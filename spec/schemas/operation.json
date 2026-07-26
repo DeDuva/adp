@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adp.dev/schemas/operation.json",
+  "title": "Operation",
+  "description": "Append-only op-log entry. Every mutation writes its state change and its operation row in one transaction — this is the audit log and what makes undo possible. Per docs/pragmatic_mvp.md §4.2, §4.3.",
+  "type": "object",
+  "required": ["id", "actor_id", "verb", "target", "created_at"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "actor_id": { "type": "string", "format": "uuid" },
+    "verb": { "type": "string", "description": "e.g. repo.create, proposal.land, review.submit" },
+    "target": { "type": "string", "description": "Stable reference to the affected object" },
+    "before": { "description": "Prior state, or null for creation" },
+    "after": { "description": "Resulting state, or null for deletion" },
+    "parent_op": { "type": ["string", "null"], "format": "uuid" },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

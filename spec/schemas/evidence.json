@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adp.dev/schemas/evidence.json",
+  "title": "Evidence bundle",
+  "description": "Signed record of how a change was verified, projected to GitHub clients as a check-run. Per docs/pragmatic_mvp.md §2.4, §4.3.",
+  "type": "object",
+  "required": ["id", "change_id", "verdict", "results", "signature"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "change_id": { "type": "string", "format": "uuid" },
+    "proposal_id": { "type": ["string", "null"], "format": "uuid" },
+    "verdict": { "type": "string", "enum": ["pass", "fail", "pending"] },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["gate", "status"],
+        "properties": {
+          "gate": { "type": "string" },
+          "status": { "type": "string", "enum": ["pass", "fail", "skipped", "running"] },
+          "weight": { "type": "number" },
+          "artifact_refs": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "land_decision": { "type": ["string", "null"], "enum": [null, "landed", "blocked"] },
+    "signature": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

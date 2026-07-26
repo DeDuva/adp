@@ -3,3 +3,12 @@
 
 # WSL / Windows alternate-data-stream artifacts
 *:Zone.Identifier
+
+# Node
+node_modules/
+dist/
+
+# Local env
+.env
+deploy/.env
+

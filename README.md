@@ -1,6 +1,10 @@
 # ADP — Agent Development-state Protocol
 
-**Status: design phase. No code yet — this repository currently holds three documents.**
+**Status: M0 walking skeleton in progress.** `server/` has a Fastify + Postgres server with
+token auth and git smart-HTTP proxied to the real `git http-backend` — see
+[`server/README.md`](server/README.md) to run it locally. REST/GraphQL compat, gates,
+evidence, and the native plane are not built yet; see `docs/pragmatic_mvp.md` for the full
+milestone plan.
 
 ## What this is
 
