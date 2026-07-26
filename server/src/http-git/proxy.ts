@@ -214,7 +214,11 @@ export function registerGitHttpRoutes(app: FastifyInstance, gitBackend: GitBacke
           queryString: url.search.replace(/^\?/, ""),
           contentType: req.headers["content-type"] ?? "",
           contentLength: req.headers["content-length"],
-          remoteUser: req.identity.principal,
+          // Pushed through as REMOTE_USER, which git forwards verbatim to
+          // any hooks it spawns (http-git/hooks.ts) — the identity's id,
+          // not its display name, since the hooks need to look the
+          // identity back up unambiguously (principal isn't unique).
+          remoteUser: req.identity.identityId,
           body: (req.body as Readable | undefined) ?? req.raw,
           maxBytes,
         },

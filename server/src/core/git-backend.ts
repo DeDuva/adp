@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile, chmod } from "node:fs/promises";
 import path from "node:path";
 
 const execFileAsync = promisify(execFile);
@@ -51,8 +51,97 @@ function runWithInput(args: string[], cwd: string, input: Buffer): Promise<strin
 
 // All git plumbing goes through the real `git` binary as a subprocess: 100%
 // wire-protocol fidelity for free, no isomorphic-git edge cases.
+// Written verbatim into every bare repo's hooks/pre-receive|post-receive at
+// creation, with owner/name/internalUrl baked in as literals rather than
+// read from the environment at hook-run time — the hook is a separate OS
+// process git spawns, and depending on env-var forwarding through `git
+// http-backend` -> `git receive-pack` -> hook for anything beyond what git
+// itself sets (REMOTE_USER) is exactly the kind of fragility this avoids.
+// Node (not bash+curl) because Node is already a hard dependency of this
+// project and has global fetch — no new tool for the deployment image to
+// provide.
+const EMPTY_TREE_SHA_JS = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+// pre-receive and post-receive need meaningfully different bodies, not just
+// a different URL: git keeps newly-pushed objects in a per-push quarantine
+// directory (`GIT_OBJECT_DIRECTORY`/`GIT_ALTERNATE_OBJECT_DIRECTORIES`, set
+// only in the hook's own process env) until pre-receive succeeds — objects
+// aren't visible to any *other* process (like this server, reached over
+// HTTP) until refs actually move. So pre-receive must compute its own diff
+// locally, inheriting that env for free as a child process of the hook
+// itself, and ship the diff *text* to the server for scanning. Post-receive
+// has no such constraint (refs have already moved, objects are ordinary by
+// then) and can just ship shas for the server to look up itself via GitBackend.
+function hookScript(kind: "pre-receive" | "post-receive", owner: string, name: string, internalUrl: string): string {
+  const perUpdate =
+    kind === "pre-receive"
+      ? `
+      const base = oldSha === "0000000000000000000000000000000000000000" ? ${JSON.stringify(EMPTY_TREE_SHA_JS)} : oldSha;
+      const patch = await new Promise((resolve, reject) => {
+        execFile("git", ["diff", base, newSha], { maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => {
+          // exit code 1 just means "there is a diff" for \`git diff\` — not a real error.
+          if (err && typeof err.code === "number" && err.code > 1) reject(err);
+          else resolve(stdout);
+        });
+      });
+      return { oldSha, newSha, ref, patch };`
+      : `
+      return { oldSha, newSha, ref };`;
+
+  return `#!/usr/bin/env node
+const { execFile } = require("node:child_process");
+const owner = ${JSON.stringify(owner)};
+const name = ${JSON.stringify(name)};
+const internalUrl = ${JSON.stringify(internalUrl)};
+
+let input = "";
+process.stdin.on("data", (c) => { input += c; });
+process.stdin.on("end", async () => {
+  const lines = input.trim().split("\\n").filter(Boolean);
+  if (lines.length === 0) process.exit(0);
+
+  try {
+    const updates = await Promise.all(lines.map(async (line) => {
+      const [oldSha, newSha, ref] = line.split(" ");
+      ${perUpdate}
+    }));
+
+    const res = await fetch(\`\${internalUrl}/internal/hooks/${kind}\`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ owner, name, identityId: process.env.REMOTE_USER || null, updates }),
+    });
+    const body = await res.json();
+    if (body.block) {
+      console.error(\`ADP push protection: \${body.message}\`);
+      for (const f of body.findings ?? []) console.error(\`  \${f.ref}:\${f.line} \${f.pattern}\`);
+      process.exit(1);
+    }
+    process.exit(0);
+  } catch (err) {
+    console.error(\`ADP ${kind} hook error: \${err}\`);
+    // Fail closed on pre-receive (a broken policy check is not the same as
+    // "no policy"); post-receive has already let the push through, so
+    // failing here would only lose the auto-record, not the push itself.
+    process.exit(${kind === "pre-receive" ? 1 : 0});
+  }
+});
+`;
+}
+
 export class GitBackend {
-  constructor(private readonly gitRoot: string) {}
+  // Not readonly: the internal URL's port is often only known once the
+  // server is actually listening (e.g. tests that bind port 0 for an
+  // OS-assigned free port) — later than GitBackend construction, but always
+  // before any repo (and therefore any hook script) gets created.
+  constructor(
+    private readonly gitRoot: string,
+    private internalUrl?: string,
+  ) {}
+
+  setInternalUrl(internalUrl: string): void {
+    this.internalUrl = internalUrl;
+  }
 
   repoPath(owner: string, name: string): string {
     return path.join(this.gitRoot, owner, `${name}.git`);
@@ -70,6 +159,14 @@ export class GitBackend {
     ]);
     // Smart-HTTP push is opt-in per repo; the compat plane needs it on by default.
     await execFileAsync("git", ["config", "http.receivepack", "true"], { cwd: repoPath });
+
+    if (this.internalUrl) {
+      for (const kind of ["pre-receive", "post-receive"] as const) {
+        const hookPath = path.join(repoPath, "hooks", kind);
+        await writeFile(hookPath, hookScript(kind, owner, name, this.internalUrl));
+        await chmod(hookPath, 0o755);
+      }
+    }
   }
 
   async exists(owner: string, name: string): Promise<boolean> {

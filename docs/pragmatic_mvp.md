@@ -367,7 +367,7 @@ that is the honest price of zero-config.
 
 ## Status ledger
 
-*Updated 2026-07-26. CI runs typecheck, build, migrations, the full three-tier test suite (79
+*Updated 2026-07-26. CI runs typecheck, build, migrations, the full three-tier test suite (90
 tests, including all e2e suites), and the `gh` conformance gate (`conformance/run.sh`) on every PR.*
 
 | Milestone | Status | Evidence |
@@ -376,7 +376,7 @@ tests, including all e2e suites), and the `gh` conformance gate (`conformance/ru
 | M1a — domain + REST core loop | **✓ core complete** | PRs #2–#3. e2e: issue→intent → comment → signed change → proposal → typed review → ff-merge → 409 on non-ff. Tier-2 tail now done (see M1b′) |
 | M1b — GraphQL + `gh` | **✓ gate met** | PR #4 (read) + the M1b′ mutation slice. GitHub's real SDL loaded unmodified; `conformance/run.sh` drives a real, unmodified, pinned `gh` v2.63.0 through `issue create/view`, `pr create/view/merge` against the live server — the definition-of-done §2.1 gate, enforced in CI on every PR |
 | M1b′ — compat completion + hardening | **✓ done** | GraphQL mutations, the Tier-2 REST tail, all five hardening items, and the `gh` conformance gate all landed — see below |
-| M1c | not started | revised scope below |
+| M1c | **◐ receive-path hooks done** | Real git `pre-receive`/`post-receive` hooks: auto-recorded changes on push, and push protection (bundled regex+entropy secret scan) rejecting a push at the wire. Outstanding: `adp.yaml` gate runner + DSSE evidence, two-level land policy, op log read API + undo, history query, candidate sets, MCP native plane, read-only web UI — see below |
 | M2–M5 | not started | M2 scope revised below (trust ramp) |
 
 ### M0 — Spec + walking skeleton (weeks 1–2) — ✓ done
@@ -502,10 +502,40 @@ Sequenced so the compat plane is provably working before the differentiators lan
 unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` against the server.
 
 #### M1c — differentiators *(revised 2026-07-26: trust-plane slice folded in, §1.5)*
-- **Receive-path hook subsystem** — one mechanism, two consumers: post-receive auto-records typed
-  changes on push; pre-receive runs push protection (bundled regex+entropy secret engine behind a
-  pluggable provider API). Violations return a typed, actionable error to the pushing agent and are
-  non-bypassable below the instance policy floor.
+- ~~**Receive-path hook subsystem**~~ **done**: one mechanism, two consumers, implemented as real
+  git `pre-receive`/`post-receive` hooks written into every bare repo at creation time
+  (`GitBackend.initBareRepo`, `server/src/core/git-backend.ts`'s `hookScript`) — not a simulation of
+  hook behavior, actual hooks `git receive-pack` invokes on every push.
+  - **post-receive auto-records typed changes on push** (`server/src/http-git/hooks.ts`): for each
+    ref update, resolves the new commits (`GitBackend.log`) and inserts a signed `changes` row per
+    commit not already recorded, deduped by `(repoId, gitSha)` — this is what `changes.ts`'s comment
+    called "wiring automatic recording into the push path," now done. Provenance is the pushing
+    identity (see below), `via: "push"`.
+  - **pre-receive runs push protection**: bundled regex+entropy secret engine
+    (`server/src/core/secret-scan.ts`, `BundledSecretScanProvider` behind a `SecretScanProvider`
+    interface — the "pluggable provider API" is that interface; only the bundled engine is
+    implemented so far, external scanner adapters are M2 scope, §1.5 item 4). A finding rejects the
+    push at the wire with a typed, actionable error (which line, which pattern) — **non-bypassable**
+    because there's no per-repo `adp.yaml` config surface yet to turn it off; the instance-wide
+    default *is* the floor for now.
+  - **The one real subtlety**: `pre-receive` runs before refs move, while pushed objects still sit
+    in git's per-push *object quarantine* (`GIT_OBJECT_DIRECTORY`/`GIT_ALTERNATE_OBJECT_DIRECTORIES`,
+    set only in the hook process's own env) — a *separate* process (this server, reached over HTTP)
+    can't see those objects yet. So the hook script computes its own diff locally (inheriting the
+    right env for free, as a child of the hook process) and ships the diff **text** to the server for
+    scanning; only `post-receive` (after refs move, objects ordinary again) ships shas for the server
+    to look up itself. Confirmed by hitting this exact failure (`fatal: bad object <sha>`) before
+    fixing it — worth remembering if this pattern needs extending.
+  - `http-git/proxy.ts` now passes the pushing identity's **id** (not its principal/display name) as
+    `REMOTE_USER` — git forwards it verbatim to any hooks it spawns, and the hooks need to resolve it
+    back to exactly one identity unambiguously (`principal` isn't a unique column).
+  - The internal `/internal/hooks/{pre,post}-receive` routes (`http-git/hooks.ts`) are loopback-only
+    (no bearer token — the hook has none to present; trust is scoped to "same host" instead, fine for
+    the MVP's single-host deployment, docs/pragmatic_mvp.md §4.1).
+  - Covered by `server/test/e2e-hooks.test.ts`: a clean push auto-records a change with a valid
+    signature and op-log entry; a push containing a seeded AWS key is rejected with `git push`
+    exiting non-zero and the ref never moving server-side; dedup on a replayed ref update; and the
+    loopback-only guard.
 - **`adp.yaml` gate runner + evidence bundles** — evidence serialized as in-toto/DSSE attestation
   envelopes (§1.5 item 1), projected as check-runs on the compat plane.
 - **Land policy, resolved two-level:** instance floor ∧ repo `adp.yaml`
@@ -513,8 +543,8 @@ unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` again
 - **Op log read API + undo; history query; candidate sets; MCP native plane (8 tools); read-only
   web UI** — as originally scoped.
 
-**Exit (unchanged):** §2.1 passes as a scripted E2E driven by a real unmodified agent — plus one
-addition: a push containing a seeded secret is blocked at the wire with a typed error.
+**Exit:** §2.1 passes as a scripted E2E driven by a real unmodified agent — plus one addition, now
+**met**: a push containing a seeded secret is blocked at the wire with a typed error.
 
 ### M2 — Adoption + trust ramp *(revised 2026-07-26)*
 **Mirror mode** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub; the single
