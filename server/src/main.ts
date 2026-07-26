@@ -11,6 +11,7 @@ import { registerIssueRoutes } from "./http-rest/issues.js";
 import { registerChangeRoutes } from "./http-rest/changes.js";
 import { registerProposalRoutes } from "./http-rest/proposals.js";
 import { registerReviewRoutes } from "./http-rest/reviews.js";
+import { registerGitDataRoutes } from "./http-rest/git-data.js";
 import { loadGitHubSchema } from "./http-gql/schema.js";
 import { attachResolvers } from "./http-gql/attach-resolvers.js";
 import { createResolvers } from "./http-gql/resolvers.js";
@@ -45,6 +46,7 @@ async function main() {
   registerChangeRoutes(app, db, gitBackend, signer);
   registerProposalRoutes(app, db, gitBackend);
   registerReviewRoutes(app, db);
+  registerGitDataRoutes(app, db, gitBackend);
 
   const gqlSchema = loadGitHubSchema();
   attachResolvers(gqlSchema, createResolvers(gitBackend));

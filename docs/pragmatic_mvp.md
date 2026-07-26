@@ -368,14 +368,14 @@ that is the honest price of zero-config.
 ## Status ledger
 
 *Updated 2026-07-26. CI runs typecheck, build, migrations, and the full three-tier test suite
-(68 tests, including both e2e suites) on every PR.*
+(75 tests, including all three e2e suites) on every PR.*
 
 | Milestone | Status | Evidence |
 |---|---|---|
 | M0 — walking skeleton | **✓ complete** | PR #1. CI e2e: mint token → create repo → `git clone` → `git push` → commit lands |
-| M1a — domain + REST core loop | **✓ core complete** | PRs #2–#3. e2e: issue→intent → comment → signed change → proposal → typed review → ff-merge → 409 on non-ff. Tier-2 tail outstanding (see M1b′) |
+| M1a — domain + REST core loop | **✓ core complete** | PRs #2–#3. e2e: issue→intent → comment → signed change → proposal → typed review → ff-merge → 409 on non-ff. Tier-2 tail now done (see M1b′) |
 | M1b — GraphQL + `gh` | **◐ read + mutation slice** | PR #4 (read), plus the M1b′ mutation slice below. GitHub's real SDL loaded unmodified; read resolvers (repository/node/viewer, issue/PR connections, authors) and now the 9 GraphQL mutations pass `gh`-shaped queries. Record-replay gate against the real `gh` binary still outstanding |
-| M1b′ — compat completion + hardening | **◐ mutations done** | GraphQL mutations (`createIssue`, `closeIssue`, `addComment`, `createPullRequest`, `closePullRequest`, `reopenPullRequest`, `markPullRequestReadyForReview`, `addPullRequestReview`, `mergePullRequest`) landed with `User`/`Bot` actor fidelity (agent identities now resolve as `Bot`). Outstanding: Tier-2 REST tail (contents/commits/compare/git-data), record-replay conformance suite, hardening items (bodyLimit/streaming, scope enforcement, default-private reads, keyed token lookup, `SIGNING_KEY` doc fix) |
+| M1b′ — compat completion + hardening | **◐ mutations + REST tail done** | GraphQL mutations (`createIssue`, `closeIssue`, `addComment`, `createPullRequest`, `closePullRequest`, `reopenPullRequest`, `markPullRequestReadyForReview`, `addPullRequestReview`, `mergePullRequest`) landed with `User`/`Bot` actor fidelity. Tier-2 REST tail landed: `contents`, `commits`/`commits/{sha}`/`compare/{base}...{head}`, `git/refs|blobs|trees|commits` (+ `DELETE git/refs/heads/{b}`), PR `files` + diff/patch `Accept` media types, and the GitHub-standard `POST /user/repos` / `POST /orgs/{org}/repos` create paths. Outstanding: the `gh` record-replay conformance suite and the hardening items (bodyLimit/streaming, scope enforcement, default-private reads, keyed token lookup, `SIGNING_KEY` doc fix) |
 | M1c | not started | revised scope below |
 | M2–M5 | not started | M2 scope revised below (trust ramp) |
 
@@ -413,9 +413,16 @@ Sequenced so the compat plane is provably working before the differentiators lan
    covered by `Repository.pullRequest(number)`; `statusCheckRollup` needs no resolver — it's a
    nullable field with no CI system behind it yet, so it already resolves to `null`. Covered by
    `server/test/e2e-graphql.test.ts`'s "M1b′ GraphQL: mutations" suite.
-2. **Tier-2 REST tail:** `contents`, `commits`/`compare`, git-data endpoints
-   (`git/refs|blobs|trees|commits`, `DELETE git/refs/heads/{b}`), PR `files` + diff/patch media
-   types, GitHub-standard repo-create paths.
+2. ~~**Tier-2 REST tail**~~ **done**: `contents` (`server/src/http-rest/git-data.ts`), `commits` /
+   `commits/{sha}` / `compare/{base}...{head}`, git-data endpoints (`git/refs|blobs|trees|commits`,
+   `DELETE git/refs/heads/{b}`), PR `files` + diff/patch `Accept` media types on `GET pulls/{n}`, and
+   the GitHub-standard `POST /user/repos` / `POST /orgs/{org}/repos` create paths (`repos.ts`). All
+   backed by new `GitBackend` plumbing (`statPath`, `readBlob`, `listTree`, `getCommit`, `log`,
+   `diffNameStatus`, `diffPatch`, `mergeBaseCount`, `listRefs`, `createBlob`, `createTree`,
+   `createCommit`, `createRef`, `deleteRef`) — still subprocess-to-real-`git`, no isomorphic-git.
+   `git/trees` tree-merge semantics (`base_tree` + overlay entries, `sha: null` deletes) are a
+   pragmatic subset of GitHub's, not full parity. Covered by
+   `server/test/e2e-git-data.test.ts`.
 3. **The record-replay conformance suite** — build it now and make it the gate it was always meant
    to be: pin a `gh` version in CI, record real-GitHub exchanges once, assert shape-compatible
    responses.

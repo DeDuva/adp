@@ -146,7 +146,36 @@ export function registerProposalRoutes(app: FastifyInstance, db: Db, gitBackend:
       reply.code(404).send({ message: "Not Found" });
       return;
     }
+
+    // GitHub overloads this endpoint via Accept: the same resource as a
+    // unified diff or patch, not a separate route.
+    const accept = req.headers.accept ?? "";
+    if (accept.includes("diff") || accept.includes("patch")) {
+      const patch = await gitBackend.diffPatch(owner, repoName, proposal.baseRef, proposal.headSha);
+      reply.type(accept.includes("patch") ? "text/x-patch" : "text/x-diff").send(patch);
+      return;
+    }
+
     reply.send(serializeProposal(proposal, owner, repoName));
+  });
+
+  app.get("/api/v3/repos/:owner/:repo/pulls/:number/files", async (req, reply) => {
+    const { owner, repo: repoName, number } = req.params as { owner: string; repo: string; number: string };
+    const repo = await findRepo(db, owner, repoName);
+    if (!repo) {
+      reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
+      return;
+    }
+    const [proposal] = await db
+      .select()
+      .from(proposals)
+      .where(and(eq(proposals.repoId, repo.id), eq(proposals.number, Number(number))));
+    if (!proposal) {
+      reply.code(404).send({ message: "Not Found" });
+      return;
+    }
+    const files = await gitBackend.diffNameStatus(owner, repoName, proposal.baseRef, proposal.headSha);
+    reply.send(files.map((f) => ({ filename: f.path, status: f.status })));
   });
 
   app.patch(
