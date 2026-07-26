@@ -11,6 +11,7 @@ import { identities } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
+import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerIssueRoutes } from "../src/http-rest/issues.js";
 import { registerProposalRoutes } from "../src/http-rest/proposals.js";
@@ -64,6 +65,11 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
     const gitBackend = new GitBackend(gitRoot);
 
     app = Fastify({ logger: false });
+    app.addContentTypeParser(
+      ["application/x-git-upload-pack-request", "application/x-git-receive-pack-request"],
+      { parseAs: "buffer" },
+      (_req, body, done) => done(null, body as Buffer),
+    );
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend);
     registerIssueRoutes(app, db);
@@ -72,6 +78,8 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
     const schema = loadGitHubSchema();
     attachResolvers(schema, createResolvers(gitBackend));
     registerGraphQLRoute(app, schema, db);
+
+    registerGitHttpRoutes(app, gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
