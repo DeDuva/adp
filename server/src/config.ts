@@ -6,6 +6,9 @@ const EnvSchema = z.object({
   SIGNING_KEY: z.string().min(1),
   PUBLIC_URL: z.string().url(),
   PORT: z.coerce.number().int().positive().default(3000),
+  // Real repos push real-sized packs; Fastify's 1 MiB default 413s those.
+  // Bounds the git smart-HTTP request body, not any other route.
+  GIT_MAX_PACK_BYTES: z.coerce.number().int().positive().default(500 * 1024 * 1024),
 });
 
 export type Config = z.infer<typeof EnvSchema>;

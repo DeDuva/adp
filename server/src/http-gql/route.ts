@@ -3,6 +3,7 @@ import { execute, parse, validate, GraphQLError, type GraphQLSchema } from "grap
 import { z } from "zod";
 import type { Db } from "../db/client.js";
 import type { GqlContext } from "./context.js";
+import { hasScope } from "../auth/plugin.js";
 
 const GraphQLRequestBody = z.object({
   query: z.string(),
@@ -24,6 +25,14 @@ const GraphQLRequestBody = z.object({
 // only need to validate the incoming query document against it.
 export function registerGraphQLRoute(app: FastifyInstance, schema: GraphQLSchema, db: Db) {
   app.post("/api/graphql", async (req, reply) => {
+    // Default-private reads (docs/pragmatic_mvp.md §1.5): the whole endpoint
+    // requires at least repo:read — surfaced as a GraphQL error (not a bare
+    // REST 401/403) so `gh`-shaped clients see it in the usual `errors` array.
+    if (!req.identity || !hasScope(req.identity.scopes, "repo:read")) {
+      reply.send({ errors: [{ message: "Requires authentication with repo:read scope" }] });
+      return;
+    }
+
     const parsedBody = GraphQLRequestBody.safeParse(req.body);
     if (!parsedBody.success) {
       reply.code(400).send({ errors: [{ message: "Invalid GraphQL request body" }] });

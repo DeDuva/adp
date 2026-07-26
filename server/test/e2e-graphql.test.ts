@@ -69,8 +69,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
     app = Fastify({ logger: false });
     app.addContentTypeParser(
       ["application/x-git-upload-pack-request", "application/x-git-receive-pack-request"],
-      { parseAs: "buffer" },
-      (_req, body, done) => done(null, body as Buffer),
+      (_req, payload, done) => done(null, payload),
     );
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend);
@@ -285,8 +284,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b′ GraphQL: mutations", () => {
     app = Fastify({ logger: false });
     app.addContentTypeParser(
       ["application/x-git-upload-pack-request", "application/x-git-receive-pack-request"],
-      { parseAs: "buffer" },
-      (_req, body, done) => done(null, body as Buffer),
+      (_req, payload, done) => done(null, payload),
     );
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend);

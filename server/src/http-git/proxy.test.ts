@@ -30,8 +30,7 @@ describe("git smart-HTTP proxy", () => {
     app = Fastify({ logger: false });
     app.addContentTypeParser(
       ["application/x-git-upload-pack-request", "application/x-git-receive-pack-request"],
-      { parseAs: "buffer" },
-      (_req, body, done) => done(null, body as Buffer),
+      (_req, payload, done) => done(null, payload),
     );
     app.addHook("onRequest", async (req) => {
       req.identity = {
@@ -88,5 +87,87 @@ describe("git smart-HTTP proxy", () => {
       cwd: backend.repoPath("acme", "hello"),
     });
     expect(stdout).toContain("test commit");
+  });
+
+  it("clones and pushes a multi-megabyte file (exercises the streaming path, not the old 1 MiB buffer default)", async () => {
+    const cloneDir = path.join(workDir, "big-clone");
+    await execFileAsync("git", ["clone", `http://127.0.0.1:${port}/acme/hello.git`, cloneDir]);
+    await execFileAsync("git", ["checkout", "-B", "big"], { cwd: cloneDir });
+    await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
+    await execFileAsync("git", ["config", "user.name", "Test"], { cwd: cloneDir });
+    // ~5 MiB of incompressible-ish data — comfortably past Fastify's old
+    // 1 MiB default bodyLimit that used to 413 real-sized packs.
+    await execFileAsync("sh", ["-c", "head -c 5000000 /dev/urandom | base64 > big.bin"], { cwd: cloneDir });
+    await execFileAsync("git", ["add", "."], { cwd: cloneDir });
+    await execFileAsync("git", ["commit", "-m", "big file"], { cwd: cloneDir });
+    await execFileAsync("git", ["push", "origin", "big"], { cwd: cloneDir });
+
+    const { stdout } = await execFileAsync("git", ["log", "--oneline", "big"], {
+      cwd: backend.repoPath("acme", "hello"),
+    });
+    expect(stdout).toContain("big file");
+  });
+});
+
+describe("git smart-HTTP proxy bodyLimit", () => {
+  let gitRoot: string;
+  let workDir: string;
+  let app: FastifyInstance;
+  let port: number;
+  let backend: GitBackend;
+
+  beforeAll(async () => {
+    gitRoot = await mkdtemp(path.join(tmpdir(), "adp-proxy-limit-test-git-"));
+    backend = new GitBackend(gitRoot);
+    await backend.initBareRepo("acme", "hello", "main");
+
+    app = Fastify({ logger: false });
+    app.addContentTypeParser(
+      ["application/x-git-upload-pack-request", "application/x-git-receive-pack-request"],
+      (_req, payload, done) => done(null, payload),
+    );
+    app.addHook("onRequest", async (req) => {
+      req.identity = {
+        identityId: "test",
+        kind: "human",
+        principal: "tester",
+        scopes: ["repo:write"],
+        harness: null,
+        model: null,
+        sessionId: null,
+      };
+    });
+    // A tiny limit — small enough that even a trivial commit's pack exceeds it.
+    registerGitHttpRoutes(app, backend, 100);
+
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const address = app.server.address();
+    port = typeof address === "object" && address ? address.port : 0;
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await rm(gitRoot, { recursive: true, force: true });
+  });
+
+  beforeEach(async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "adp-proxy-limit-test-clone-"));
+  });
+
+  afterEach(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("rejects a push whose pack exceeds the configured limit with 413, not a hang or crash", async () => {
+    const cloneDir = path.join(workDir, "clone");
+    await execFileAsync("git", ["clone", `http://127.0.0.1:${port}/acme/hello.git`, cloneDir]);
+    await execFileAsync("git", ["checkout", "-B", "main"], { cwd: cloneDir });
+    await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
+    await execFileAsync("git", ["config", "user.name", "Test"], { cwd: cloneDir });
+    await execFileAsync("sh", ["-c", "echo hi > README.md"], { cwd: cloneDir });
+    await execFileAsync("git", ["add", "."], { cwd: cloneDir });
+    await execFileAsync("git", ["commit", "-m", "test commit"], { cwd: cloneDir });
+
+    await expect(execFileAsync("git", ["push", "origin", "main"], { cwd: cloneDir })).rejects.toThrow();
   });
 });

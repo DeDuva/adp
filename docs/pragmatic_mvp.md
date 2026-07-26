@@ -368,14 +368,14 @@ that is the honest price of zero-config.
 ## Status ledger
 
 *Updated 2026-07-26. CI runs typecheck, build, migrations, and the full three-tier test suite
-(75 tests, including all three e2e suites) on every PR.*
+(79 tests, including all e2e suites) on every PR.*
 
 | Milestone | Status | Evidence |
 |---|---|---|
 | M0 — walking skeleton | **✓ complete** | PR #1. CI e2e: mint token → create repo → `git clone` → `git push` → commit lands |
 | M1a — domain + REST core loop | **✓ core complete** | PRs #2–#3. e2e: issue→intent → comment → signed change → proposal → typed review → ff-merge → 409 on non-ff. Tier-2 tail now done (see M1b′) |
 | M1b — GraphQL + `gh` | **◐ read + mutation slice** | PR #4 (read), plus the M1b′ mutation slice below. GitHub's real SDL loaded unmodified; read resolvers (repository/node/viewer, issue/PR connections, authors) and now the 9 GraphQL mutations pass `gh`-shaped queries. Record-replay gate against the real `gh` binary still outstanding |
-| M1b′ — compat completion + hardening | **◐ mutations + REST tail done** | GraphQL mutations (`createIssue`, `closeIssue`, `addComment`, `createPullRequest`, `closePullRequest`, `reopenPullRequest`, `markPullRequestReadyForReview`, `addPullRequestReview`, `mergePullRequest`) landed with `User`/`Bot` actor fidelity. Tier-2 REST tail landed: `contents`, `commits`/`commits/{sha}`/`compare/{base}...{head}`, `git/refs|blobs|trees|commits` (+ `DELETE git/refs/heads/{b}`), PR `files` + diff/patch `Accept` media types, and the GitHub-standard `POST /user/repos` / `POST /orgs/{org}/repos` create paths. Outstanding: the `gh` record-replay conformance suite and the hardening items (bodyLimit/streaming, scope enforcement, default-private reads, keyed token lookup, `SIGNING_KEY` doc fix) |
+| M1b′ — compat completion + hardening | **✓ done except the conformance suite** | GraphQL mutations, the Tier-2 REST tail, and all five hardening items landed (streaming git bodies + configurable `bodyLimit`, scope enforcement, default-private reads, keyed token lookup, `SIGNING_KEY` doc fix). Only the `gh` record-replay conformance suite remains — see item 3 below |
 | M1c | not started | revised scope below |
 | M2–M5 | not started | M2 scope revised below (trust ramp) |
 
@@ -426,8 +426,34 @@ Sequenced so the compat plane is provably working before the differentiators lan
 3. **The record-replay conformance suite** — build it now and make it the gate it was always meant
    to be: pin a `gh` version in CI, record real-GitHub exchanges once, assert shape-compatible
    responses.
-4. **Hardening (§1.5 list):** git-route `bodyLimit` + streaming pack bodies; scope enforcement;
-   default-private reads; keyed token lookup; `SIGNING_KEY` doc fix.
+4. ~~**Hardening (§1.5 list)**~~ **done**:
+   - **git-route `bodyLimit` + streaming pack bodies** (`server/src/http-git/proxy.ts`): the request
+     content-type parser now hands back the raw stream instead of buffering (`main.ts`); it's piped
+     through a byte-counting `Transform` guard straight into `git http-backend`'s stdin, and the CGI
+     response is split into headers/body by `splitCgiResponse` and streamed straight to the client via
+     `reply.hijack()` + `reply.raw` — neither direction is ever fully materialized in memory. The limit
+     is configurable via `GIT_MAX_PACK_BYTES` (`config.ts`, `deploy/.env.example`; default 500 MB),
+     replacing Fastify's 1 MiB default that used to 413 any real-sized pack.
+   - **Scope enforcement** (`server/src/auth/plugin.ts`): `requireScope("repo:read" | "repo:write")`
+     now gates every REST route (reads too — see below), the whole GraphQL endpoint, and the git
+     smart-HTTP route (push needs `repo:write`, clone/fetch needs `repo:read`); `repo:write` also
+     satisfies a `repo:read` requirement, and `admin` satisfies both, via the shared `hasScope` helper.
+     GraphQL mutations check the same via `requireIdentity` in `resolvers.ts`.
+   - **Default-private reads**: every REST `GET` route that used to have no `preHandler` now requires
+     `repo:read`; the GraphQL route requires it too, surfaced as a GraphQL `errors` entry rather than a
+     bare REST 401/403 so `gh`-shaped clients see it the way they expect.
+   - **Keyed token lookup** (`server/src/auth/tokens.ts`, `db/schema.ts`): `tokens.lookupKey` (indexed,
+     `sha256(token)`) narrows `authenticate()` to a single-row lookup instead of scrypt-verifying every
+     unrevoked token in the table; the scrypt check against `tokenHash` is still what actually
+     authenticates, `lookupKey` is only a fast filter. Migration `0003` backfills a random placeholder
+     for pre-existing rows (no production tokens exist yet at this point in the MVP).
+   - **`SIGNING_KEY` doc fix** (`deploy/.env.example`): corrected to say the key is derived via
+     SHA-256 of any secret string, not an `openssl genpkey` PEM keypair — matches what
+     `core/signing.ts` has always actually done.
+   
+   Covered by new tests in `server/src/http-git/proxy.test.ts` (streaming a multi-MB push, and a
+   configured-`bodyLimit` 413 case) and `server/test/e2e.test.ts` (default-private reads, read-only
+   vs. write-scoped tokens).
 
 **Gate (unchanged in substance):** definition of done §2.1 minus evidence/undo passes with a real,
 unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` against the server.

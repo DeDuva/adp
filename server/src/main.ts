@@ -25,11 +25,13 @@ async function main() {
 
   const app = Fastify({ logger: true });
 
-  // git smart-HTTP payloads (pack data) must reach the CGI subprocess untouched.
+  // git smart-HTTP payloads (pack data) must reach the CGI subprocess
+  // untouched and unbuffered — no `parseAs`, so `payload` is the raw request
+  // stream itself; http-git/proxy.ts pipes it straight into `git
+  // http-backend`'s stdin instead of materializing it as a Buffer first.
   app.addContentTypeParser(
     ["application/x-git-upload-pack-request", "application/x-git-receive-pack-request"],
-    { parseAs: "buffer" },
-    (_req, body, done) => done(null, body),
+    (_req, payload, done) => done(null, payload),
   );
 
   await app.register(authPlugin(db));
@@ -52,7 +54,7 @@ async function main() {
   attachResolvers(gqlSchema, createResolvers(gitBackend));
   registerGraphQLRoute(app, gqlSchema, db);
 
-  registerGitHttpRoutes(app, gitBackend);
+  registerGitHttpRoutes(app, gitBackend, config.GIT_MAX_PACK_BYTES);
 
   await app.listen({ host: "0.0.0.0", port: config.PORT });
 }

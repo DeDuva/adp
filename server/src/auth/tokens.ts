@@ -1,5 +1,5 @@
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { identities, tokens } from "../db/schema.js";
 
@@ -7,6 +7,12 @@ const TOKEN_PREFIX = "adp_pat_";
 
 export function generateToken(): string {
   return TOKEN_PREFIX + randomBytes(32).toString("base64url");
+}
+
+// Deterministic, not secret on its own (scrypt+salt in tokenHash still does
+// the real verification) — just narrows the row scan to O(1).
+function lookupKeyFor(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 // Exported for unit testing; not part of the module's intended external API.
@@ -52,6 +58,7 @@ export async function mintToken(
   await db.insert(tokens).values({
     identityId,
     tokenHash: hashToken(token),
+    lookupKey: lookupKeyFor(token),
     scopes,
     expiresAt: opts.expiresAt ?? null,
     harness: opts.harness ?? null,
@@ -61,12 +68,13 @@ export async function mintToken(
   return token;
 }
 
-// Linear scan over unrevoked, unexpired tokens: fine at MVP scale, avoids storing
-// a lookup key derived from the token itself.
+// Keyed lookup by sha256(token) narrows this to (at most) one row — the
+// scrypt verification against tokenHash is still what actually authenticates
+// it; lookupKey just avoids scanning/scrypt-verifying every token in the table.
 export async function authenticate(db: Db, token: string): Promise<AuthenticatedIdentity | null> {
   if (!token.startsWith(TOKEN_PREFIX)) return null;
 
-  const rows = await db
+  const [row] = await db
     .select({
       tokenHash: tokens.tokenHash,
       scopes: tokens.scopes,
@@ -80,22 +88,20 @@ export async function authenticate(db: Db, token: string): Promise<Authenticated
       principal: identities.principal,
     })
     .from(tokens)
-    .innerJoin(identities, eq(tokens.identityId, identities.id));
+    .innerJoin(identities, eq(tokens.identityId, identities.id))
+    .where(and(eq(tokens.lookupKey, lookupKeyFor(token)), eq(tokens.revoked, false)));
 
-  for (const row of rows) {
-    if (row.revoked) continue;
-    if (row.expiresAt && row.expiresAt.getTime() < Date.now()) continue;
-    if (verifyTokenHash(token, row.tokenHash)) {
-      return {
-        identityId: row.identityId,
-        kind: row.kind as "human" | "agent",
-        principal: row.principal,
-        scopes: row.scopes,
-        harness: row.harness,
-        model: row.model,
-        sessionId: row.sessionId,
-      };
-    }
-  }
-  return null;
+  if (!row) return null;
+  if (row.expiresAt && row.expiresAt.getTime() < Date.now()) return null;
+  if (!verifyTokenHash(token, row.tokenHash)) return null;
+
+  return {
+    identityId: row.identityId,
+    kind: row.kind as "human" | "agent",
+    principal: row.principal,
+    scopes: row.scopes,
+    harness: row.harness,
+    model: row.model,
+    sessionId: row.sessionId,
+  };
 }
