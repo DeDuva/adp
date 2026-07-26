@@ -34,7 +34,15 @@ describe("git smart-HTTP proxy", () => {
       (_req, body, done) => done(null, body as Buffer),
     );
     app.addHook("onRequest", async (req) => {
-      req.identity = { identityId: "test", kind: "human", principal: "tester", scopes: ["repo:write"] };
+      req.identity = {
+        identityId: "test",
+        kind: "human",
+        principal: "tester",
+        scopes: ["repo:write"],
+        harness: null,
+        model: null,
+        sessionId: null,
+      };
     });
     registerGitHttpRoutes(app, backend);
 

@@ -1,10 +1,13 @@
-# ADP server — M0 walking skeleton
+# ADP server — M0 skeleton + M1a slice
 
-Fastify + PostgreSQL server. Two things work end to end: token-authenticated repo creation,
-and git smart-HTTP (clone/push) proxied to the real `git http-backend` binary.
+Fastify + PostgreSQL server. Working end to end: token-authenticated repo creation, git
+smart-HTTP (clone/push) proxied to the real `git http-backend` binary, issues (which each
+file an intent) with comments, and typed changes — a git commit bound to an intent and a
+server-signed provenance record.
 
-Not yet implemented: REST `/api/v3` beyond identity probes + repo create, GraphQL, gates,
-evidence bundles, the native MCP plane. See `docs/pragmatic_mvp.md` for the milestone plan.
+Not yet implemented: proposals, reviews, GraphQL, gates, evidence bundles, the native MCP
+plane, and automatic change recording on push (changes are currently recorded via an
+explicit API call, not a git hook). See `docs/pragmatic_mvp.md` for the milestone plan.
 
 ## Local development
 

@@ -89,7 +89,155 @@ paths:
           description: OK
         "404":
           description: Not found
+  /api/v3/repos/{owner}/{repo}/issues:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    post:
+      summary: File an issue (also creates an intent)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIssueRequest"
+      responses:
+        "201":
+          description: Created
+        "404":
+          description: Repository not found
+        "422":
+          description: Validation failed
+    get:
+      summary: List issues
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Repository not found
+  /api/v3/repos/{owner}/{repo}/issues/{number}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - name: number
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get an issue
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+    patch:
+      summary: Update an issue (title, body, or state — open/closed)
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateIssueRequest"
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+        "422":
+          description: Validation failed
+  /api/v3/repos/{owner}/{repo}/issues/{number}/comments:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - name: number
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      summary: Comment on an issue
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommentRequest"
+      responses:
+        "201":
+          description: Created
+        "404":
+          description: Not found
+        "422":
+          description: Validation failed
+    get:
+      summary: List comments on an issue
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+  /api/v3/repos/{owner}/{repo}/changes:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    post:
+      summary: >
+        Record a typed change: an existing git commit plus intent and
+        provenance, server-signed. No GitHub shape — native ADP metadata
+        living beside the commit (docs/pragmatic_mvp.md §2.2). Recorded via
+        explicit call; not yet triggered automatically by a git push.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateChangeRequest"
+      responses:
+        "201":
+          description: Created
+        "404":
+          description: Repository not found
+        "422":
+          description: git_sha is not a commit in this repo, or intent_id doesn't belong to it
+  /api/v3/repos/{owner}/{repo}/changes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a signed change record
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
 components:
+  parameters:
+    owner:
+      name: owner
+      in: path
+      required: true
+      schema:
+        type: string
+    repo:
+      name: repo
+      in: path
+      required: true
+      schema:
+        type: string
   securitySchemes:
     bearerAuth:
       type: http
@@ -104,3 +252,40 @@ components:
         default_branch:
           type: string
           default: main
+    CreateIssueRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+    UpdateIssueRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+        state:
+          type: string
+          enum: [open, closed]
+    CreateCommentRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+    CreateChangeRequest:
+      type: object
+      required: [git_sha]
+      properties:
+        git_sha:
+          type: string
+          pattern: "^[0-9a-f]{40}$"
+        intent_id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid

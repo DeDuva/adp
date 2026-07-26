@@ -1,10 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
-import { repos, operations } from "../db/schema.js";
+import { repos } from "../db/schema.js";
 import { requireAuth } from "../auth/plugin.js";
+import { recordOperation } from "../core/operations.js";
+import { findRepo } from "../core/repos-lookup.js";
 
 const CreateRepoBody = z.object({
   name: z.string().min(1).regex(/^[a-zA-Z0-9._-]+$/),
@@ -21,32 +22,33 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     }
     const { name, default_branch } = parsed.data;
 
-    const existing = await db
-      .select()
-      .from(repos)
-      .where(and(eq(repos.owner, owner), eq(repos.name, name)));
-    if (existing.length > 0) {
+    if (await findRepo(db, owner, name)) {
       reply.code(422).send({ message: `Repository ${owner}/${name} already exists` });
       return;
     }
 
+    // git init happens outside the DB transaction (it's not transactional
+    // infrastructure), but the repo row and its op-log entry are atomic.
     await gitBackend.initBareRepo(owner, name, default_branch);
 
-    const [repo] = await db
-      .insert(repos)
-      .values({ owner, name, defaultBranch: default_branch })
-      .returning();
+    const repo = await db.transaction(async (tx) => {
+      const [repo] = await tx
+        .insert(repos)
+        .values({ owner, name, defaultBranch: default_branch })
+        .returning();
 
-    await db.insert(operations).values({
-      actorId: req.identity!.identityId,
-      verb: "repo.create",
-      target: `${owner}/${name}`,
-      before: null,
-      after: { id: repo!.id, owner, name, defaultBranch: default_branch },
+      await recordOperation(tx, {
+        actorId: req.identity!.identityId,
+        verb: "repo.create",
+        target: `${owner}/${name}`,
+        after: { id: repo!.id, owner, name, defaultBranch: default_branch },
+      });
+
+      return repo!;
     });
 
     reply.code(201).send({
-      id: repo!.id,
+      id: repo.id,
       full_name: `${owner}/${name}`,
       name,
       owner: { login: owner },
@@ -57,10 +59,7 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
 
   app.get("/api/v3/repos/:owner/:repo", async (req, reply) => {
     const { owner, repo: name } = req.params as { owner: string; repo: string };
-    const [repo] = await db
-      .select()
-      .from(repos)
-      .where(and(eq(repos.owner, owner), eq(repos.name, name)));
+    const repo = await findRepo(db, owner, name);
     if (!repo) {
       reply.code(404).send({ message: "Not Found" });
       return;

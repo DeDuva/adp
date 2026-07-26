@@ -38,4 +38,15 @@ export class GitBackend {
       return false;
     }
   }
+
+  async commitExists(owner: string, name: string, gitSha: string): Promise<boolean> {
+    try {
+      const { stdout } = await execFileAsync("git", ["cat-file", "-t", gitSha], {
+        cwd: this.repoPath(owner, name),
+      });
+      return stdout.trim() === "commit";
+    } catch {
+      return false;
+    }
+  }
 }
