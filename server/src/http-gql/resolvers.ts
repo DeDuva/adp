@@ -4,6 +4,9 @@ import { hasScope } from "../auth/plugin.js";
 import { identities, issueComments, issues, proposals, repos, reviews, intents } from "../db/schema.js";
 import { findRepo } from "../core/repos-lookup.js";
 import { recordOperation } from "../core/operations.js";
+import { evaluateLandPolicy } from "../core/land-policy.js";
+import type { LandRequirement } from "../core/repo-policy.js";
+import { latestGateResults } from "../core/gate-results-lookup.js";
 import { toGlobalId, fromGlobalId } from "./global-id.js";
 import { buildConnection, type ConnectionArgs } from "./connections.js";
 import type { GqlContext } from "./context.js";
@@ -198,6 +201,7 @@ async function shapeRef(db: GqlContext["db"], gitBackend: GitBackend, repo: Repo
       __typename: "Commit",
       id: toGlobalId("Commit", sha),
       oid: sha,
+      __repoId: repo.id,
     },
   };
 }
@@ -207,7 +211,7 @@ async function resolveAuthor(ctx: GqlContext, authorId: string) {
   return identity ? shapeUser(identity) : null;
 }
 
-export function createResolvers(gitBackend: GitBackend): ResolverMap {
+export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequirement[] = []): ResolverMap {
   return {
     Query: {
       repository: async (_root, args: { owner: string; name: string }, ctx: GqlContext) => {
@@ -353,6 +357,7 @@ export function createResolvers(gitBackend: GitBackend): ResolverMap {
             oid: c.sha,
             message: c.message,
             committedDate: c.authorDate,
+            __repoId: parent.__repo.id,
           },
         }));
         return buildConnection(nodes, args);
@@ -362,6 +367,35 @@ export function createResolvers(gitBackend: GitBackend): ResolverMap {
     IssueComment: {
       author: (parent: ReturnType<typeof shapeIssueComment>, _args, ctx: GqlContext) =>
         resolveAuthor(ctx, parent.__authorId),
+    },
+
+    // Evidence bundles (core/dsse.ts, core/gate-results-lookup.ts) projected
+    // onto the compat plane (docs/pragmatic_mvp.md M1c). Per-context detail
+    // (`contexts`) isn't implemented — an empty connection, honest about
+    // what's missing rather than an error — but the aggregate `state` is
+    // real. Returns null entirely (StatusCheckRollup is a nullable field)
+    // when nothing has been reported for this commit, same as a repo with
+    // no CI configured at all on real GitHub.
+    Commit: {
+      statusCheckRollup: async (parent: { oid: string; __repoId?: string }, _args, ctx: GqlContext) => {
+        if (!parent.__repoId) return null;
+        const latest = await latestGateResults(ctx.db, parent.__repoId, parent.oid);
+        if (latest.size === 0) return null;
+
+        const statuses = [...latest.values()].map((r) => r.status);
+        const state = statuses.includes("failure")
+          ? "FAILURE"
+          : statuses.includes("pending")
+            ? "PENDING"
+            : "SUCCESS";
+
+        return {
+          __typename: "StatusCheckRollup",
+          id: toGlobalId("StatusCheckRollup", `${parent.__repoId}:${parent.oid}`),
+          state,
+          contexts: buildConnection([], {}),
+        };
+      },
     },
 
     PullRequestReview: {
@@ -651,6 +685,13 @@ export function createResolvers(gitBackend: GitBackend): ResolverMap {
         if (args.input.expectedHeadOid && args.input.expectedHeadOid !== proposal.headSha) {
           throw new GraphQLError("Head ref oid does not match expectedHeadOid", {
             extensions: { code: "CONFLICT" },
+          });
+        }
+
+        const policy = await evaluateLandPolicy(ctx.db, gitBackend, instanceFloor, repo, proposal);
+        if (!policy.allowed) {
+          throw new GraphQLError(`Land policy not satisfied: ${policy.unmet.join("; ")}`, {
+            extensions: { code: "BAD_USER_INPUT" },
           });
         }
 

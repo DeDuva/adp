@@ -37,6 +37,16 @@ export class Signer {
     const signature = Buffer.from(signatureBase64, "base64");
     return ed25519.verify(signature, message, Buffer.from(this.publicKeyHex, "hex"));
   }
+
+  // Signs exact bytes with no canonicalization/wrapping — DSSE (core/dsse.ts)
+  // signs its own PAE-encoded byte string per spec, not arbitrary JSON.
+  signRaw(message: Uint8Array): Uint8Array {
+    return ed25519.sign(message, this.privateKey);
+  }
+
+  verifyRaw(message: Uint8Array, signature: Uint8Array): boolean {
+    return ed25519.verify(signature, message, Buffer.from(this.publicKeyHex, "hex"));
+  }
 }
 
 function sortKeysDeep(value: unknown): unknown {

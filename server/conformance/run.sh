@@ -127,6 +127,19 @@ echo "-- gh pr view --"
 PR_OUT=$("$GH_BIN" pr view 1 --repo "$REPO") || fail "gh pr view"
 echo "$PR_OUT" | grep -q "conformance pr" || fail "gh pr view: title missing from output"
 
+# The default instance land-policy floor (LAND_POLICY_FLOOR, config.ts) now
+# requires one_approval — confirm an unreviewed PR is genuinely refused,
+# then approve it and confirm the merge succeeds, same as a real workflow.
+PRE_APPROVAL_MERGE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
+  "http://localhost:${PORT}/api/v3/repos/${OWNER}/widget/pulls/1/merge" \
+  -H "Authorization: Bearer ${TOKEN}")
+[ "$PRE_APPROVAL_MERGE_STATUS" = "422" ] || fail "expected land policy to refuse an unreviewed merge (422), got $PRE_APPROVAL_MERGE_STATUS"
+
+curl -sf -X POST "http://localhost:${PORT}/api/v3/repos/${OWNER}/widget/pulls/1/reviews" \
+  -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d '{"state":"approved","body":"looks good"}' >/dev/null \
+  || fail "approving review failed"
+
 echo "-- gh pr merge --"
 "$GH_BIN" pr merge 1 --repo "$REPO" --merge || fail "gh pr merge"
 

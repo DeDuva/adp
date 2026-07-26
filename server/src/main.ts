@@ -13,6 +13,8 @@ import { registerProposalRoutes } from "./http-rest/proposals.js";
 import { registerReviewRoutes } from "./http-rest/reviews.js";
 import { registerGitDataRoutes } from "./http-rest/git-data.js";
 import { registerHookRoutes } from "./http-git/hooks.js";
+import { registerGateRoutes } from "./http-rest/gates.js";
+import { LandRequirement } from "./core/repo-policy.js";
 import { loadGitHubSchema } from "./http-gql/schema.js";
 import { attachResolvers } from "./http-gql/attach-resolvers.js";
 import { createResolvers } from "./http-gql/resolvers.js";
@@ -28,6 +30,10 @@ async function main() {
   const internalUrl = `http://127.0.0.1:${config.PORT}`;
   const gitBackend = new GitBackend(config.GIT_ROOT, internalUrl);
   const signer = new Signer(config.SIGNING_KEY);
+  // Fails fast at boot if misconfigured, matching config.ts's philosophy —
+  // LAND_POLICY_FLOOR is a plain string list there so config.ts doesn't
+  // need to depend on core/repo-policy.ts's enum.
+  const instanceFloor = LandRequirement.array().parse(config.LAND_POLICY_FLOOR);
 
   const app = Fastify({ logger: true });
 
@@ -52,13 +58,14 @@ async function main() {
   registerRepoRoutes(app, db, gitBackend);
   registerIssueRoutes(app, db);
   registerChangeRoutes(app, db, gitBackend, signer);
-  registerProposalRoutes(app, db, gitBackend);
+  registerProposalRoutes(app, db, gitBackend, instanceFloor);
   registerReviewRoutes(app, db);
   registerGitDataRoutes(app, db, gitBackend);
   registerHookRoutes(app, db, gitBackend, signer);
+  registerGateRoutes(app, db, signer, config.PUBLIC_URL);
 
   const gqlSchema = loadGitHubSchema();
-  attachResolvers(gqlSchema, createResolvers(gitBackend));
+  attachResolvers(gqlSchema, createResolvers(gitBackend, instanceFloor));
   registerGraphQLRoute(app, gqlSchema, db);
 
   registerGitHttpRoutes(app, gitBackend, config.GIT_MAX_PACK_BYTES);
