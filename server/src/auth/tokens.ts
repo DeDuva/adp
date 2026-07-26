@@ -30,20 +30,33 @@ export interface AuthenticatedIdentity {
   kind: "human" | "agent";
   principal: string;
   scopes: string[];
+  harness: string | null;
+  model: string | null;
+  sessionId: string | null;
+}
+
+export interface MintTokenOptions {
+  expiresAt?: Date;
+  harness?: string;
+  model?: string;
+  sessionId?: string;
 }
 
 export async function mintToken(
   db: Db,
   identityId: string,
   scopes: string[],
-  expiresAt?: Date,
+  opts: MintTokenOptions = {},
 ): Promise<string> {
   const token = generateToken();
   await db.insert(tokens).values({
     identityId,
     tokenHash: hashToken(token),
     scopes,
-    expiresAt: expiresAt ?? null,
+    expiresAt: opts.expiresAt ?? null,
+    harness: opts.harness ?? null,
+    model: opts.model ?? null,
+    sessionId: opts.sessionId ?? null,
   });
   return token;
 }
@@ -59,6 +72,9 @@ export async function authenticate(db: Db, token: string): Promise<Authenticated
       scopes: tokens.scopes,
       revoked: tokens.revoked,
       expiresAt: tokens.expiresAt,
+      harness: tokens.harness,
+      model: tokens.model,
+      sessionId: tokens.sessionId,
       identityId: identities.id,
       kind: identities.kind,
       principal: identities.principal,
@@ -75,6 +91,9 @@ export async function authenticate(db: Db, token: string): Promise<Authenticated
         kind: row.kind as "human" | "agent",
         principal: row.principal,
         scopes: row.scopes,
+        harness: row.harness,
+        model: row.model,
+        sessionId: row.sessionId,
       };
     }
   }

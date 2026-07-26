@@ -11,9 +11,12 @@ import { identities } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
+import { Signer } from "../src/core/signing.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerIdentityRoutes } from "../src/http-rest/identity.js";
+import { registerIssueRoutes } from "../src/http-rest/issues.js";
+import { registerChangeRoutes } from "../src/http-rest/changes.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -48,6 +51,8 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     await app.register(authPlugin(db));
     registerIdentityRoutes(app);
     registerRepoRoutes(app, db, gitBackend);
+    registerIssueRoutes(app, db);
+    registerChangeRoutes(app, db, gitBackend, new Signer("e2e-test-signing-key"));
     registerGitHttpRoutes(app, gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
@@ -130,5 +135,82 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
         path.join(await mkdtemp(path.join(tmpdir(), "adp-e2e-noauth-")), "clone"),
       ]),
     ).rejects.toThrow();
+  });
+
+  it("creates an issue, which files an intent, then a comment on it", async () => {
+    const createRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/issues`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Add a README", body: "It's empty right now." }),
+    });
+    expect(createRes.status).toBe(201);
+    const issue = (await createRes.json()) as { number: number; intent_id: string; state: string };
+    expect(issue.state).toBe("open");
+    expect(issue.intent_id).toBeTruthy();
+
+    const commentRes = await fetch(
+      `http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/issues/${issue.number}/comments`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "On it." }),
+      },
+    );
+    expect(commentRes.status).toBe(201);
+
+    const closeRes = await fetch(
+      `http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/issues/${issue.number}`,
+      {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ state: "closed" }),
+      },
+    );
+    expect(closeRes.status).toBe(200);
+    const closed = (await closeRes.json()) as { state: string };
+    expect(closed.state).toBe("closed");
+  });
+
+  it("records a signed change against a real commit, linked to an intent", async () => {
+    const issueRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/issues`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Second task" }),
+    });
+    const issue = (await issueRes.json()) as { intent_id: string };
+
+    const { stdout: sha } = await execFileAsync("git", ["rev-parse", "main"], {
+      cwd: new GitBackend(gitRoot).repoPath("e2e-owner", "hello"),
+    });
+
+    const changeRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/changes`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ git_sha: sha.trim(), intent_id: issue.intent_id }),
+    });
+    expect(changeRes.status).toBe(201);
+    const change = (await changeRes.json()) as {
+      id: string;
+      git_sha: string;
+      intent_id: string;
+      signature: string;
+      provenance: { kind: string; principal: string };
+    };
+    expect(change.git_sha).toBe(sha.trim());
+    expect(change.intent_id).toBe(issue.intent_id);
+    expect(change.provenance.kind).toBe("human");
+    expect(change.signature).toBeTruthy();
+
+    const getRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/changes/${change.id}`);
+    expect(getRes.status).toBe(200);
+  });
+
+  it("rejects a change referencing a commit that doesn't exist", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/changes`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ git_sha: "f".repeat(40) }),
+    });
+    expect(res.status).toBe(422);
   });
 });

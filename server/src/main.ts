@@ -2,15 +2,19 @@ import Fastify from "fastify";
 import { loadConfig } from "./config.js";
 import { createDb } from "./db/client.js";
 import { GitBackend } from "./core/git-backend.js";
+import { Signer } from "./core/signing.js";
 import { authPlugin } from "./auth/plugin.js";
 import { registerGitHttpRoutes } from "./http-git/proxy.js";
 import { registerRepoRoutes } from "./http-rest/repos.js";
 import { registerIdentityRoutes } from "./http-rest/identity.js";
+import { registerIssueRoutes } from "./http-rest/issues.js";
+import { registerChangeRoutes } from "./http-rest/changes.js";
 
 async function main() {
   const config = loadConfig();
   const { db, pool } = createDb(config.DATABASE_URL);
   const gitBackend = new GitBackend(config.GIT_ROOT);
+  const signer = new Signer(config.SIGNING_KEY);
 
   const app = Fastify({ logger: true });
 
@@ -31,6 +35,8 @@ async function main() {
 
   registerIdentityRoutes(app);
   registerRepoRoutes(app, db, gitBackend);
+  registerIssueRoutes(app, db);
+  registerChangeRoutes(app, db, gitBackend, signer);
   registerGitHttpRoutes(app, gitBackend);
 
   await app.listen({ host: "0.0.0.0", port: config.PORT });
