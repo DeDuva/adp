@@ -367,7 +367,7 @@ that is the honest price of zero-config.
 
 ## Status ledger
 
-*Updated 2026-07-26. CI runs typecheck, build, migrations, the full three-tier test suite (102
+*Updated 2026-07-26. CI runs typecheck, build, migrations, the full three-tier test suite (104
 tests, including all e2e suites), and the `gh` conformance gate (`conformance/run.sh`) on every PR.*
 
 | Milestone | Status | Evidence |
@@ -376,7 +376,7 @@ tests, including all e2e suites), and the `gh` conformance gate (`conformance/ru
 | M1a — domain + REST core loop | **✓ core complete** | PRs #2–#3. e2e: issue→intent → comment → signed change → proposal → typed review → ff-merge → 409 on non-ff. Tier-2 tail now done (see M1b′) |
 | M1b — GraphQL + `gh` | **✓ gate met** | PR #4 (read) + the M1b′ mutation slice. GitHub's real SDL loaded unmodified; `conformance/run.sh` drives a real, unmodified, pinned `gh` v2.63.0 through `issue create/view`, `pr create/view/merge` against the live server — the definition-of-done §2.1 gate, enforced in CI on every PR |
 | M1b′ — compat completion + hardening | **✓ done** | GraphQL mutations, the Tier-2 REST tail, all five hardening items, and the `gh` conformance gate all landed — see below |
-| M1c | **◐ hooks + gate runner + land policy done** | Real git `pre-receive`/`post-receive` hooks (auto-record + push protection); `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy (instance floor ∧ repo `adp.yaml`) enforced on both REST and GraphQL merge, blocking a real `gh pr merge` until satisfied. Outstanding: op log read API + undo, history query, candidate sets, MCP native plane, read-only web UI — see below |
+| M1c | **◐ hooks + gate runner + land policy + op log/undo done** | Real git `pre-receive`/`post-receive` hooks (auto-record + push protection); `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy enforced on both REST and GraphQL merge; native-plane (`/api/adp`) op log read API with actor/verb/date filtering, and `adp_undo`'s first case — reverting a fast-forward merge, refused if the branch has moved since. Outstanding: full history-query (by path), candidate sets, MCP native plane, read-only web UI — see below |
 | M2–M5 | not started | M2 scope revised below (trust ramp) |
 
 ### M0 — Spec + walking skeleton (weeks 1–2) — ✓ done
@@ -570,8 +570,27 @@ unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` again
     floor: confirms an unreviewed `gh pr merge` is genuinely refused (422), approves the PR via the
     REST reviews endpoint, then confirms the merge succeeds — rather than weakening the floor just
     to keep that script passing.
-- **Op log read API + undo; history query; candidate sets; MCP native plane (8 tools); read-only
-  web UI** — as originally scoped, not yet started.
+- ~~**Op log read API + undo**~~ **done** (native plane, `/api/adp` — no GitHub analogue, per
+  the compat/native table in §2.2): `GET /api/adp/repos/{owner}/{repo}/operations` (filterable by
+  `actor`, `verb`, `since`/`until` — a lightweight cut of "history query," not the full
+  by-file-path version) and `.../operations/{id}`. `operations` has no `repoId` column (it's been
+  repo-agnostic in shape since commit 1, and adding one is a bigger migration than this read API
+  calls for) — repo-scoping instead matches on `target`'s shape: every target this codebase writes
+  is either exactly `owner/name` or `owner/name` immediately followed by `#` or `@`, so
+  `server/src/http-rest/operations.ts`'s `repoTargetFilter` is a precise match, not a fuzzy prefix
+  (`"acme/widget"` can't accidentally match a target starting with `"acme/widget2"`).
+  `POST .../operations/{id}/undo` (`core/undo.ts`) implements the one undo case scoped so far —
+  reverting a fast-forward merge (`verb: "proposal.merge"`) — by moving the base ref back to its
+  pre-merge sha via the same compare-and-swap `GitBackend.fastForwardRef` the merge itself used
+  (nothing about that method actually requires moving forward; the ff-only restriction lives in the
+  caller's separate `isAncestor` check, not in `update-ref` itself). **Refuses to undo if the branch
+  has moved since** — winding it back further would silently drop whatever landed after — and
+  refuses a second undo of the same operation. Other verbs aren't undoable yet: an honest 422, not
+  a no-op that pretends to have worked. Covered by `server/test/e2e-operations.test.ts` (list +
+  filter, undo reverting the ref and reopening the PR, a rejected second undo, and a rejected undo
+  once the branch moved).
+- **History query (full, by path), candidate sets, MCP native plane (8 tools), read-only web UI** —
+  as originally scoped, not yet started.
 
 **Exit:** §2.1 passes as a scripted E2E driven by a real unmodified agent — plus one addition, now
 **met**: a push containing a seeded secret is blocked at the wire with a typed error.
