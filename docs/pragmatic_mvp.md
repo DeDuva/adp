@@ -1,0 +1,540 @@
+# ADP — Concept Review, MVP Definition, and Infrastructure Plan
+
+## Context
+
+`docs/agent-native-vcs-brief-v4.md` argues for a neutral, open, agent-native substrate for version
+control and CI/CD (ADP). `docs/adp-prototype-implementation-plan.md` proposes a 24-week, 6-engineer
+prototype. The repo is otherwise empty — two documents, no code.
+
+The ask here is narrower and more useful than the existing plan: **an MVP that an agent can use
+instead of GitHub**, deferring everything complex. That reframing is load-bearing. The existing plan
+optimizes for "prove the brief's three theses to a frontier lab." This plan optimizes for "an
+off-the-shelf agent completes its whole outer loop against our server and we learn what actually
+breaks." The second is a precondition for the first.
+
+**Decisions taken (locked):**
+
+| Decision | Choice | Consequence |
+|---|---|---|
+| Success test | **Unmodified agent, zero config** — point `GH_HOST` at us, no MCP setup, no code changes | GitHub REST *and* GraphQL compatibility is MVP-critical, not deferred |
+| `gh` CLI | **Works in MVP** | ~14 GraphQL operations must ship; adds ~2.5 weeks |
+| Stack | **TypeScript + Node** | Fast surface-area iteration; git plumbing via subprocess |
+| Forge | **Greenfield over plain git** | Bare repos + `git http-backend` + our own Postgres domain model |
+
+Everything below is written against those four.
+
+---
+
+# Part 1 — Concept review
+
+## 1.1 What holds up
+
+- **Git-compatible surface over non-Git internals is validated,** not speculative. Five independent
+  teams converged; [Cursor Origin](https://www.eesel.ai/blog/what-is-cursor-origin) shipped exactly
+  this in June 2026. This is now a baseline, not a differentiator.
+- **Verification as the bottleneck is correct and under-served.** When agents author most code, the
+  scarce resource is trustworthy attestation, not keystrokes.
+- **Binding intent → diff → evidence → provenance at land time is the strongest idea in the brief**
+  and is genuinely unoccupied. Entire and Diversion capture context; neither gates on it.
+- **The harness-boundary analysis (§e) is the sharpest section.** Harnesses privately reimplementing
+  checkpointing, session persistence, memory, and workspace orchestration is real and observable.
+
+## 1.2 Where the concept is weak
+
+**A. The LSP analogy is the wrong precedent, and it hides the hard part.**
+LSP won because the M×N problem was symmetric and neither side wanted the other's state: the editor
+kept the buffers, the server answered questions. ADP as specified is asymmetric — *the substrate owns
+the state*. Asking a harness vendor to adopt ADP is not "adopt a query protocol," it is "move your
+session state, your memory, and your customer's source code onto a third party's server." That is a
+database migration, not an integration, and it is why adoption will be much harder than §e implies.
+
+The better precedent is **OpenTelemetry**: it standardized *emission* — of precisely our payload,
+provenance and evidence — without requiring anyone to move their system of record, and it won.
+Consequence: ADP's adoptable core should be *record formats plus a verb set that works against a repo
+you already have*. This is what makes **mirror mode** (§3, M2) strategically important rather than a
+nice-to-have.
+
+**B. "Neutral standard" and "replace GitHub" are in tension; the docs pick the harder one first.**
+The brief says the forge API is the prize, then cuts the GitHub shim to webhooks and statuses. But
+the success test we've now locked is exactly a forge test. Sequence them: **be a usable forge first
+(concrete, testable), extract the standard second.** A spec with one implementation and no users is
+not a standard; it is a document. The `spec/` directory and conformance suite are cheap to maintain
+from day one — but they are the *byproduct* of a working forge, not the deliverable.
+
+**C. The real switching cost is the integration estate, not the token tax.**
+The brief's central mechanism — "Git familiarity is a per-token performance tax" — is true but is not
+what keeps organizations on GitHub. That is Actions, SSO/SCIM, Dependabot, code scanning, branch
+protection, CODEOWNERS, audit export, and dozens of webhook integrations. The *agent* is rarely
+blocked; the *org* is blocked on compliance and plumbing. Two consequences:
+- Don't try to win the integration estate — it is unwinnable. Target **greenfield agent workloads
+  and speculative fan-out**, where no estate exists yet.
+- "Keep GitHub as system of record, add ADP alongside" is the only genuinely low-friction adoption
+  path. Hence mirror mode at M2.
+
+**D. The verification fabric is scoped as infrastructure, but its defensible core is policy.**
+A hermetic, Bazel-compatible, remote-cached incremental build graph is a decade-long product with
+three well-funded incumbents. The brief calls it "the lead," then quietly descopes it to "pluggable
+gate runners" — which is CI. The novel *and* cheap pieces are the **evidence bundle schema** and
+**statistical land criteria under stochastic gates** (A8). Those are a schema and a policy engine.
+Build them; run gates in containers like everyone else; do not write a build system.
+
+**E. The novel primitive is buried, and it is not the merge queue.**
+Merge queues serialize *independent* changes — solved and commoditized (GitHub, Graphite, Mergify,
+Aviator). What no forge has is a primitive for **N competing candidate solutions to one intent**: fan
+out 50 attempts, score them against the same gates, land one, keep 49 queryable and out of history.
+That is the actual shape of agent-fleet work, it has no GitHub analogue, and it is cheap once
+proposals exist. It belongs in the MVP; speculative batching does not.
+
+**F. The read path is ignored, and it is where agents spend their tokens.**
+Both docs are about the write path (fork → change → land). Agents burn most of their budget
+*reading*: `git log -p`, `git blame`, "why is this like this," "what broke this." A substrate holding
+intent + evidence + provenance in a database answers those in one typed query instead of 40k tokens
+of scrollback. Oak's "~50% fewer VCS tokens" claim lives here. **A semantic history-query API is
+probably the cheapest large agent win available, and it appears in neither document.**
+
+**G. Cut-list items that are actually load-bearing.**
+- *"Cut multi-tenant auth; each partner runs an isolated instance."* Ship single-tenant *data*
+  isolation, but build token-scoped auth from commit 1 — it is middleware, not a subsystem, and
+  retrofitting identity into a provenance system is not viable.
+- *"Rust, gRPC, jj-lib, gitoxide."* A five-year architecture chosen at week 0. For an MVP whose
+  deliverable is API surface breadth, Rust spends the budget on the wrong problem; gRPC adds codegen
+  and proxy cost with zero MVP consumer; jj-lib imports the doc's own unsolved A4 research problem
+  into week 2. (Superseded by the locked decisions above.)
+- *Five repos from the first commit.* Premature. One public monorepo, `spec/` as a directory.
+
+**H. Git projection fidelity is asserted as "borrow, zero innovation budget." It is not.**
+With first-class conflicts, typed changes, and undo-of-landed-changes, projecting into a git DAG is
+lossy and full of edge cases (what does a conflicted change look like to `git clone`? what does undo
+look like to someone who already fetched?). Sapling/Mononoke took years. **Resolution: don't project.
+Git *is* the store; ADP is an overlay beside the DAG.** Fidelity risk goes to zero, `git` works by
+construction, and the ADP *API* — the actual standard — is unchanged. The brief already concedes the
+principle ("the spec, not the codebase, is the commitment"); the MVP exploits it maximally and defers
+the jj-derived engine entirely.
+
+## 1.3 Competitive blind spots
+
+| Blind spot | Why it matters |
+|---|---|
+| **GitHub is already moving.** [Agent apps in Marketplace](https://github.blog/changelog/2026-06-02-extend-github-with-agent-apps/) and an [agent-native Copilot desktop app](https://github.blog/news-insights/product-news/github-copilot-app-the-agent-native-desktop-experience/), both H1 2026. | This is risk A10 materializing *now*. Distribution beats architecture. A10's fallback (become the open **conformance layer**) should be treated as the likely case — which argues for `spec/` + `conformance/` being real artifacts early. They are cheap, and they are the hedge. |
+| **Forgejo/Gitea already exist and already fail your exact test.** Mature, self-hostable, GitHub-*shaped* — and `gh` does not work against them because [they expose no GraphQL](https://github.com/IoTReady/forgejo-cli). | Two conclusions. (1) Forking Gitea would have bought a forge but *not* agent fluency, while importing a large Go codebase built for human workflows — this is why greenfield is right. (2) The absence of any gh-compatible open forge is an unfilled gap, and it tells you the expensive part of "usable instead of GitHub" is GraphQL, not REST. |
+| **`gh` is GraphQL-first.** `gh pr view/list/status/checks/merge` and `gh issue list/view` are all GraphQL. | Any REST-only shim leaves `gh` broken. Now scoped explicitly in §2.4. |
+| **Harness vendors may standardize among themselves.** Claude Code and others already ship git-worktree isolation and their own checkpointing. | The §e drift may resolve via a harness-side convention (cheap, no server) before a substrate standard lands. ADP's pitch must be what a harness *cannot* do locally: cross-harness, durable, signed, server-side history and evidence. |
+| **Agent-sandbox platforms (Freestyle, Daytona, E2B) already sell "git + environment via API."** | They own the adjacent workflow and could add proposals/evidence more easily than ADP could add sandbox infrastructure. Argues for ADP explicitly *not* owning execution environments and keeping a clean integration seam. |
+| **Nobody has costed being system-of-record for a lab's source code.** | Tier-0 security asset, DR obligation, availability SLO, data residency. Another reason mirror mode matters: ADP can be *additive* before it is *authoritative*. |
+
+## 1.4 What changes about the concept
+
+1. Sequence **usable forge → measured adoption → extracted standard.** Not standard-first.
+2. Make **mirror mode** a first-class product mode (M2).
+3. Promote **candidate sets** and the **semantic history-query API** to headline differentiators;
+   demote speculative merge batching and the build graph.
+4. Defer the jj-derived change engine; ship the ADP verb set and record schema over plain git.
+5. Treat `spec/` + `conformance/` as the durable artifact. The server is replaceable.
+
+---
+
+# Part 2 — The MVP
+
+## 2.1 Definition of done
+
+> Set three environment variables. An off-the-shelf coding agent — no MCP config, no code changes,
+> no ADP knowledge — completes a full development cycle with no GitHub involved: `git clone`s, reads
+> the issue with `gh issue view`, edits, pushes, `gh pr create`, watches `gh pr checks` go green,
+> `gh pr view` shows a typed review, `gh pr merge` lands it. A human then opens the ADP web UI and
+> sees the intent, the signed evidence bundle, the provenance (harness / model / session), the
+> operation log — and clicks undo.
+
+```bash
+export GH_HOST=adp.example.com
+export GH_TOKEN=adp_pat_...
+git config --global credential.https://adp.example.com.helper '!f(){ echo "username=x-access-token"; echo "password=$GH_TOKEN"; };f'
+```
+
+Explicitly **not** in the definition of done: GitHub API parity, Actions, scale, multi-tenancy, VFS,
+structural merge, a build graph.
+
+## 2.2 The two planes
+
+The locked decisions produce a clean architecture. The MVP has two surfaces over one domain layer:
+
+| Plane | Surface | Obligation | Purpose |
+|---|---|---|---|
+| **Compat plane** | git smart-HTTP + REST `/api/v3` + GraphQL `/api/graphql` | Must be *faithful* — a broken `gh` is worse than an absent one | Zero-config adoption. This is the MVP's tier-1 obligation. |
+| **Native plane** | ADP REST + MCP (~8 tools) | Must be *expressive* | The primitives GitHub structurally cannot express: workspaces, candidate sets, evidence bundles, op log/undo, history query. |
+
+**Progressive disclosure is the design principle.** The differentiated value surfaces *through* the
+compat plane wherever it can be projected, so an unmodified agent benefits without knowing ADP exists:
+
+| ADP concept | Projection an unmodified agent sees | Native plane gives you |
+|---|---|---|
+| Intent | PR body + linked issue | Typed object, queryable, links candidates |
+| Evidence bundle | Check-run with summary + annotations + `details_url` | Signed bundle, artifact refs, land decision record |
+| Provenance | Commit trailers (`ADP-Agent:`, `ADP-Model:`, `ADP-Session:`) + signature | Identity graph, session linkage |
+| Workspace | A branch `adp/ws/<id>` | Lifecycle, TTL, GC, isolation |
+| Candidate set | Label + an index issue listing members | Real object, selection policy, scored comparison |
+| Operation log / undo | *(no analogue)* | Native only — the audit and safety story |
+
+This also resolves a real risk: if the GraphQL slice proves flakier than hoped, the native plane is
+an intact fallback rather than a second half-built system.
+
+## 2.3 Inclusion rubric
+
+Everything in the MVP sits on the agent's **outer loop**. Nine steps, one capability each. Not on the
+loop ⇒ out.
+
+| # | Agent needs to… | MVP capability | Why it can't be cut |
+|---|---|---|---|
+| 1 | get the code | git smart-HTTP | Non-negotiable; everything assumes a working copy |
+| 2 | know the task | issues + `intent` on changes | Intent is the payload the thesis rests on |
+| 3 | get an isolated place to work | workspaces (projected as branches) | The one primitive fleets need that git lacks |
+| 4 | record work | typed change: diff + intent + provenance | The defining record; cheap as metadata beside a git commit |
+| 5 | propose it | proposals (PR-shaped) | The unit review and landing attach to |
+| 6 | get it verified | gate runner + evidence bundle | Differentiator #2; without it landing is unattested |
+| 7 | get it reviewed | typed review states | Agents can't parse emoji threads |
+| 8 | land it | land with policy check | Closes the loop |
+| 9 | audit / undo | op log, undo, history query | Op log cannot be retrofitted; history-query is the token win (§1.2F) |
+
+Plus one deliberate addition off the loop:
+
+| Extra | Why it earns its place |
+|---|---|
+| **Candidate sets** | The only MVP feature GitHub structurally cannot express. It is the demo. Cost ≈ one table + a selection endpoint once proposals exist. Without it the MVP is "a worse GitHub." |
+
+## 2.4 GitHub surface: exactly what ships
+
+### Tier 1 — git wire protocol: 100%
+
+Smart HTTP only: `GET /{o}/{r}.git/info/refs`, `POST .../git-upload-pack`, `POST .../git-receive-pack`
+— delegated to the real `git http-backend` CGI behind auth middleware. Covers
+clone/fetch/pull/push/ls-remote/shallow/partial/force-push. **Delegating to git itself makes perfect
+fidelity free, and fidelity here is worth more than every other compatibility decision combined.**
+No SSH (agents in sandboxes use HTTPS + token; SSH is a key-provisioning problem with no payoff).
+
+### Tier 2 — REST at `/api/v3` (~24 endpoints)
+
+`gh` treats any non-`github.com` host as GitHub Enterprise Server and derives
+`https://HOST/api/v3/` — verified against [cli/cli `ghinstance/host.go`](https://raw.githubusercontent.com/cli/cli/trunk/internal/ghinstance/host.go).
+Mounting there also means `gh api`, Octokit, and CI libraries work with one env var.
+
+| Group | Endpoints | Defense |
+|---|---|---|
+| Identity | `GET /`(with `X-OAuth-Scopes`), `GET /user`, `GET /rate_limit` | `gh auth status` and every Octokit client probe these first; without them clients hard-fail before doing anything |
+| Repo | `GET`/`HEAD /repos/{o}/{r}` | Default-branch and existence resolution; universally required |
+| Read-without-clone | `GET /repos/{o}/{r}/contents/{path}` | Heavily used by agents to read one file cheaply — direct token savings |
+| History | `GET .../commits`, `.../commits/{sha}`, `.../compare/{b}...{h}` | The read path in a vocabulary clients already know |
+| Git data | `GET/POST .../git/refs`, `POST .../git/blobs`, `.../git/trees`, `.../git/commits`, `DELETE .../git/refs/heads/{b}` | Commit with no working copy — a real fleet pattern, nearly free over a git backend; the DELETE is what `gh pr merge --delete-branch` calls |
+| Proposals | `POST/GET .../pulls`, `GET/PATCH .../pulls/{n}` (+`Accept: …diff`/`…patch`), `GET .../pulls/{n}/files`, `PUT .../pulls/{n}/merge` | The loop. `gh pr diff` is REST-only and cheap to serve |
+| Discussion | `GET/POST .../issues`, `GET/PATCH .../issues/{n}`, `GET/POST .../issues/{n}/comments` | Where intent enters the system and the human↔agent channel lives |
+| Review | `POST/GET .../pulls/{n}/reviews` | Machine-readable review state — a core claim |
+| Evidence | `POST .../check-runs`, `GET .../commits/{ref}/check-runs`, `POST .../statuses/{sha}`, `GET .../commits/{ref}/status` | Evidence in the shape existing CI already emits and reads — the cheapest on-ramp there is |
+
+**Not implemented:** search, Actions/workflows/runs, releases, packages, orgs/teams/members, projects,
+deployments/environments/secrets, branch protection, code scanning, Dependabot, notifications,
+gists, stars, forks-as-social-object, third-party webhooks (one outbound emitter at M2).
+Unsupported endpoints return `404` with a JSON body naming the ADP equivalent — a broken call that
+*explains itself* costs an agent one turn; a hang or a 500 costs it the trajectory.
+
+### Tier 3 — GraphQL at `/api/graphql` (~14 operations)
+
+This is the MVP's single largest new-risk item, so the approach matters more than the list.
+
+**Approach: load GitHub's published public schema SDL (`schema.docs.graphql`) into `graphql-js`
+unmodified, and implement resolvers only for the fields we back.** Everything else resolves to a
+proper GraphQL error rather than a validation failure. This matters because:
+- `gh`'s queries *validate* against the real schema, so we never fail with "field does not exist" —
+  the failure mode that makes a partial shim worse than none;
+- we implement resolvers incrementally, driven by the record-replay suite (§5), instead of by reading
+  `cli/cli` source, which moves;
+- it dodges "perpetually chasing upstream": the schema is upstream's artifact, refreshed by a script.
+
+Also required: `Node`/`node(id:)` with base64 `typename:id` global IDs, Relay-style connections with
+cursor pagination, and the `User | Bot` actor unions `gh` selects on.
+
+Operation inventory, derived from [`api/queries_pr.go`](https://raw.githubusercontent.com/cli/cli/trunk/api/queries_pr.go)
+and [`api/queries_repo.go`](https://raw.githubusercontent.com/cli/cli/trunk/api/queries_repo.go):
+
+| `gh` command | Needs |
+|---|---|
+| `gh repo view` | `RepositoryInfo` (id, name, owner, defaultBranchRef, viewerPermission, merge settings) |
+| `gh pr create` | `RepositoryInfo` + `RepoMetadata` (labels, assignable actors, milestones) + `createPullRequest` |
+| `gh pr list` | `repository.pullRequests` connection + `search` fallback |
+| `gh pr view [--json]` | `repository.pullRequest{…}` incl. comments, reviews, `statusCheckRollup` |
+| `gh pr checkout` | `PullRequestByNumber` (headRefName, headRepository) then git fetch |
+| `gh pr checks` | `statusCheckRollup` on the head commit |
+| `gh pr review` | `addPullRequestReview` |
+| `gh pr comment` / `gh issue comment` | `addComment` |
+| `gh pr merge` | `mergePullRequest` (+ `mergeStateStatus`) |
+| `gh pr close/reopen/ready` | `closePullRequest`, `reopenPullRequest`, `markPullRequestReadyForReview` |
+| `gh issue create/list/view/close` | `IssueRepositoryInfo`, `createIssue`, `repository.issues`, `repository.issue`, `closeIssue` |
+
+`gh run *`, `gh release *`, `gh project *`, `gh search *` are **deliberately unsupported** and return
+a clear error. Agents recover from a clean "not supported here" in one turn.
+
+### Tier 4 — Native plane: ADP REST + MCP (~8 tools)
+
+Deliberately *shrunk* now that `gh` covers the loop — a second surface duplicating `gh pr create`
+would only degrade tool selection. MCP exposes only what has no GitHub shape:
+
+```
+adp_workspace_create / adp_workspace_destroy   # lifecycle, TTL, GC
+adp_history_query        # who / what / why / how-verified over a path, range, or session
+adp_evidence_get         # full signed bundle for a change
+adp_op_log / adp_undo    # the audit + safety story; no GitHub analogue
+adp_candidates_open / adp_candidates_select    # N solutions, one intent
+```
+
+## 2.5 Cut list
+
+| Cut | Rationale |
+|---|---|
+| jj-derived change engine, first-class conflict objects | Git is the store, ADP the overlay. Removes the A4 research risk entirely. MVP conflict = failed merge → proposal `conflicted` → agent rebases (exactly what it does on GitHub today). |
+| Virtual filesystem (FUSE/ProjFS) | MVP-scale repos materialize in seconds. Pure infrastructure cost, zero learning. |
+| Structural / AST merge | A6 is right: the evidence gate means merge errors need catching, not preventing. |
+| Speculative merge batching | Solves throughput we won't have. Serial land + re-verify-before-land is ~200 lines and captures the value. |
+| Hermetic incremental build graph | Bazel exists. Run declared commands in a container. |
+| Actions / workflow engine | Gates are `image + commands` in `adp.yaml`. An Actions clone is a multi-year trap. |
+| Orgs, teams, per-path ACLs, SSO/SCIM | Token-scoped auth covers MVP. Enterprise identity is an M4 conversation with a real customer. |
+| Releases, packages, wikis, projects, discussions, gists, code scanning, Dependabot, notifications | Not on the loop. |
+| Inline positional review comments (`position`/`line`/`side`) | GitHub's diff-position model is notoriously painful. MVP reviews carry body + file/line annotations; positional projection is best-effort. |
+| SSH transport | Token-over-HTTPS is what agents already do. |
+| gRPC | HTTP/JSON + MCP covers every MVP consumer. Add when a perf-sensitive second implementer exists. |
+| S3-backed git objects, sharding, multi-region | One volume, one box. |
+| Sigstore / keyless signing | Server-held Ed25519 key; schema shaped for per-agent keys later. |
+
+---
+
+# Part 3 — Milestones
+
+Assumes 2 engineers. Weeks elapsed, not ideal. The `gh` decision moves the MVP from ~7 to ~11 weeks;
+that is the honest price of zero-config.
+
+### M0 — Spec + walking skeleton (weeks 1–2)
+`spec/openapi.yaml` + JSON Schemas (change, evidence, provenance, operation). Server boots, Postgres
+migrations, token auth middleware, repo create, git smart-HTTP end to end (`git clone` → edit →
+`git push`). Caddy + TLS, compose file.
+**Exit:** a real repo can be pushed to and cloned from the server over HTTPS with a token.
+
+### M1 — MVP (weeks 3–11) ← *this is the MVP*
+Sequenced so the compat plane is provably working before the differentiators land on top:
+
+- **M1a (wks 3–5) — domain + REST.** Issues, proposals, reviews, changes with intent/provenance,
+  server signing, the `operations` table. REST `/api/v3` Tier 2 complete.
+- **M1b (wks 6–8) — GraphQL + `gh`.** Public schema SDL loaded, ~14 operations resolved, global IDs,
+  connections. Record-replay conformance suite green for the target command set. **Gate: definition
+  of done §2.1 minus evidence/undo must pass here.** If `gh` compat is going to blow up, it blows up
+  in week 8, with the native plane already a viable fallback.
+- **M1c (wks 9–11) — differentiators.** `adp.yaml` gate runner + evidence bundles projected as
+  check-runs; land policy; op log + undo; history query; candidate sets; MCP native plane (8 tools);
+  read-only web UI.
+
+**Exit:** §2.1 passes as a scripted E2E driven by a real unmodified agent.
+
+### M2 — Adoption ramp (weeks 12–15)
+**Mirror mode** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub; the single
+biggest adoption lever and cheap: push mirror + webhook ingest). Outbound webhook emitter. `adp` CLI.
+`conformance/` published against `spec/`. GraphQL coverage widened from measured real traffic.
+**Exit:** an existing GitHub repo gets ADP workspaces + evidence without migrating.
+
+### M3 — Fleet and differentiation (weeks 16–20)
+50-way fan-out orchestration over candidate sets. Cross-harness checkpoint/resume (session state as a
+first-class ADP object — the §e demo). Statistical land criteria v0: flaky-gate quarantine,
+confidence-interval gating — the A8 contribution. Benchmark harness published (tokens / tool calls /
+error rate / wall clock: GitHub+`gh` vs ADP-MCP vs ADP-via-`gh`) — note this now measures all three
+arms for free, because both planes exist.
+**Exit:** D1 and D2 from the prototype doc are demonstrable; benchmark published with methodology.
+
+### M4 — Multi-tenant hosted preview (weeks 21–26)
+Org/user model, OIDC login, scoped tokens, quotas and GC. Managed Postgres + object store.
+Backup/PITR with an **executed** restore drill. Runner pool isolation. Observability dashboards.
+Docs, quickstart, self-host artifacts (image + compose + helm).
+**Exit:** external users can sign up and run a real workload; restore drill completed.
+
+### M5 — Substrate hardening (evidence-gated, open-ended)
+Only if measurement demands: jj-derived change engine with first-class conflicts; VFS lazy
+materialization; speculative merge batching; pluggable storage backends (Lore evaluation, A3);
+per-path ACLs; structural merge. **Each requires a written justification citing M3/M4 telemetry.**
+
+---
+
+# Part 4 — Infrastructure
+
+## 4.1 Shape
+
+One public monorepo, one deployable service plus a runner, no Kubernetes.
+
+```
+adp/
+  spec/         OpenAPI + JSON Schemas (change, evidence, provenance, operation) ← durable artifact
+  server/       modular monolith
+    http-git/   git-http-backend proxy + auth
+    http-rest/  /api/v3 (GitHub-compatible) + /api/adp (native)
+    http-gql/   /api/graphql — GitHub SDL + partial resolvers
+    mcp/        native-plane MCP server
+    core/       domain: changes, proposals, reviews, gates, evidence, operations
+    db/  auth/  gates/
+  runner/       container gate executor (Postgres job queue)
+  cli/          adp CLI (M2)
+  web/          read-only supervision UI
+  conformance/  black-box HTTP suite + gh record-replay ← future multi-vendor artifact
+  deploy/       Dockerfile, docker-compose.yml, .env.example, Caddyfile, helm/ (M4)
+```
+
+Monolith with enforced internal module boundaries: the MVP's risk is surface breadth, not scale.
+Boundaries preserve the option to split; a service mesh at week 3 does not.
+
+## 4.2 Components
+
+| Component | Choice | Why |
+|---|---|---|
+| **Runtime** | Node 22 LTS, TypeScript strict, ESM | Locked. Fastest iteration on surface breadth |
+| **HTTP** | Fastify | Fast, schema-first — route schemas generate from the same JSON Schemas as `spec/` |
+| **GraphQL** | `graphql-js` + GitHub's published SDL, partial resolvers (§2.4 Tier 3) | Correct validation without reimplementing the schema |
+| **Git storage** | Bare repos on one volume; all plumbing by invoking the real `git` binary as a subprocess | 100% fidelity, free. No isomorphic-git/nodegit edge cases. Behind a `GitBackend` interface for later |
+| **Git transport** | `git http-backend` (CGI) proxied behind auth middleware | The reference implementation of the wire protocol, already installed |
+| **Database** | PostgreSQL 16, Drizzle (migrations + typed queries) | Transactional spine |
+| **Job queue** | `pg-boss` (Postgres-backed) | No Redis. One stateful dependency is enough, and gate jobs want transactional enqueue alongside the change record |
+| **Object store** | S3-compatible: MinIO local, S3/R2 hosted. Content-addressed keys `sha256/<hash>` | Gate logs, junit XML, evidence payloads, trajectories. Content addressing gives dedup and makes A9 sealed payloads natural later |
+| **Gate runner** | Separate process, Docker/Podman. Reads `adp.yaml` (`image`, `setup`, `gates:[{name,run,weight}]`), materializes a checkout, runs commands, uploads logs+junit, posts a check-run | Not a workflow engine. No matrix, no marketplace, no DAG |
+| **MCP** | Official TS SDK, streamable-HTTP, bearer auth, same process | MCP is a projection of the same domain layer, not a second system |
+| **Web UI** | Vite + React SPA, read-only, served as static assets. Views: repo, history graph, change detail (intent/diff/evidence/provenance), proposal, candidate-set comparison, op log with undo, gate logs | Humans supervise, agents act. Deliberately small |
+
+**The one hard invariant:** every mutation writes its state change **and** its `operations` row in a
+single Postgres transaction. That invariant *is* the op log, *is* the audit log, and is what makes
+undo possible. It is free at commit 1 and impossible to retrofit.
+
+## 4.3 Data model
+
+```
+repos, refs_cache
+workspaces        (repo, base_ref, branch, owner_identity, state, ttl)
+intents           (title, body, source: issue|task|api, parent)
+issues, comments
+changes           (repo, git_sha, intent_id, workspace_id, provenance_id, signature)
+proposals         (repo, head_change, base_ref, state, candidate_set_id?)
+candidate_sets    (intent_id, selection_policy, selected_proposal_id?)
+reviews           (proposal, reviewer_identity, state, body, annotations jsonb)
+gate_runs, evidence (proposal, change, results, artifact_refs, verdict, land_decision)
+identities        (kind: human|agent, principal, harness, model, session_id, pubkey?)
+operations        ← append-only spine: (actor, verb, target, before, after, parent_op, inverse)
+node_ids          (global-id mapping for GraphQL Node resolution)
+```
+
+`operations` is the keystone. Everything else can be added later; it cannot.
+
+## 4.4 Auth and identity
+
+- **Human tokens:** opaque PATs, argon2id-hashed at rest, scopes `repo:read|write`, `admin`.
+  Served back through `X-OAuth-Scopes` so `gh auth status` reports correctly.
+- **Agent identity tokens:** minted per session, short TTL, carrying
+  `(principal, harness, model, session_id, repo, workspace)`. **This tuple is the MVP's answer to
+  A9's "what, cryptographically, is an agent identity"** — provenance-bearing, delegation-shaped,
+  revocable, and honest about being weaker than per-agent keys.
+- **Transport:** bearer for REST/GraphQL/MCP; token-as-HTTP-password for git — identical to how
+  agents already authenticate to GitHub, so zero new agent behavior.
+- **Signing:** server-held Ed25519 over the canonicalized (change, evidence, provenance) tuple.
+  Schema admits per-agent keys and sealed payloads later; MVP implements neither.
+- Deferred: OIDC/SSO (M4), per-path ACLs (M5).
+
+## 4.5 Hosting
+
+**MVP: one VM + docker compose.** Hetzner CCX or EC2 `m7i`-class, 8–16 vCPU, 64 GB, one NVMe volume.
+Caddy in front for automatic TLS. Compose runs server, runner, Postgres, MinIO, Caddy.
+
+Defense: the workload is stateful (git repos on disk), needs a Docker socket for gate execution, and
+has one user (us) for weeks. Kubernetes, Fly.io, and serverless all fight at least one of those.
+A single box is ~$100/month, deploys with `git pull && docker compose up -d`, rebuilds from `deploy/`
+in ten minutes. Revisit at M4, not before.
+
+**TLS and hostname matter more than usual here:** `gh` only takes the GHES `/api/v3` + `/api/graphql`
+path for a non-`github.com` host, and expects HTTPS. A real DNS name with a real certificate is a
+week-1 requirement, not a polish item.
+
+**M4 hosted posture:** managed Postgres with PITR (RDS/Neon), S3 or R2, git volume on EBS with
+snapshots, and gate runners on a **separate** autoscaling pool — runners execute untrusted code and
+must never share a host with the API.
+
+## 4.6 Config
+
+- **Server:** 12-factor env vars validated against a Zod schema **at boot, fail fast** —
+  `DATABASE_URL`, `GIT_ROOT`, `OBJECT_STORE_*`, `SIGNING_KEY`, `RUNNER_*`, `PUBLIC_URL`.
+  `deploy/.env.example` is the documentation.
+- **Repo policy:** `adp.yaml` at repo root, versioned with the code — gates, land policy
+  (`require: [gates_green, one_approval]`), risk tiers by path glob, workspace TTL. Policy-as-code
+  in the repo, not in a database, so policy changes are themselves reviewable changes.
+- **Migrations:** Drizzle, forward-only, run on boot behind a Postgres advisory lock.
+
+## 4.7 Operations
+
+| Concern | MVP approach |
+|---|---|
+| Logging | Structured JSON to stdout (`pino`); `docker compose logs`. No log platform until M4 |
+| Tracing/metrics | OpenTelemetry SDK wired from commit 1, exporter off by default. Cheap now, impossible to retrofit, and it is the sibling of the evidence story |
+| Health | `/healthz` liveness; `/readyz` checks db + object store + git volume |
+| Backup | Postgres nightly `pg_dump` + WAL archiving to object store. Git nightly `git bundle --all` per repo to object store — self-verifying and restorable with plain git. Object store versioning on |
+| Restore | A documented, **actually executed** restore drill is an M4 exit criterion. Untested backups are not backups |
+| Audit | The `operations` table. No second system |
+| GC | Workspaces expire on TTL; garbage refs swept nightly. Git objects **never** pruned in MVP — cheap insurance for undo correctness |
+| Runner isolation | Network-deny by default with an `adp.yaml` allowlist; no host mounts; no ambient secrets; CPU/memory/wall-clock caps |
+| Secrets | Env only. No repo-scoped secret store — avoids becoming a secrets-management product |
+
+## 4.8 Licensing and neutrality
+
+Apache-2.0 for everything, public from the first commit. Decide the boundary now to avoid the
+Elastic/HashiCorp trap later: **spec, conformance suite, CLI, and server are Apache-2.0 permanently;
+hosting is a convenience, never a license lever.** Neutrality is the entire thesis, and a future
+relicense would destroy it retroactively.
+
+---
+
+# Part 5 — Verification
+
+In order of authority:
+
+1. **Scripted E2E — the definition of done, automated.** `deploy/` up → create repo → set the three
+   env vars → an unmodified agent (Claude Code, no MCP config) is given a task → `git clone` →
+   `gh issue view` → edit → push → `gh pr create` → gates run → `gh pr checks` green →
+   `gh pr view` shows the typed review → `gh pr merge` → fresh `git clone` shows the commit → ADP UI
+   shows intent, signed evidence, provenance, op log → `adp_undo` reverts the land.
+   Runs in CI on every commit. **If this does not pass, the MVP is not done, regardless of feature
+   count.**
+2. **`gh` record-replay conformance suite.** For each target command, record the exact HTTP exchange
+   against real GitHub once, then assert ADP produces a shape-compatible response. This is how the
+   GraphQL slice gets built (§2.4) and how it stays working as `gh` upgrades — pin a `gh` version in
+   CI and bump deliberately. **This suite is the M1b exit gate.**
+3. **Git fidelity suite.** clone / shallow / partial / fetch / force-push / `push --atomic` /
+   large file, against the real `git` binary. Guards the one thing that must never break.
+4. **Candidate-set demo test.** Fan out 10 workspaces on one intent, gates score all 10, select and
+   land one; the other 9 are archived, queryable, and absent from `git log`. The differentiator gets
+   its own test.
+5. **API conformance suite** (`conformance/`): black-box tests asserting the `spec/` OpenAPI
+   contract. The M0 investment that becomes the multi-vendor artifact at M2.
+6. **Measurement harness (M3).** A fixed task suite run through an agent against (a) GitHub + `gh`,
+   (b) ADP + `gh`, (c) ADP + MCP — recording tokens, tool calls, error rate, wall clock, and the
+   distribution of endpoints actually requested. Publish regardless of result. This is simultaneously
+   the A1 study, the A2 study, and the honest basis for widening GraphQL coverage.
+
+---
+
+# Appendix — Decisions and their consequences
+
+| Question | Answer | What it changed in this plan |
+|---|---|---|
+| Primary success test | Unmodified agent, zero config | Compat plane became tier-1; MVP grew from ~7 to ~11 weeks; native MCP surface shrank from 16 tools to 8 (only what GitHub can't express); TLS + real hostname became a week-1 requirement |
+| `gh` CLI compatibility | In the MVP | ~14 GraphQL operations added; "load GitHub's real SDL, partial resolvers" chosen to avoid the partial-shim failure mode; record-replay suite became the M1b exit gate; M1 explicitly sequenced so `gh` risk surfaces in week 8 with a fallback intact |
+| Stack | TypeScript + Node | Fastify / Drizzle / graphql-js / pg-boss / MCP TS SDK; git via subprocess; supersedes the docs' Rust + gRPC + jj-lib + gitoxide |
+| Build vs fork | Greenfield over plain git | Confirmed by research: forking Gitea/Forgejo would not have delivered `gh` compat (no GraphQL) while importing a human-workflow data model |
+
+**Residual risks to watch, in order:**
+1. GraphQL slice under-scoped — `gh` reaches for a field we don't back mid-trajectory. *Mitigation:
+   real SDL so it's a resolver error not a validation error; record-replay suite; native fallback.*
+2. GitHub ships agent-native primitives and moots the standard (A10). *Mitigation: `spec/` +
+   `conformance/` from day one — the "become the conformance layer" fallback is cheap to hold open.*
+3. Adoption requires being system-of-record for someone's source. *Mitigation: mirror mode at M2.*
+4. Scope gravity toward the brief's full architecture. *Mitigation: §2.5 is the contract; M5 items
+   each require written justification citing telemetry.*
+
+Sources: [Cursor Origin](https://www.eesel.ai/blog/what-is-cursor-origin) ·
+[GitHub agent apps](https://github.blog/changelog/2026-06-02-extend-github-with-agent-apps/) ·
+[GitHub Copilot app](https://github.blog/news-insights/product-news/github-copilot-app-the-agent-native-desktop-experience/) ·
+[Forgejo/`gh` GraphQL gap](https://github.com/IoTReady/forgejo-cli) ·
+[cli/cli ghinstance](https://raw.githubusercontent.com/cli/cli/trunk/internal/ghinstance/host.go)
