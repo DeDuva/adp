@@ -12,6 +12,49 @@ const CreateRepoBody = z.object({
   default_branch: z.string().min(1).default("main"),
 });
 
+async function createRepo(
+  db: Db,
+  gitBackend: GitBackend,
+  owner: string,
+  name: string,
+  defaultBranch: string,
+  actorId: string,
+) {
+  if (await findRepo(db, owner, name)) {
+    return { conflict: true as const };
+  }
+
+  // git init happens outside the DB transaction (it's not transactional
+  // infrastructure), but the repo row and its op-log entry are atomic.
+  await gitBackend.initBareRepo(owner, name, defaultBranch);
+
+  const repo = await db.transaction(async (tx) => {
+    const [repo] = await tx.insert(repos).values({ owner, name, defaultBranch }).returning();
+
+    await recordOperation(tx, {
+      actorId,
+      verb: "repo.create",
+      target: `${owner}/${name}`,
+      after: { id: repo!.id, owner, name, defaultBranch },
+    });
+
+    return repo!;
+  });
+
+  return { conflict: false as const, repo };
+}
+
+function serializeRepo(repo: typeof repos.$inferSelect, owner: string, name: string, req: { protocol: string; hostname: string }) {
+  return {
+    id: repo.id,
+    full_name: `${owner}/${name}`,
+    name,
+    owner: { login: owner },
+    default_branch: repo.defaultBranch,
+    clone_url: `${req.protocol}://${req.hostname}/${owner}/${name}.git`,
+  };
+}
+
 export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: GitBackend) {
   app.post("/api/v3/repos/:owner", { preHandler: requireAuth }, async (req, reply) => {
     const { owner } = req.params as { owner: string };
@@ -22,39 +65,49 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     }
     const { name, default_branch } = parsed.data;
 
-    if (await findRepo(db, owner, name)) {
+    const result = await createRepo(db, gitBackend, owner, name, default_branch, req.identity!.identityId);
+    if (result.conflict) {
       reply.code(422).send({ message: `Repository ${owner}/${name} already exists` });
       return;
     }
+    reply.code(201).send(serializeRepo(result.repo, owner, name, req));
+  });
 
-    // git init happens outside the DB transaction (it's not transactional
-    // infrastructure), but the repo row and its op-log entry are atomic.
-    await gitBackend.initBareRepo(owner, name, default_branch);
+  // GitHub-standard repo-create paths — the owner is implicit (the caller's
+  // own login, or the named org), unlike /api/v3/repos/:owner above which
+  // predates this and takes the owner explicitly in the path.
+  app.post("/api/v3/user/repos", { preHandler: requireAuth }, async (req, reply) => {
+    const parsed = CreateRepoBody.safeParse(req.body);
+    if (!parsed.success) {
+      reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+      return;
+    }
+    const owner = req.identity!.principal;
+    const { name, default_branch } = parsed.data;
 
-    const repo = await db.transaction(async (tx) => {
-      const [repo] = await tx
-        .insert(repos)
-        .values({ owner, name, defaultBranch: default_branch })
-        .returning();
+    const result = await createRepo(db, gitBackend, owner, name, default_branch, req.identity!.identityId);
+    if (result.conflict) {
+      reply.code(422).send({ message: `Repository ${owner}/${name} already exists` });
+      return;
+    }
+    reply.code(201).send(serializeRepo(result.repo, owner, name, req));
+  });
 
-      await recordOperation(tx, {
-        actorId: req.identity!.identityId,
-        verb: "repo.create",
-        target: `${owner}/${name}`,
-        after: { id: repo!.id, owner, name, defaultBranch: default_branch },
-      });
+  app.post("/api/v3/orgs/:org/repos", { preHandler: requireAuth }, async (req, reply) => {
+    const { org } = req.params as { org: string };
+    const parsed = CreateRepoBody.safeParse(req.body);
+    if (!parsed.success) {
+      reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+      return;
+    }
+    const { name, default_branch } = parsed.data;
 
-      return repo!;
-    });
-
-    reply.code(201).send({
-      id: repo.id,
-      full_name: `${owner}/${name}`,
-      name,
-      owner: { login: owner },
-      default_branch,
-      clone_url: `${req.protocol}://${req.hostname}/${owner}/${name}.git`,
-    });
+    const result = await createRepo(db, gitBackend, org, name, default_branch, req.identity!.identityId);
+    if (result.conflict) {
+      reply.code(422).send({ message: `Repository ${org}/${name} already exists` });
+      return;
+    }
+    reply.code(201).send(serializeRepo(result.repo, org, name, req));
   });
 
   app.get("/api/v3/repos/:owner/:repo", async (req, reply) => {
