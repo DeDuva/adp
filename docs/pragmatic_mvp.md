@@ -367,7 +367,7 @@ that is the honest price of zero-config.
 
 ## Status ledger
 
-*Updated 2026-07-26. CI runs typecheck, build, migrations, the full three-tier test suite (90
+*Updated 2026-07-26. CI runs typecheck, build, migrations, the full three-tier test suite (102
 tests, including all e2e suites), and the `gh` conformance gate (`conformance/run.sh`) on every PR.*
 
 | Milestone | Status | Evidence |
@@ -376,7 +376,7 @@ tests, including all e2e suites), and the `gh` conformance gate (`conformance/ru
 | M1a — domain + REST core loop | **✓ core complete** | PRs #2–#3. e2e: issue→intent → comment → signed change → proposal → typed review → ff-merge → 409 on non-ff. Tier-2 tail now done (see M1b′) |
 | M1b — GraphQL + `gh` | **✓ gate met** | PR #4 (read) + the M1b′ mutation slice. GitHub's real SDL loaded unmodified; `conformance/run.sh` drives a real, unmodified, pinned `gh` v2.63.0 through `issue create/view`, `pr create/view/merge` against the live server — the definition-of-done §2.1 gate, enforced in CI on every PR |
 | M1b′ — compat completion + hardening | **✓ done** | GraphQL mutations, the Tier-2 REST tail, all five hardening items, and the `gh` conformance gate all landed — see below |
-| M1c | **◐ receive-path hooks done** | Real git `pre-receive`/`post-receive` hooks: auto-recorded changes on push, and push protection (bundled regex+entropy secret scan) rejecting a push at the wire. Outstanding: `adp.yaml` gate runner + DSSE evidence, two-level land policy, op log read API + undo, history query, candidate sets, MCP native plane, read-only web UI — see below |
+| M1c | **◐ hooks + gate runner + land policy done** | Real git `pre-receive`/`post-receive` hooks (auto-record + push protection); `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy (instance floor ∧ repo `adp.yaml`) enforced on both REST and GraphQL merge, blocking a real `gh pr merge` until satisfied. Outstanding: op log read API + undo, history query, candidate sets, MCP native plane, read-only web UI — see below |
 | M2–M5 | not started | M2 scope revised below (trust ramp) |
 
 ### M0 — Spec + walking skeleton (weeks 1–2) — ✓ done
@@ -536,12 +536,42 @@ unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` again
     signature and op-log entry; a push containing a seeded AWS key is rejected with `git push`
     exiting non-zero and the ref never moving server-side; dedup on a replayed ref update; and the
     loopback-only guard.
-- **`adp.yaml` gate runner + evidence bundles** — evidence serialized as in-toto/DSSE attestation
-  envelopes (§1.5 item 1), projected as check-runs on the compat plane.
-- **Land policy, resolved two-level:** instance floor ∧ repo `adp.yaml`
-  (`require: [gates_green, one_approval]`, risk tiers by path glob).
+- ~~**`adp.yaml` gate runner + evidence bundles**~~ **done**: evidence serialized as in-toto/DSSE
+  attestation envelopes (§1.5 item 1) via `server/src/core/dsse.ts` — proper DSSE Pre-Authentication
+  Encoding (`PAE(payloadType, payload)`), not a simplified stand-in, wrapping an in-toto v1
+  `Statement` whose `predicateType` is `https://adp.dev/attestations/gate-result/v1`. **This server
+  is the receiving/attestation end, not a code-execution runner** — same shape as GitHub's own
+  Checks API (external systems report results; GitHub doesn't run the tests either). No first-party
+  gate ever executes anything, matching §1.5 item 4 ("no first-party SAST/SCA, ever"); scanner-as-gate
+  adapters that report into this are M2 scope. `POST /api/v3/repos/{owner}/{repo}/gates` (`name`,
+  `status`, `summary`, `git_sha`) signs and stores a `gate_results` row (`server/src/db/schema.ts`;
+  multiple rows per commit+name are kept, e.g. reruns — the most recent one wins for policy/rollup
+  purposes, `core/gate-results-lookup.ts`); `GET .../commits/{sha}/gates` lists them. Projected onto
+  the compat plane as `Commit.statusCheckRollup` in GraphQL (`http-gql/resolvers.ts`) — real
+  aggregate `state`, `contexts` left as an empty connection (per-context detail not implemented,
+  honestly, not as an error).
+- ~~**Land policy, resolved two-level**~~ **done**: instance floor (`LAND_POLICY_FLOOR` env var,
+  `config.ts`, default `gates_green,one_approval`) ∧ repo `adp.yaml`'s `land.require`
+  (`server/src/core/repo-policy.ts` parses `adp.yaml` off the *base* ref, same as GitHub reads
+  branch protection off the target branch; a malformed file fails closed — treated as requiring
+  everything — rather than silently ignored) — resolved as a **union** in
+  `resolveLandRequirements` (`core/repo-policy.ts`): the repo can only add requirements on top of
+  the floor, never remove one. `core/land-policy.ts`'s `evaluateLandPolicy` enforces this identically
+  in both the REST `PUT .../pulls/{number}/merge` (`http-rest/proposals.ts`) and the GraphQL
+  `mergePullRequest` mutation (`http-gql/resolvers.ts`), rejecting with a typed 422 /
+  `BAD_USER_INPUT` listing exactly which requirements are unmet. Risk tiers by path glob are **not**
+  implemented — `require` is repo-wide, not conditioned on what changed.
+  - Covered by `server/src/core/repo-policy.test.ts` (resolution/union semantics) and
+    `server/test/e2e-gates.test.ts` (a real merge attempt blocked with neither requirement met,
+    blocked again after a failing gate report, blocked on `one_approval` alone after the gate goes
+    green, then succeeding once approved — with both a failure and a success report retained as
+    separate rows for the same commit).
+  - `conformance/run.sh` (the M1b′ `gh` gate) now exercises this for real against the default
+    floor: confirms an unreviewed `gh pr merge` is genuinely refused (422), approves the PR via the
+    REST reviews endpoint, then confirms the merge succeeds — rather than weakening the floor just
+    to keep that script passing.
 - **Op log read API + undo; history query; candidate sets; MCP native plane (8 tools); read-only
-  web UI** — as originally scoped.
+  web UI** — as originally scoped, not yet started.
 
 **Exit:** §2.1 passes as a scripted E2E driven by a real unmodified agent — plus one addition, now
 **met**: a push containing a seeded secret is blocked at the wire with a typed error.

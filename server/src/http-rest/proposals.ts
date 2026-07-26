@@ -7,6 +7,8 @@ import { proposals, changes } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepo } from "../core/repos-lookup.js";
+import { evaluateLandPolicy } from "../core/land-policy.js";
+import type { LandRequirement } from "../core/repo-policy.js";
 
 const CreateProposalBody = z.object({
   title: z.string().min(1),
@@ -39,7 +41,12 @@ function serializeProposal(proposal: typeof proposals.$inferSelect, owner: strin
   };
 }
 
-export function registerProposalRoutes(app: FastifyInstance, db: Db, gitBackend: GitBackend) {
+export function registerProposalRoutes(
+  app: FastifyInstance,
+  db: Db,
+  gitBackend: GitBackend,
+  instanceFloor: LandRequirement[] = [],
+) {
   app.post(
     "/api/v3/repos/:owner/:repo/pulls",
     { preHandler: requireScope("repo:write") },
@@ -240,10 +247,11 @@ export function registerProposalRoutes(app: FastifyInstance, db: Db, gitBackend:
     },
   );
 
-  // Fast-forward only, no evidence/gate check yet — that's M1c's land
-  // policy (docs/pragmatic_mvp.md M1c). A non-fast-forward base is exactly
-  // the MVP's "conflict": 409, agent rebases and retries, same as it would
-  // against a real forge today (cut list, §2.5).
+  // Fast-forward only. Land policy (core/land-policy.ts, docs/pragmatic_mvp.md
+  // M1c/§1.5 item 2) gates the merge before the fast-forward check ever
+  // runs — a non-fast-forward base is the MVP's "conflict": 409, agent
+  // rebases and retries, same as it would against a real forge today (cut
+  // list, §2.5).
   app.put(
     "/api/v3/repos/:owner/:repo/pulls/:number/merge",
     { preHandler: requireScope("repo:write") },
@@ -269,6 +277,12 @@ export function registerProposalRoutes(app: FastifyInstance, db: Db, gitBackend:
       }
       if (proposal.state === "closed") {
         reply.code(422).send({ message: "Cannot merge a closed proposal" });
+        return;
+      }
+
+      const policy = await evaluateLandPolicy(db, gitBackend, instanceFloor, repo, proposal);
+      if (!policy.allowed) {
+        reply.code(422).send({ message: "Land policy not satisfied", unmet: policy.unmet });
         return;
       }
 

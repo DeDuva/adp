@@ -9,6 +9,14 @@ const EnvSchema = z.object({
   // Real repos push real-sized packs; Fastify's 1 MiB default 413s those.
   // Bounds the git smart-HTTP request body, not any other route.
   GIT_MAX_PACK_BYTES: z.coerce.number().int().positive().default(500 * 1024 * 1024),
+  // Instance-level land-policy floor (docs/pragmatic_mvp.md §1.5 item 2):
+  // admin-owned, non-bypassable by any repo's adp.yaml — repos can only add
+  // requirements on top, never remove one of these. Comma-separated
+  // "gates_green" and/or "one_approval"; empty string means no floor.
+  LAND_POLICY_FLOOR: z
+    .string()
+    .default("gates_green,one_approval")
+    .transform((s) => s.split(",").map((r) => r.trim()).filter(Boolean)),
 });
 
 export type Config = z.infer<typeof EnvSchema>;

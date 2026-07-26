@@ -122,6 +122,24 @@ export const reviews = pgTable("reviews", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// One row per gate report against a commit — the evidence bundle IS the
+// `envelope` column (a signed DSSE envelope wrapping an in-toto Statement,
+// core/dsse.ts); the other columns are a queryable projection of it, not a
+// second source of truth. Multiple rows can exist for the same
+// (repoId, gitSha, name) — a rerun — the most recent one wins when resolving
+// land policy or a StatusCheckRollup; history is kept, not overwritten.
+export const gateResults = pgTable("gate_results", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  repoId: uuid("repo_id").notNull().references(() => repos.id),
+  gitSha: text("git_sha").notNull(),
+  name: text("name").notNull(),
+  status: text("status", { enum: ["success", "failure", "pending"] }).notNull(),
+  summary: text("summary").notNull().default(""),
+  reporterId: uuid("reporter_id").notNull().references(() => identities.id),
+  envelope: jsonb("envelope").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Append-only spine: every mutation writes its state change and its operations
 // row in a single transaction. This *is* the op log and the audit log.
 export const operations = pgTable("operations", {
