@@ -44,3 +44,13 @@ jobs:
       - run: npm run build
       - run: npm run migrate
       - run: npm test
+
+      - name: Cache pinned gh release
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/adp-conformance-gh
+          key: gh-conformance-${{ hashFiles('server/conformance/run.sh') }}
+
+      # M1b′ gate (docs/pragmatic_mvp.md): the real, unmodified `gh` binary
+      # against this server — gh issue view / pr create / pr view / pr merge.
+      - run: bash conformance/run.sh

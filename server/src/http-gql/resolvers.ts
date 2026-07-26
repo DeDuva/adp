@@ -111,6 +111,11 @@ function shapeOwner(repo: Repo) {
   return { __typename: "User", id: toGlobalId("User", `owner:${repo.owner}`), login: repo.owner };
 }
 
+// Every one of these is a non-null field on the real Repository type — `gh`
+// pulls several of them incidentally (e.g. `issue create` checks
+// hasIssuesEnabled before doing anything else) even though the MVP has no
+// concept of disabling any of these features per repo. All permissive
+// defaults; there's nowhere yet to configure them otherwise.
 function shapeRepository(repo: Repo) {
   return {
     __typename: "Repository",
@@ -119,6 +124,18 @@ function shapeRepository(repo: Repo) {
     nameWithOwner: `${repo.owner}/${repo.name}`,
     description: null,
     isPrivate: false,
+    isArchived: false,
+    isEmpty: false,
+    isFork: false,
+    isTemplate: false,
+    hasIssuesEnabled: true,
+    hasProjectsEnabled: true,
+    hasWikiEnabled: false,
+    hasDiscussionsEnabled: false,
+    mergeCommitAllowed: true,
+    rebaseMergeAllowed: true,
+    squashMergeAllowed: true,
+    deleteBranchOnMerge: false,
     url: `/${repo.owner}/${repo.name}`,
     viewerPermission: "WRITE",
     __repo: repo,
@@ -137,6 +154,7 @@ function shapeIssue(issue: IssueRow, repo: Repo) {
     createdAt: issue.createdAt.toISOString(),
     closedAt: issue.closedAt?.toISOString() ?? null,
     __authorId: issue.authorId,
+    __issueId: issue.id,
   };
 }
 
@@ -151,13 +169,21 @@ function shapePullRequest(proposal: ProposalRow, repo: Repo) {
     state,
     baseRefName: proposal.baseRef,
     headRefName: proposal.headRef,
+    headRefOid: proposal.headSha,
     isDraft: false,
+    isCrossRepository: false,
     mergeable: "UNKNOWN",
+    mergeStateStatus: "CLEAN",
+    isInMergeQueue: false,
+    isMergeQueueEnabled: false,
     url: `/${repo.owner}/${repo.name}/pulls/${proposal.number}`,
     createdAt: proposal.createdAt.toISOString(),
     closedAt: proposal.closedAt?.toISOString() ?? null,
     mergedAt: proposal.mergedAt?.toISOString() ?? null,
     __authorId: proposal.authorId,
+    __repo: repo,
+    __baseRef: proposal.baseRef,
+    __headSha: proposal.headSha,
   };
 }
 
@@ -250,16 +276,87 @@ export function createResolvers(gitBackend: GitBackend): ResolverMap {
           args,
         );
       },
+      // Real GitHub shares one number sequence across issues and PRs, so a
+      // given number is unambiguous; ours are separate sequences (schema.ts
+      // comment on the proposals table), so `gh issue view`/`gh pr view`
+      // both route through this and we just check both tables.
+      issueOrPullRequest: async (
+        parent: ReturnType<typeof shapeRepository>,
+        args: { number: number },
+        ctx: GqlContext,
+      ) => {
+        const [issue] = await ctx.db
+          .select()
+          .from(issues)
+          .where(and(eq(issues.repoId, parent.__repo.id), eq(issues.number, args.number)));
+        if (issue) return shapeIssue(issue, parent.__repo);
+
+        const [proposal] = await ctx.db
+          .select()
+          .from(proposals)
+          .where(and(eq(proposals.repoId, parent.__repo.id), eq(proposals.number, args.number)));
+        return proposal ? shapePullRequest(proposal, parent.__repo) : null;
+      },
     },
 
     Issue: {
       author: (parent: ReturnType<typeof shapeIssue>, _args, ctx: GqlContext) =>
         resolveAuthor(ctx, parent.__authorId),
+      // Assignees/labels/milestone aren't modeled at all yet (no schema.ts
+      // tables) — empty/null is the honest answer, and satisfies the
+      // non-null connection types `gh` expects to always get back something.
+      assignees: () => buildConnection([], {}),
+      labels: () => buildConnection([], {}),
+      milestone: () => null,
+      reactionGroups: () => [],
+      projectCards: () => buildConnection([], {}),
+      comments: async (parent: ReturnType<typeof shapeIssue>, args: ConnectionArgs, ctx: GqlContext) => {
+        const rows = await ctx.db.select().from(issueComments).where(eq(issueComments.issueId, parent.__issueId));
+        return buildConnection(rows.map(shapeIssueComment), args);
+      },
     },
 
     PullRequest: {
       author: (parent: ReturnType<typeof shapePullRequest>, _args, ctx: GqlContext) =>
         resolveAuthor(ctx, parent.__authorId),
+      assignees: () => buildConnection([], {}),
+      labels: () => buildConnection([], {}),
+      milestone: () => null,
+      reactionGroups: () => [],
+      projectCards: () => buildConnection([], {}),
+      // PR conversation-tab comments aren't modeled separately from issue
+      // comments (same gap as Mutation.addComment) — empty, not an error.
+      comments: () => buildConnection([], {}),
+      maintainerCanModify: () => true,
+      additions: async (parent: ReturnType<typeof shapePullRequest>) =>
+        (await gitBackend.diffStat(parent.__repo.owner, parent.__repo.name, parent.__baseRef, parent.__headSha))
+          .additions,
+      deletions: async (parent: ReturnType<typeof shapePullRequest>) =>
+        (await gitBackend.diffStat(parent.__repo.owner, parent.__repo.name, parent.__baseRef, parent.__headSha))
+          .deletions,
+      changedFiles: async (parent: ReturnType<typeof shapePullRequest>) =>
+        (await gitBackend.diffStat(parent.__repo.owner, parent.__repo.name, parent.__baseRef, parent.__headSha))
+          .changedFiles,
+      commits: async (parent: ReturnType<typeof shapePullRequest>, args: ConnectionArgs) => {
+        const commits = await gitBackend.log(
+          parent.__repo.owner,
+          parent.__repo.name,
+          `${parent.__baseRef}..${parent.__headSha}`,
+          250,
+        );
+        const nodes = commits.reverse().map((c) => ({
+          __typename: "PullRequestCommit",
+          id: toGlobalId("PullRequestCommit", `${parent.__headSha}:${c.sha}`),
+          commit: {
+            __typename: "Commit",
+            id: toGlobalId("Commit", c.sha),
+            oid: c.sha,
+            message: c.message,
+            committedDate: c.authorDate,
+          },
+        }));
+        return buildConnection(nodes, args);
+      },
     },
 
     IssueComment: {
