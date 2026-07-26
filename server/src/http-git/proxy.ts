@@ -125,36 +125,50 @@ function streamHttpBackend(
     child.stderr.on("data", (c) => (stderr += c.toString()));
     child.on("error", reject);
 
+    // Both the request-side guard and the response-side header parser can
+    // try to produce the HTTP response independently (a too-large upload can
+    // fire *after* http-backend has already started writing an error of its
+    // own to stdout) — only one may ever call reply.hijack()/writeHead/send,
+    // and once one has, the other side's pipeline must stop producing output
+    // rather than write to an already-finished response.
+    let responded = false;
+    const responseSplitter = splitCgiResponse((status, headers) => {
+      if (responded) return;
+      responded = true;
+      reply.hijack();
+      reply.raw.writeHead(status, headers);
+    });
+
     const guard = limitBytes(opts.maxBytes);
     guard.on("error", (err) => {
       child.kill();
-      if (err instanceof BodyTooLargeError && !reply.sent) {
+      child.stdout.unpipe(responseSplitter);
+      responseSplitter.unpipe(reply.raw);
+      responseSplitter.destroy();
+      if (err instanceof BodyTooLargeError && !responded) {
+        responded = true;
         reply.code(413).send({ message: err.message });
         resolve();
         return;
       }
-      reject(err);
+      if (!responded) reject(err);
     });
     opts.body.pipe(guard).pipe(child.stdin);
 
     let settled = false;
-    const responseSplitter = splitCgiResponse((status, headers) => {
-      reply.hijack();
-      reply.raw.writeHead(status, headers);
-    });
     child.stdout.pipe(responseSplitter).pipe(reply.raw);
 
     responseSplitter.on("error", (err) => {
       if (!settled) {
         settled = true;
-        reject(err);
+        if (!responded) reject(err);
       }
     });
 
     child.on("close", (code) => {
       if (settled) return;
       settled = true;
-      if (code !== 0 && code !== null) {
+      if (code !== 0 && code !== null && !responded) {
         reject(new Error(`git http-backend exited ${code}: ${stderr}`));
         return;
       }
