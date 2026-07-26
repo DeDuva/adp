@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adp.dev/schemas/change.json",
+  "title": "Change",
+  "description": "A typed transaction: diff + intent + provenance, signed. Git is the store; this is metadata beside a git commit. Per docs/pragmatic_mvp.md §4.3.",
+  "type": "object",
+  "required": ["id", "repo", "git_sha", "intent_id", "provenance", "signature"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "repo": { "type": "string", "description": "owner/name" },
+    "git_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "intent_id": { "type": "string", "format": "uuid" },
+    "workspace_id": { "type": ["string", "null"], "format": "uuid" },
+    "provenance": { "$ref": "provenance.json" },
+    "signature": { "type": "string", "description": "Base64 Ed25519 signature over the canonicalized tuple" },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

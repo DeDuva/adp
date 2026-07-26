@@ -1,0 +1,106 @@
+openapi: 3.1.0
+info:
+  title: ADP API
+  version: 0.0.0-mvp
+  description: >
+    Native and compat-plane HTTP surface for ADP. This file grows with each
+    milestone; M0 only covers the walking-skeleton endpoints. GitHub REST
+    compatibility endpoints (mounted at /api/v3) are a separate obligation
+    tracked here as they're implemented — see docs/pragmatic_mvp.md §2.4.
+servers:
+  - url: /
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      responses:
+        "200":
+          description: OK
+  /readyz:
+    get:
+      summary: Readiness probe (checks DB connectivity)
+      responses:
+        "200":
+          description: OK
+        "503":
+          description: Not ready
+  /api/v3:
+    get:
+      summary: Identity root probe (gh auth status / Octokit clients)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+  /api/v3/user:
+    get:
+      summary: Authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+  /api/v3/rate_limit:
+    get:
+      summary: Rate limit status (stubbed; ADP does not rate-limit in the MVP)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+  /api/v3/repos/{owner}:
+    post:
+      summary: Create a repository
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRepoRequest"
+      responses:
+        "201":
+          description: Created
+        "422":
+          description: Validation failed or repo already exists
+  /api/v3/repos/{owner}/{repo}:
+    get:
+      summary: Get a repository
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    CreateRepoRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        default_branch:
+          type: string
+          default: main

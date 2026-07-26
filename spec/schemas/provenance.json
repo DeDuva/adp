@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adp.dev/schemas/provenance.json",
+  "title": "Provenance",
+  "description": "Identity of the actor (human or agent) that produced a change, per docs/pragmatic_mvp.md §4.4.",
+  "type": "object",
+  "required": ["kind", "principal"],
+  "properties": {
+    "kind": { "type": "string", "enum": ["human", "agent"] },
+    "principal": { "type": "string", "description": "Stable identity, e.g. a username or service account" },
+    "harness": { "type": "string", "description": "Agent harness name, e.g. claude-code, codex (agent kind only)" },
+    "model": { "type": "string", "description": "Model identifier used for this session (agent kind only)" },
+    "session_id": { "type": "string", "description": "Harness session/conversation identifier (agent kind only)" }
+  },
+  "additionalProperties": false
+}
