@@ -1,0 +1,43 @@
+# Deploys docs/html/ (the "Why ADP" overview) to GitHub Pages.
+#
+# One-time repo setup required: Settings → Pages → Build and deployment →
+# Source: "GitHub Actions". Note that a GitHub Pages site is publicly
+# accessible even while the repository is private (access-controlled Pages
+# is an Enterprise feature), and Pages on a private repo requires a paid
+# plan — see the PR description for details.
+name: Deploy Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/html/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/html
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
