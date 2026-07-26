@@ -9,13 +9,14 @@ export function generateToken(): string {
   return TOKEN_PREFIX + randomBytes(32).toString("base64url");
 }
 
-function hashToken(token: string): string {
+// Exported for unit testing; not part of the module's intended external API.
+export function hashToken(token: string): string {
   const salt = randomBytes(16);
   const derived = scryptSync(token, salt, 64);
   return `${salt.toString("hex")}:${derived.toString("hex")}`;
 }
 
-function verifyTokenHash(token: string, stored: string): boolean {
+export function verifyTokenHash(token: string, stored: string): boolean {
   const [saltHex, hashHex] = stored.split(":");
   if (!saltHex || !hashHex) return false;
   const salt = Buffer.from(saltHex, "hex");

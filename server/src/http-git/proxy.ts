@@ -99,7 +99,7 @@ export function registerGitHttpRoutes(app: FastifyInstance, gitBackend: GitBacke
         queryString: url.search.replace(/^\?/, ""),
         contentType: req.headers["content-type"] ?? "",
         remoteUser: req.identity.principal,
-        body: req.body as Buffer,
+        body: (req.body as Buffer | undefined) ?? Buffer.alloc(0),
       });
 
       reply.code(result.status);
