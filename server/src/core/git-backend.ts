@@ -241,6 +241,26 @@ export class GitBackend {
     return entries;
   }
 
+  // Line-level stats (`gh pr view`'s additions/deletions/changedFiles) —
+  // binary files report "-" for both counts in --numstat, counted as 0 here.
+  async diffStat(
+    owner: string,
+    name: string,
+    base: string,
+    head: string,
+  ): Promise<{ additions: number; deletions: number; changedFiles: number }> {
+    const { stdout } = await run(["diff", "--numstat", `${base}...${head}`], this.repoPath(owner, name));
+    const lines = stdout.split("\n").filter(Boolean);
+    let additions = 0;
+    let deletions = 0;
+    for (const line of lines) {
+      const [added, deleted] = line.split("\t");
+      additions += Number(added) || 0;
+      deletions += Number(deleted) || 0;
+    }
+    return { additions, deletions, changedFiles: lines.length };
+  }
+
   async diffPatch(owner: string, name: string, base: string, head: string): Promise<string> {
     const { stdout } = await run(["diff", `${base}...${head}`], this.repoPath(owner, name));
     return stdout;

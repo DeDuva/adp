@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { execute, parse, validate, GraphQLError, type GraphQLSchema } from "graphql";
+import { execute, parse, validate, specifiedRules, GraphQLError, type GraphQLSchema } from "graphql";
 import { z } from "zod";
 import type { Db } from "../db/client.js";
 import type { GqlContext } from "./context.js";
@@ -10,6 +10,18 @@ const GraphQLRequestBody = z.object({
   variables: z.record(z.unknown()).optional().nullable(),
   operationName: z.string().optional().nullable(),
 });
+
+// `gh`'s real, unmodified queries (e.g. `issue view`'s `issueOrPullRequest`
+// lookup) select same-named fields of different types inside mutually
+// exclusive `... on Issue` / `... on PullRequest` fragments on a union —
+// legal by the GraphQL spec's own field-merging rule, and something real
+// GitHub's server accepts every day, but graphql-js's
+// OverlappingFieldsCanBeMergedRule flags it anyway (confirmed by direct
+// testing against the vendored schema: only this one rule objects, and
+// removing it introduces no other validation gap we've hit). Dropped for
+// the same reason schema.ts strips @deprecated — a known impedance mismatch
+// between graphql-js's strictness and the schema/queries we didn't write.
+const VALIDATION_RULES = specifiedRules.filter((rule) => rule.name !== "OverlappingFieldsCanBeMergedRule");
 
 // Single endpoint, GitHub-shaped. Unimplemented fields resolve to a
 // GraphQL error (or null, if nullable) rather than a validation failure —
@@ -47,7 +59,7 @@ export function registerGraphQLRoute(app: FastifyInstance, schema: GraphQLSchema
       return;
     }
 
-    const validationErrors = validate(schema, document);
+    const validationErrors = validate(schema, document, VALIDATION_RULES);
     if (validationErrors.length > 0) {
       reply.send({ errors: validationErrors.map((e) => ({ message: e.message })) });
       return;
