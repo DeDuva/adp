@@ -368,14 +368,15 @@ that is the honest price of zero-config.
 ## Status ledger
 
 *Updated 2026-07-26. CI runs typecheck, build, migrations, and the full three-tier test suite
-(63 tests, including both e2e suites) on every PR.*
+(68 tests, including both e2e suites) on every PR.*
 
 | Milestone | Status | Evidence |
 |---|---|---|
 | M0 — walking skeleton | **✓ complete** | PR #1. CI e2e: mint token → create repo → `git clone` → `git push` → commit lands |
 | M1a — domain + REST core loop | **✓ core complete** | PRs #2–#3. e2e: issue→intent → comment → signed change → proposal → typed review → ff-merge → 409 on non-ff. Tier-2 tail outstanding (see M1b′) |
-| M1b — GraphQL + `gh` | **◐ read slice** | PR #4. GitHub's real SDL loaded unmodified; read resolvers (repository/node/viewer, issue/PR connections, authors) pass `gh`-shaped queries. Mutations + record-replay gate outstanding |
-| M1b′ + M1c — compat completion, hardening, differentiators | not started | revised scope below |
+| M1b — GraphQL + `gh` | **◐ read + mutation slice** | PR #4 (read), plus the M1b′ mutation slice below. GitHub's real SDL loaded unmodified; read resolvers (repository/node/viewer, issue/PR connections, authors) and now the 9 GraphQL mutations pass `gh`-shaped queries. Record-replay gate against the real `gh` binary still outstanding |
+| M1b′ — compat completion + hardening | **◐ mutations done** | GraphQL mutations (`createIssue`, `closeIssue`, `addComment`, `createPullRequest`, `closePullRequest`, `reopenPullRequest`, `markPullRequestReadyForReview`, `addPullRequestReview`, `mergePullRequest`) landed with `User`/`Bot` actor fidelity (agent identities now resolve as `Bot`). Outstanding: Tier-2 REST tail (contents/commits/compare/git-data), record-replay conformance suite, hardening items (bodyLimit/streaming, scope enforcement, default-private reads, keyed token lookup, `SIGNING_KEY` doc fix) |
+| M1c | not started | revised scope below |
 | M2–M5 | not started | M2 scope revised below (trust ramp) |
 
 ### M0 — Spec + walking skeleton (weeks 1–2) — ✓ done
@@ -401,10 +402,17 @@ Sequenced so the compat plane is provably working before the differentiators lan
 - **M1c — differentiators.** Revised scope below.
 
 #### M1b′ — compat completion + hardening *(revised 2026-07-26; the current critical path)*
-1. **GraphQL mutations** (~9: `createIssue`, `closeIssue`, `createPullRequest`, `mergePullRequest`,
-   `closePullRequest`, `reopenPullRequest`, `markPullRequestReadyForReview`,
-   `addPullRequestReview`, `addComment`) + `RepoMetadata`, `statusCheckRollup`, `PullRequestByNumber`
-   fields `gh pr checkout` needs, and `User | Bot` actor fidelity (agent identities are `Bot`).
+1. ~~**GraphQL mutations**~~ **done**: all 9 (`createIssue`, `closeIssue`, `createPullRequest`,
+   `mergePullRequest`, `closePullRequest`, `reopenPullRequest`, `markPullRequestReadyForReview`,
+   `addPullRequestReview`, `addComment`) implemented in `server/src/http-gql/resolvers.ts`, each
+   writing its `operations` row in the same transaction as the domain mutation (the invariant from
+   M1a). `addComment` only supports `Issue` subjects — PR conversation-tab comments aren't modeled
+   separately from issue comments in the schema yet, a known gap. `markPullRequestReadyForReview` is
+   a recorded no-op (no `draft` column — every PR is ready-for-review from creation). `User | Bot`
+   actor fidelity done (`identities.kind` drives `__typename`). `PullRequestByNumber` was already
+   covered by `Repository.pullRequest(number)`; `statusCheckRollup` needs no resolver — it's a
+   nullable field with no CI system behind it yet, so it already resolves to `null`. Covered by
+   `server/test/e2e-graphql.test.ts`'s "M1b′ GraphQL: mutations" suite.
 2. **Tier-2 REST tail:** `contents`, `commits`/`compare`, git-data endpoints
    (`git/refs|blobs|trees|commits`, `DELETE git/refs/heads/{b}`), PR `files` + diff/patch media
    types, GitHub-standard repo-create paths.
