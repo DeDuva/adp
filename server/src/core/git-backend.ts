@@ -49,4 +49,50 @@ export class GitBackend {
       return false;
     }
   }
+
+  async resolveRef(owner: string, name: string, ref: string): Promise<string | null> {
+    try {
+      const { stdout } = await execFileAsync("git", ["rev-parse", "--verify", `refs/heads/${ref}`], {
+        cwd: this.repoPath(owner, name),
+      });
+      return stdout.trim();
+    } catch {
+      return null;
+    }
+  }
+
+  async isAncestor(owner: string, name: string, ancestorSha: string, descendantSha: string): Promise<boolean> {
+    try {
+      await execFileAsync("git", ["merge-base", "--is-ancestor", ancestorSha, descendantSha], {
+        cwd: this.repoPath(owner, name),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Fast-forward only: sets refs/heads/<branch> to newSha, but only if the
+  // ref currently points at expectedCurrentSha (optimistic concurrency) and
+  // newSha is a descendant of it. No merge commits, no rebasing — matches
+  // the cut list's "conflict = failed merge, agent rebases" MVP conflict
+  // model (docs/pragmatic_mvp.md §2.5).
+  async fastForwardRef(
+    owner: string,
+    name: string,
+    branch: string,
+    expectedCurrentSha: string,
+    newSha: string,
+  ): Promise<boolean> {
+    try {
+      await execFileAsync(
+        "git",
+        ["update-ref", `refs/heads/${branch}`, newSha, expectedCurrentSha],
+        { cwd: this.repoPath(owner, name) },
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }

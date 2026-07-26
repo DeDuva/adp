@@ -81,6 +81,42 @@ export const changes = pgTable("changes", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// PR-shaped: the unit review and landing attach to. Numbered independently
+// from issues for now — real GitHub shares one number sequence across both,
+// which would need a shared counter across two tables; deferred as a known
+// fidelity gap rather than scope-creeping this slice.
+export const proposals = pgTable(
+  "proposals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repoId: uuid("repo_id").notNull().references(() => repos.id),
+    number: integer("number").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull().default(""),
+    headRef: text("head_ref").notNull(),
+    headSha: text("head_sha").notNull(),
+    baseRef: text("base_ref").notNull(),
+    changeId: uuid("change_id").references(() => changes.id),
+    candidateSetId: uuid("candidate_set_id"),
+    state: text("state", { enum: ["open", "closed", "merged"] }).notNull().default("open"),
+    authorId: uuid("author_id").notNull().references(() => identities.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    mergedAt: timestamp("merged_at", { withTimezone: true }),
+  },
+  (table) => [unique().on(table.repoId, table.number)],
+);
+
+export const reviews = pgTable("reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  proposalId: uuid("proposal_id").notNull().references(() => proposals.id),
+  reviewerId: uuid("reviewer_id").notNull().references(() => identities.id),
+  state: text("state", { enum: ["approved", "changes_requested", "commented"] }).notNull(),
+  body: text("body").notNull().default(""),
+  annotations: jsonb("annotations"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Append-only spine: every mutation writes its state change and its operations
 // row in a single transaction. This *is* the op log and the audit log.
 export const operations = pgTable("operations", {

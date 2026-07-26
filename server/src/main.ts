@@ -9,6 +9,8 @@ import { registerRepoRoutes } from "./http-rest/repos.js";
 import { registerIdentityRoutes } from "./http-rest/identity.js";
 import { registerIssueRoutes } from "./http-rest/issues.js";
 import { registerChangeRoutes } from "./http-rest/changes.js";
+import { registerProposalRoutes } from "./http-rest/proposals.js";
+import { registerReviewRoutes } from "./http-rest/reviews.js";
 
 async function main() {
   const config = loadConfig();
@@ -37,6 +39,8 @@ async function main() {
   registerRepoRoutes(app, db, gitBackend);
   registerIssueRoutes(app, db);
   registerChangeRoutes(app, db, gitBackend, signer);
+  registerProposalRoutes(app, db, gitBackend);
+  registerReviewRoutes(app, db);
   registerGitHttpRoutes(app, gitBackend);
 
   await app.listen({ host: "0.0.0.0", port: config.PORT });
