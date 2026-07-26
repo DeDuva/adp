@@ -2,9 +2,10 @@
 
 ## Context
 
-`docs/agent-native-vcs-brief-v4.md` argues for a neutral, open, agent-native substrate for version
+`docs/agent-native-vcs-brief-v5.md` argues for a neutral, open, agent-native substrate for version
 control and CI/CD (ADP). `docs/adp-prototype-implementation-plan.md` proposes a 24-week, 6-engineer
-prototype. The repo is otherwise empty — two documents, no code.
+prototype. When this plan was first written the repo held two documents and no code; implementation
+is now underway against it — see the status ledger in Part 3 and the dated addendum in §1.5.
 
 The ask here is narrower and more useful than the existing plan: **an MVP that an agent can use
 instead of GitHub**, deferring everything complex. That reframing is load-bearing. The existing plan
@@ -131,6 +132,58 @@ the jj-derived engine entirely.
 4. Defer the jj-derived change engine; ship the ADP verb set and record schema over plain git.
 5. Treat `spec/` + `conformance/` as the durable artifact. The server is replaceable.
 
+## 1.5 Addendum (2026-07-26) — the trust plane, and what the first code taught us
+
+Two inputs since this plan was written: **brief v5 added §f** (enterprise controls and
+supply-chain security as a "trust plane"), and **M0 plus the core of M1 are implemented** and
+green in CI (see the status ledger in Part 3). Both change the milestone plan below; neither
+reopens the four locked decisions.
+
+**From §f — argued fully in the brief, sequenced here.** The target segment treats
+Dependabot-class dependency management, secret scanning with push protection, and admin-enforced
+policy as procurement gates, and the 2025–26 threat data (slopsquatting, ~2× secret-leak rates in
+AI-co-authored commits, worms harvesting CI tokens) says those controls belong at **admission
+time, server-side** — client-side pre-commit hooks are advisory to an agent (`--no-verify` is one
+token away); external pre-commit scanners like Wiz CLI remain welcome as a latency optimization,
+with the substrate as the enforcement backstop. The MVP inherits only the retrofit-hostile slice,
+ranked by cost-of-retrofit:
+
+1. **Evidence bundles serialize as in-toto/DSSE attestation envelopes** from the first
+   implementation (M1c). Choosing the envelope now is nearly free; converting stored evidence
+   later is a migration. The gate runner design is otherwise unchanged.
+2. **Land-policy resolution is two-level from day one:** an instance-level floor (server config,
+   admin-owned, non-bypassable) ∧ repo-level `adp.yaml`. Single-tenant stand-in for the org ∧ repo
+   resolution the brief describes; the resolver is the durable part, the org model is M4.
+3. **The receive path gets one hook subsystem serving two jobs:** post-receive auto-recording of
+   changes (already noted as follow-up in `changes.ts`) and pre-receive push protection (bundled
+   secret engine behind a provider API). Build it once.
+4. **Scanner integrations are gate adapters, dependency admission is a gate** (M2): SARIF/JSON in,
+   evidence attestations out, `wizcli` as the reference adapter; lockfile-diff admission checks
+   against OSV + the OpenSSF malicious-packages feed with cooldown windows. Neither is a scanner
+   we build — no first-party SAST/SCA, ever (brief v5 A13 names what would change that).
+5. Everything else in §f (org policy console, SSO/SCIM, audit export surface, fleet kill switch as
+   product UX) stays M4.
+
+**From the code — review findings (2026-07-26), all pre-M1-exit hardening:**
+
+- **`git push` breaks at 1 MiB:** the git routes inherit Fastify's default `bodyLimit`, so any
+  real-sized pack 413s. Raise the limit on the git routes now; move pack bodies to streaming
+  (both directions — they are currently fully buffered) before any fleet-scale test.
+- **Token scopes are minted but never enforced** — any valid token can push. Enforcing
+  `repo:read`/`repo:write`/`admin` at the routes is small, and it is the seed of the policy plane.
+- **Read-auth is inconsistent:** REST/GraphQL reads are unauthenticated while git transport
+  requires a token. Decide once: default-private (reads require a token) until instance policy
+  can say otherwise.
+- **Auth is O(n · scrypt) across all tokens per request.** Commented and fine single-tenant;
+  needs a keyed lookup (embed a token-id prefix in the token format) before fleet fan-out (M3).
+- **`SIGNING_KEY` doc/code mismatch:** `.env.example` says generate with `openssl genpkey`; the
+  code derives the Ed25519 key from the env string via SHA-256. Fix the doc; per-agent keys stay
+  deferred as planned.
+- **Known-fidelity gaps to feed the record-replay suite:** proposals and issues number
+  independently (GitHub shares one sequence); repo creation lives at a nonstandard path
+  (`POST /api/v3/repos/:owner` vs GitHub's `POST /user/repos` · `POST /orgs/{org}/repos`);
+  GraphQL actors always resolve as `User`, never `Bot`, even for agent identities.
+
 ---
 
 # Part 2 — The MVP
@@ -233,6 +286,9 @@ deployments/environments/secrets, branch protection, code scanning, Dependabot, 
 gists, stars, forks-as-social-object, third-party webhooks (one outbound emitter at M2).
 Unsupported endpoints return `404` with a JSON body naming the ADP equivalent — a broken call that
 *explains itself* costs an agent one turn; a hang or a 500 costs it the trajectory.
+Branch protection, code scanning, and Dependabot stay unimplemented *as API surfaces*; their
+capabilities arrive natively through the trust plane — land-policy floor, push protection,
+dependency admission, scanner adapters (§1.5) — not as endpoint emulation.
 
 ### Tier 3 — GraphQL at `/api/graphql` (~14 operations)
 
@@ -294,7 +350,8 @@ adp_candidates_open / adp_candidates_select    # N solutions, one intent
 | Hermetic incremental build graph | Bazel exists. Run declared commands in a container. |
 | Actions / workflow engine | Gates are `image + commands` in `adp.yaml`. An Actions clone is a multi-year trap. |
 | Orgs, teams, per-path ACLs, SSO/SCIM | Token-scoped auth covers MVP. Enterprise identity is an M4 conversation with a real customer. |
-| Releases, packages, wikis, projects, discussions, gists, code scanning, Dependabot, notifications | Not on the loop. |
+| Releases, packages, wikis, projects, discussions, gists, notifications | Not on the loop. |
+| Code scanning / Dependabot as *GitHub API emulation* | The capabilities ship natively instead — push protection at the receive path (M1c), dependency admission gates and scanner-as-gate adapters (M2) — per the trust plane (§1.5, brief v5 §f). First-party scanners are never built; the bundled secret engine is the only in-tree detector. |
 | Inline positional review comments (`position`/`line`/`side`) | GitHub's diff-position model is notoriously painful. MVP reviews carry body + file/line annotations; positional projection is best-effort. |
 | SSH transport | Token-over-HTTPS is what agents already do. |
 | gRPC | HTTP/JSON + MCP covers every MVP consumer. Add when a perf-sensitive second implementer exists. |
@@ -308,32 +365,90 @@ adp_candidates_open / adp_candidates_select    # N solutions, one intent
 Assumes 2 engineers. Weeks elapsed, not ideal. The `gh` decision moves the MVP from ~7 to ~11 weeks;
 that is the honest price of zero-config.
 
-### M0 — Spec + walking skeleton (weeks 1–2)
+## Status ledger
+
+*Updated 2026-07-26. CI runs typecheck, build, migrations, and the full three-tier test suite
+(63 tests, including both e2e suites) on every PR.*
+
+| Milestone | Status | Evidence |
+|---|---|---|
+| M0 — walking skeleton | **✓ complete** | PR #1. CI e2e: mint token → create repo → `git clone` → `git push` → commit lands |
+| M1a — domain + REST core loop | **✓ core complete** | PRs #2–#3. e2e: issue→intent → comment → signed change → proposal → typed review → ff-merge → 409 on non-ff. Tier-2 tail outstanding (see M1b′) |
+| M1b — GraphQL + `gh` | **◐ read slice** | PR #4. GitHub's real SDL loaded unmodified; read resolvers (repository/node/viewer, issue/PR connections, authors) pass `gh`-shaped queries. Mutations + record-replay gate outstanding |
+| M1b′ + M1c — compat completion, hardening, differentiators | not started | revised scope below |
+| M2–M5 | not started | M2 scope revised below (trust ramp) |
+
+### M0 — Spec + walking skeleton (weeks 1–2) — ✓ done
 `spec/openapi.yaml` + JSON Schemas (change, evidence, provenance, operation). Server boots, Postgres
 migrations, token auth middleware, repo create, git smart-HTTP end to end (`git clone` → edit →
 `git push`). Caddy + TLS, compose file.
-**Exit:** a real repo can be pushed to and cloned from the server over HTTPS with a token.
+**Exit:** a real repo can be pushed to and cloned from the server over HTTPS with a token. **Met —
+enforced in CI on every commit since.**
 
 ### M1 — MVP (weeks 3–11) ← *this is the MVP*
 Sequenced so the compat plane is provably working before the differentiators land on top:
 
 - **M1a (wks 3–5) — domain + REST.** Issues, proposals, reviews, changes with intent/provenance,
   server signing, the `operations` table. REST `/api/v3` Tier 2 complete.
+  **Status: core loop done.** Every mutation writes its `operations` row in the same transaction —
+  the one hard invariant held from commit 1.
 - **M1b (wks 6–8) — GraphQL + `gh`.** Public schema SDL loaded, ~14 operations resolved, global IDs,
   connections. Record-replay conformance suite green for the target command set. **Gate: definition
   of done §2.1 minus evidence/undo must pass here.** If `gh` compat is going to blow up, it blows up
   in week 8, with the native plane already a viable fallback.
-- **M1c (wks 9–11) — differentiators.** `adp.yaml` gate runner + evidence bundles projected as
-  check-runs; land policy; op log + undo; history query; candidate sets; MCP native plane (8 tools);
-  read-only web UI.
+  **Status: read slice done; the gate is unmet** — hand-written `gh`-shaped queries pass, the real
+  `gh` binary has not yet been pointed at the server.
+- **M1c — differentiators.** Revised scope below.
 
-**Exit:** §2.1 passes as a scripted E2E driven by a real unmodified agent.
+#### M1b′ — compat completion + hardening *(revised 2026-07-26; the current critical path)*
+1. **GraphQL mutations** (~9: `createIssue`, `closeIssue`, `createPullRequest`, `mergePullRequest`,
+   `closePullRequest`, `reopenPullRequest`, `markPullRequestReadyForReview`,
+   `addPullRequestReview`, `addComment`) + `RepoMetadata`, `statusCheckRollup`, `PullRequestByNumber`
+   fields `gh pr checkout` needs, and `User | Bot` actor fidelity (agent identities are `Bot`).
+2. **Tier-2 REST tail:** `contents`, `commits`/`compare`, git-data endpoints
+   (`git/refs|blobs|trees|commits`, `DELETE git/refs/heads/{b}`), PR `files` + diff/patch media
+   types, GitHub-standard repo-create paths.
+3. **The record-replay conformance suite** — build it now and make it the gate it was always meant
+   to be: pin a `gh` version in CI, record real-GitHub exchanges once, assert shape-compatible
+   responses.
+4. **Hardening (§1.5 list):** git-route `bodyLimit` + streaming pack bodies; scope enforcement;
+   default-private reads; keyed token lookup; `SIGNING_KEY` doc fix.
 
-### M2 — Adoption ramp (weeks 12–15)
+**Gate (unchanged in substance):** definition of done §2.1 minus evidence/undo passes with a real,
+unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` against the server.
+
+#### M1c — differentiators *(revised 2026-07-26: trust-plane slice folded in, §1.5)*
+- **Receive-path hook subsystem** — one mechanism, two consumers: post-receive auto-records typed
+  changes on push; pre-receive runs push protection (bundled regex+entropy secret engine behind a
+  pluggable provider API). Violations return a typed, actionable error to the pushing agent and are
+  non-bypassable below the instance policy floor.
+- **`adp.yaml` gate runner + evidence bundles** — evidence serialized as in-toto/DSSE attestation
+  envelopes (§1.5 item 1), projected as check-runs on the compat plane.
+- **Land policy, resolved two-level:** instance floor ∧ repo `adp.yaml`
+  (`require: [gates_green, one_approval]`, risk tiers by path glob).
+- **Op log read API + undo; history query; candidate sets; MCP native plane (8 tools); read-only
+  web UI** — as originally scoped.
+
+**Exit (unchanged):** §2.1 passes as a scripted E2E driven by a real unmodified agent — plus one
+addition: a push containing a seeded secret is blocked at the wire with a typed error.
+
+### M2 — Adoption + trust ramp *(revised 2026-07-26)*
 **Mirror mode** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub; the single
 biggest adoption lever and cheap: push mirror + webhook ingest). Outbound webhook emitter. `adp` CLI.
 `conformance/` published against `spec/`. GraphQL coverage widened from measured real traffic.
-**Exit:** an existing GitHub repo gets ADP workspaces + evidence without migrating.
+Plus the trust-plane ramp (§1.5 item 4):
+- **Scanner-as-gate adapters:** any CLI scanner drops into the gate runner — SARIF/JSON out,
+  DSSE evidence attestation in; **Wiz Code (`wizcli`) is the reference adapter** (SAST, SCA,
+  secrets, IaC in one integration), with one open engine (e.g. `osv-scanner`) as the
+  second implementation proving the adapter interface.
+- **Dependency admission v0:** manifest/lockfile diffs become gate inputs — registry existence,
+  age/cooldown windows, OSV + OpenSSF malicious-packages lookups; unknowns quarantine to
+  supervisor approval; verdicts are typed and returned to the authoring agent.
+- **SBOM per land:** CycloneDX emitted as ordinary evidence on every landed change.
+
+**Exit:** an existing GitHub repo gets ADP workspaces + evidence without migrating; a `wizcli`
+gate posts findings as signed evidence on a proposal; a lockfile diff adding a known-malicious
+package is refused with a typed verdict the agent can act on.
 
 ### M3 — Fleet and differentiation (weeks 16–20)
 50-way fan-out orchestration over candidate sets. Cross-harness checkpoint/resume (session state as a
@@ -345,6 +460,10 @@ arms for free, because both planes exist.
 
 ### M4 — Multi-tenant hosted preview (weeks 21–26)
 Org/user model, OIDC login, scoped tokens, quotas and GC. Managed Postgres + object store.
+The instance policy floor generalizes to the org policy plane (org ∧ repo resolution, policy
+changes as signed reviewable changes, fleet kill switch) and the named procurement checklist
+lands here: SSO/SCIM, audit-log export (a projection of `operations`, not a second system),
+org policy console.
 Backup/PITR with an **executed** restore drill. Runner pool isolation. Observability dashboards.
 Docs, quickstart, self-host artifacts (image + compose + helm).
 **Exit:** external users can sign up and run a real workload; restore drill completed.
@@ -511,7 +630,14 @@ In order of authority:
 6. **Measurement harness (M3).** A fixed task suite run through an agent against (a) GitHub + `gh`,
    (b) ADP + `gh`, (c) ADP + MCP — recording tokens, tool calls, error rate, wall clock, and the
    distribution of endpoints actually requested. Publish regardless of result. This is simultaneously
-   the A1 study, the A2 study, and the honest basis for widening GraphQL coverage.
+   the A1 study, the A2 study, and the honest basis for widening GraphQL coverage. Adopt ForgeMark
+   (Entire's open push-throughput benchmark) alongside it — a neutral third-party yardstick for the
+   write path.
+7. **Trust-plane suite (M1c/M2).** A push containing a seeded secret is blocked at the wire with a
+   typed error the agent can act on — and the block is recorded in the op log; a lockfile diff
+   adding a known-malicious or too-new package fails dependency admission with a typed verdict;
+   every stored evidence bundle validates as a well-formed DSSE/in-toto attestation; a repo-level
+   `adp.yaml` cannot loosen the instance policy floor.
 
 ---
 
@@ -528,10 +654,17 @@ In order of authority:
 1. GraphQL slice under-scoped — `gh` reaches for a field we don't back mid-trajectory. *Mitigation:
    real SDL so it's a resolver error not a validation error; record-replay suite; native fallback.*
 2. GitHub ships agent-native primitives and moots the standard (A10). *Mitigation: `spec/` +
-   `conformance/` from day one — the "become the conformance layer" fallback is cheap to hold open.*
+   `conformance/` from day one — the "become the conformance layer" fallback is cheap to hold open.
+   (Materializing as of mid-2026: Agent HQ + a security-vendor-heavy agent-apps Marketplace — which
+   raises the urgency of publishing `conformance/`, and validates gates-in-the-agent-loop as the
+   contested ground.)*
 3. Adoption requires being system-of-record for someone's source. *Mitigation: mirror mode at M2.*
 4. Scope gravity toward the brief's full architecture. *Mitigation: §2.5 is the contract; M5 items
    each require written justification citing telemetry.*
+5. Trust-plane scope gravity — the §f procurement checklist balloons into building scanners or a
+   GRC product. *Mitigation: adapters only (brief v5 A13/A15); the bundled secret engine is the
+   only first-party detector; compliance output is attestations, and report-rendering belongs to
+   partners.*
 
 Sources: [Cursor Origin](https://www.eesel.ai/blog/what-is-cursor-origin) ·
 [GitHub agent apps](https://github.blog/changelog/2026-06-02-extend-github-with-agent-apps/) ·

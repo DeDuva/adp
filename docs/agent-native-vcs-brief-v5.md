@@ -1,11 +1,14 @@
 # An Open, Agent-Native Substrate for Version Control and CI/CD
 
-**Technical Brief v5 — Confidential draft for frontier lab leadership**
-*Office of the CTO · July 2026 · Apache-2.0, no commercial encumbrance*
+**Technical Brief v5 — public draft**
+*ADP project · July 2026 · Apache-2.0, no commercial encumbrance*
 
-*v5 adds §f — enterprise controls and supply-chain security (the trust plane) — plus landscape and
-appendix updates through late July 2026 (A9/A10/A12 updates; new A13–A15). v4 is retained in-repo
-unchanged for history.*
+*Audience note: this brief is written for technical leadership at frontier labs and
+agent-infrastructure teams, and is published openly — neutrality is the thesis, and a neutral
+substrate should not have a private pitch. v5 adds §f — enterprise controls and supply-chain
+security (the trust plane) — plus landscape and appendix updates through late July 2026
+(A9/A10/A12 updates; new A13–A15) and an implementation-status section. Prior versions of this
+brief live in git history.*
 
 ---
 
@@ -39,18 +42,18 @@ Between February and June 2026 the space compressed dramatically: Entire launche
 
 | Player | What they shipped | What it validates | Gap for frontier labs |
 |---|---|---|---|
-| **Entire** (Dohmke, ex-GitHub CEO) | "Checkpoints": Git primitive versioning agent sessions, prompts, tool calls, reasoning traces alongside commits; **distributed Git network in public preview since July 8, 2026**, with ForgeMark, an open push-throughput benchmark for agent-scale concurrency; record $60M seed | Context/intent/provenance as first-class versioned data — our thesis (b), nearly verbatim | Venture platform; business model gestures at monetizing agent "data exhaust"; no verification layer; labs would rent their provenance |
-| **Cursor Origin** (Anysphere) | Git-compatible forge for parallel agents: stacked PRs (Graphite acquisition), merge queues, machine-readable review states, MCP-drivable; claims 22.6 commits/sec sustained and sub-400ms global sync; **waitlist-gated, GA slated fall 2026** | Forge layer is the bottleneck; concurrency and machine-readable review as the design center — our thesis (a) | Proprietary, product-captive, SpaceX-adjacent post-acquisition; labs would build on a competitor's closed stack |
+| **Entire** (Dohmke, ex-GitHub CEO) | "Checkpoints": Git primitive versioning agent sessions, prompts, tool calls, reasoning traces alongside commits; **distributed Git network in public preview since July 8, 2026**, with ForgeMark, an open push-throughput benchmark for agent-scale concurrency; record $60M seed | Context/intent/provenance as first-class versioned data — our thesis (b), nearly verbatim | Venture platform whose business model centers on hosting the agent-session data layer; no verification layer; labs would rent their provenance |
+| **Cursor Origin** (Anysphere) | Git-compatible forge for parallel agents: stacked PRs (Graphite acquisition), merge queues, machine-readable review states, MCP-drivable; claims 22.6 commits/sec sustained and sub-400ms global sync; **waitlist-gated, GA slated fall 2026** | Forge layer is the bottleneck; concurrency and machine-readable review as the design center — our thesis (a) | Proprietary and product-captive; labs would build on a competitor's closed stack |
 | **Epic Lore** | Open-source (MIT, open spec; public on GitHub since June 17, 2026) centralized content-addressed VCS: Merkle-tree revisions, fragment-level dedup, lazy sparse working copies; pairs with Horde CI/CD | Our Layer 0 storage architecture, independently derived; binary-scale payloads (weights, datasets) as first-class | Game-industry design center; not agent-native — no intent, provenance, or agent-facing change model |
 | **Diversion** | Full-stack cloud-native VCS (not a Git layer): central repository with unlimited ephemeral working copies, no local clones; binary/monorepo-native; bi-directional GitHub mirroring; "Trajectory" provenance product | Centralized store + cheap workspace forking + provenance capture; and the switching-cost-erosion argument (agents lower the cost of leaving Git) | Closed-source commercial SaaS; no verification layer; provenance capture without merge-time evidence binding |
-| **Oak** | Purpose-built Rust VCS: ~1s virtual mounts, no full clone, per-task branch isolation for parallel agents; claims ~50% fewer VCS tokens, ~90% faster ops | Token cost and mount latency as first-order VCS metrics; per-task workspace isolation | Early and thin (small team); no server-side collaboration or verification story |
+| **Oak** | Purpose-built Rust VCS: ~1s virtual mounts, no full clone, per-task branch isolation for parallel agents; claims ~50% fewer VCS tokens, ~90% faster ops | Token cost and mount latency as first-order VCS metrics; per-task workspace isolation | Early-stage; no server-side collaboration or verification story yet |
 | **Ecosystem** (jj, GitButler, Freestyle, Sapling) | jj: operation log, first-class conflicts. GitButler: agent hooks + 300-run VCS agent benchmark. Freestyle: API-first hosted Git for agent sandboxes. Sapling: Git facade over different internals at Meta scale | The change-model, benchmarking, and facade patterns we adopt | Fragments, not a substrate: none combines change model + storage + verification + neutrality |
 
 Three structural observations:
 
 1. **Convergent architecture.** All five entrants converged on centralized-ish, content-addressed storage with lazy virtualization behind a git-compatible or git-mirrored surface, and some notion of provenance. Independent convergence by teams with very different incentives — an ex-GitHub CEO, an IDE company, a game engine, a Perforce challenger, an indie — is the strongest available evidence the architecture is right.
 2. **Nobody owns verification.** Every entrant stops at capture and hosting. None leads with the hermetic incremental build/test graph and eval-gated merge queue — the layer that determines whether agent-scale throughput actually lands as trustworthy software. The nearest motion is adjacent: AI code-review products (CodeRabbit, Greptile, Cursor's Bugbot, Copilot code review) have normalized merge-blocking AI gates, and the first cohort of GitHub agent apps is dominated by security scanners (Endor Labs, Sonar, Bright Security, Packfiles). Gates are being normalized; *attested, policy-bound evidence* still has no owner.
-3. **Neutrality is collapsing.** GitHub is Microsoft's; Origin is Cursor's and, post-acquisition, SpaceX-adjacent; Entire is a venture platform whose stated model points toward monetizing agent data exhaust; Diversion and Oak are closed or thin. The pattern now extends down-stack: Wiz, the leading code-and-cloud scanner, closed into Google in March 2026. Every frontier lab competes with at least one of these owners. The window for a neutral substrate is open now and will not stay open.
+3. **Neutrality is collapsing.** GitHub is Microsoft's; Origin is Cursor's; Entire is a venture platform whose business model centers on the agent-session data layer it hosts; Diversion is closed-source and Oak is early-stage. The pattern now extends down-stack: Wiz, the leading code-and-cloud scanner, closed into Google in March 2026. Every frontier lab competes with at least one of these owners. The window for a neutral substrate is open now and will not stay open.
 
 ## d) Architectural tradeoffs, and why Google still runs Piper
 
@@ -143,6 +146,27 @@ Our center of gravity sits deliberately up the stack: **commoditize what the mar
 **Layer 2 — Interfaces.** Full git wire-protocol support and a pragmatic GitHub-API shim for existing CI; the native ADP surface (MCP and gRPC) as the preferred agent interface and proposed standard; reference harness adapters for the major agent CLIs so adoption requires configuration, not integration work; a stacked-diff-native review UI where humans review intent and evidence, not just hunks.
 
 **The trust plane (cross-cutting — new in v5).** The org policy engine and two-level policy resolution; attestation-native evidence (in-toto/DSSE envelopes, SLSA-shaped provenance, per-land SBOMs); push protection at the receive path; dependency admission gates fed by OSV and malicious-package intelligence; and the scanner-as-gate integration surface (SARIF in, signed attestations out — Wiz Code as reference integration). Ships as schema, policy engine, and seams — never as a first-party scanner (§f).
+
+## Where this stands (July 2026)
+
+The reference implementation lives in this repository (TypeScript · Fastify · Postgres · the real
+`git` binary for all plumbing; Apache-2.0), built against the narrower plan of record in
+[`docs/pragmatic_mvp.md`](pragmatic_mvp.md) — whose bet is that the fastest route to the standard
+is a server an **unmodified** agent can use instead of GitHub, with zero configuration beyond
+`GH_HOST` and a token.
+
+Working today, verified in CI end-to-end: git smart-HTTP (clone/push) delegated to `git
+http-backend` behind token auth; the GitHub-shaped REST core loop (issues — each of which files a
+typed **intent** — comments, PR-shaped proposals, typed review states, fast-forward landing); typed
+**changes** binding a git commit to intent and provenance, Ed25519-signed server-side; an
+append-only **operation log** written in the same transaction as every mutation; and a GraphQL
+read path served from GitHub's real published SDL, so `gh`-shaped queries validate correctly and
+unimplemented fields fail as resolver errors, never schema errors.
+
+Not yet built, stated plainly: GraphQL mutations and validation against the unmodified `gh` binary
+(the record-replay conformance gate); gate runners and evidence bundles; land policy; undo and the
+history-query API; candidate sets; the native MCP plane; and the §f trust plane. The milestone
+plan, including the next set, is `pragmatic_mvp.md` Part 3.
 
 ## Why frontier labs specifically — and the ask
 
@@ -252,4 +276,6 @@ The brief above states our positions with conviction; this appendix states them 
 
 ---
 
-*Prepared for discussion with frontier-lab technical leadership. Positions in the main brief are current convictions; every item in the appendix names the evidence that would change them.*
+*Published for open discussion; the primary audience remains technical leadership at frontier labs
+and the teams building agent infrastructure. Positions in the main brief are current convictions;
+every item in the appendix names the evidence that would change them.*
