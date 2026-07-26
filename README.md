@@ -24,13 +24,17 @@ Git compatibility is preserved throughout — `git clone` keeps working.
 The differentiating bet is not storage or the change model, both of which the market is rapidly
 converging on. It is **binding context to verification evidence at merge time** — capturing *why* a
 change was made and *how it was verified* in one signed record. Several well-funded efforts capture
-provenance; none gate on it.
+provenance; none gate on it. Brief v5 extends the same admission-time architecture into a **trust
+plane**: enterprise controls and supply-chain security (org-enforced policy, push protection at the
+receive path, dependency admission, attestation-native evidence, scanner integrations such as Wiz
+Code) — the procurement checklist the target customer segment treats as mandatory.
 
 ## The documents
 
 | Document | What it is |
 |---|---|
-| [`docs/agent-native-vcs-brief-v4.md`](docs/agent-native-vcs-brief-v4.md) | **The thesis.** Technical brief arguing the case for a neutral agent-native substrate: the GitHub interface question, versioning beyond source, the competitive landscape, architectural tradeoffs, and the agent-harness boundary. Its appendix (A1–A12) states the open decisions honestly — each names the evidence that would change the position. |
+| [`docs/agent-native-vcs-brief-v5.md`](docs/agent-native-vcs-brief-v5.md) | **The thesis (current, v5).** Technical brief arguing the case for a neutral agent-native substrate: the GitHub interface question, versioning beyond source, the competitive landscape, architectural tradeoffs, the agent-harness boundary, and — new in v5 — enterprise controls and supply-chain security as a "trust plane" (§f). Its appendix (A1–A15) states the open decisions honestly — each names the evidence that would change the position. |
+| [`docs/agent-native-vcs-brief-v4.md`](docs/agent-native-vcs-brief-v4.md) | **Prior version of the thesis**, retained unchanged for history. Superseded by v5. |
 | [`docs/adp-prototype-implementation-plan.md`](docs/adp-prototype-implementation-plan.md) | **The original prototype plan.** A 24-week, 6-engineer build targeting a lab preview: Rust server, jj-derived change engine, verification fabric, harness adapters. Optimizes for proving the brief's theses to a frontier lab. |
 | [`docs/pragmatic_mvp.md`](docs/pragmatic_mvp.md) | **The current plan of record.** A critique of the concept plus a much narrower MVP: the smallest system an off-the-shelf agent can use *instead of* GitHub, with everything complex deferred and defended. Supersedes the prototype plan on scope, stack, and sequencing. |
 
