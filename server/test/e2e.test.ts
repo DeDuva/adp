@@ -102,6 +102,9 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     const cloneDir = path.join(workDir, "clone");
 
     await execFileAsync("git", ["clone", cloneUrl, cloneDir]);
+    // Cloning an empty repo names the local branch from the client's
+    // init.defaultBranch, not the server's — pin it explicitly.
+    await execFileAsync("git", ["checkout", "-B", "main"], { cwd: cloneDir });
     await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
     await execFileAsync("git", ["config", "user.name", "Test"], { cwd: cloneDir });
     await execFileAsync("sh", ["-c", "echo hi > README.md"], { cwd: cloneDir });

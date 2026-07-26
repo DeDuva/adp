@@ -65,6 +65,10 @@ describe("git smart-HTTP proxy", () => {
     const cloneDir = path.join(workDir, "clone");
     await execFileAsync("git", ["clone", `http://127.0.0.1:${port}/acme/hello.git`, cloneDir]);
 
+    // Cloning an empty repo names the local branch from the client's
+    // init.defaultBranch, not the server's — pin it explicitly rather than
+    // assuming "main" (this differs between machines, e.g. CI runners).
+    await execFileAsync("git", ["checkout", "-B", "main"], { cwd: cloneDir });
     await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
     await execFileAsync("git", ["config", "user.name", "Test"], { cwd: cloneDir });
     await execFileAsync("sh", ["-c", "echo hi > README.md"], { cwd: cloneDir });
