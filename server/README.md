@@ -1,13 +1,16 @@
-# ADP server — M0 skeleton + M1a slice
+# ADP server — M0 skeleton + M1a
 
 Fastify + PostgreSQL server. Working end to end: token-authenticated repo creation, git
 smart-HTTP (clone/push) proxied to the real `git http-backend` binary, issues (which each
-file an intent) with comments, and typed changes — a git commit bound to an intent and a
-server-signed provenance record.
+file an intent) with comments, typed changes (a git commit bound to an intent and a
+server-signed provenance record), proposals (PR-shaped, opened against a head/base branch),
+typed reviews, and fast-forward-only merge.
 
-Not yet implemented: proposals, reviews, GraphQL, gates, evidence bundles, the native MCP
-plane, and automatic change recording on push (changes are currently recorded via an
-explicit API call, not a git hook). See `docs/pragmatic_mvp.md` for the milestone plan.
+Not yet implemented: GraphQL, gate runners, evidence bundles, land policy beyond
+fast-forward, the native MCP plane, candidate sets, and automatic change recording on push
+(changes are currently recorded via an explicit API call, not a git hook). Proposal/issue
+numbering are independent sequences rather than GitHub's shared one — a known fidelity gap.
+See `docs/pragmatic_mvp.md` for the milestone plan.
 
 ## Local development
 

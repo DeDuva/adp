@@ -224,6 +224,117 @@ paths:
           description: OK
         "404":
           description: Not found
+  /api/v3/repos/{owner}/{repo}/pulls:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    post:
+      summary: >
+        Open a proposal (PR-shaped). Numbered independently from issues —
+        real GitHub shares one sequence across both; a known fidelity gap,
+        not yet closed.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProposalRequest"
+      responses:
+        "201":
+          description: Created
+        "404":
+          description: Repository not found
+        "422":
+          description: head/base branch not found, or change_id doesn't belong to this repo
+    get:
+      summary: List proposals
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Repository not found
+  /api/v3/repos/{owner}/{repo}/pulls/{number}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/number"
+    get:
+      summary: Get a proposal
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+    patch:
+      summary: Update a proposal (title, body, or state — open/closed)
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProposalRequest"
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+        "422":
+          description: Validation failed, or proposal is already merged
+  /api/v3/repos/{owner}/{repo}/pulls/{number}/merge:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/number"
+    put:
+      summary: >
+        Merge a proposal. Fast-forward only — no evidence/gate check yet
+        (that's M1c's land policy). A non-fast-forward base is the MVP's
+        conflict model: 409, the agent rebases and retries.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Merged
+        "404":
+          description: Not found
+        "409":
+          description: Base has diverged from head — not a fast-forward
+        "422":
+          description: Already merged, or the proposal is closed
+  /api/v3/repos/{owner}/{repo}/pulls/{number}/reviews:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/number"
+    post:
+      summary: >
+        Submit a typed review (approved / changes_requested / commented) —
+        not a GitHub-shaped emoji thread.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReviewRequest"
+      responses:
+        "201":
+          description: Created
+        "404":
+          description: Not found
+        "422":
+          description: Validation failed
+    get:
+      summary: List reviews on a proposal
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
 components:
   parameters:
     owner:
@@ -238,6 +349,12 @@ components:
       required: true
       schema:
         type: string
+    number:
+      name: number
+      in: path
+      required: true
+      schema:
+        type: integer
   securitySchemes:
     bearerAuth:
       type: http
@@ -289,3 +406,51 @@ components:
         workspace_id:
           type: string
           format: uuid
+    CreateProposalRequest:
+      type: object
+      required: [title, head, base]
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+        head:
+          type: string
+          description: Branch name
+        base:
+          type: string
+          description: Branch name
+        change_id:
+          type: string
+          format: uuid
+    UpdateProposalRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+        state:
+          type: string
+          enum: [open, closed]
+    CreateReviewRequest:
+      type: object
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [approved, changes_requested, commented]
+        body:
+          type: string
+        annotations:
+          type: array
+          items:
+            type: object
+            required: [file, line, body]
+            properties:
+              file:
+                type: string
+              line:
+                type: integer
+              body:
+                type: string

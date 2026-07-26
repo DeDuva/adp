@@ -17,6 +17,8 @@ import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerIdentityRoutes } from "../src/http-rest/identity.js";
 import { registerIssueRoutes } from "../src/http-rest/issues.js";
 import { registerChangeRoutes } from "../src/http-rest/changes.js";
+import { registerProposalRoutes } from "../src/http-rest/proposals.js";
+import { registerReviewRoutes } from "../src/http-rest/reviews.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -53,6 +55,8 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     registerRepoRoutes(app, db, gitBackend);
     registerIssueRoutes(app, db);
     registerChangeRoutes(app, db, gitBackend, new Signer("e2e-test-signing-key"));
+    registerProposalRoutes(app, db, gitBackend);
+    registerReviewRoutes(app, db);
     registerGitHttpRoutes(app, gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
@@ -212,5 +216,106 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
       body: JSON.stringify({ git_sha: "f".repeat(40) }),
     });
     expect(res.status).toBe(422);
+  });
+
+  it("opens a proposal, reviews it, merges it fast-forward, and rejects a second merge", async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-proposal-"));
+    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/e2e-owner/hello.git`;
+    const cloneDir = path.join(workDir, "clone");
+
+    await execFileAsync("git", ["clone", cloneUrl, cloneDir]);
+    await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
+    await execFileAsync("git", ["config", "user.name", "Test"], { cwd: cloneDir });
+    await execFileAsync("git", ["checkout", "-b", "feature"], { cwd: cloneDir });
+    await execFileAsync("sh", ["-c", "echo more >> README.md"], { cwd: cloneDir });
+    await execFileAsync("git", ["commit", "-am", "proposal commit"], { cwd: cloneDir });
+    await execFileAsync("git", ["push", "origin", "feature"], { cwd: cloneDir });
+
+    const createRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/pulls`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Extend README", head: "feature", base: "main" }),
+    });
+    expect(createRes.status).toBe(201);
+    const proposal = (await createRes.json()) as { number: number; head: { sha: string }; state: string };
+    expect(proposal.state).toBe("open");
+
+    const reviewRes = await fetch(
+      `http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/pulls/${proposal.number}/reviews`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ state: "approved", body: "LGTM" }),
+      },
+    );
+    expect(reviewRes.status).toBe(201);
+    const review = (await reviewRes.json()) as { state: string };
+    expect(review.state).toBe("approved");
+
+    const listReviewsRes = await fetch(
+      `http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/pulls/${proposal.number}/reviews`,
+    );
+    expect(((await listReviewsRes.json()) as unknown[]).length).toBe(1);
+
+    const mergeRes = await fetch(
+      `http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/pulls/${proposal.number}/merge`,
+      { method: "PUT", headers: { Authorization: `Bearer ${token}` } },
+    );
+    expect(mergeRes.status).toBe(200);
+    const merged = (await mergeRes.json()) as { merged: boolean; sha: string; state: string };
+    expect(merged.merged).toBe(true);
+    expect(merged.state).toBe("merged");
+
+    const { stdout: mainSha } = await execFileAsync("git", ["rev-parse", "main"], {
+      cwd: new GitBackend(gitRoot).repoPath("e2e-owner", "hello"),
+    });
+    expect(mainSha.trim()).toBe(proposal.head.sha);
+
+    const secondMergeRes = await fetch(
+      `http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/pulls/${proposal.number}/merge`,
+      { method: "PUT", headers: { Authorization: `Bearer ${token}` } },
+    );
+    expect(secondMergeRes.status).toBe(422);
+
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("rejects a non-fast-forward merge with 409", async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-conflict-"));
+    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/e2e-owner/hello.git`;
+    const cloneDir = path.join(workDir, "clone");
+
+    await execFileAsync("git", ["clone", cloneUrl, cloneDir]);
+    await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
+    await execFileAsync("git", ["config", "user.name", "Test"], { cwd: cloneDir });
+
+    // Branch off the current main, then advance main independently so the
+    // branch is no longer a fast-forward candidate.
+    await execFileAsync("git", ["checkout", "-b", "stale-feature"], { cwd: cloneDir });
+    await execFileAsync("sh", ["-c", "echo stale >> stale.txt"], { cwd: cloneDir });
+    await execFileAsync("git", ["add", "."], { cwd: cloneDir });
+    await execFileAsync("git", ["commit", "-m", "stale branch commit"], { cwd: cloneDir });
+    await execFileAsync("git", ["push", "origin", "stale-feature"], { cwd: cloneDir });
+
+    await execFileAsync("git", ["checkout", "main"], { cwd: cloneDir });
+    await execFileAsync("sh", ["-c", "echo diverged >> diverged.txt"], { cwd: cloneDir });
+    await execFileAsync("git", ["add", "."], { cwd: cloneDir });
+    await execFileAsync("git", ["commit", "-m", "diverge main"], { cwd: cloneDir });
+    await execFileAsync("git", ["push", "origin", "main"], { cwd: cloneDir });
+
+    const createRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/pulls`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Stale", head: "stale-feature", base: "main" }),
+    });
+    const proposal = (await createRes.json()) as { number: number };
+
+    const mergeRes = await fetch(
+      `http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/pulls/${proposal.number}/merge`,
+      { method: "PUT", headers: { Authorization: `Bearer ${token}` } },
+    );
+    expect(mergeRes.status).toBe(409);
+
+    await rm(workDir, { recursive: true, force: true });
   });
 });
