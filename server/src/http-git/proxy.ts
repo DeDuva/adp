@@ -1,53 +1,68 @@
 import { spawn } from "node:child_process";
+import { Transform } from "node:stream";
+import type { Readable } from "node:stream";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { GitBackend } from "../core/git-backend.js";
+import { hasScope } from "../auth/plugin.js";
 
-// Delegates the smart-HTTP wire protocol to the real `git http-backend` CGI.
-// This is the reference implementation, already installed, and gives perfect
-// protocol fidelity for free — the single highest-value compatibility decision
-// in the MVP.
-function runHttpBackend(opts: {
-  repoRoot: string;
-  pathInfo: string;
-  method: string;
-  queryString: string;
-  contentType: string;
-  remoteUser: string;
-  body: Buffer;
-}): Promise<{ status: number; headers: Record<string, string>; body: Buffer }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("git", ["http-backend"], {
-      env: {
-        ...process.env,
-        GIT_PROJECT_ROOT: opts.repoRoot,
-        GIT_HTTP_EXPORT_ALL: "1",
-        PATH_INFO: opts.pathInfo,
-        REQUEST_METHOD: opts.method,
-        QUERY_STRING: opts.queryString,
-        CONTENT_TYPE: opts.contentType,
-        CONTENT_LENGTH: String(opts.body.length),
-        REMOTE_USER: opts.remoteUser,
-        REMOTE_ADDR: "127.0.0.1",
-        SERVER_PROTOCOL: "HTTP/1.1",
-      },
-    });
+// receive-pack (push) needs repo:write; upload-pack (clone/fetch) only needs
+// repo:read — both the `/info/refs?service=` negotiation GET and the
+// `/git-<service>-pack` POST carry this in the URL.
+function isWriteRequest(wildcard: string, queryString: string): boolean {
+  return wildcard.endsWith("git-receive-pack") || queryString.includes("service=git-receive-pack");
+}
 
-    const chunks: Buffer[] = [];
-    let stderr = "";
-    child.stdout.on("data", (c) => chunks.push(c));
-    child.stderr.on("data", (c) => (stderr += c.toString()));
+class BodyTooLargeError extends Error {}
 
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code !== 0 && code !== null) {
-        reject(new Error(`git http-backend exited ${code}: ${stderr}`));
+// Enforced independently of Fastify's own bodyLimit/Content-Length check:
+// this also catches a chunked-encoded request with no declared length.
+function limitBytes(maxBytes: number): Transform {
+  let seen = 0;
+  return new Transform({
+    transform(chunk, _enc, callback) {
+      seen += chunk.length;
+      if (seen > maxBytes) {
+        callback(new BodyTooLargeError(`request body exceeds ${maxBytes} bytes`));
         return;
       }
-      const raw = Buffer.concat(chunks);
-      const headerEnd = raw.indexOf("\r\n\r\n");
-      const sepLen = 4;
-      const rawHeaders = (headerEnd === -1 ? raw.toString("latin1") : raw.slice(0, headerEnd).toString("latin1"));
-      const body = headerEnd === -1 ? Buffer.alloc(0) : raw.slice(headerEnd + sepLen);
+      callback(null, chunk);
+    },
+  });
+}
+
+// Splits a CGI response stream into its header block and body without
+// buffering the body — headers are a few hundred bytes, git pack bodies can
+// be gigabytes. `onHeaders` fires once, as soon as the blank line after the
+// header block is seen; every chunk after that point is forwarded through
+// this Transform's normal push/output path as the body.
+function splitCgiResponse(onHeaders: (status: number, headers: Record<string, string>) => void): Transform {
+  let headerBuf = Buffer.alloc(0);
+  let headersSent = false;
+
+  return new Transform({
+    transform(chunk, _enc, callback) {
+      if (headersSent) {
+        callback(null, chunk);
+        return;
+      }
+
+      headerBuf = Buffer.concat([headerBuf, chunk]);
+      const sepIdx = headerBuf.indexOf("\r\n\r\n");
+      if (sepIdx === -1) {
+        // Bound how long we'll wait for the header block, in case a
+        // misbehaving CGI process never sends one — 64 KiB is generous for
+        // real header sets.
+        if (headerBuf.length > 64 * 1024) {
+          callback(new Error("git http-backend: header block exceeded 64 KiB"));
+        } else {
+          callback();
+        }
+        return;
+      }
+
+      const rawHeaders = headerBuf.slice(0, sepIdx).toString("latin1");
+      const rest = headerBuf.subarray(sepIdx + 4);
+      headersSent = true;
 
       const headers: Record<string, string> = {};
       let status = 200;
@@ -63,18 +78,99 @@ function runHttpBackend(opts: {
           headers[key] = value;
         }
       }
-      resolve({ status, headers, body });
-    });
-
-    child.stdin.write(opts.body);
-    child.stdin.end();
+      onHeaders(status, headers);
+      callback(null, rest.length > 0 ? rest : undefined);
+    },
   });
 }
 
-export function registerGitHttpRoutes(app: FastifyInstance, gitBackend: GitBackend) {
+// Delegates the smart-HTTP wire protocol to the real `git http-backend` CGI.
+// This is the reference implementation, already installed, and gives perfect
+// protocol fidelity for free — the single highest-value compatibility decision
+// in the MVP. Both directions are streamed through: neither the request pack
+// nor the response pack is ever fully buffered in memory (docs/pragmatic_mvp.md
+// §1.5 — "any real-sized pack 413s ... currently fully buffered").
+function streamHttpBackend(
+  opts: {
+    repoRoot: string;
+    pathInfo: string;
+    method: string;
+    queryString: string;
+    contentType: string;
+    contentLength: string | undefined;
+    remoteUser: string;
+    body: Readable;
+    maxBytes: number;
+  },
+  reply: FastifyReply,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", ["http-backend"], {
+      env: {
+        ...process.env,
+        GIT_PROJECT_ROOT: opts.repoRoot,
+        GIT_HTTP_EXPORT_ALL: "1",
+        PATH_INFO: opts.pathInfo,
+        REQUEST_METHOD: opts.method,
+        QUERY_STRING: opts.queryString,
+        CONTENT_TYPE: opts.contentType,
+        CONTENT_LENGTH: opts.contentLength ?? "",
+        REMOTE_USER: opts.remoteUser,
+        REMOTE_ADDR: "127.0.0.1",
+        SERVER_PROTOCOL: "HTTP/1.1",
+      },
+    });
+
+    let stderr = "";
+    child.stderr.on("data", (c) => (stderr += c.toString()));
+    child.on("error", reject);
+
+    const guard = limitBytes(opts.maxBytes);
+    guard.on("error", (err) => {
+      child.kill();
+      if (err instanceof BodyTooLargeError && !reply.sent) {
+        reply.code(413).send({ message: err.message });
+        resolve();
+        return;
+      }
+      reject(err);
+    });
+    opts.body.pipe(guard).pipe(child.stdin);
+
+    let settled = false;
+    const responseSplitter = splitCgiResponse((status, headers) => {
+      reply.hijack();
+      reply.raw.writeHead(status, headers);
+    });
+    child.stdout.pipe(responseSplitter).pipe(reply.raw);
+
+    responseSplitter.on("error", (err) => {
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
+    });
+
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      if (code !== 0 && code !== null) {
+        reject(new Error(`git http-backend exited ${code}: ${stderr}`));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+export function registerGitHttpRoutes(app: FastifyInstance, gitBackend: GitBackend, maxBytes = 500 * 1024 * 1024) {
   app.route({
     method: ["GET", "POST"],
     url: "/:owner/:repo.git/*",
+    // Bypasses Fastify's body parsing entirely (config.contentTypeParser is
+    // never invoked for a route with no matching parser needed here) — the
+    // raw request stream is read directly in the handler below via req.raw.
+    bodyLimit: maxBytes,
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
       const { owner, repo } = req.params as { owner: string; repo: string };
 
@@ -83,7 +179,6 @@ export function registerGitHttpRoutes(app: FastifyInstance, gitBackend: GitBacke
         return;
       }
 
-      // git push requires write auth; clone/fetch is readable by anyone with a token.
       if (!req.identity) {
         reply.code(401).header("WWW-Authenticate", "Basic realm=adp").send();
         return;
@@ -91,22 +186,26 @@ export function registerGitHttpRoutes(app: FastifyInstance, gitBackend: GitBacke
 
       const wildcard = (req.params as Record<string, string>)["*"] ?? "";
       const url = new URL(req.url, "http://internal");
-
-      const result = await runHttpBackend({
-        repoRoot: gitBackend.repoPath(owner, repo).replace(new RegExp(`${repo}\\.git$`), ""),
-        pathInfo: `/${repo}.git/${wildcard}`,
-        method: req.method,
-        queryString: url.search.replace(/^\?/, ""),
-        contentType: req.headers["content-type"] ?? "",
-        remoteUser: req.identity.principal,
-        body: (req.body as Buffer | undefined) ?? Buffer.alloc(0),
-      });
-
-      reply.code(result.status);
-      for (const [key, value] of Object.entries(result.headers)) {
-        reply.header(key, value);
+      const requiredScope = isWriteRequest(wildcard, url.search) ? "repo:write" : "repo:read";
+      if (!hasScope(req.identity.scopes, requiredScope)) {
+        reply.code(403).send({ message: `Requires scope '${requiredScope}'` });
+        return;
       }
-      reply.send(result.body);
+
+      await streamHttpBackend(
+        {
+          repoRoot: gitBackend.repoPath(owner, repo).replace(new RegExp(`${repo}\\.git$`), ""),
+          pathInfo: `/${repo}.git/${wildcard}`,
+          method: req.method,
+          queryString: url.search.replace(/^\?/, ""),
+          contentType: req.headers["content-type"] ?? "",
+          contentLength: req.headers["content-length"],
+          remoteUser: req.identity.principal,
+          body: (req.body as Readable | undefined) ?? req.raw,
+          maxBytes,
+        },
+        reply,
+      );
     },
   });
 }

@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
 import { repos } from "../db/schema.js";
-import { requireAuth } from "../auth/plugin.js";
+import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepo } from "../core/repos-lookup.js";
 
@@ -56,7 +56,7 @@ function serializeRepo(repo: typeof repos.$inferSelect, owner: string, name: str
 }
 
 export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: GitBackend) {
-  app.post("/api/v3/repos/:owner", { preHandler: requireAuth }, async (req, reply) => {
+  app.post("/api/v3/repos/:owner", { preHandler: requireScope("repo:write") }, async (req, reply) => {
     const { owner } = req.params as { owner: string };
     const parsed = CreateRepoBody.safeParse(req.body);
     if (!parsed.success) {
@@ -76,7 +76,7 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
   // GitHub-standard repo-create paths — the owner is implicit (the caller's
   // own login, or the named org), unlike /api/v3/repos/:owner above which
   // predates this and takes the owner explicitly in the path.
-  app.post("/api/v3/user/repos", { preHandler: requireAuth }, async (req, reply) => {
+  app.post("/api/v3/user/repos", { preHandler: requireScope("repo:write") }, async (req, reply) => {
     const parsed = CreateRepoBody.safeParse(req.body);
     if (!parsed.success) {
       reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
@@ -93,7 +93,7 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     reply.code(201).send(serializeRepo(result.repo, owner, name, req));
   });
 
-  app.post("/api/v3/orgs/:org/repos", { preHandler: requireAuth }, async (req, reply) => {
+  app.post("/api/v3/orgs/:org/repos", { preHandler: requireScope("repo:write") }, async (req, reply) => {
     const { org } = req.params as { org: string };
     const parsed = CreateRepoBody.safeParse(req.body);
     if (!parsed.success) {
@@ -110,7 +110,7 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     reply.code(201).send(serializeRepo(result.repo, org, name, req));
   });
 
-  app.get("/api/v3/repos/:owner/:repo", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: name } = req.params as { owner: string; repo: string };
     const repo = await findRepo(db, owner, name);
     if (!repo) {

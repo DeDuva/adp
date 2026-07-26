@@ -5,7 +5,7 @@ import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
 import type { Signer } from "../core/signing.js";
 import { changes, intents } from "../db/schema.js";
-import { requireAuth } from "../auth/plugin.js";
+import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepo } from "../core/repos-lookup.js";
 import type { AuthenticatedIdentity } from "../auth/tokens.js";
@@ -52,7 +52,7 @@ export function registerChangeRoutes(
 ) {
   app.post(
     "/api/v3/repos/:owner/:repo/changes",
-    { preHandler: requireAuth },
+    { preHandler: requireScope("repo:write") },
     async (req, reply) => {
       const { owner, repo: repoName } = req.params as { owner: string; repo: string };
       const parsed = CreateChangeBody.safeParse(req.body);
@@ -118,7 +118,7 @@ export function registerChangeRoutes(
     },
   );
 
-  app.get("/api/v3/repos/:owner/:repo/changes/:id", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/changes/:id", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
     const repo = await findRepo(db, owner, repoName);
     if (!repo) {

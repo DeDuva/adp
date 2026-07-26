@@ -35,6 +35,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
   let workDir: string;
   let port: number;
   let token: string;
+  let readOnlyToken: string;
   // Unique per run so this suite is safe to rerun against a Postgres that
   // isn't wiped between invocations (e.g. a long-lived local docker compose
   // instance) — CI gets a fresh database every time so this never surfaced
@@ -52,8 +53,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     app = Fastify({ logger: false });
     app.addContentTypeParser(
       ["application/x-git-upload-pack-request", "application/x-git-receive-pack-request"],
-      { parseAs: "buffer" },
-      (_req, body, done) => done(null, body as Buffer),
+      (_req, payload, done) => done(null, payload),
     );
     await app.register(authPlugin(db));
     registerIdentityRoutes(app);
@@ -73,6 +73,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
       .values({ kind: "human", principal: `e2e-test-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    readOnlyToken = await mintToken(db, identity!.id, ["repo:read"]);
   });
 
   afterAll(async () => {
@@ -99,6 +100,25 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     expect(res.status).toBe(201);
     const body = (await res.json()) as { full_name: string };
     expect(body.full_name).toBe(`${owner}/hello`);
+  });
+
+  it("rejects an unauthenticated read (default-private reads)", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/hello`);
+    expect(res.status).toBe(401);
+  });
+
+  it("allows a repo:read-only token to read but rejects it from writing (scope enforcement)", async () => {
+    const readRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/hello`, {
+      headers: { Authorization: `Bearer ${readOnlyToken}` },
+    });
+    expect(readRes.status).toBe(200);
+
+    const writeRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/issues`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${readOnlyToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "should be rejected" }),
+    });
+    expect(writeRes.status).toBe(403);
   });
 
   it("reports the authenticated user via GET /api/v3/user (gh auth status probe)", async () => {
@@ -220,7 +240,9 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     expect(change.provenance.kind).toBe("human");
     expect(change.signature).toBeTruthy();
 
-    const getRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/changes/${change.id}`);
+    const getRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/changes/${change.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     expect(getRes.status).toBe(200);
   });
 
@@ -269,6 +291,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
 
     const listReviewsRes = await fetch(
       `http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/pulls/${proposal.number}/reviews`,
+      { headers: { Authorization: `Bearer ${token}` } },
     );
     expect(((await listReviewsRes.json()) as unknown[]).length).toBe(1);
 

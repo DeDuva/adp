@@ -3,7 +3,7 @@ import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { issues, issueComments, intents } from "../db/schema.js";
-import { requireAuth } from "../auth/plugin.js";
+import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepo } from "../core/repos-lookup.js";
 
@@ -45,7 +45,7 @@ function serializeIssue(
 export function registerIssueRoutes(app: FastifyInstance, db: Db) {
   app.post(
     "/api/v3/repos/:owner/:repo/issues",
-    { preHandler: requireAuth },
+    { preHandler: requireScope("repo:write") },
     async (req, reply) => {
       const { owner, repo: repoName } = req.params as { owner: string; repo: string };
       const parsed = CreateIssueBody.safeParse(req.body);
@@ -109,7 +109,7 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
     },
   );
 
-  app.get("/api/v3/repos/:owner/:repo/issues", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/issues", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const repo = await findRepo(db, owner, repoName);
     if (!repo) {
@@ -121,7 +121,7 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
     reply.send(rows.map((issue) => serializeIssue(issue, owner, repoName, "")));
   });
 
-  app.get("/api/v3/repos/:owner/:repo/issues/:number", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/issues/:number", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, number } = req.params as {
       owner: string;
       repo: string;
@@ -146,7 +146,7 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
 
   app.patch(
     "/api/v3/repos/:owner/:repo/issues/:number",
-    { preHandler: requireAuth },
+    { preHandler: requireScope("repo:write") },
     async (req, reply) => {
       const { owner, repo: repoName, number } = req.params as {
         owner: string;
@@ -207,7 +207,7 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
 
   app.post(
     "/api/v3/repos/:owner/:repo/issues/:number/comments",
-    { preHandler: requireAuth },
+    { preHandler: requireScope("repo:write") },
     async (req, reply) => {
       const { owner, repo: repoName, number } = req.params as {
         owner: string;
@@ -264,7 +264,7 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
     },
   );
 
-  app.get("/api/v3/repos/:owner/:repo/issues/:number/comments", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/issues/:number/comments", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, number } = req.params as {
       owner: string;
       repo: string;

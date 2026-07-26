@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Db } from "../db/client.js";
 import type { GitBackend, TreeEntry, CommitInfo } from "../core/git-backend.js";
-import { requireAuth } from "../auth/plugin.js";
+import { requireScope } from "../auth/plugin.js";
 import { findRepo } from "../core/repos-lookup.js";
 
 function serializeCommit(commit: CommitInfo, owner: string, repoName: string) {
@@ -32,7 +32,7 @@ function serializeTreeEntry(entry: TreeEntry) {
 // endpoints. All backed by the real `git` binary (core/git-backend.ts), no
 // isomorphic-git.
 export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: GitBackend) {
-  app.get("/api/v3/repos/:owner/:repo/contents/*", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/contents/*", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const filePath = (req.params as { "*": string })["*"] ?? "";
     const { ref } = req.query as { ref?: string };
@@ -74,7 +74,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     );
   });
 
-  app.get("/api/v3/repos/:owner/:repo/commits", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/commits", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const { sha, per_page } = req.query as { sha?: string; per_page?: string };
     const repo = await findRepo(db, owner, repoName);
@@ -87,7 +87,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     reply.send(commits.map((c) => serializeCommit(c, owner, repoName)));
   });
 
-  app.get("/api/v3/repos/:owner/:repo/commits/:sha", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/commits/:sha", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, sha } = req.params as { owner: string; repo: string; sha: string };
     const repo = await findRepo(db, owner, repoName);
     if (!repo) {
@@ -105,7 +105,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
   // GitHub's basehead segment is literally "base...head" inside one path
   // component — Fastify can't declare that as two params, so it's parsed
   // out of the wildcard tail.
-  app.get("/api/v3/repos/:owner/:repo/compare/*", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/compare/*", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const basehead = (req.params as { "*": string })["*"] ?? "";
     const sep = basehead.indexOf("...");
@@ -147,7 +147,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     });
   });
 
-  app.get("/api/v3/repos/:owner/:repo/git/refs/*", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/git/refs/*", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const refTail = (req.params as { "*": string })["*"] ?? "";
     const repo = await findRepo(db, owner, repoName);
@@ -163,7 +163,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     reply.send(refs.map((r) => ({ ref: r.ref, object: { sha: r.sha, type: "commit" } })));
   });
 
-  app.get("/api/v3/repos/:owner/:repo/git/refs", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/git/refs", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const repo = await findRepo(db, owner, repoName);
     if (!repo) {
@@ -175,7 +175,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
   });
 
   const CreateRefBody = z.object({ ref: z.string().min(1), sha: z.string().min(1) });
-  app.post("/api/v3/repos/:owner/:repo/git/refs", { preHandler: requireAuth }, async (req, reply) => {
+  app.post("/api/v3/repos/:owner/:repo/git/refs", { preHandler: requireScope("repo:write") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const parsed = CreateRefBody.safeParse(req.body);
     if (!parsed.success) {
@@ -193,7 +193,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
 
   app.delete(
     "/api/v3/repos/:owner/:repo/git/refs/heads/:branch",
-    { preHandler: requireAuth },
+    { preHandler: requireScope("repo:write") },
     async (req, reply) => {
       const { owner, repo: repoName, branch } = req.params as { owner: string; repo: string; branch: string };
       const repo = await findRepo(db, owner, repoName);
@@ -207,7 +207,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
   );
 
   const CreateBlobBody = z.object({ content: z.string(), encoding: z.enum(["utf-8", "base64"]).default("utf-8") });
-  app.post("/api/v3/repos/:owner/:repo/git/blobs", { preHandler: requireAuth }, async (req, reply) => {
+  app.post("/api/v3/repos/:owner/:repo/git/blobs", { preHandler: requireScope("repo:write") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const parsed = CreateBlobBody.safeParse(req.body);
     if (!parsed.success) {
@@ -224,7 +224,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     reply.code(201).send({ sha, url: `/api/v3/repos/${owner}/${repoName}/git/blobs/${sha}` });
   });
 
-  app.get("/api/v3/repos/:owner/:repo/git/blobs/:sha", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/git/blobs/:sha", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, sha } = req.params as { owner: string; repo: string; sha: string };
     const repo = await findRepo(db, owner, repoName);
     if (!repo) {
@@ -247,7 +247,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     content: z.string().optional(),
   });
   const CreateTreeBody = z.object({ base_tree: z.string().optional(), tree: z.array(TreeEntryInput) });
-  app.post("/api/v3/repos/:owner/:repo/git/trees", { preHandler: requireAuth }, async (req, reply) => {
+  app.post("/api/v3/repos/:owner/:repo/git/trees", { preHandler: requireScope("repo:write") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const parsed = CreateTreeBody.safeParse(req.body);
     if (!parsed.success) {
@@ -280,7 +280,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     reply.code(201).send({ sha: treeSha, tree: [...base.values()].map(serializeTreeEntry) });
   });
 
-  app.get("/api/v3/repos/:owner/:repo/git/trees/:sha", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/git/trees/:sha", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, sha } = req.params as { owner: string; repo: string; sha: string };
     const repo = await findRepo(db, owner, repoName);
     if (!repo) {
@@ -300,7 +300,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     tree: z.string().min(1),
     parents: z.array(z.string()).default([]),
   });
-  app.post("/api/v3/repos/:owner/:repo/git/commits", { preHandler: requireAuth }, async (req, reply) => {
+  app.post("/api/v3/repos/:owner/:repo/git/commits", { preHandler: requireScope("repo:write") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const parsed = CreateCommitBody.safeParse(req.body);
     if (!parsed.success) {
@@ -330,7 +330,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     });
   });
 
-  app.get("/api/v3/repos/:owner/:repo/git/commits/:sha", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/git/commits/:sha", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, sha } = req.params as { owner: string; repo: string; sha: string };
     const repo = await findRepo(db, owner, repoName);
     if (!repo) {

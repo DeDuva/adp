@@ -1,5 +1,6 @@
 import { GraphQLError } from "graphql";
 import { and, eq, sql } from "drizzle-orm";
+import { hasScope } from "../auth/plugin.js";
 import { identities, issueComments, issues, proposals, repos, reviews, intents } from "../db/schema.js";
 import { findRepo } from "../core/repos-lookup.js";
 import { recordOperation } from "../core/operations.js";
@@ -25,9 +26,15 @@ function shapeUser(identity: IdentityRow) {
   return { __typename, id: toGlobalId(__typename, identity.id), login: identity.principal };
 }
 
+// Only called from Mutation resolvers, so "requires identity" also means
+// "requires the write scope" — mirrors requireScope("repo:write") on the
+// REST side (auth/plugin.ts).
 function requireIdentity(ctx: GqlContext) {
   if (!ctx.identity) {
     throw new GraphQLError("Requires authentication", { extensions: { code: "UNAUTHORIZED" } });
+  }
+  if (!hasScope(ctx.identity.scopes, "repo:write")) {
+    throw new GraphQLError("Requires scope 'repo:write'", { extensions: { code: "FORBIDDEN" } });
   }
   return ctx.identity;
 }

@@ -4,7 +4,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
 import { proposals, changes } from "../db/schema.js";
-import { requireAuth } from "../auth/plugin.js";
+import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepo } from "../core/repos-lookup.js";
 
@@ -42,7 +42,7 @@ function serializeProposal(proposal: typeof proposals.$inferSelect, owner: strin
 export function registerProposalRoutes(app: FastifyInstance, db: Db, gitBackend: GitBackend) {
   app.post(
     "/api/v3/repos/:owner/:repo/pulls",
-    { preHandler: requireAuth },
+    { preHandler: requireScope("repo:write") },
     async (req, reply) => {
       const { owner, repo: repoName } = req.params as { owner: string; repo: string };
       const parsed = CreateProposalBody.safeParse(req.body);
@@ -120,7 +120,7 @@ export function registerProposalRoutes(app: FastifyInstance, db: Db, gitBackend:
     },
   );
 
-  app.get("/api/v3/repos/:owner/:repo/pulls", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/pulls", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const repo = await findRepo(db, owner, repoName);
     if (!repo) {
@@ -131,7 +131,7 @@ export function registerProposalRoutes(app: FastifyInstance, db: Db, gitBackend:
     reply.send(rows.map((p) => serializeProposal(p, owner, repoName)));
   });
 
-  app.get("/api/v3/repos/:owner/:repo/pulls/:number", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/pulls/:number", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, number } = req.params as { owner: string; repo: string; number: string };
     const repo = await findRepo(db, owner, repoName);
     if (!repo) {
@@ -159,7 +159,7 @@ export function registerProposalRoutes(app: FastifyInstance, db: Db, gitBackend:
     reply.send(serializeProposal(proposal, owner, repoName));
   });
 
-  app.get("/api/v3/repos/:owner/:repo/pulls/:number/files", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/pulls/:number/files", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, number } = req.params as { owner: string; repo: string; number: string };
     const repo = await findRepo(db, owner, repoName);
     if (!repo) {
@@ -180,7 +180,7 @@ export function registerProposalRoutes(app: FastifyInstance, db: Db, gitBackend:
 
   app.patch(
     "/api/v3/repos/:owner/:repo/pulls/:number",
-    { preHandler: requireAuth },
+    { preHandler: requireScope("repo:write") },
     async (req, reply) => {
       const { owner, repo: repoName, number } = req.params as { owner: string; repo: string; number: string };
       const parsed = UpdateProposalBody.safeParse(req.body);
@@ -246,7 +246,7 @@ export function registerProposalRoutes(app: FastifyInstance, db: Db, gitBackend:
   // against a real forge today (cut list, §2.5).
   app.put(
     "/api/v3/repos/:owner/:repo/pulls/:number/merge",
-    { preHandler: requireAuth },
+    { preHandler: requireScope("repo:write") },
     async (req, reply) => {
       const { owner, repo: repoName, number } = req.params as { owner: string; repo: string; number: string };
       const repo = await findRepo(db, owner, repoName);

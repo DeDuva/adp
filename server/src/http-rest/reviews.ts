@@ -3,7 +3,7 @@ import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { proposals, reviews } from "../db/schema.js";
-import { requireAuth } from "../auth/plugin.js";
+import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepo } from "../core/repos-lookup.js";
 
@@ -32,7 +32,7 @@ function serializeReview(review: typeof reviews.$inferSelect) {
 export function registerReviewRoutes(app: FastifyInstance, db: Db) {
   app.post(
     "/api/v3/repos/:owner/:repo/pulls/:number/reviews",
-    { preHandler: requireAuth },
+    { preHandler: requireScope("repo:write") },
     async (req, reply) => {
       const { owner, repo: repoName, number } = req.params as { owner: string; repo: string; number: string };
       const parsed = CreateReviewBody.safeParse(req.body);
@@ -82,7 +82,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Db) {
     },
   );
 
-  app.get("/api/v3/repos/:owner/:repo/pulls/:number/reviews", async (req, reply) => {
+  app.get("/api/v3/repos/:owner/:repo/pulls/:number/reviews", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, number } = req.params as { owner: string; repo: string; number: string };
     const repo = await findRepo(db, owner, repoName);
     if (!repo) {

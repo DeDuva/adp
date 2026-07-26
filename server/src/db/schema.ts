@@ -22,6 +22,11 @@ export const tokens = pgTable("tokens", {
   id: uuid("id").primaryKey().defaultRandom(),
   identityId: uuid("identity_id").notNull().references(() => identities.id),
   tokenHash: text("token_hash").notNull().unique(),
+  // sha256(token) hex, indexed — narrows authenticate() to (at most) one row
+  // instead of scrypt-verifying against every unrevoked token in the table.
+  // Not a substitute for tokenHash's scrypt verification, just a fast filter:
+  // a lookup-key collision would still fail the scrypt check.
+  lookupKey: text("lookup_key").notNull().unique(),
   scopes: text("scopes").array().notNull().default([]),
   harness: text("harness"),
   model: text("model"),
