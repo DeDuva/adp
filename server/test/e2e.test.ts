@@ -130,14 +130,24 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
   });
 
   it("rejects a clone attempt with no credentials", async () => {
+    // credential.helper= disables a configured helper, but on some
+    // machines (observed: WSL resolving Windows Git Credential Manager)
+    // something still intercepts the 401 and waits on an interactive
+    // prompt instead of failing fast, hanging the test until it times out.
+    // GIT_TERMINAL_PROMPT=0 forces git to fail immediately no matter what
+    // credential machinery is configured on the host.
     await expect(
-      execFileAsync("git", [
-        "-c",
-        "credential.helper=",
-        "clone",
-        `http://127.0.0.1:${port}/e2e-owner/hello.git`,
-        path.join(await mkdtemp(path.join(tmpdir(), "adp-e2e-noauth-")), "clone"),
-      ]),
+      execFileAsync(
+        "git",
+        [
+          "-c",
+          "credential.helper=",
+          "clone",
+          `http://127.0.0.1:${port}/e2e-owner/hello.git`,
+          path.join(await mkdtemp(path.join(tmpdir(), "adp-e2e-noauth-")), "clone"),
+        ],
+        { env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
+      ),
     ).rejects.toThrow();
   });
 
