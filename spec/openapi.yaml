@@ -24,6 +24,38 @@ paths:
           description: OK
         "503":
           description: Not ready
+  /api/graphql:
+    post:
+      summary: >
+        GraphQL endpoint. GitHub's real public schema SDL
+        (spec/graphql/github.graphql), loaded unmodified — that file, not
+        this OpenAPI doc, is the source of truth for the GraphQL surface.
+        Only a subset of fields have resolvers (docs/pragmatic_mvp.md §2.4
+        Tier 3); everything else is a valid query that fails as a resolver
+        error, never a validation error. Currently backed: Query.repository,
+        Query.node, Query.viewer, Repository.{owner,defaultBranchRef,issue,
+        issues,pullRequest,pullRequests}, Issue.author, PullRequest.author.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                variables:
+                  type: object
+                operationName:
+                  type: string
+      responses:
+        "200":
+          description: >
+            Always 200 per GraphQL convention — check the response body's
+            `errors` array.
   /api/v3:
     get:
       summary: Identity root probe (gh auth status / Octokit clients)

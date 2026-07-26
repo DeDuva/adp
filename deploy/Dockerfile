@@ -15,5 +15,8 @@ COPY server/package.json server/package-lock.json* ./
 RUN npm install --omit=dev
 COPY --from=build /app/server/dist ./dist
 COPY server/drizzle ./drizzle
+# schema.ts resolves this relative to the repo root at runtime (three levels
+# up from dist/http-gql/), so it has to land at the same relative depth here.
+COPY spec/graphql /app/spec/graphql
 EXPOSE 3000
 CMD ["node", "dist/main.js"]
