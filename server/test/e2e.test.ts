@@ -35,6 +35,11 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
   let workDir: string;
   let port: number;
   let token: string;
+  // Unique per run so this suite is safe to rerun against a Postgres that
+  // isn't wiped between invocations (e.g. a long-lived local docker compose
+  // instance) — CI gets a fresh database every time so this never surfaced
+  // there, but it will collide on a persistent one otherwise.
+  const owner = `e2e-owner-${Date.now()}`;
 
   beforeAll(async () => {
     const databaseUrl = process.env.DATABASE_URL!;
@@ -77,7 +82,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
   });
 
   it("rejects repo creation without a token", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner`, {
+    const res = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "hello" }),
@@ -86,14 +91,14 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
   });
 
   it("creates a repo with a valid token", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner`, {
+    const res = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ name: "hello" }),
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { full_name: string };
-    expect(body.full_name).toBe("e2e-owner/hello");
+    expect(body.full_name).toBe(`${owner}/hello`);
   });
 
   it("reports the authenticated user via GET /api/v3/user (gh auth status probe)", async () => {
@@ -107,7 +112,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
 
   it("clones and pushes over HTTP using the token as the git password", async () => {
     workDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-clone-"));
-    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/e2e-owner/hello.git`;
+    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/hello.git`;
     const cloneDir = path.join(workDir, "clone");
 
     await execFileAsync("git", ["clone", cloneUrl, cloneDir]);
@@ -122,7 +127,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     await execFileAsync("git", ["push", "origin", "main"], { cwd: cloneDir });
 
     const { stdout } = await execFileAsync("git", ["log", "--oneline", "main"], {
-      cwd: new GitBackend(gitRoot).repoPath("e2e-owner", "hello"),
+      cwd: new GitBackend(gitRoot).repoPath(owner, "hello"),
     });
     expect(stdout).toContain("e2e commit");
 
@@ -143,7 +148,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
           "-c",
           "credential.helper=",
           "clone",
-          `http://127.0.0.1:${port}/e2e-owner/hello.git`,
+          `http://127.0.0.1:${port}/${owner}/hello.git`,
           path.join(await mkdtemp(path.join(tmpdir(), "adp-e2e-noauth-")), "clone"),
         ],
         { env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
@@ -152,7 +157,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
   });
 
   it("creates an issue, which files an intent, then a comment on it", async () => {
-    const createRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/issues`, {
+    const createRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/issues`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ title: "Add a README", body: "It's empty right now." }),
@@ -163,7 +168,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     expect(issue.intent_id).toBeTruthy();
 
     const commentRes = await fetch(
-      `http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/issues/${issue.number}/comments`,
+      `http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/issues/${issue.number}/comments`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -173,7 +178,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     expect(commentRes.status).toBe(201);
 
     const closeRes = await fetch(
-      `http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/issues/${issue.number}`,
+      `http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/issues/${issue.number}`,
       {
         method: "PATCH",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -186,7 +191,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
   });
 
   it("records a signed change against a real commit, linked to an intent", async () => {
-    const issueRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/issues`, {
+    const issueRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/issues`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ title: "Second task" }),
@@ -194,10 +199,10 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     const issue = (await issueRes.json()) as { intent_id: string };
 
     const { stdout: sha } = await execFileAsync("git", ["rev-parse", "main"], {
-      cwd: new GitBackend(gitRoot).repoPath("e2e-owner", "hello"),
+      cwd: new GitBackend(gitRoot).repoPath(owner, "hello"),
     });
 
-    const changeRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/changes`, {
+    const changeRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/changes`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ git_sha: sha.trim(), intent_id: issue.intent_id }),
@@ -215,12 +220,12 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     expect(change.provenance.kind).toBe("human");
     expect(change.signature).toBeTruthy();
 
-    const getRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/changes/${change.id}`);
+    const getRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/changes/${change.id}`);
     expect(getRes.status).toBe(200);
   });
 
   it("rejects a change referencing a commit that doesn't exist", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/changes`, {
+    const res = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/changes`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ git_sha: "f".repeat(40) }),
@@ -230,7 +235,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
 
   it("opens a proposal, reviews it, merges it fast-forward, and rejects a second merge", async () => {
     workDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-proposal-"));
-    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/e2e-owner/hello.git`;
+    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/hello.git`;
     const cloneDir = path.join(workDir, "clone");
 
     await execFileAsync("git", ["clone", cloneUrl, cloneDir]);
@@ -241,7 +246,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     await execFileAsync("git", ["commit", "-am", "proposal commit"], { cwd: cloneDir });
     await execFileAsync("git", ["push", "origin", "feature"], { cwd: cloneDir });
 
-    const createRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/pulls`, {
+    const createRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/pulls`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ title: "Extend README", head: "feature", base: "main" }),
@@ -251,7 +256,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     expect(proposal.state).toBe("open");
 
     const reviewRes = await fetch(
-      `http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/pulls/${proposal.number}/reviews`,
+      `http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/pulls/${proposal.number}/reviews`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -263,12 +268,12 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     expect(review.state).toBe("approved");
 
     const listReviewsRes = await fetch(
-      `http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/pulls/${proposal.number}/reviews`,
+      `http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/pulls/${proposal.number}/reviews`,
     );
     expect(((await listReviewsRes.json()) as unknown[]).length).toBe(1);
 
     const mergeRes = await fetch(
-      `http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/pulls/${proposal.number}/merge`,
+      `http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/pulls/${proposal.number}/merge`,
       { method: "PUT", headers: { Authorization: `Bearer ${token}` } },
     );
     expect(mergeRes.status).toBe(200);
@@ -277,12 +282,12 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     expect(merged.state).toBe("merged");
 
     const { stdout: mainSha } = await execFileAsync("git", ["rev-parse", "main"], {
-      cwd: new GitBackend(gitRoot).repoPath("e2e-owner", "hello"),
+      cwd: new GitBackend(gitRoot).repoPath(owner, "hello"),
     });
     expect(mainSha.trim()).toBe(proposal.head.sha);
 
     const secondMergeRes = await fetch(
-      `http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/pulls/${proposal.number}/merge`,
+      `http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/pulls/${proposal.number}/merge`,
       { method: "PUT", headers: { Authorization: `Bearer ${token}` } },
     );
     expect(secondMergeRes.status).toBe(422);
@@ -292,7 +297,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
 
   it("rejects a non-fast-forward merge with 409", async () => {
     workDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-conflict-"));
-    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/e2e-owner/hello.git`;
+    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/hello.git`;
     const cloneDir = path.join(workDir, "clone");
 
     await execFileAsync("git", ["clone", cloneUrl, cloneDir]);
@@ -313,7 +318,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     await execFileAsync("git", ["commit", "-m", "diverge main"], { cwd: cloneDir });
     await execFileAsync("git", ["push", "origin", "main"], { cwd: cloneDir });
 
-    const createRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/pulls`, {
+    const createRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/pulls`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ title: "Stale", head: "stale-feature", base: "main" }),
@@ -321,7 +326,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
     const proposal = (await createRes.json()) as { number: number };
 
     const mergeRes = await fetch(
-      `http://127.0.0.1:${port}/api/v3/repos/e2e-owner/hello/pulls/${proposal.number}/merge`,
+      `http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/pulls/${proposal.number}/merge`,
       { method: "PUT", headers: { Authorization: `Bearer ${token}` } },
     );
     expect(mergeRes.status).toBe(409);
