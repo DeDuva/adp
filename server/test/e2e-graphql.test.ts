@@ -43,6 +43,8 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
   let port: number;
   let token: string;
   let repoId: string;
+  // Unique per run — see the matching comment in test/e2e.test.ts.
+  const owner = `gql-owner-${Date.now()}`;
 
   async function gql<T = unknown>(query: string, variables?: Record<string, unknown>, auth = true) {
     const res = await fetch(`http://127.0.0.1:${port}/api/graphql`, {
@@ -91,7 +93,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
 
-    const createRepoRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/gql-owner`, {
+    const createRepoRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ name: "widget" }),
@@ -101,7 +103,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
 
     // Give the repo a real commit so defaultBranchRef.target.oid resolves.
     const cloneDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-gql-clone-"));
-    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/gql-owner/widget.git`;
+    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/widget.git`;
     await execFileAsync("git", ["clone", cloneUrl, cloneDir]);
     await execFileAsync("git", ["checkout", "-B", "main"], { cwd: cloneDir });
     await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
@@ -112,7 +114,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
     await execFileAsync("git", ["push", "origin", "main"], { cwd: cloneDir });
     await rm(cloneDir, { recursive: true, force: true });
 
-    await fetch(`http://127.0.0.1:${port}/api/v3/repos/gql-owner/widget/issues`, {
+    await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/widget/issues`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ title: "First issue" }),
@@ -130,7 +132,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
       repository: { name: string; nameWithOwner: string; owner: { login: string }; defaultBranchRef: { name: string; target: { oid: string } } };
     }>(
       `query {
-        repository(owner: "gql-owner", name: "widget") {
+        repository(owner: "${owner}", name: "widget") {
           name
           nameWithOwner
           owner { login }
@@ -140,8 +142,8 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
     );
     expect(status).toBe(200);
     expect(body.errors).toBeUndefined();
-    expect(body.data!.repository.nameWithOwner).toBe("gql-owner/widget");
-    expect(body.data!.repository.owner.login).toBe("gql-owner");
+    expect(body.data!.repository.nameWithOwner).toBe(`${owner}/widget`);
+    expect(body.data!.repository.owner.login).toBe(owner);
     expect(body.data!.repository.defaultBranchRef.name).toBe("main");
     expect(body.data!.repository.defaultBranchRef.target.oid).toMatch(/^[0-9a-f]{40}$/);
   });
@@ -156,14 +158,14 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
 
   it("lists and fetches issues, matching `gh issue list`/`gh issue view`", async () => {
     const listRes = await gql<{ repository: { issues: { totalCount: number; nodes: { number: number; title: string }[] } } }>(
-      `query { repository(owner: "gql-owner", name: "widget") { issues(first: 10) { totalCount nodes { number title } } } }`,
+      `query { repository(owner: "${owner}", name: "widget") { issues(first: 10) { totalCount nodes { number title } } } }`,
     );
     expect(listRes.body.errors).toBeUndefined();
     expect(listRes.body.data!.repository.issues.totalCount).toBe(1);
     const number = listRes.body.data!.repository.issues.nodes[0]!.number;
 
     const viewRes = await gql<{ repository: { issue: { title: string; state: string; author: { login: string } | null } } }>(
-      `query($n: Int!) { repository(owner: "gql-owner", name: "widget") { issue(number: $n) { title state author { login } } } }`,
+      `query($n: Int!) { repository(owner: "${owner}", name: "widget") { issue(number: $n) { title state author { login } } } }`,
       { n: number },
     );
     expect(viewRes.body.errors).toBeUndefined();
@@ -174,7 +176,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
 
   it("lists and fetches pull requests, matching `gh pr list`/`gh pr view`", async () => {
     const cloneDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-gql-pr-"));
-    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/gql-owner/widget.git`;
+    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/widget.git`;
     await execFileAsync("git", ["clone", cloneUrl, cloneDir]);
     await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
     await execFileAsync("git", ["config", "user.name", "Test"], { cwd: cloneDir });
@@ -184,14 +186,14 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
     await execFileAsync("git", ["push", "origin", "feature"], { cwd: cloneDir });
     await rm(cloneDir, { recursive: true, force: true });
 
-    await fetch(`http://127.0.0.1:${port}/api/v3/repos/gql-owner/widget/pulls`, {
+    await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/widget/pulls`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ title: "Add more", head: "feature", base: "main" }),
     });
 
     const listRes = await gql<{ repository: { pullRequests: { totalCount: number; nodes: { number: number }[] } } }>(
-      `query { repository(owner: "gql-owner", name: "widget") { pullRequests(first: 10) { totalCount nodes { number } } } }`,
+      `query { repository(owner: "${owner}", name: "widget") { pullRequests(first: 10) { totalCount nodes { number } } } }`,
     );
     expect(listRes.body.errors).toBeUndefined();
     expect(listRes.body.data!.repository.pullRequests.totalCount).toBe(1);
@@ -200,7 +202,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
     const viewRes = await gql<{
       repository: { pullRequest: { title: string; state: string; baseRefName: string; headRefName: string } };
     }>(
-      `query($n: Int!) { repository(owner: "gql-owner", name: "widget") { pullRequest(number: $n) { title state baseRefName headRefName } } }`,
+      `query($n: Int!) { repository(owner: "${owner}", name: "widget") { pullRequest(number: $n) { title state baseRefName headRefName } } }`,
       { n: number },
     );
     expect(viewRes.body.errors).toBeUndefined();
@@ -235,7 +237,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
     // unmodified (docs/pragmatic_mvp.md §2.4 Tier 3): the failure must be a
     // resolver/execution error, never "Cannot query field ... on type ...".
     const { status, body } = await gql(
-      `query { repository(owner: "gql-owner", name: "widget") { name stargazerCount } }`,
+      `query { repository(owner: "${owner}", name: "widget") { name stargazerCount } }`,
     );
     expect(status).toBe(200);
     expect(body.errors).toBeDefined();
