@@ -1,15 +1,28 @@
-# ADP server — M0 skeleton + M1a
+# ADP server — M0 skeleton + M1a + M1b read slice
 
 Fastify + PostgreSQL server. Working end to end: token-authenticated repo creation, git
 smart-HTTP (clone/push) proxied to the real `git http-backend` binary, issues (which each
 file an intent) with comments, typed changes (a git commit bound to an intent and a
 server-signed provenance record), proposals (PR-shaped, opened against a head/base branch),
-typed reviews, and fast-forward-only merge.
+typed reviews, fast-forward-only merge, and a GraphQL read path at `/api/graphql` backed by
+GitHub's real, unmodified public schema (`spec/graphql/github.graphql`).
 
-Not yet implemented: GraphQL, gate runners, evidence bundles, land policy beyond
+**GraphQL scope, precisely:** `Query.repository`, `Query.node`, `Query.viewer`,
+`Repository.{owner,defaultBranchRef,issue,issues,pullRequest,pullRequests}`,
+`Issue.author`, `PullRequest.author` have resolvers — enough to back `gh repo view`,
+`gh issue list`/`view`, `gh pr list`/`view` in principle. Mutations (`gh pr create`/`merge`/
+`review`, `gh issue create`/`close`) are REST-only for now; GraphQL mutation resolvers are
+next. **Not yet validated against the real `gh` binary** — that's the record-replay
+conformance suite (`docs/pragmatic_mvp.md` §5), a separate follow-up. What's tested here is
+that hand-written queries shaped like `gh`'s actually resolve correctly, and that fields we
+haven't backed fail as a GraphQL resolver error, never a schema validation error — the
+entire point of loading the real SDL unmodified.
+
+Not yet implemented: GraphQL mutations, gate runners, evidence bundles, land policy beyond
 fast-forward, the native MCP plane, candidate sets, and automatic change recording on push
 (changes are currently recorded via an explicit API call, not a git hook). Proposal/issue
 numbering are independent sequences rather than GitHub's shared one — a known fidelity gap.
+Refresh the vendored GraphQL schema with `scripts/update-graphql-schema.sh`.
 See `docs/pragmatic_mvp.md` for the milestone plan.
 
 ## Local development
