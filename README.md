@@ -164,14 +164,21 @@ REST under `/api/adp`, and the same operations over MCP:
 | Undo | `POST .../operations/{id}/undo` | `adp_undo` |
 | Evidence bundle | `GET .../evidence/{sha}` | `adp_evidence_get` |
 | Workspaces | `GET/POST .../workspaces`, `DELETE .../workspaces/{id}` | `adp_workspace_create`, `adp_workspace_destroy` |
+| Candidate sets | `GET/POST .../candidate-sets`, `POST .../candidate-sets/{id}/select` | `adp_candidates_open`, `adp_candidates_select` |
 
-The operation log is filterable by actor, verb, and date range. Undo currently covers reverting a
-landed fast-forward merge, moving the base ref back by the same compare-and-swap the merge used; it
-refuses if the branch has moved since, rather than silently discarding what landed after. Other
+The operation log is filterable by actor, verb, date range, and file path — path filtering resolves
+the commit behind an operation and asks git which paths it touched. Undo currently covers reverting
+a landed fast-forward merge, moving the base ref back by the same compare-and-swap the merge used;
+it refuses if the branch has moved since, rather than silently discarding what landed after. Other
 verbs return a 422 instead of a no-op that pretends to have worked.
 
 A workspace is deliberately just a git branch with lifecycle metadata, not a new isolation
 mechanism. Destroying one deletes the ref and marks the row destroyed, so the log stays complete.
+
+**Candidate sets** are the one primitive here with no GitHub analogue: N competing solutions to a
+single intent. A set is opened against an intent, proposals join it by passing `candidate_set_id`
+at creation, and one is eventually selected as the winner — the fan-out/compare/pick shape a fleet
+of agents actually produces, which a merge queue does not express.
 
 The MCP server is a thin wrapper over these same REST endpoints, so behavior is defined in one
 place rather than duplicated per protocol. Run it over stdio:
@@ -179,9 +186,6 @@ place rather than duplicated per protocol. Run it over stdio:
 ```bash
 ADP_SERVER_URL=https://adp.example.com ADP_TOKEN=<token> npm run mcp
 ```
-
-`adp_candidates_open` and `adp_candidates_select` are registered but return an explicit error;
-candidate sets have no data model yet.
 
 ### Web UI
 
