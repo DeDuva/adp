@@ -165,12 +165,13 @@ validated against the real, unmodified `gh` binary in CI (`conformance/run.sh`, 
 conformance gate, pinned to `gh` v2.63.0). Real git `pre-receive`/`post-receive` hooks auto-record
 signed changes on push and block pushes containing secrets — a first slice of the §f trust plane.
 Gate results are DSSE-signed in-toto evidence bundles; the operation log supports undo of a landed
-merge; and a native MCP plane (8 tools) plus a read-only web UI sit alongside the compat surface.
+merge; history-query by actor, verb, date, and file path; **candidate sets** — N competing
+proposals against one intent, the primitive with no GitHub analogue; and a native MCP plane
+(8 tools) plus a read-only web UI alongside the compat surface.
 
-Not yet built, stated plainly: full history-query by file path; candidate sets; and the rest of
-the §f trust plane beyond push protection and evidence bundles (org-enforced policy, dependency
-admission, scanner integrations). The milestone plan, including the next set, is
-`pragmatic_mvp.md` Part 3.
+Not yet built, stated plainly: the rest of the §f trust plane beyond push protection and evidence
+bundles — org-enforced policy, dependency admission, and scanner-as-gate integrations. The
+milestone plan, including the next set, is `pragmatic_mvp.md` Part 3.
 
 ## Why frontier labs specifically — and the ask
 

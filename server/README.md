@@ -23,12 +23,13 @@ doesn't cover (it isn't record-replay against production github.com).
 Real git `pre-receive`/`post-receive` hooks auto-record signed changes on every push and run
 push protection against committed secrets (bundled regex+entropy scanner). Gate results
 (`POST .../gates`) are stored as DSSE-signed in-toto evidence envelopes and rolled up into
-`Commit.statusCheckRollup`. A native plane at `/api/adp` (op log, undo of a landed
-fast-forward merge, workspaces, evidence-bundle read) is wrapped by a real MCP server
-(`server/src/mcp/`, 8 tools) and by a read-only web UI (`server/web/`, served at `/ui/*`).
+`Commit.statusCheckRollup`. A native plane at `/api/adp` (op log and history query
+filterable by actor/verb/date/path, undo of a landed fast-forward merge, workspaces,
+evidence-bundle read, candidate sets) is wrapped by a real MCP server (`server/src/mcp/`,
+8 tools) and by a read-only web UI (`server/web/`, served at `/ui/*`).
 
-Not yet implemented: full history query by file path, candidate sets. Proposal/issue
-numbering are independent sequences rather than GitHub's shared one — a known fidelity gap.
+Proposal/issue numbering are independent sequences rather than GitHub's shared one — a
+known fidelity gap.
 Refresh the vendored GraphQL schema with `scripts/update-graphql-schema.sh`.
 See `docs/pragmatic_mvp.md` for the milestone plan and status ledger.
 
