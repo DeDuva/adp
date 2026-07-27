@@ -15,6 +15,8 @@ import { registerGitDataRoutes } from "./http-rest/git-data.js";
 import { registerHookRoutes } from "./http-git/hooks.js";
 import { registerGateRoutes } from "./http-rest/gates.js";
 import { registerOperationRoutes } from "./http-rest/operations.js";
+import { registerWorkspaceRoutes } from "./http-rest/workspaces.js";
+import { registerEvidenceRoutes } from "./http-rest/evidence.js";
 import { LandRequirement } from "./core/repo-policy.js";
 import { loadGitHubSchema } from "./http-gql/schema.js";
 import { attachResolvers } from "./http-gql/attach-resolvers.js";
@@ -65,6 +67,8 @@ async function main() {
   registerHookRoutes(app, db, gitBackend, signer);
   registerGateRoutes(app, db, signer, config.PUBLIC_URL);
   registerOperationRoutes(app, db, gitBackend);
+  registerWorkspaceRoutes(app, db, gitBackend);
+  registerEvidenceRoutes(app, db);
 
   const gqlSchema = loadGitHubSchema();
   attachResolvers(gqlSchema, createResolvers(gitBackend, instanceFloor));

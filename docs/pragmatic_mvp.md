@@ -367,7 +367,7 @@ that is the honest price of zero-config.
 
 ## Status ledger
 
-*Updated 2026-07-26. CI runs typecheck, build, migrations, the full three-tier test suite (104
+*Updated 2026-07-26. CI runs typecheck, build, migrations, the full three-tier test suite (113
 tests, including all e2e suites), and the `gh` conformance gate (`conformance/run.sh`) on every PR.*
 
 | Milestone | Status | Evidence |
@@ -376,7 +376,7 @@ tests, including all e2e suites), and the `gh` conformance gate (`conformance/ru
 | M1a — domain + REST core loop | **✓ core complete** | PRs #2–#3. e2e: issue→intent → comment → signed change → proposal → typed review → ff-merge → 409 on non-ff. Tier-2 tail now done (see M1b′) |
 | M1b — GraphQL + `gh` | **✓ gate met** | PR #4 (read) + the M1b′ mutation slice. GitHub's real SDL loaded unmodified; `conformance/run.sh` drives a real, unmodified, pinned `gh` v2.63.0 through `issue create/view`, `pr create/view/merge` against the live server — the definition-of-done §2.1 gate, enforced in CI on every PR |
 | M1b′ — compat completion + hardening | **✓ done** | GraphQL mutations, the Tier-2 REST tail, all five hardening items, and the `gh` conformance gate all landed — see below |
-| M1c | **◐ hooks + gate runner + land policy + op log/undo done** | Real git `pre-receive`/`post-receive` hooks (auto-record + push protection); `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy enforced on both REST and GraphQL merge; native-plane (`/api/adp`) op log read API with actor/verb/date filtering, and `adp_undo`'s first case — reverting a fast-forward merge, refused if the branch has moved since. Outstanding: full history-query (by path), candidate sets, MCP native plane, read-only web UI — see below |
+| M1c | **◐ hooks, gate runner, land policy, op log/undo, MCP native plane done** | Real git `pre-receive`/`post-receive` hooks; `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy on both REST and GraphQL merge; native-plane (`/api/adp`) op log + `adp_undo`; workspaces (a branch with lifecycle metadata) and an evidence-bundle read; a real MCP server (`server/src/mcp/`) wrapping all of it as 8 tools — 6 real, 2 honest not-yet-implemented stubs for candidate sets. Outstanding: full history-query (by path), candidate sets themselves, read-only web UI — see below |
 | M2–M5 | not started | M2 scope revised below (trust ramp) |
 
 ### M0 — Spec + walking skeleton (weeks 1–2) — ✓ done
@@ -589,8 +589,35 @@ unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` again
   a no-op that pretends to have worked. Covered by `server/test/e2e-operations.test.ts` (list +
   filter, undo reverting the ref and reopening the PR, a rejected second undo, and a rejected undo
   once the branch moved).
-- **History query (full, by path), candidate sets, MCP native plane (8 tools), read-only web UI** —
-  as originally scoped, not yet started.
+- ~~**MCP native plane (8 tools)**~~ **done**: `server/src/mcp/server.ts`, built on
+  `@modelcontextprotocol/sdk`. Every tool is a thin wrapper over the real `/api/adp` REST
+  endpoints via `server/src/mcp/client.ts` — the MCP server holds no domain logic of its own, so
+  "what can undo do" stays defined in exactly one place (`core/undo.ts`), not duplicated for a
+  second protocol. Run with `ADP_SERVER_URL=... ADP_TOKEN=... npm run mcp` (stdio transport).
+  - `adp_workspace_create` / `adp_workspace_destroy`: a workspace is deliberately just a git branch
+    with lifecycle metadata (`workspaces` table + `core/workspaces.ts`), matching the doc's own
+    projection ("Workspace | A branch `adp/ws/<id>`") — not a new isolation mechanism. Destroying
+    one deletes the ref for real (via `GitBackend.deleteRef`) and marks `destroyedAt` rather than
+    deleting the row, so the op log stays complete.
+  - `adp_history_query` / `adp_op_log`: both wrap the same operations-list query already built for
+    the REST op log (filter by actor/verb/date) — "history query" is the richer framing, "op log"
+    the raw one, over one underlying function. Filtering by file path still isn't implemented.
+  - `adp_evidence_get`: `core/evidence.ts` assembles — doesn't store — the full signed bundle for a
+    commit: its `changes` row (signature + provenance) plus every `gate_results` DSSE envelope
+    reported for that sha, most-recent-first per gate.
+  - `adp_undo`: calls `core/undo.ts` directly, same semantics as the REST endpoint (only
+    `proposal.merge` so far, refused if the branch moved since).
+  - `adp_candidates_open` / `adp_candidates_select`: **not implemented** — candidate sets have no
+    data model yet (see below) — and these two tools say so honestly (`isError: true`, a clear
+    message) rather than pretending to work.
+  - Covered by `server/test/e2e-native-plane.test.ts` (workspace create/list/destroy against a real
+    branch, evidence-bundle assembly from a real signed change + gate report) and
+    `server/test/e2e-mcp.test.ts` — a real MCP `Client`/`Server` pair over the SDK's in-memory
+    transport, the MCP server's real HTTP client hitting a real Fastify+Postgres instance: tool
+    listing, workspace round-trip, evidence-after-op-log, history-query filtering, undo reverting a
+    real merge, and the candidate-set stubs reporting honestly.
+- **History query (full, by path), candidate sets, read-only web UI** — as originally scoped, not
+  yet started.
 
 **Exit:** §2.1 passes as a scripted E2E driven by a real unmodified agent — plus one addition, now
 **met**: a push containing a seeded secret is blocked at the wire with a typed error.

@@ -140,6 +140,24 @@ export const gateResults = pgTable("gate_results", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Native-plane-only concept (docs/pragmatic_mvp.md §2.2: "Workspace | A
+// branch adp/ws/<id> | Lifecycle, TTL, GC, isolation") — deliberately just a
+// thin row around a real git ref, not a new storage mechanism. `branch` is
+// the actual `refs/heads/<branch>` name; destroying a workspace deletes that
+// ref (core/workspaces.ts) and sets destroyedAt rather than deleting the row,
+// so the op log stays a complete history.
+export const workspaces = pgTable("workspaces", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  repoId: uuid("repo_id").notNull().references(() => repos.id),
+  branch: text("branch").notNull(),
+  baseRef: text("base_ref").notNull(),
+  baseSha: text("base_sha").notNull(),
+  createdById: uuid("created_by_id").notNull().references(() => identities.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  destroyedAt: timestamp("destroyed_at", { withTimezone: true }),
+});
+
 // Append-only spine: every mutation writes its state change and its operations
 // row in a single transaction. This *is* the op log and the audit log.
 export const operations = pgTable("operations", {

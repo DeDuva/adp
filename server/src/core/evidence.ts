@@ -1,0 +1,56 @@
+import { and, eq } from "drizzle-orm";
+import type { Db } from "../db/client.js";
+import { changes, gateResults } from "../db/schema.js";
+
+export interface EvidenceBundle {
+  git_sha: string;
+  change: {
+    id: string;
+    intent_id: string | null;
+    provenance: unknown;
+    signature: string;
+    created_at: string;
+  } | null;
+  gates: {
+    name: string;
+    status: string;
+    summary: string;
+    envelope: unknown;
+    created_at: string;
+  }[];
+}
+
+// "adp_evidence_get — full signed bundle for a change" (docs/pragmatic_mvp.md
+// Tier 4). Not a new source of truth — a read that assembles what's already
+// signed and stored elsewhere: the change record (core/signing.ts) and every
+// gate result reported for that commit (core/dsse.ts), most-recent-first.
+export async function getEvidenceBundle(db: Db, repoId: string, gitSha: string): Promise<EvidenceBundle> {
+  const [change] = await db.select().from(changes).where(and(eq(changes.repoId, repoId), eq(changes.gitSha, gitSha)));
+
+  const gateRows = await db
+    .select()
+    .from(gateResults)
+    .where(and(eq(gateResults.repoId, repoId), eq(gateResults.gitSha, gitSha)));
+
+  return {
+    git_sha: gitSha,
+    change: change
+      ? {
+          id: change.id,
+          intent_id: change.intentId,
+          provenance: change.provenance,
+          signature: change.signature,
+          created_at: change.createdAt.toISOString(),
+        }
+      : null,
+    gates: gateRows
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map((row) => ({
+        name: row.name,
+        status: row.status,
+        summary: row.summary,
+        envelope: row.envelope,
+        created_at: row.createdAt.toISOString(),
+      })),
+  };
+}
