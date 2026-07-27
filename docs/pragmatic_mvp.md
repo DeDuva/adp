@@ -376,7 +376,7 @@ tests, including all e2e suites), and the `gh` conformance gate (`conformance/ru
 | M1a — domain + REST core loop | **✓ core complete** | PRs #2–#3. e2e: issue→intent → comment → signed change → proposal → typed review → ff-merge → 409 on non-ff. Tier-2 tail now done (see M1b′) |
 | M1b — GraphQL + `gh` | **✓ gate met** | PR #4 (read) + the M1b′ mutation slice. GitHub's real SDL loaded unmodified; `conformance/run.sh` drives a real, unmodified, pinned `gh` v2.63.0 through `issue create/view`, `pr create/view/merge` against the live server — the definition-of-done §2.1 gate, enforced in CI on every PR |
 | M1b′ — compat completion + hardening | **✓ done** | GraphQL mutations, the Tier-2 REST tail, all five hardening items, and the `gh` conformance gate all landed — see below |
-| M1c | **◐ hooks, gate runner, land policy, op log/undo, MCP native plane, web UI done** | Real git `pre-receive`/`post-receive` hooks; `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy on both REST and GraphQL merge; native-plane (`/api/adp`) op log + `adp_undo`; workspaces and an evidence-bundle read; a real MCP server (`server/src/mcp/`) wrapping all of it as 8 tools; a read-only supervision web UI (`server/web/`, served at `/ui/*`). Outstanding: full history-query (by path), candidate sets — see below |
+| M1c | **✓ done** | Real git `pre-receive`/`post-receive` hooks; `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy on both REST and GraphQL merge; native-plane (`/api/adp`) op log + `adp_undo` + history-query by path; workspaces, candidate sets, and an evidence-bundle read; a real MCP server (`server/src/mcp/`) wrapping all of it as 8 tools; a read-only supervision web UI (`server/web/`, served at `/ui/*`) — see below |
 | M2–M5 | not started | M2 scope revised below (trust ramp) |
 
 ### M0 — Spec + walking skeleton (weeks 1–2) — ✓ done
@@ -572,8 +572,12 @@ unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` again
     to keep that script passing.
 - ~~**Op log read API + undo**~~ **done** (native plane, `/api/adp` — no GitHub analogue, per
   the compat/native table in §2.2): `GET /api/adp/repos/{owner}/{repo}/operations` (filterable by
-  `actor`, `verb`, `since`/`until` — a lightweight cut of "history query," not the full
-  by-file-path version) and `.../operations/{id}`. `operations` has no `repoId` column (it's been
+  `actor`, `verb`, `since`/`until`, and `path` — the full history-query slice, `http-rest/operations.ts`'s
+  `matchesPath`: operations carry no path column, so a `path` filter resolves the commit sha out of a
+  commit-scoped target (`owner/name@<sha>`, written only by `change.create`) and asks git which paths
+  that commit touched via `GitBackend.commitPaths` (`git diff-tree --no-commit-id --name-only -r --root`)
+  — over-fetches from Postgres when `path` is set since the narrowing happens in application code, then
+  truncates to `limit`) and `.../operations/{id}`. `operations` has no `repoId` column (it's been
   repo-agnostic in shape since commit 1, and adding one is a bigger migration than this read API
   calls for) — repo-scoping instead matches on `target`'s shape: every target this codebase writes
   is either exactly `owner/name` or `owner/name` immediately followed by `#` or `@`, so
@@ -600,22 +604,27 @@ unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` again
     one deletes the ref for real (via `GitBackend.deleteRef`) and marks `destroyedAt` rather than
     deleting the row, so the op log stays complete.
   - `adp_history_query` / `adp_op_log`: both wrap the same operations-list query already built for
-    the REST op log (filter by actor/verb/date) — "history query" is the richer framing, "op log"
-    the raw one, over one underlying function. Filtering by file path still isn't implemented.
+    the REST op log (filter by actor/verb/date/path) — "history query" is the richer framing, "op log"
+    the raw one, over one underlying function.
   - `adp_evidence_get`: `core/evidence.ts` assembles — doesn't store — the full signed bundle for a
     commit: its `changes` row (signature + provenance) plus every `gate_results` DSSE envelope
     reported for that sha, most-recent-first per gate.
   - `adp_undo`: calls `core/undo.ts` directly, same semantics as the REST endpoint (only
     `proposal.merge` so far, refused if the branch moved since).
-  - `adp_candidates_open` / `adp_candidates_select`: **not implemented** — candidate sets have no
-    data model yet (see below) — and these two tools say so honestly (`isError: true`, a clear
-    message) rather than pretending to work.
+  - `adp_candidates_open` / `adp_candidates_select`: wrap the candidate-set data model
+    (`core/candidate-sets.ts`, a `candidate_sets` table keyed to one `intent`). Opening a set
+    creates the row; proposals join it by passing `candidate_set_id` at creation
+    (`http-rest/proposals.ts`, the existing `POST .../pulls`, not a new endpoint) — fan-out is just
+    N ordinary proposals sharing one `candidateSetId`. Selecting records the winning proposal id on
+    the set; it doesn't close or merge the losing candidates, which stay exactly as open proposals
+    an agent or human can still inspect.
   - Covered by `server/test/e2e-native-plane.test.ts` (workspace create/list/destroy against a real
     branch, evidence-bundle assembly from a real signed change + gate report) and
     `server/test/e2e-mcp.test.ts` — a real MCP `Client`/`Server` pair over the SDK's in-memory
     transport, the MCP server's real HTTP client hitting a real Fastify+Postgres instance: tool
     listing, workspace round-trip, evidence-after-op-log, history-query filtering, undo reverting a
-    real merge, and the candidate-set stubs reporting honestly.
+    real merge, and candidate-set open/fan-out/select over two real proposals against one intent.
+    `server/test/e2e-hooks.test.ts` covers history-query by path against a real pushed commit.
 - ~~**Read-only web UI**~~ **done**: `server/web/`, a Vite + React + TypeScript SPA served as
   static assets by the same Fastify server at `/ui/*` (`@fastify/static`, `main.ts` — skipped with
   a log line if the app hasn't been built yet, so a fresh checkout's plain `npm run dev` still
@@ -629,8 +638,9 @@ unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` again
   log with filters — the one interactive control granted per the plan of record ("op log with
   undo"): an **Undo** button on `proposal.merge` rows, calling the same `/api/adp` endpoint the
   MCP tool and a direct API caller would, with the result (or the server's refusal reason) shown
-  inline. Candidate-set comparison, named in the original UI scope, isn't built — candidate sets
-  don't exist yet (below).
+  inline. Candidate-set comparison, named in the original UI scope, still isn't built in the web UI
+  — candidate sets now exist as a real data model and are reachable via REST/MCP (above), but the
+  UI has no dedicated view for them yet, an honest gap rather than a blocker for M1 exit.
   - **Verification note:** this sandbox has no root and is missing the system libraries Chromium
     needs (`libnspr4`, `libnss3`, …), and neither jsdom nor happy-dom could execute the built Vite
     ES-module bundle — so this was *not* visually confirmed in a real rendered browser. What was
@@ -639,10 +649,13 @@ unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` again
     server — every endpoint the UI calls hit directly and confirmed to match the TypeScript
     interfaces in `api.ts` exactly, including a real merge-undo round trip. Worth an actual
     browser check before relying on this for anything but development.
-- **History query (full, by path), candidate sets** — as originally scoped, not yet started.
+- ~~**History query (full, by path), candidate sets**~~ **done** — see the op-log and MCP bullets
+  above. The one remaining gap is UI-only: the web UI has no candidate-set comparison view.
 
 **Exit:** §2.1 passes as a scripted E2E driven by a real unmodified agent — plus one addition, now
-**met**: a push containing a seeded secret is blocked at the wire with a typed error.
+**met**: a push containing a seeded secret is blocked at the wire with a typed error. All of M1c's
+differentiators, including the two items that were outstanding as of 2026-07-26 (history-query by
+path, candidate sets), are now implemented and covered by real e2e tests — **M1 is complete.**
 
 ### M2 — Adoption + trust ramp *(revised 2026-07-26)*
 **Mirror mode** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub; the single

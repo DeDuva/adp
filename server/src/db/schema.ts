@@ -112,6 +112,20 @@ export const proposals = pgTable(
   (table) => [unique().on(table.repoId, table.number)],
 );
 
+// Native-plane-only concept (docs/pragmatic_mvp.md §2.2, "the only MVP
+// feature GitHub structurally cannot express"): N proposals fanned out
+// against one intent, scored, and one selected. `proposals.candidateSetId`
+// (added ahead of this table, schema.ts commit history) is how a proposal
+// joins a set; this table is the set itself plus the resolution.
+export const candidateSets = pgTable("candidate_sets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  repoId: uuid("repo_id").notNull().references(() => repos.id),
+  intentId: uuid("intent_id").notNull().references(() => intents.id),
+  selectionPolicy: text("selection_policy").notNull().default("manual"),
+  selectedProposalId: uuid("selected_proposal_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const reviews = pgTable("reviews", {
   id: uuid("id").primaryKey().defaultRandom(),
   proposalId: uuid("proposal_id").notNull().references(() => proposals.id),

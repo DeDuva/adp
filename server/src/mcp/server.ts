@@ -10,10 +10,11 @@ import { createAdpClient, type AdpClient } from "./client.js";
 // keeps "what can undo do" defined in exactly one place (core/undo.ts),
 // not duplicated here.
 //
-// adp_candidates_open/select are listed in the plan of record but candidate
-// sets (fan out N workspaces under one intent, score, select) aren't a real
-// data model yet — those two tools report that honestly rather than
-// pretending to work.
+// adp_candidates_open/select wrap the candidate-set data model
+// (core/candidate-sets.ts, http-rest/candidate-sets.ts): opening a set
+// creates a row against an intent, proposals join it via candidate_set_id
+// at creation time, and selecting records the winner without touching the
+// other candidates' state.
 export function buildMcpServer(client: AdpClient): McpServer {
   const server = new McpServer({ name: "adp-native", version: "0.1.0" });
 
@@ -60,8 +61,8 @@ export function buildMcpServer(client: AdpClient): McpServer {
     "adp_history_query",
     {
       description:
-        "Who did what and when, over a repo's operation log — filter by actor, verb, or a date range. " +
-        "(Filtering by file path isn't implemented yet; this is actor/verb/date only.)",
+        "Who did what and when, over a repo's operation log — filter by actor, verb, a date range, or a file path " +
+        "(matches commit-scoped operations whose commit touched that path or a path under it).",
       inputSchema: {
         owner: z.string(),
         repo: z.string(),
@@ -69,6 +70,7 @@ export function buildMcpServer(client: AdpClient): McpServer {
         verb: z.string().optional(),
         since: z.string().datetime().optional(),
         until: z.string().datetime().optional(),
+        path: z.string().optional(),
         limit: z.number().int().positive().max(200).optional(),
       },
     },
@@ -119,20 +121,42 @@ export function buildMcpServer(client: AdpClient): McpServer {
   server.registerTool(
     "adp_candidates_open",
     {
-      description: "Not implemented yet: fan out N candidate solutions against one intent.",
-      inputSchema: { owner: z.string(), repo: z.string(), intent_id: z.string() },
+      description:
+        "Open a candidate set against one intent — proposals then join it by passing candidate_set_id " +
+        "when they're created (fan out N solutions to compare).",
+      inputSchema: {
+        owner: z.string(),
+        repo: z.string(),
+        intent_id: z.string().uuid(),
+        selection_policy: z.string().optional().describe("Defaults to 'manual'"),
+      },
     },
-    async () => err("adp_candidates_open: candidate sets aren't implemented yet — there's no data model for them."),
+    async ({ owner, repo, intent_id, selection_policy }) => {
+      const res = await client.post(`/api/adp/repos/${owner}/${repo}/candidate-sets`, {
+        intent_id,
+        selection_policy,
+      });
+      return res.ok ? ok(res.body) : err(res.message);
+    },
   );
 
   server.registerTool(
     "adp_candidates_select",
     {
-      description: "Not implemented yet: select the winning candidate from a candidate set.",
-      inputSchema: { owner: z.string(), repo: z.string(), candidate_set_id: z.string(), candidate_id: z.string() },
+      description: "Select the winning candidate (a proposal already in the set) from a candidate set.",
+      inputSchema: {
+        owner: z.string(),
+        repo: z.string(),
+        candidate_set_id: z.string().uuid(),
+        candidate_id: z.string().uuid().describe("The proposal id to select as the winner"),
+      },
     },
-    async () =>
-      err("adp_candidates_select: candidate sets aren't implemented yet — there's no data model for them."),
+    async ({ owner, repo, candidate_set_id, candidate_id }) => {
+      const res = await client.post(`/api/adp/repos/${owner}/${repo}/candidate-sets/${candidate_set_id}/select`, {
+        proposal_id: candidate_id,
+      });
+      return res.ok ? ok(res.body) : err(res.message);
+    },
   );
 
   return server;
