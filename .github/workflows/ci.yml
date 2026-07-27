@@ -45,6 +45,23 @@ jobs:
       - run: npm run migrate
       - run: npm test
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/web/package-lock.json
+
+      # The read-only supervision UI (server/web/) — built here so it's
+      # actually served at /ui/* by the conformance run below, matching how
+      # main.ts skips it silently if unbuilt (a fresh checkout's `npm run
+      # dev` shouldn't require this step).
+      - working-directory: server/web
+        run: npm ci
+      - working-directory: server/web
+        run: npm run typecheck
+      - working-directory: server/web
+        run: npm run build
+
       - name: Cache pinned gh release
         uses: actions/cache@v4
         with:

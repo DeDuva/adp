@@ -1,4 +1,8 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
+import fastifyStatic from "@fastify/static";
 import { loadConfig } from "./config.js";
 import { createDb } from "./db/client.js";
 import { GitBackend } from "./core/git-backend.js";
@@ -75,6 +79,21 @@ async function main() {
   registerGraphQLRoute(app, gqlSchema, db);
 
   registerGitHttpRoutes(app, gitBackend, config.GIT_MAX_PACK_BYTES);
+
+  // The read-only supervision UI (docs/pragmatic_mvp.md §4.6: "web/ served
+  // as static assets"), at /ui/* rather than / — the git routes already own
+  // /:owner/:repo.git/*, and this avoids any ambiguity with them. It's a
+  // single-page app with no client-side URL routing (App.tsx navigates via
+  // in-memory state), so unlike a typical SPA there's no history-fallback
+  // to wire up: only /ui/, /ui/index.html, and /ui/assets/* are ever
+  // requested. Skipped with a log line if `cd web && npm run build` hasn't
+  // been run yet, so a fresh checkout's plain `npm run dev` still boots.
+  const webDist = path.join(path.dirname(fileURLToPath(import.meta.url)), "../web/dist");
+  if (existsSync(webDist)) {
+    await app.register(fastifyStatic, { root: webDist, prefix: "/ui/" });
+  } else {
+    app.log.warn(`web UI not built (${webDist} missing) — skipping /ui/*; run "cd web && npm run build"`);
+  }
 
   await app.listen({ host: "0.0.0.0", port: config.PORT });
 }
