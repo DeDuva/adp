@@ -376,7 +376,7 @@ tests, including all e2e suites), and the `gh` conformance gate (`conformance/ru
 | M1a — domain + REST core loop | **✓ core complete** | PRs #2–#3. e2e: issue→intent → comment → signed change → proposal → typed review → ff-merge → 409 on non-ff. Tier-2 tail now done (see M1b′) |
 | M1b — GraphQL + `gh` | **✓ gate met** | PR #4 (read) + the M1b′ mutation slice. GitHub's real SDL loaded unmodified; `conformance/run.sh` drives a real, unmodified, pinned `gh` v2.63.0 through `issue create/view`, `pr create/view/merge` against the live server — the definition-of-done §2.1 gate, enforced in CI on every PR |
 | M1b′ — compat completion + hardening | **✓ done** | GraphQL mutations, the Tier-2 REST tail, all five hardening items, and the `gh` conformance gate all landed — see below |
-| M1c | **◐ hooks, gate runner, land policy, op log/undo, MCP native plane done** | Real git `pre-receive`/`post-receive` hooks; `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy on both REST and GraphQL merge; native-plane (`/api/adp`) op log + `adp_undo`; workspaces (a branch with lifecycle metadata) and an evidence-bundle read; a real MCP server (`server/src/mcp/`) wrapping all of it as 8 tools — 6 real, 2 honest not-yet-implemented stubs for candidate sets. Outstanding: full history-query (by path), candidate sets themselves, read-only web UI — see below |
+| M1c | **◐ hooks, gate runner, land policy, op log/undo, MCP native plane, web UI done** | Real git `pre-receive`/`post-receive` hooks; `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy on both REST and GraphQL merge; native-plane (`/api/adp`) op log + `adp_undo`; workspaces and an evidence-bundle read; a real MCP server (`server/src/mcp/`) wrapping all of it as 8 tools; a read-only supervision web UI (`server/web/`, served at `/ui/*`). Outstanding: full history-query (by path), candidate sets — see below |
 | M2–M5 | not started | M2 scope revised below (trust ramp) |
 
 ### M0 — Spec + walking skeleton (weeks 1–2) — ✓ done
@@ -616,8 +616,30 @@ unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` again
     transport, the MCP server's real HTTP client hitting a real Fastify+Postgres instance: tool
     listing, workspace round-trip, evidence-after-op-log, history-query filtering, undo reverting a
     real merge, and the candidate-set stubs reporting honestly.
-- **History query (full, by path), candidate sets, read-only web UI** — as originally scoped, not
-  yet started.
+- ~~**Read-only web UI**~~ **done**: `server/web/`, a Vite + React + TypeScript SPA served as
+  static assets by the same Fastify server at `/ui/*` (`@fastify/static`, `main.ts` — skipped with
+  a log line if the app hasn't been built yet, so a fresh checkout's plain `npm run dev` still
+  boots). No client-side URL routing — `App.tsx` navigates via in-memory state, since the whole
+  point is one page a human opens, not a set of shareable deep links — so there's no
+  history-fallback to wire up either. Calls the plain REST API (not GraphQL) via `src/api.ts`; a
+  connect screen collects a token + owner/repo into `localStorage` (there's no login system to
+  build against). Views: issues list + detail (with comments), pull requests list + detail
+  (reviews, gate results for the head commit, files changed, an on-demand diff load), an evidence
+  view (signed change provenance/signature + every DSSE gate attestation for a commit), and the op
+  log with filters — the one interactive control granted per the plan of record ("op log with
+  undo"): an **Undo** button on `proposal.merge` rows, calling the same `/api/adp` endpoint the
+  MCP tool and a direct API caller would, with the result (or the server's refusal reason) shown
+  inline. Candidate-set comparison, named in the original UI scope, isn't built — candidate sets
+  don't exist yet (below).
+  - **Verification note:** this sandbox has no root and is missing the system libraries Chromium
+    needs (`libnspr4`, `libnss3`, …), and neither jsdom nor happy-dom could execute the built Vite
+    ES-module bundle — so this was *not* visually confirmed in a real rendered browser. What was
+    verified: a clean `tsc --noEmit`, a clean `vite build`, static-asset serving confirmed over real
+    HTTP, and — seeding a real repo/issue/PR/review/gate-report/merge through the actual running
+    server — every endpoint the UI calls hit directly and confirmed to match the TypeScript
+    interfaces in `api.ts` exactly, including a real merge-undo round trip. Worth an actual
+    browser check before relying on this for anything but development.
+- **History query (full, by path), candidate sets** — as originally scoped, not yet started.
 
 **Exit:** §2.1 passes as a scripted E2E driven by a real unmodified agent — plus one addition, now
 **met**: a push containing a seeded secret is blocked at the wire with a typed error.
