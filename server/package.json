@@ -11,11 +11,13 @@
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "migrate": "tsx src/db/migrate.ts",
+    "mcp": "tsx src/mcp/server.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@noble/ed25519": "^2.1.0",
     "drizzle-orm": "^0.36.4",
     "fastify": "^5.1.0",
