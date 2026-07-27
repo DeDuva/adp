@@ -5,16 +5,20 @@ transaction carrying **intent → diff → evidence → provenance**, cryptograp
 server-side operation log — behind a GitHub-compatible surface, so `git` and `gh` keep working
 with zero configuration.
 
-**Status (July 2026): working server, mid-M1.** The walking skeleton (M0) and the core domain
-loop are implemented and CI-verified end to end: an authenticated client can create a repo,
-`git clone`/`push` over smart HTTP (delegated to the real `git http-backend`), file issues that
-become typed intents, record Ed25519-signed changes with provenance, open PR-shaped proposals,
-attach typed reviews, and land fast-forward merges — with every mutation writing an append-only
-`operations` row in the same transaction. A GraphQL read path serves GitHub's real published
-schema. Not yet built: GraphQL mutations, validation against the unmodified `gh` binary, gate
-runners and evidence bundles, land policy, undo/history query, candidate sets, the MCP native
-plane, and the trust plane. See the [status ledger](docs/pragmatic_mvp.md#status-ledger) for the
-per-milestone view.
+**Status (July 2026): working server, M1c mostly done.** The walking skeleton (M0), the core
+domain loop, and GitHub-compat surface are implemented and CI-verified end to end: an
+authenticated client can create a repo, `git clone`/`push` over smart HTTP (delegated to the
+real `git http-backend`), file issues that become typed intents, record Ed25519-signed changes
+with provenance, open PR-shaped proposals, attach typed reviews, and land merges under a
+two-level land policy — with every mutation writing an append-only `operations` row in the same
+transaction. GraphQL serves GitHub's real published schema with both queries and mutations, and
+is validated against the real, unmodified `gh` binary in CI (`conformance/run.sh`). Real git
+`pre-receive`/`post-receive` hooks auto-record changes on push and run push protection against
+committed secrets. Gate results are DSSE-signed evidence bundles; a native MCP plane (8 tools)
+and a read-only web UI sit alongside the compat surface; the operation log supports undo of a
+landed merge. Not yet built: full history query by file path, candidate sets, and the wider
+trust plane beyond push protection and evidence bundles. See the
+[status ledger](docs/pragmatic_mvp.md#status-ledger) for the per-milestone view.
 
 ## What this is
 
@@ -77,9 +81,10 @@ infrastructure are in [`docs/pragmatic_mvp.md`](docs/pragmatic_mvp.md).
 
 The server (Fastify + Postgres + the real `git` binary) runs locally or via Docker Compose —
 setup, bootstrap, and the three-tier test suite are documented in
-[`server/README.md`](server/README.md). CI runs typecheck, build, migrations, and the full test
-suite (unit / integration / end-to-end, including a real clone→push→propose→review→merge cycle)
-on every pull request.
+[`server/README.md`](server/README.md). CI runs typecheck, build, migrations, the full test
+suite (unit / integration / end-to-end, including a real clone→push→propose→review→merge cycle),
+and the `gh` conformance gate — the real, unmodified `gh` binary driven against the live
+server — on every pull request.
 
 ## License
 
