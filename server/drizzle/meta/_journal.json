@@ -43,6 +43,13 @@
       "when": 1785110652193,
       "tag": "0005_nostalgic_pandemic",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785120411215,
+      "tag": "0006_loud_ultimates",
+      "breakpoints": true
     }
   ]
 }
