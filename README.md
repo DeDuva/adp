@@ -47,26 +47,10 @@ Code) — the procurement checklist enterprise adopters treat as mandatory.
 |---|---|
 | [`docs/agent-native-vcs-brief-v5.md`](docs/agent-native-vcs-brief-v5.md) | **The thesis (v5, public draft).** The case for a neutral agent-native substrate: the GitHub interface question, versioning beyond source, the competitive landscape, architectural tradeoffs, the agent-harness boundary, and — new in v5 — enterprise controls and supply-chain security as a trust plane (§f). Its appendix (A1–A15) states the open decisions honestly — each names the evidence that would change the position. Prior versions live in git history. |
 | [`docs/pragmatic_mvp.md`](docs/pragmatic_mvp.md) | **The plan of record.** A critique of the concept plus a deliberately narrow MVP: the smallest system an off-the-shelf agent can use *instead of* GitHub, with everything complex deferred and defended. Includes the per-milestone status ledger and the next-milestone plan. |
-| [`docs/adp-prototype-implementation-plan.md`](docs/adp-prototype-implementation-plan.md) | **Historical.** The original 24-week, 6-engineer prototype plan (Rust, jj-derived change engine). Superseded by `pragmatic_mvp.md` on scope, stack, and sequencing; kept because several of its demo scenarios (fleet fan-out, cross-harness resume) remain the north star. |
 | [`docs/server-stack-tutorial.md`](docs/server-stack-tutorial.md) | **Onboarding.** The server stack (Node/TypeScript, Fastify, Postgres/Drizzle, Caddy, Docker Compose) explained piece by piece, no prior familiarity assumed. |
 
 New readers: start with the brief for the argument, then `pragmatic_mvp.md` for what is actually
 being built, in what order, and why the scope is what it is.
-
-## Where the plan diverges from the brief
-
-`docs/pragmatic_mvp.md` accepts the thesis but changes five things, each argued in its Part 1:
-
-- **Sequence forge → adoption → standard**, not standard-first. A spec with one implementation and
-  no users is a document, not a standard.
-- **Git *is* the store; ADP is an overlay beside the DAG.** Defers the jj-derived change engine
-  entirely and removes the hardest open research question from the critical path.
-- **The defensible core of verification is policy, not infrastructure** — the evidence schema and
-  statistical land criteria, not a hermetic build graph.
-- **Promote the genuinely novel primitive:** N competing candidate solutions to one intent. Merge
-  queues are commoditized; this has no GitHub analogue.
-- **Serve the read path.** Agents burn most of their tokens reading history, and neither original
-  document addresses it.
 
 ## MVP in one paragraph
 
@@ -85,6 +69,34 @@ setup, bootstrap, and the three-tier test suite are documented in
 suite (unit / integration / end-to-end, including a real clone→push→propose→review→merge cycle),
 and the `gh` conformance gate — the real, unmodified `gh` binary driven against the live
 server — on every pull request.
+
+## `gh` CLI and API surface
+
+`git` (clone/fetch/pull/push/ls-remote, including shallow/partial/force-push) is delegated to
+the real `git http-backend` binary, so it's 100% fidelity, not listed below. For `gh`, "functional"
+means the command does real work against ADP's domain model end to end; "shell" means it's callable
+but returns an honest no-op, a partial result, or a clear "not supported" error rather than doing
+nothing or crashing. Full endpoint/operation inventory: `docs/pragmatic_mvp.md` §2.4.
+
+| `gh` command | Status | Notes |
+|---|---|---|
+| `gh auth status` | **Functional** | via `GET /`, `GET /user` |
+| `gh repo view` | **Functional** | |
+| `gh repo clone` / `gh repo create` | **Functional** | REST create + git clone |
+| `gh issue create` / `list` / `view` / `close` | **Functional** | verified against the real `gh` binary in CI |
+| `gh issue comment` | **Functional** | |
+| `gh pr create` | **Functional** | verified against the real `gh` binary in CI |
+| `gh pr list` / `view [--json]` | **Functional** | verified against the real `gh` binary in CI |
+| `gh pr checkout` | **Functional** | resolves head ref, then a real `git fetch` |
+| `gh pr diff` | **Functional** | REST `Accept: …diff`/`…patch` |
+| `gh pr comment` | **Functional** | comments land as issue comments; PR conversation-tab comments aren't modeled as a separate subject yet |
+| `gh pr review` | **Functional** | |
+| `gh pr merge` | **Functional** | verified against the real `gh` binary in CI; gated by the two-level land policy |
+| `gh pr close` / `reopen` | **Functional** | |
+| `gh pr checks` | **Shell** | aggregate rollup state is real; per-check-context detail is an empty connection, not backed yet |
+| `gh pr ready` | **Shell** | recorded as a no-op — every PR is ready-for-review from creation, no draft state exists |
+| `gh api <endpoint>` | **Functional for the ~24 implemented Tier-2 endpoints** | unimplemented endpoints (search, Actions, releases, packages, orgs/teams, projects, branch protection, code scanning, Dependabot, notifications, gists, webhooks) return `404` naming the ADP equivalent instead of hanging or 500ing |
+| `gh run *` / `gh release *` / `gh project *` / `gh search *` | **Not supported** | deliberately unimplemented; returns a clear error, not a shell |
 
 ## License
 
