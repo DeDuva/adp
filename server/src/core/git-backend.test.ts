@@ -106,5 +106,55 @@ describe("GitBackend", () => {
       expect(ok).toBe(false);
       expect(await backend.resolveRef("acme", "hello", "main")).toBe(baseSha);
     });
+
+    // Mirror mode (M2): a second bare repo stands in for "GitHub" — no live
+    // network, just two local bare repos exchanging refs via file:// paths.
+    describe("mirror push/fetch against a second remote", () => {
+      let mirrorRoot: string;
+      let mirrorBackend: GitBackend;
+
+      beforeEach(async () => {
+        mirrorRoot = await mkdtemp(path.join(tmpdir(), "adp-git-backend-mirror-"));
+        mirrorBackend = new GitBackend(mirrorRoot);
+        await mirrorBackend.initBareRepo("github", "hello", "main");
+      });
+
+      afterEach(async () => {
+        await rm(mirrorRoot, { recursive: true, force: true });
+      });
+
+      it("pushToRemote fast-forwards the remote's ref", async () => {
+        const remotePath = mirrorBackend.repoPath("github", "hello");
+        await backend.pushToRemote("acme", "hello", remotePath, `${baseSha}:refs/heads/main`);
+        expect(await mirrorBackend.resolveRef("github", "hello", "main")).toBe(baseSha);
+      });
+
+      it("pushToRemote rejects a non-fast-forward push", async () => {
+        const remotePath = mirrorBackend.repoPath("github", "hello");
+        // Push both shas across first so the remote has the objects it
+        // needs to build a divergent commit on top of baseSha.
+        await backend.pushToRemote("acme", "hello", remotePath, `${aheadSha}:refs/heads/scratch`);
+
+        const treeSha = (await execFileAsync("git", ["rev-parse", `${baseSha}^{tree}`], { cwd: remotePath })).stdout.trim();
+        const divergedSha = (
+          await execFileAsync("git", ["commit-tree", treeSha, "-p", baseSha, "-m", "diverged"], { cwd: remotePath })
+        ).stdout.trim();
+        await execFileAsync("git", ["update-ref", "refs/heads/main", divergedSha], { cwd: remotePath });
+
+        await expect(backend.pushToRemote("acme", "hello", remotePath, `${aheadSha}:refs/heads/main`)).rejects.toThrow();
+        expect(await mirrorBackend.resolveRef("github", "hello", "main")).toBe(divergedSha);
+      });
+
+      it("fetchFromRemote fetches a ref into FETCH_HEAD and returns its sha", async () => {
+        const remotePath = mirrorBackend.repoPath("github", "hello");
+        // Populate the mirror's objects via a real push first (objects
+        // aren't shared between two separate bare repos), then fetch that
+        // ref back into acme's repo.
+        await backend.pushToRemote("acme", "hello", remotePath, `${aheadSha}:refs/heads/main`);
+
+        const fetchedSha = await backend.fetchFromRemote("acme", "hello", remotePath, "refs/heads/main");
+        expect(fetchedSha).toBe(aheadSha);
+      });
+    });
   });
 });
