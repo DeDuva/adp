@@ -1,29 +1,37 @@
-# ADP server — M0 skeleton + M1a + M1b read slice
+# ADP server — M0 through M1c (most of it)
 
 Fastify + PostgreSQL server. Working end to end: token-authenticated repo creation, git
 smart-HTTP (clone/push) proxied to the real `git http-backend` binary, issues (which each
 file an intent) with comments, typed changes (a git commit bound to an intent and a
 server-signed provenance record), proposals (PR-shaped, opened against a head/base branch),
-typed reviews, fast-forward-only merge, and a GraphQL read path at `/api/graphql` backed by
-GitHub's real, unmodified public schema (`spec/graphql/github.graphql`).
+typed reviews, and merges under a two-level land policy (instance floor ∧ repo `adp.yaml`,
+fast-forward only). GraphQL at `/api/graphql` is backed by GitHub's real, unmodified public
+schema (`spec/graphql/github.graphql`) with both queries and mutations resolved.
 
 **GraphQL scope, precisely:** `Query.repository`, `Query.node`, `Query.viewer`,
 `Repository.{owner,defaultBranchRef,issue,issues,pullRequest,pullRequests}`,
-`Issue.author`, `PullRequest.author` have resolvers — enough to back `gh repo view`,
-`gh issue list`/`view`, `gh pr list`/`view` in principle. Mutations (`gh pr create`/`merge`/
-`review`, `gh issue create`/`close`) are REST-only for now; GraphQL mutation resolvers are
-next. **Not yet validated against the real `gh` binary** — that's the record-replay
-conformance suite (`docs/pragmatic_mvp.md` §5), a separate follow-up. What's tested here is
-that hand-written queries shaped like `gh`'s actually resolve correctly, and that fields we
-haven't backed fail as a GraphQL resolver error, never a schema validation error — the
-entire point of loading the real SDL unmodified.
+`Issue.author`, `PullRequest.author` have resolvers, plus all 9 mutations
+(`createIssue`, `closeIssue`, `createPullRequest`, `mergePullRequest`, `closePullRequest`,
+`reopenPullRequest`, `markPullRequestReadyForReview`, `addPullRequestReview`, `addComment`) —
+enough to back `gh repo view`, `gh issue list/view/create/close`, `gh pr list/view/create/
+merge/review` for real. **Validated against the real `gh` binary**: `conformance/run.sh`,
+pinned to `gh` v2.63.0, drives the actual unmodified binary through
+`issue create` → `issue view` → `pr create` → `pr view` → `pr merge` against a live server
+in CI on every PR — see `docs/pragmatic_mvp.md` §M1b′ item 3 for what that gate does and
+doesn't cover (it isn't record-replay against production github.com).
 
-Not yet implemented: GraphQL mutations, gate runners, evidence bundles, land policy beyond
-fast-forward, the native MCP plane, candidate sets, and automatic change recording on push
-(changes are currently recorded via an explicit API call, not a git hook). Proposal/issue
-numbering are independent sequences rather than GitHub's shared one — a known fidelity gap.
+Real git `pre-receive`/`post-receive` hooks auto-record signed changes on every push and run
+push protection against committed secrets (bundled regex+entropy scanner). Gate results
+(`POST .../gates`) are stored as DSSE-signed in-toto evidence envelopes and rolled up into
+`Commit.statusCheckRollup`. A native plane at `/api/adp` (op log and history query
+filterable by actor/verb/date/path, undo of a landed fast-forward merge, workspaces,
+evidence-bundle read, candidate sets) is wrapped by a real MCP server (`server/src/mcp/`,
+8 tools) and by a read-only web UI (`server/web/`, served at `/ui/*`).
+
+Proposal/issue numbering are independent sequences rather than GitHub's shared one — a
+known fidelity gap.
 Refresh the vendored GraphQL schema with `scripts/update-graphql-schema.sh`.
-See `docs/pragmatic_mvp.md` for the milestone plan.
+See `docs/pragmatic_mvp.md` for the milestone plan and status ledger.
 
 ## Local development
 
