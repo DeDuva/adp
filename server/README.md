@@ -87,6 +87,16 @@ Three tiers, matching how much infrastructure each needs. All run under
 | Integration | `src/**/*.test.ts` (git-backend, http-git proxy) | a real `git` binary (no DB) | bare repo creation, and a full `git clone`/`push` through Fastify into `git http-backend`, with auth stubbed to a fixed identity |
 | End-to-end | `test/e2e.test.ts` | Postgres (`DATABASE_URL`) | the actual M0 exit criterion: mint a token, create a repo over REST, `git clone`/`push` with that token as the git password, confirm the commit landed |
 
+The supported way to run the whole thing is from the repo root, against an ephemeral Postgres
+that is created and destroyed per run (`docs/test-environment-automation.md`):
+
+```bash
+make up && make test-all && make down
+```
+
+`make down` asserts that nothing leaked — containers, volumes, server processes, temp
+directories. Directly, without the Makefile:
+
 ```bash
 npm test              # everything the current environment supports
 npm run typecheck      # tsc --noEmit, including test files

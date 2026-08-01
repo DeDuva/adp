@@ -1,6 +1,6 @@
 # Test environment automation
 
-**Status:** Phase 0 landed; Phases 1–4 proposed.
+**Status:** Phases 0 and 1 landed; Phases 2–4 proposed.
 
 The goal, stated as a test: a tester with a **brand new Windows machine** installs WSL, clones
 this repo, runs one command, watches the full manual test suite execute, and runs one more
@@ -31,6 +31,22 @@ These are not hypothetical. Each was found in the repo or on the developer machi
 
 Findings 1, 3 and 4 are the direct mechanical causes of partial runs and broken Docker
 configs. Finding 9 is why they never got fixed the same way twice.
+
+### Found by the automation itself
+
+Three more surfaced only once Phase 1 could put a genuinely *empty* database and a
+leak-detector behind every run. All three are the fresh-machine case specifically — which is
+the case this document exists to make routine.
+
+| # | Finding | Consequence |
+|---|---|---|
+| 10 | Eight e2e suites each call `migrate()` in `beforeAll`, and vitest runs them in parallel | Against an empty database they race and some lose. Invisible until now because both environments that ran the e2e tier had migrations already applied — CI runs `npm run migrate` as its own step, and a developer's local Postgres was migrated days earlier. A brand-new machine has neither accident. **Fixed** by `server/test/global-setup.ts`. |
+| 11 | `conformance/run.sh`'s cleanup trap killed `$SERVER_PID`, which is the `npx` wrapper — `tsx` spawns a child node process that survived, kept its port bound, and was reparented to init | A stray ADP server outliving the run: finding 3's phantom-404 arriving by a second route. Caught by `verify-clean.sh` after a real run. **Fixed** by signalling the process group. |
+| 12 | Two e2e tests `mkdtemp`'d directories nothing ever removed — one of them in a test that asserts a clone *fails*, so no later cleanup statement is reached | One leaked `/tmp` directory per run, per test. **Fixed.** |
+
+The pattern is worth naming: each of these was invisible precisely because the environment
+was dirty in a way that happened to be *benign*. Making the environment reproducibly clean is
+what turned them into failures — which is the argument for the whole exercise.
 
 ---
 
@@ -103,28 +119,37 @@ daemon removes the category rather than managing it.
 ## 4. Deliverables
 
 ```
-Makefile                          # doctor | up | test | test-all | down | nuke — one entrypoint, CI uses it too
-scripts/dev/lib.sh                # shared constants, logging, the canonical local DSN      [Phase 0]
-scripts/dev/doctor.sh             # versions, ports, orphans, docker reachability           [Phase 0]
-scripts/dev/verify-clean.sh       # asserts zero adp-* containers/volumes/networks/ports    [Phase 0]
-server/test/require-db.ts         # turns a silent e2e skip into a hard failure             [Phase 0]
-.nvmrc                            # 22                                                      [Phase 0]
-scripts/dev/up.sh                 # ephemeral compose, wait healthy, emit .env.test         [Phase 1]
-scripts/dev/down.sh               # compose down -v --remove-orphans + kill stray PIDs      [Phase 1]
-scripts/dev/env.sh                # generate .env.test: random SIGNING_KEY, discovered port [Phase 1]
-deploy/docker-compose.test.yml    # Postgres only, tmpfs, ephemeral port, no restart policy [Phase 1]
-scripts/dev/bootstrap.sh          # bare Ubuntu -> provisioned (apt, docker.io, Node 22)    [Phase 2]
-.github/workflows/clean-room.yml  # runs bootstrap.sh on a bare runner so it cannot rot     [Phase 2]
-docs/manual-test-plan.md          # written first, then progressively emptied into tests    [Phase 3]
-server/test/acceptance/           # the §2.1 definition-of-done walkthrough, executable     [Phase 3]
-tools/win/Run-CleanTest.ps1       # import distro -> bootstrap -> test -> unregister        [Phase 4]
+Makefile                          # doctor | up | test | test-all | down | nuke — one entrypoint  [done]
+scripts/dev/config.sh             # constants only: canonical DSN, prefixes, pinned Node major    [done]
+scripts/dev/lib.sh                # logging helpers on top of config.sh                           [done]
+scripts/dev/doctor.sh             # versions, ports, orphans, docker reachability                  [done]
+scripts/dev/verify-clean.sh       # asserts zero adp-test-* containers/volumes/procs/tempdirs      [done]
+server/test/require-db.ts         # turns a silent e2e skip into a hard failure                    [done]
+server/test/global-setup.ts       # migrate once, before any suite (finding 10)                    [done]
+.nvmrc                            # 22                                                             [done]
+deploy/docker-compose.test.yml    # Postgres only, tmpfs, ephemeral port, no restart policy         [done]
+scripts/dev/up.sh                 # ephemeral compose, wait healthy, discover port, emit .env.test [done]
+scripts/dev/down.sh               # compose down -v --remove-orphans, then verify                   [done]
+scripts/dev/env.sh                # generate .env.test: random SIGNING_KEY, discovered port         [done]
+scripts/dev/bootstrap.sh          # bare Ubuntu -> provisioned (apt, docker.io, Node 22)      [Phase 2]
+.github/workflows/clean-room.yml  # runs bootstrap.sh on a bare runner so it cannot rot       [Phase 2]
+docs/manual-test-plan.md          # written first, then progressively emptied into tests      [Phase 3]
+server/test/acceptance/           # the §2.1 definition-of-done walkthrough, executable       [Phase 3]
+tools/win/Run-CleanTest.ps1       # import distro -> bootstrap -> test -> unregister          [Phase 4]
 ```
+
+CI does **not** yet call these targets — it still runs its own step list, and it uses a Postgres
+service container rather than this compose stack, so `make up` does not apply to it unchanged.
+Converging the two is Phase 2 work, landing with `clean-room.yml`. Until then the Makefile and
+CI can drift, and `make test-all` is deliberately ordered to mirror CI's steps so the drift is
+at least visible.
 
 ### Two invariants that make the difference
 
-**Every script registers a `trap` cleanup.** `server/conformance/run.sh` already does this
-correctly — its `cleanup()`/`trap cleanup EXIT` pair is the pattern to copy. A script that
-cleans up only on the success path is how leaked state accumulates.
+**Every script registers a `trap` cleanup.** `server/conformance/run.sh` was the model here —
+and then turned out to have the subtle version of the bug: its trap fired correctly but killed
+only the `npx` wrapper, leaving the real server running (finding 11). Cleaning up the pid you
+started is not the same as cleaning up the process tree you caused.
 
 **`verify-clean.sh` runs at the start of a run as well as at the end.** Checking only at the end
 tells you that you made a mess. Checking at the start refuses to produce a result that inherited
@@ -147,12 +172,16 @@ Half a day. Worth doing even if everything after it is dropped.
 
 Closes findings 1, 5 and 7, and makes 2, 3 and 6 *visible* instead of mysterious.
 
-### Phase 1 — ephemeral dependencies
+### Phase 1 — ephemeral dependencies *(done)*
 
-1–2 days. `docker-compose.test.yml` + `Makefile` + `up`/`down`/`env`. Namespaced, ephemeral,
-no restart policies, discovered ports.
+`deploy/docker-compose.test.yml` + `Makefile` + `up`/`down`/`env`. Namespaced per checkout and
+per run, tmpfs state, no restart policies, host port discovered with `docker compose port`.
 
-Closes findings 3, 4 and 6.
+Closes findings 3, 4 and 6, and exposed findings 10, 11 and 12 — all now fixed.
+
+Verified end to end on 2026-08-01: `make up` → `make test-all` (typecheck, build, migrate,
+**113 passed / 0 skipped**, web build, and the real-`gh` conformance gate) → `make down`
+reporting a completely clean machine.
 
 ### Phase 2 — bootstrap from bare metal
 
@@ -186,20 +215,49 @@ Closes finding 8 — the UI build stops being optional because a test depends on
 
 ---
 
-## 6. Usage (as it exists today, after Phase 0)
+## 6. Usage (as it exists today, after Phases 0 and 1)
+
+The whole loop:
 
 ```bash
-bash scripts/dev/doctor.sh          # preflight: is this machine able to run the suite?
-bash scripts/dev/verify-clean.sh    # is there leaked state from a previous run?
+make doctor     # can this machine run the suite at all?
+make up         # ephemeral Postgres on a discovered port, writes .env.test
+make test-all   # typecheck, build, migrate, 113 tests, web build, gh conformance gate
+make down       # tear down, then assert the machine is clean
 ```
 
-Run the full suite with e2e coverage actually enforced:
+`make down` ends by running `verify-clean.sh`, so teardown is asserted rather than assumed. A
+clean result looks like this, and any leaked container, volume, network, server process or temp
+directory shows up as a named warning instead:
+
+```
+== processes ==
+  ok    no stray ADP server processes
+== temp directories ==
+  ok    no stale temp directories
+verify-clean: ok
+```
+
+Recovery paths, for when a run was killed hard enough to skip its trap:
 
 ```bash
-ADP_REQUIRE_DB=1 DATABASE_URL=postgres://adp:adp@localhost:5432/adp npm test --prefix server
+make down-all                          # sweep every adp-test-* project on the machine
+bash scripts/dev/verify-clean.sh --fix # remove leaked resources and generated files
+make nuke                              # the above, plus deps, build output and the gh cache
 ```
+
+`make up` requires Docker. Without it, point the suite at any Postgres you like and skip the
+container layer entirely:
+
+```bash
+bash scripts/dev/env.sh postgres://user:pass@host:5432/db && make test
+```
+
+### On the e2e skip
 
 Without `ADP_REQUIRE_DB`, a missing `DATABASE_URL` still skips the e2e tier — that keeps
-`npm test` usable on a machine with no database, which was the original and legitimate reason for
-the skip. The change is that any context which *intends* full coverage now says so explicitly,
-and gets a hard failure instead of a green partial run.
+`npm test` (`make test-unit`) usable on a machine with no database, which was the original and
+legitimate reason for the skip. The change is that any context which *intends* full coverage now
+says so explicitly and gets a hard failure instead of a green partial run. `make up` writes
+`ADP_REQUIRE_DB=1` into `.env.test`, so everything downstream of a real stack is enforced by
+default.

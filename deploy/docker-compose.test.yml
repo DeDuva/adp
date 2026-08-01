@@ -1,0 +1,53 @@
+# Ephemeral dependency stack for tests. This is NOT a deployment.
+#
+# docker-compose.yml next to this file describes a deployment, and a deployment
+# is *supposed* to restart itself, hold named volumes, and bind well-known
+# ports. The bug was never that file — it was that dev and test reused it, so a
+# months-old `deploy-server-1` image would resurrect itself after a Docker
+# restart and answer on the dev port, turning a route that provably exists in
+# the checkout into a phantom 404 (docs/test-environment-automation.md,
+# findings 3 and 4).
+#
+# So this file inverts every one of those properties:
+#
+#   - Postgres only. The server under test always runs from source, never from
+#     a built image, so it cannot go stale relative to the checkout.
+#   - No `restart:` key anywhere — the Compose default is "no". Nothing here may
+#     outlive the run that created it.
+#   - tmpfs for PGDATA, no named volumes. State cannot survive the container,
+#     so no run can inherit a previous run's database.
+#   - The host port is unspecified, so Docker assigns an ephemeral one that
+#     scripts/dev/up.sh discovers with `docker compose port`. Removes the whole
+#     "something else is already on 5432" class of failure.
+#   - A default project name that is namespaced and prefix-matchable, so
+#     scripts/dev/verify-clean.sh can identify leaked state unambiguously.
+#     scripts/dev/up.sh overrides it per run via COMPOSE_PROJECT_NAME, which
+#     takes precedence over this, so parallel runs and git worktrees never
+#     collide.
+name: adp-test
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: adp
+      POSTGRES_PASSWORD: adp
+      POSTGRES_DB: adp
+      # A subdirectory of the mount rather than the mount root: initdb refuses
+      # a non-empty PGDATA, and this keeps that true regardless of what the
+      # mount point itself happens to contain.
+      PGDATA: /var/lib/postgresql/data/pgdata
+    tmpfs:
+      - /var/lib/postgresql/data
+    ports:
+      # No host side: Docker picks a free ephemeral port. Never hardcode 5432
+      # here — that reintroduces the conflict this file exists to avoid.
+      - "5432"
+    healthcheck:
+      # Tighter interval than the deployment's: this gates `up.sh --wait`, and
+      # shaving the bring-up is worth it on a stack torn down every run.
+      test: ["CMD-SHELL", "pg_isready -U adp -d adp"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+      start_period: 2s

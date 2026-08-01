@@ -109,4 +109,25 @@ else
   ok "no stale temp directories"
 fi
 
+section "generated files"
+# up.sh writes these and down.sh removes them; if they are here at the start of
+# a run, a previous teardown did not complete. The DSN inside a stale .env.test
+# points at an ephemeral port that no longer exists, which fails in a way that
+# looks like a database bug rather than a leftover-file bug.
+for target in "$ADP_REPO_ROOT/.env.test" "$ADP_REPO_ROOT/.adp-test"; do
+  rel="${target#"$ADP_REPO_ROOT"/}"
+  if [ -e "$target" ]; then
+    warn "$rel still present (a stack is up, or a teardown was interrupted)"
+    if [ "$FIX" = "1" ]; then
+      rm -rf "$target"
+      info "removed $rel"
+      ADP_WARNINGS=$((ADP_WARNINGS - 1))
+    else
+      hint "make down   # the correct way to remove these"
+    fi
+  else
+    ok "$rel absent"
+  fi
+done
+
 adp_summary "verify-clean"

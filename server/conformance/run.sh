@@ -26,9 +26,37 @@ TLS_PORT="${ADP_CONFORMANCE_TLS_PORT:-$((40000 + RANDOM % 20000))}"
 WORKDIR="$(mktemp -d)"
 GH_HOST="localhost:${TLS_PORT}"
 
+SELF_PGID="$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')"
+
+# `kill $SERVER_PID` reaches only the `npx` wrapper. tsx then spawns a child
+# node process which survives, keeps the port bound, and gets reparented to
+# init — a stray ADP server that outlives the run and answers on a port
+# something else expects to own later. That is the phantom-404 failure mode in
+# docs/test-environment-automation.md (finding 3) arriving by a second route,
+# and it was caught by scripts/dev/verify-clean.sh after a real run.
+#
+# So signal the whole process group rather than the one pid. The group is read
+# off the process itself, so it still works once children have been reparented,
+# and it is compared against this script's own group first — signalling that
+# would kill the script mid-cleanup.
+kill_tree() {
+  local pid="${1:-}" pgid
+  [ -n "$pid" ] || return 0
+  pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')"
+  if [ -n "$pgid" ] && [ "$pgid" != "$SELF_PGID" ]; then
+    kill -TERM -- "-$pgid" 2>/dev/null || true
+    return 0
+  fi
+  # Shares our group (no separate group was created): walk the tree instead,
+  # deepest first, so no child is orphaned by its parent dying ahead of it.
+  local child
+  for child in $(pgrep -P "$pid" 2>/dev/null); do kill_tree "$child"; done
+  kill -TERM "$pid" 2>/dev/null || true
+}
+
 cleanup() {
-  [ -n "${SERVER_PID:-}" ] && kill "$SERVER_PID" 2>/dev/null || true
-  [ -n "${PROXY_PID:-}" ] && kill "$PROXY_PID" 2>/dev/null || true
+  kill_tree "${SERVER_PID:-}"
+  kill_tree "${PROXY_PID:-}"
   [ -n "${DEBUG_KEEP_WORKDIR:-}" ] || rm -rf "$WORKDIR"
 }
 trap cleanup EXIT
