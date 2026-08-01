@@ -27,6 +27,11 @@ jobs:
       GIT_ROOT: /tmp/adp-ci-git
       SIGNING_KEY: ci-test-key
       PUBLIC_URL: https://adp.ci.example.com
+      # The e2e tier skips itself when DATABASE_URL is absent, so that a laptop
+      # with no Postgres can still run `npm test`. That makes a skip and a pass
+      # indistinguishable at the exit code — CI must never accept that, so here
+      # a missing DATABASE_URL is a hard failure instead (server/test/require-db.ts).
+      ADP_REQUIRE_DB: "1"
     defaults:
       run:
         working-directory: server

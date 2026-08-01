@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { skipWithoutDb } from "./require-db.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -25,9 +26,10 @@ const execFileAsync = promisify(execFile);
 // This is the M0 exit criterion from docs/pragmatic_mvp.md: "a real repo can
 // be pushed to and cloned from the server over HTTPS with a token." Requires
 // a real Postgres — set DATABASE_URL to run it locally, or rely on CI, which
-// provides one as a service container. Silently skipped otherwise so `npm
-// test` stays usable on a machine with no database.
-describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create -> clone -> push", () => {
+// provides one as a service container. Skipped otherwise so `npm test` stays
+// usable on a machine with no database; set ADP_REQUIRE_DB=1 to turn that skip
+// into a hard failure instead (test/require-db.ts).
+describe.skipIf(skipWithoutDb)("M0 end-to-end: token -> repo create -> clone -> push", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;

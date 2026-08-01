@@ -62,7 +62,13 @@ node conformance/tls-proxy.mjs "$WORKDIR/cert.pem" "$WORKDIR/key.pem" "$TLS_PORT
 PROXY_PID=$!
 
 # --- ADP server -------------------------------------------------------------
-export DATABASE_URL="${DATABASE_URL:-postgres://adp:adp@localhost:5432/adp}"
+# One canonical local DSN, shared with scripts/dev/* — these had drifted apart
+# (docs/test-environment-automation.md, finding 5). config.sh, not lib.sh:
+# constants only, so it cannot override this script's own `fail()`. Sourced
+# defensively so this keeps working from a partial checkout.
+# shellcheck source=../scripts/dev/config.sh
+[ -f ../scripts/dev/config.sh ] && . ../scripts/dev/config.sh
+export DATABASE_URL="${DATABASE_URL:-${ADP_DEFAULT_DATABASE_URL:-postgres://adp:adp@localhost:5432/adp}}"
 export GIT_ROOT="$WORKDIR/git"
 export SIGNING_KEY="conformance-test-key"
 export PUBLIC_URL="http://localhost:${PORT}"

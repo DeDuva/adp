@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { skipWithoutDb } from "./require-db.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -38,7 +39,7 @@ function textOf(result: { content: { type: string; text?: string }[] }): string 
 // HTTP client (src/mcp/client.ts) hitting the real server. Nothing here is
 // mocked except the wire between MCP client and server, which is exactly
 // what the SDK's InMemoryTransport is for.
-describe.skipIf(!process.env.DATABASE_URL)("M1c: MCP native plane", () => {
+describe.skipIf(skipWithoutDb)("M1c: MCP native plane", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;
