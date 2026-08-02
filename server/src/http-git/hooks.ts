@@ -1,71 +1,16 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
-import { and, eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import type { GitBackend, CommitInfo } from "../core/git-backend.js";
+import type { GitBackend } from "../core/git-backend.js";
 import type { Signer } from "../core/signing.js";
-import { changes, identities } from "../db/schema.js";
-import { recordOperation } from "../core/operations.js";
+import { identities, mirrorSyncLog } from "../db/schema.js";
 import { findRepo } from "../core/repos-lookup.js";
+import { findMirror } from "../core/mirrors-lookup.js";
+import { recordPushedCommits } from "../core/change-recorder.js";
 import { BundledSecretScanProvider, type SecretScanProvider } from "../core/secret-scan.js";
 
 const ZERO_SHA = "0".repeat(40);
-
-// A ref update spanning more than this many new commits (a mirrored import of
-// real GitHub history, not an incremental push) is recorded page by page
-// instead of via one `git log --max-count=500` call — that single call used
-// to silently drop everything past the newest 500 commits, which is the one
-// failure mode this product cannot have: a gap in the provenance record.
-const RECORD_BATCH_SIZE = 500;
-
-async function recordCommitsBatch(
-  db: Db,
-  signer: Signer,
-  repo: { id: string },
-  owner: string,
-  name: string,
-  identity: { id: string; kind: string; principal: string },
-  commits: CommitInfo[],
-): Promise<void> {
-  if (commits.length === 0) return;
-  const shas = commits.map((c) => c.sha);
-  const existingRows = await db
-    .select({ gitSha: changes.gitSha })
-    .from(changes)
-    .where(and(eq(changes.repoId, repo.id), inArray(changes.gitSha, shas)));
-  const existing = new Set(existingRows.map((r) => r.gitSha));
-  const toRecord = commits.filter((c) => !existing.has(c.sha));
-  if (toRecord.length === 0) return;
-
-  // One transaction per batch (not per commit) — a >500-commit mirror import
-  // used to do one DB round-trip per commit; this keeps the per-commit
-  // signature and operations row (the append-only spine invariant) but pages
-  // the round-trips instead.
-  await db.transaction(async (tx) => {
-    for (const commit of toRecord) {
-      const provenance = { kind: identity.kind, principal: identity.principal, via: "push" };
-      const signature = signer.sign({
-        repo: `${owner}/${name}`,
-        git_sha: commit.sha,
-        intent_id: null,
-        provenance,
-      });
-
-      const [change] = await tx
-        .insert(changes)
-        .values({ repoId: repo.id, gitSha: commit.sha, intentId: null, provenance, signature })
-        .returning();
-
-      await recordOperation(tx, {
-        repoId: repo.id,
-        actorId: identity.id,
-        verb: "change.create",
-        target: `${owner}/${name}@${commit.sha}`,
-        after: { id: change!.id, gitSha: commit.sha, via: "push" },
-      });
-    }
-  });
-}
 
 // These routes are only ever called by the pre-receive/post-receive hook
 // scripts this same server writes into each bare repo at creation
@@ -167,6 +112,8 @@ export function registerHookRoutes(
     }
 
     const identity = identityId ? (await db.select().from(identities).where(eq(identities.id, identityId)))[0] : undefined;
+    const mirror = await findMirror(db, repo.id);
+    const mirrorOutbound = mirror?.enabled && (mirror.direction === "outbound" || mirror.direction === "both") ? mirror : null;
 
     for (const update of updates) {
       if (update.newSha === ZERO_SHA) continue;
@@ -176,37 +123,36 @@ export function registerHookRoutes(
       // nothing safe to record (this shouldn't happen in practice: pushing
       // at all requires an authenticated identity, so identityId should
       // always resolve).
-      if (!identity) continue;
-
-      // A brand-new branch (oldSha all-zero) usually forks from history
-      // that's already recorded via whatever ref it was pushed from —
-      // recording the tip only (not the whole reachable history) avoids
-      // re-recording everything on every new branch. `existing change`
-      // dedup in recordCommitsBatch covers the rest regardless.
-      //
-      // This shortcut is wrong for one case this file doesn't handle yet: a
-      // *first* mirror import, where `main` is pushed as a brand-new branch
-      // on the ADP side but carries real, never-before-seen history (there's
-      // nothing else it could have forked from that's "already recorded").
-      // Mirror mode (docs/pragmatic_mvp.md M2) needs its own bulk-import path
-      // that walks full history rather than relying on this heuristic — this
-      // is the reason it can't just reuse the push hook as-is.
-      if (update.oldSha === ZERO_SHA) {
-        const commits = await gitBackend.log(owner, name, update.newSha, 1);
-        await recordCommitsBatch(db, signer, repo, owner, name, identity, commits);
-        continue;
+      if (identity) {
+        // Chunking past a single 500-commit `git log` call (a >500-commit
+        // mirror import, not an ordinary push) lives inside
+        // recordPushedCommits itself (core/change-recorder.ts) — shared with
+        // the inbound mirror webhook, so both callers get the fix.
+        await recordPushedCommits(
+          db,
+          gitBackend,
+          signer,
+          owner,
+          name,
+          repo.id,
+          { id: identity.id, kind: identity.kind, principal: identity.principal },
+          update.oldSha,
+          update.newSha,
+          "push",
+        );
       }
 
-      // Page through the whole range in RECORD_BATCH_SIZE-sized batches —
-      // this is what turns a >500-commit mirror import into a complete
-      // record instead of a truncated one.
-      let skip = 0;
-      for (;;) {
-        const batch = await gitBackend.log(owner, name, `${update.oldSha}..${update.newSha}`, RECORD_BATCH_SIZE, skip);
-        if (batch.length === 0) break;
-        await recordCommitsBatch(db, signer, repo, owner, name, identity, batch);
-        if (batch.length < RECORD_BATCH_SIZE) break;
-        skip += RECORD_BATCH_SIZE;
+      // Queue the outbound push-out as an outbox row rather than pushing to
+      // GitHub inline here — see core/mirror-poller.ts's comment for why
+      // (keeps this hook's latency independent of GitHub's availability).
+      if (mirrorOutbound) {
+        await db.insert(mirrorSyncLog).values({
+          mirrorId: mirrorOutbound.id,
+          direction: "outbound",
+          ref: update.ref,
+          sha: update.newSha,
+          status: "pending",
+        });
       }
     }
 

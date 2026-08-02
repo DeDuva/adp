@@ -21,6 +21,9 @@ import { registerGateRoutes } from "./http-rest/gates.js";
 import { registerOperationRoutes } from "./http-rest/operations.js";
 import { registerWorkspaceRoutes } from "./http-rest/workspaces.js";
 import { registerEvidenceRoutes } from "./http-rest/evidence.js";
+import { registerMirrorRoutes } from "./http-rest/mirrors.js";
+import { registerMirrorWebhookRoutes, registerMirrorWebhookRawBodyParser } from "./http-rest/mirror-webhook.js";
+import { startMirrorPoller } from "./core/mirror-poller.js";
 import { registerCandidateSetRoutes } from "./http-rest/candidate-sets.js";
 import { LandRequirement } from "./core/repo-policy.js";
 import { loadGitHubSchema } from "./http-gql/schema.js";
@@ -53,6 +56,11 @@ async function main() {
     ["application/x-git-upload-pack-request", "application/x-git-receive-pack-request"],
     (_req, payload, done) => done(null, payload),
   );
+  // Must be registered before authPlugin: it replaces the default
+  // application/json parser app-wide, scoped internally to only affect
+  // /webhooks/github/* (see its own comment) — GitHub's webhook signature
+  // covers the raw body bytes, which the default eager-JSON-parse discards.
+  registerMirrorWebhookRawBodyParser(app);
 
   await app.register(authPlugin(db));
 
@@ -74,6 +82,8 @@ async function main() {
   registerOperationRoutes(app, db, gitBackend);
   registerWorkspaceRoutes(app, db, gitBackend);
   registerEvidenceRoutes(app, db);
+  registerMirrorRoutes(app, db, config.MIRROR_CREDENTIAL_KEY);
+  registerMirrorWebhookRoutes(app, db, gitBackend, signer, config.MIRROR_CREDENTIAL_KEY);
   registerCandidateSetRoutes(app, db);
 
   const gqlSchema = loadGitHubSchema();
@@ -98,6 +108,8 @@ async function main() {
   }
 
   await app.listen({ host: "0.0.0.0", port: config.PORT });
+
+  startMirrorPoller(db, gitBackend, config.MIRROR_CREDENTIAL_KEY, config.MIRROR_POLL_INTERVAL_MS);
 }
 
 main().catch((err) => {

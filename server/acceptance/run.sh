@@ -74,6 +74,7 @@ step "A — environment"
 [ -n "${DATABASE_URL:-}" ] || fail "DATABASE_URL is not set (run 'make up' first, or use 'make acceptance')"
 export GIT_ROOT="$WORKDIR/git"
 export SIGNING_KEY="acceptance-$(openssl rand -hex 8)"
+export MIRROR_CREDENTIAL_KEY="acceptance-$(openssl rand -hex 8)"
 export PUBLIC_URL="http://localhost:${PORT}"
 export PORT
 mkdir -p "$GIT_ROOT" "$ARTIFACTS"

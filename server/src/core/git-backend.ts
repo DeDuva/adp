@@ -435,6 +435,26 @@ export class GitBackend {
     return stdout.trim();
   }
 
+  // Mirror mode (M2): push/fetch against an arbitrary remote URL, never
+  // persisted as a named git remote — the credential is baked into the URL
+  // string by the caller and this way never lands in .git/config or `git
+  // remote -v` output. Fast-forward only: `git push`/`git fetch` without
+  // `--force` already reject a non-fast-forward update, which is exactly
+  // the "surface divergence, don't resolve it" behavior mirror mode wants.
+  async pushToRemote(owner: string, name: string, remoteUrl: string, refspec: string): Promise<void> {
+    await execFileAsync("git", ["push", remoteUrl, refspec], { cwd: this.repoPath(owner, name) });
+  }
+
+  // Fetches `remoteRef` from an arbitrary remote into FETCH_HEAD (never
+  // directly onto a local branch — the caller decides whether to move
+  // refs/heads/<branch>, via fastForwardRef, only after confirming with
+  // isAncestor that doing so is actually a fast-forward) and returns its sha.
+  async fetchFromRemote(owner: string, name: string, remoteUrl: string, remoteRef: string): Promise<string> {
+    await execFileAsync("git", ["fetch", remoteUrl, remoteRef], { cwd: this.repoPath(owner, name) });
+    const { stdout } = await execFileAsync("git", ["rev-parse", "FETCH_HEAD"], { cwd: this.repoPath(owner, name) });
+    return stdout.trim();
+  }
+
   async createRef(owner: string, name: string, ref: string, sha: string): Promise<void> {
     await run(["update-ref", ref, sha], this.repoPath(owner, name));
   }

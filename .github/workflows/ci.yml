@@ -26,6 +26,7 @@ jobs:
       DATABASE_URL: postgres://adp:adp@localhost:5432/adp
       GIT_ROOT: /tmp/adp-ci-git
       SIGNING_KEY: ci-test-key
+      MIRROR_CREDENTIAL_KEY: ci-test-mirror-key
       PUBLIC_URL: https://adp.ci.example.com
       # The e2e tier skips itself when DATABASE_URL is absent, so that a laptop
       # with no Postgres can still run `npm test`. That makes a skip and a pass
