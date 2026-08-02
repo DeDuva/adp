@@ -662,11 +662,21 @@ differentiators, including the two items that were outstanding as of 2026-07-26 
 path, candidate sets), are now implemented and covered by real e2e tests — **M1 is complete.**
 
 ### M2 — Adoption + trust ramp *(revised 2026-07-26; amended 2026-08-01 per [`m2-readiness-review.md`](m2-readiness-review.md))*
-**Mirror mode** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub; the single
-biggest adoption lever and cheap: push mirror + webhook ingest). Outbound webhook emitter. `adp` CLI.
+**Mirror mode — ✓ landed** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub;
+the single biggest adoption lever and cheap: push mirror + webhook ingest). **Outbound webhook
+emitter — ✓ landed:** `core/webhooks.ts` (HMAC-SHA256 signing, GitHub's own `X-Hub-Signature-256`
+header shape, 3-attempt retry with backoff, then logged rather than queued) + `POST/GET/DELETE
+/api/v3/repos/:owner/:repo/hooks` + emission wired at push (`http-git/hooks.ts`), PR open/merge (REST
+and GraphQL), and gate report. **`adp` CLI — ✓ landed:** `cli/`, a new top-level package (first CLI
+in the repo, zero runtime dependencies). Thin REST wrapper — `login`, `repo mirror`, `gate report`,
+`pr list`, `pr merge` — reusing the same bearer-token auth every other client already uses.
+`~/.adp/config.json` or `ADP_SERVER_URL`/`ADP_TOKEN`, same override shape as `gh`'s own
+`GH_HOST`/`GH_TOKEN`.
 `conformance/` published against `spec/`. GraphQL coverage widened from measured real traffic —
-which makes **API-traffic telemetry a named prerequisite**, not an optimization: nothing measures
-traffic today, and the same instrumentation feeds A2's endpoint-distribution research for free.
+which makes **API-traffic telemetry a named prerequisite**, not an optimization: nothing measured
+traffic before this. **✓ landed:** `core/telemetry.ts` + `GET /metrics` (Prometheus text format) —
+REST by route pattern/method/status, GraphQL by root field/operation type/outcome. The coverage
+*widening* itself still waits on real traffic accumulating against a running instance.
 Plus the trust-plane ramp (§1.5 item 4):
 - **Scanner-as-gate adapters — ✓ landed:** `adapters/` (new top-level package, standalone scripts —
   see `adapters/README.md` for the contract). Adapters never invoke the scanner; they translate output
@@ -688,21 +698,27 @@ Plus the trust-plane ramp (§1.5 item 4):
 
 Plus the **scale hygiene forced by mirror mode** (added 2026-08-01 — mirroring imports real GitHub
 repos with real histories, which turns these from M5 speculation into M2 correctness bugs; details
-and file references in the readiness review §2):
+and file references in the readiness review §2). **✓ landed** (all five items):
 - **Chunked post-receive recording:** the 500-commit-per-ref-update cap in
   `server/src/http-git/hooks.ts` must chunk or queue, never truncate silently — a silent hole in
-  the provenance record is the one failure mode this product cannot have.
-- **Secondary-index pass:** `changes (repo_id, git_sha)`, `gate_results (repo_id, git_sha, name)`,
-  and an `operations` strategy (a `repo_id` column or an expression index serving the `target`
-  filter) — today every one of these hot paths is a sequential scan.
+  the provenance record is the one failure mode this product cannot have. Done for an existing
+  branch receiving a >500-commit push (paged via `git log --skip`, batched into one transaction per
+  page instead of one per commit). **Known residual gap, left for mirror mode itself (PR4):** a
+  brand-new branch still records its tip commit only (the pre-existing shortcut, `hooks.ts`'s
+  `oldSha === ZERO_SHA` case) — correct for an ordinary new local branch, wrong for a *first* mirror
+  import, which needs its own bulk-import path rather than reusing the push hook as-is.
+- **Secondary-index pass:** `changes (repo_id, git_sha)`, `gate_results (repo_id, git_sha, name)`
+  composite indexes, and `operations` gained a real `repo_id` column (indexed) replacing the
+  `target` LIKE-prefix scan — every one of these hot paths was a sequential scan before.
 - **Pagination on unbounded list endpoints** (`GET /pulls`, `GET /git/refs`), GitHub-shaped
   (`per_page`/`page`) — a compat-fidelity gain as well as a scale fix.
 - **Merge-method fidelity:** real merge-commit and squash support on both merge paths
-  (`merge_method` is currently read from nobody — every land silently fast-forwards, which a
-  migrator's `gh pr merge --merge` cannot distinguish from GitHub behavior until history is
-  inspected). Rebase-merge may stay unimplemented behind a typed error.
-- **Land-policy TOCTOU decision:** policy is evaluated before the ref CAS, not atomically with it;
-  either re-check at the CAS point or document the accepted window in `spec/`.
+  (`server/src/core/merge.ts`, shared by REST and GraphQL) — `merge_method`/`mergeMethod` is now
+  read and honored; default changed from silent fast-forward to a real merge commit, matching
+  GitHub's own default. Rebase-merge stays a typed 422, not implemented.
+- **Land-policy TOCTOU:** policy is now re-evaluated immediately before the ref CAS on both merge
+  paths, narrowing (not closing — git and Postgres aren't one transaction) the window a superseding
+  gate result could land in.
 
 **At kickoff:** resolve the two open questions in [`environments-plan.md`](environments-plan.md) §5
 (SIGNING_KEY custody including the retired-key trust model; dev-instance ownership and retirement

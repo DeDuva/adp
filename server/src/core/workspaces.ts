@@ -42,6 +42,7 @@ export async function createWorkspace(
       .returning();
 
     await recordOperation(tx, {
+      repoId: repo.id,
       actorId,
       verb: "workspace.create",
       target: `${repo.owner}/${repo.name}@${branch}`,
@@ -83,6 +84,7 @@ export async function destroyWorkspace(
     await tx.update(workspaces).set({ destroyedAt: new Date() }).where(eq(workspaces.id, workspace.id));
 
     await recordOperation(tx, {
+      repoId: repo.id,
       actorId,
       verb: "workspace.destroy",
       target: `${repo.owner}/${repo.name}@${workspace.branch}`,
