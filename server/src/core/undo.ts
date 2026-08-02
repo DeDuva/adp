@@ -61,6 +61,7 @@ export async function undoOperation(
     await tx.update(proposals).set({ state: "open", mergedAt: null }).where(eq(proposals.id, proposal.id));
 
     await recordOperation(tx, {
+      repoId: repo.id,
       actorId,
       verb: "proposal.merge.undo",
       target: entry.target,

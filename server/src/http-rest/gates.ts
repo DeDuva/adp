@@ -81,6 +81,7 @@ export function registerGateRoutes(app: FastifyInstance, db: Db, signer: Signer,
           .returning();
 
         await recordOperation(tx, {
+          repoId: repo.id,
           actorId: req.identity!.identityId,
           verb: "gate.report",
           target: `${owner}/${repoName}@${parsed.data.git_sha}#${parsed.data.name}`,

@@ -6,6 +6,7 @@ import { findRepo } from "../core/repos-lookup.js";
 import { recordOperation } from "../core/operations.js";
 import { evaluateLandPolicy } from "../core/land-policy.js";
 import type { LandRequirement } from "../core/repo-policy.js";
+import { performMerge, type MergeMethod } from "../core/merge.js";
 import { latestGateResults } from "../core/gate-results-lookup.js";
 import { toGlobalId, fromGlobalId } from "./global-id.js";
 import { buildConnection, type ConnectionArgs } from "./connections.js";
@@ -95,6 +96,12 @@ const REVIEW_EVENT_TO_STATE: Record<string, ReviewRow["state"]> = {
   APPROVE: "approved",
   REQUEST_CHANGES: "changes_requested",
   COMMENT: "commented",
+};
+
+const MERGE_METHOD_TO_INTERNAL: Record<string, MergeMethod> = {
+  MERGE: "merge",
+  SQUASH: "squash",
+  REBASE: "rebase",
 };
 
 function shapePullRequestReview(review: ReviewRow) {
@@ -440,6 +447,7 @@ export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequi
             .returning();
 
           await recordOperation(tx, {
+            repoId: repo.id,
             actorId: identity.identityId,
             verb: "issue.create",
             target: `${repo.owner}/${repo.name}#${nextNumber}`,
@@ -464,6 +472,7 @@ export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequi
             .returning();
 
           await recordOperation(tx, {
+            repoId: repo.id,
             actorId: identity.identityId,
             verb: "issue.close",
             target: `${repo.owner}/${repo.name}#${existing.number}`,
@@ -501,6 +510,7 @@ export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequi
             .returning();
 
           await recordOperation(tx, {
+            repoId: repo.id,
             actorId: identity.identityId,
             verb: "issue.comment.create",
             target: `${repo.owner}/${repo.name}#${issue.number}`,
@@ -573,6 +583,7 @@ export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequi
             .returning();
 
           await recordOperation(tx, {
+            repoId: repo.id,
             actorId: identity.identityId,
             verb: "proposal.create",
             target: `${repo.owner}/${repo.name}#${nextNumber}`,
@@ -600,6 +611,7 @@ export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequi
             .returning();
 
           await recordOperation(tx, {
+            repoId: repo.id,
             actorId: identity.identityId,
             verb: "proposal.close",
             target: `${repo.owner}/${repo.name}#${existing.number}`,
@@ -628,6 +640,7 @@ export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequi
             .returning();
 
           await recordOperation(tx, {
+            repoId: repo.id,
             actorId: identity.identityId,
             verb: "proposal.reopen",
             target: `${repo.owner}/${repo.name}#${existing.number}`,
@@ -655,6 +668,7 @@ export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequi
 
         await ctx.db.transaction(async (tx) => {
           await recordOperation(tx, {
+            repoId: repo.id,
             actorId: identity.identityId,
             verb: "proposal.ready_for_review",
             target: `${repo.owner}/${repo.name}#${proposal.number}`,
@@ -666,11 +680,14 @@ export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequi
         return { clientMutationId: null, pullRequest: shapePullRequest(proposal, repo) };
       },
 
-      // Same fast-forward-only merge model as REST (proposals.ts) — see that
-      // file's comment for why 409-and-rebase is the MVP's whole conflict story.
+      // Same land model as REST (proposals.ts) — see that file's comment for
+      // why 409-and-rebase is the MVP's whole conflict story, and
+      // core/merge.ts for what merge_method changes about the result.
       mergePullRequest: async (
         _root,
-        args: { input: { pullRequestId: string; expectedHeadOid?: string | null } },
+        args: {
+          input: { pullRequestId: string; expectedHeadOid?: string | null; mergeMethod?: string | null };
+        },
         ctx: GqlContext,
       ) => {
         const identity = requireIdentity(ctx);
@@ -715,16 +732,37 @@ export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequi
           );
         }
 
-        const updatedRef = await gitBackend.fastForwardRef(
-          repo.owner,
-          repo.name,
-          proposal.baseRef,
+        // Re-check land policy immediately before the ref CAS — see the REST
+        // merge route's comment (proposals.ts) for why this doesn't close the
+        // window entirely, only narrows it.
+        const policyAtCas = await evaluateLandPolicy(ctx.db, gitBackend, instanceFloor, repo, proposal);
+        if (!policyAtCas.allowed) {
+          throw new GraphQLError(`Land policy not satisfied: ${policyAtCas.unmet.join("; ")}`, {
+            extensions: { code: "BAD_USER_INPUT" },
+          });
+        }
+
+        const mergeMethod = MERGE_METHOD_TO_INTERNAL[args.input.mergeMethod ?? "MERGE"] ?? "merge";
+        const author = { name: identity.principal, email: `${identity.principal}@adp.local` };
+        const result = await performMerge(
+          gitBackend,
+          {
+            owner: repo.owner,
+            name: repo.name,
+            baseRef: proposal.baseRef,
+            headSha: proposal.headSha,
+            headRef: proposal.headRef,
+            number: proposal.number,
+            title: proposal.title,
+            body: proposal.body,
+          },
           currentBaseSha,
-          proposal.headSha,
+          mergeMethod,
+          author,
         );
-        if (!updatedRef) {
-          throw new GraphQLError(`base '${proposal.baseRef}' moved concurrently, retry`, {
-            extensions: { code: "CONFLICT" },
+        if (!result.ok) {
+          throw new GraphQLError(result.message, {
+            extensions: { code: result.status === 409 ? "CONFLICT" : "BAD_USER_INPUT" },
           });
         }
 
@@ -736,11 +774,12 @@ export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequi
             .returning();
 
           await recordOperation(tx, {
+            repoId: repo.id,
             actorId: identity.identityId,
             verb: "proposal.merge",
             target: `${repo.owner}/${repo.name}#${proposal.number}`,
             before: { baseSha: currentBaseSha },
-            after: { baseSha: proposal.headSha, mergedInto: proposal.baseRef },
+            after: { baseSha: result.sha, mergedInto: proposal.baseRef, mergeMethod },
           });
 
           return merged!;
@@ -785,6 +824,7 @@ export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequi
             .returning();
 
           await recordOperation(tx, {
+            repoId: repo.id,
             actorId: identity.identityId,
             verb: "review.create",
             target: `${repo.owner}/${repo.name}#${proposal.number}`,

@@ -96,6 +96,7 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
           .returning();
 
         await recordOperation(tx, {
+          repoId: repo.id,
           actorId: req.identity!.identityId,
           verb: "issue.create",
           target: `${owner}/${repoName}#${nextNumber}`,
@@ -187,6 +188,7 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
           .returning();
 
         await recordOperation(tx, {
+          repoId: repo.id,
           actorId: req.identity!.identityId,
           verb: closing ? "issue.close" : reopening ? "issue.reopen" : "issue.update",
           target: `${owner}/${repoName}#${number}`,
@@ -246,6 +248,7 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
           .returning();
 
         await recordOperation(tx, {
+          repoId: repo.id,
           actorId: req.identity!.identityId,
           verb: "issue.comment.create",
           target: `${owner}/${repoName}#${number}`,

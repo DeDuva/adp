@@ -177,7 +177,10 @@ curl -sf -X POST "http://localhost:${PORT}/api/v3/repos/${OWNER}/widget/pulls/1/
 echo "-- gh pr merge --"
 "$GH_BIN" pr merge 1 --repo "$REPO" --merge || fail "gh pr merge"
 
+# merge_method defaults to "merge" — main lands on a real merge commit, so
+# this checks the feature commit is reachable from main, not that main *is*
+# the feature head (docs/m2-readiness-review.md's merge-method-fidelity item).
 MERGED_LOG=$(git --git-dir="${GIT_ROOT}/${OWNER}/widget.git" log --oneline main)
-echo "$MERGED_LOG" | grep -q "feature commit" || fail "pr merge didn't fast-forward main server-side"
+echo "$MERGED_LOG" | grep -q "feature commit" || fail "pr merge did not land the feature commit on main server-side"
 
 echo "== conformance: all gate commands passed against real, unmodified gh ${GH_VERSION} =="

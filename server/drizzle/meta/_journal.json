@@ -50,6 +50,13 @@
       "when": 1785120411215,
       "tag": "0006_loud_ultimates",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785649734268,
+      "tag": "0007_public_sprite",
+      "breakpoints": true
     }
   ]
 }
