@@ -18,6 +18,7 @@ import { registerReviewRoutes } from "./http-rest/reviews.js";
 import { registerGitDataRoutes } from "./http-rest/git-data.js";
 import { registerHookRoutes } from "./http-git/hooks.js";
 import { registerGateRoutes } from "./http-rest/gates.js";
+import { registerDependencyAdmissionRoutes } from "./http-rest/dependency-admission.js";
 import { registerOperationRoutes } from "./http-rest/operations.js";
 import { registerWorkspaceRoutes } from "./http-rest/workspaces.js";
 import { registerEvidenceRoutes } from "./http-rest/evidence.js";
@@ -71,6 +72,7 @@ async function main() {
   registerGitDataRoutes(app, db, gitBackend);
   registerHookRoutes(app, db, gitBackend, signer);
   registerGateRoutes(app, db, signer, config.PUBLIC_URL);
+  registerDependencyAdmissionRoutes(app, db, signer, config.PUBLIC_URL);
   registerOperationRoutes(app, db, gitBackend);
   registerWorkspaceRoutes(app, db, gitBackend);
   registerEvidenceRoutes(app, db);

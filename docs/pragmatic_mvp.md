@@ -672,9 +672,17 @@ Plus the trust-plane ramp (§1.5 item 4):
   DSSE evidence attestation in; **Wiz Code (`wizcli`) is the reference adapter** (SAST, SCA,
   secrets, IaC in one integration), with one open engine (e.g. `osv-scanner`) as the
   second implementation proving the adapter interface.
-- **Dependency admission v0:** manifest/lockfile diffs become gate inputs — registry existence,
-  age/cooldown windows, OSV + OpenSSF malicious-packages lookups; unknowns quarantine to
-  supervisor approval; verdicts are typed and returned to the authoring agent.
+- **Dependency admission v0 — ✓ landed:** `core/dependency-admission.ts` + `POST
+  .../dependency-admission`, a typed gate (three-way `admit`/`quarantine`/`block` per package) a
+  lockfile diff reports into. One integration point covers both named checks: OpenSSF's Malicious
+  Packages project publishes directly into OSV.dev in OSV format (`MAL-` prefixed ids), so the same
+  `POST api.osv.dev/v1/query` call returns both ordinary CVE/GHSA advisories and malicious-package
+  reports — confirmed against the live API (queried a real reported-malicious npm package,
+  `sdxcode1@9.9.9` / MAL-2025-2155). Registry existence + an age/cooldown window are real for npm
+  (`registry.npmjs.org`) in v0; other ecosystems are honestly reported as unverified rather than
+  silently admitted. `quarantine` reports gate status `pending`, which `gates_green`
+  (`core/gate-results-lookup.ts`) already treats as not-green — a repo opts in by naming
+  `dependency-admission` in `adp.yaml`'s `gates:`, no land-policy code change needed.
 - **SBOM per land:** CycloneDX emitted as ordinary evidence on every landed change.
 
 Plus the **scale hygiene forced by mirror mode** (added 2026-08-01 — mirroring imports real GitHub
