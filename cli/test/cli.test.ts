@@ -16,10 +16,10 @@ interface RecordedRequest {
 // `fetch` — this exercises the actual request the CLI sends (method, path,
 // headers, body) over a real socket, the same testing boundary
 // e2e-webhooks.test.ts uses on the server side. It's a fake ADP server, not
-// the real one: that split (unit-ish here, real end-to-end for the commands
-// that already exist against a live server) is deliberate — the `repo
-// mirror` command wraps an endpoint that lands in a separate PR, so nothing
-// here can depend on it being live.
+// the real one, so a request shape here can still drift from what the real
+// endpoint actually requires (server/acceptance/run.sh's M2 section runs
+// this CLI against a live server, which is what caught `repo mirror`
+// shipping without `--credential` and with the wrong `direction` vocabulary).
 describe("adp CLI", () => {
   let server: Server;
   let port: number;
@@ -110,24 +110,27 @@ describe("adp CLI", () => {
     });
   });
 
-  it("repo mirror POSTs remote_url, webhook_secret, and direction", async () => {
+  it("repo mirror POSTs remote_url, webhook_secret, credential, and direction", async () => {
     const code = await run([
       "repo",
       "mirror",
       "acme/widget",
       "--remote-url",
-      "https://x-access-token:tok@github.com/acme/widget.git",
+      "https://github.com/acme/widget.git",
       "--secret",
       "whsec",
+      "--credential",
+      "ghp_faketoken",
       "--direction",
-      "pull",
+      "inbound",
     ]);
     expect(code).toBe(0);
     expect(requests[0]!.url).toBe("/api/v3/repos/acme/widget/mirror");
     expect(JSON.parse(requests[0]!.body)).toEqual({
-      remote_url: "https://x-access-token:tok@github.com/acme/widget.git",
+      remote_url: "https://github.com/acme/widget.git",
       webhook_secret: "whsec",
-      direction: "pull",
+      credential: "ghp_faketoken",
+      direction: "inbound",
     });
   });
 

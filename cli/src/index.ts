@@ -10,7 +10,7 @@ const USAGE = `adp — a CLI for ADP servers (docs/pragmatic_mvp.md M2)
 
 Usage:
   adp login --server <url> --token <token>
-  adp repo mirror <owner>/<repo> --remote-url <url> --secret <secret> [--direction push|pull|both]
+  adp repo mirror <owner>/<repo> --remote-url <url> --secret <secret> --credential <credential> [--direction outbound|inbound|both]
   adp gate report --repo <owner>/<repo> --sha <sha> --name <name> --status <success|failure|pending> [--summary <text>]
   adp pr list --repo <owner>/<repo>
   adp pr merge --repo <owner>/<repo> --number <n> [--method merge|squash|rebase]

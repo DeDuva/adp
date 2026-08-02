@@ -200,7 +200,7 @@ node dist/index.js login --server https://adp.example.com --token <token>   # wr
 | Command | Wraps |
 |---|---|
 | `adp login --server <url> --token <token>` | writes `~/.adp/config.json` (or set `ADP_SERVER_URL`/`ADP_TOKEN`) |
-| `adp repo mirror <owner>/<repo> --remote-url <url> --secret <secret> [--direction push\|pull\|both]` | `POST .../mirror` |
+| `adp repo mirror <owner>/<repo> --remote-url <url> --secret <secret> --credential <credential> [--direction outbound\|inbound\|both]` | `POST .../mirror` |
 | `adp gate report --repo <owner>/<repo> --sha <sha> --name <name> --status <success\|failure\|pending>` | `POST .../gates` |
 | `adp pr list --repo <owner>/<repo>` | `GET .../pulls` |
 | `adp pr merge --repo <owner>/<repo> --number <n> [--method merge\|squash\|rebase]` | `PUT .../pulls/{n}/merge` |
