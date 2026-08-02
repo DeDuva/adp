@@ -295,4 +295,229 @@ OPS_AFTER=$(api GET "/api/adp/repos/${OWNER}/${REPO}/operations")
 grep -q '"proposal.merge.undo"' <<<"$OPS_AFTER" || fail "C12: the undo did not record its own operation"
 pass "C12 main is back at $(cut -c1-8 <<<"$MAIN_BEFORE") and the undo recorded itself"
 
+step "D — the M2 trust-plane ramp"
+REPO_ROOT="$(cd .. && pwd)"
+
+# D13 — telemetry. Real traffic has been flowing since Part B; read it back.
+METRICS=$(curl -sS "http://localhost:${PORT}/metrics")
+grep -q '^# TYPE adp_http_requests_total counter$' <<<"$METRICS" || fail "D13: /metrics missing the HTTP counter family"
+grep -q '^adp_http_requests_total{' <<<"$METRICS" || fail "D13: /metrics has no HTTP request samples"
+grep -q '^adp_graphql_operations_total{' <<<"$METRICS" || fail "D13: /metrics has no GraphQL operation samples"
+pass "D13 /metrics carries real REST and GraphQL counters"
+
+# D14 — the adp CLI: a second client against the same REST surface gh and
+# curl have been using. Built once, cached like the pinned gh binary above.
+CLI_BIN="$REPO_ROOT/cli/dist/index.js"
+if [ ! -f "$CLI_BIN" ]; then
+  note "building adp CLI"
+  npm ci --prefix "$REPO_ROOT/cli" >/dev/null 2>&1 || fail "D14: npm ci --prefix cli failed"
+  npm run build --prefix "$REPO_ROOT/cli" >/dev/null 2>&1 || fail "D14: adp CLI build failed"
+fi
+CLI_OUT=$(ADP_SERVER_URL="http://localhost:${PORT}" ADP_TOKEN="$TOKEN" node "$CLI_BIN" pr list --repo "${OWNER}/${REPO}") \
+  || fail "D14: adp pr list failed"
+# C12 undid the merge and reopened the PR, so state here is "open" again —
+# check the title, the same state-independent signal B7's `gh pr view` used.
+grep -q "Describe the widget" <<<"$CLI_OUT" || fail "D14: adp pr list did not show the PR"
+pass "D14 adp CLI (pr list) shows the same PR gh and curl already saw"
+
+# D15 — outbound webhooks: register a hook, then trigger a real signed
+# delivery against a real local listener (not a mock of core/webhooks.ts).
+WEBHOOK_SECRET="acceptance-webhook-$(openssl rand -hex 8)"
+WEBHOOK_PORT=$((30000 + RANDOM % 10000))
+WEBHOOK_RECEIVED="$WORKDIR/webhook-received.json"
+node -e '
+const http = require("node:http");
+const fs = require("node:fs");
+const [port, outFile] = process.argv.slice(1);
+http.createServer((req, res) => {
+  let body = "";
+  req.on("data", (c) => { body += c; });
+  req.on("end", () => {
+    fs.writeFileSync(outFile, JSON.stringify({ headers: req.headers, body }));
+    res.writeHead(200); res.end("ok");
+  });
+}).listen(Number(port));
+' "$WEBHOOK_PORT" "$WEBHOOK_RECEIVED" &
+WEBHOOK_LISTENER_PID=$!
+sleep 0.3
+
+api POST "/api/v3/repos/${OWNER}/${REPO}/hooks" \
+  -d "{\"config\":{\"url\":\"http://127.0.0.1:${WEBHOOK_PORT}/\",\"secret\":\"${WEBHOOK_SECRET}\"},\"events\":[\"push\"]}" \
+  -o /dev/null -f || fail "D15: hook registration failed"
+
+(
+  cd "$CLONE"
+  git checkout -b webhook-trigger >/dev/null 2>&1
+  echo "trigger" >> README.md
+  git commit -am "trigger the outbound webhook" >/dev/null
+  git push origin webhook-trigger >/dev/null 2>&1
+) || fail "D15: trigger push failed"
+
+for _ in $(seq 1 20); do [ -s "$WEBHOOK_RECEIVED" ] && break; sleep 0.5; done
+kill_tree "$WEBHOOK_LISTENER_PID"
+[ -s "$WEBHOOK_RECEIVED" ] || fail "D15: webhook listener never received a delivery"
+
+WEBHOOK_BODY=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).body)' "$WEBHOOK_RECEIVED")
+WEBHOOK_SIG=$(printf '%s' "$WEBHOOK_BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | awk '{print $2}')
+WEBHOOK_GOT_SIG=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).headers["x-hub-signature-256"])' "$WEBHOOK_RECEIVED")
+[ "$WEBHOOK_GOT_SIG" = "sha256=${WEBHOOK_SIG}" ] || fail "D15: webhook signature did not verify against the configured secret"
+grep -q '"ref":"refs/heads/webhook-trigger"' <<<"$WEBHOOK_BODY" || fail "D15: webhook payload missing the pushed ref"
+pass "D15 outbound webhook delivered a correctly HMAC-signed push event"
+
+# D16 — a scanner-as-gate adapter. osv-scanner's has zero runtime
+# dependencies, so it runs directly against a fixture captured from a real
+# scan (adapters/test/) — no install, no mocked scanner output.
+CLI_OUT=$(node "$REPO_ROOT/adapters/osv-scanner/run.mjs" \
+  --json "$REPO_ROOT/adapters/test/fixtures/osv-scanner-real.json" \
+  --repo "${OWNER}/${REPO}" --sha "$HEAD_SHA" \
+  --server "http://localhost:${PORT}" --token "$TOKEN") || fail "D16: osv-scanner adapter failed"
+grep -q '^osv-scanner gate reported: failure' <<<"$CLI_OUT" || fail "D16: adapter did not report the expected failure verdict"
+EVIDENCE_AFTER_SCAN=$(api GET "/api/adp/repos/${OWNER}/${REPO}/evidence/${HEAD_SHA}")
+grep -q '"name":"osv-scanner"' <<<"$EVIDENCE_AFTER_SCAN" || fail "D16: evidence bundle missing the osv-scanner gate"
+pass "D16 osv-scanner adapter reported a real scan result, now in evidence"
+
+# D17 — dependency admission: typed per-package verdicts, live against the
+# real OSV.dev API (docs/pragmatic_mvp.md). sdxcode1@9.9.9 is a real
+# OpenSSF-reported malicious npm package (MAL-2025-2155); is-odd@3.0.1 is
+# real, old, and clean.
+DEP_RES=$(api POST "/api/v3/repos/${OWNER}/${REPO}/dependency-admission" \
+  -d "{\"git_sha\":\"${HEAD_SHA}\",\"packages\":[{\"ecosystem\":\"npm\",\"name\":\"is-odd\",\"version\":\"3.0.1\"},{\"ecosystem\":\"npm\",\"name\":\"sdxcode1\",\"version\":\"9.9.9\"}]}")
+grep -q '"status":"failure"' <<<"$DEP_RES" || fail "D17: expected an overall 'failure' status (a blocked package outranks a clean one)"
+grep -q 'MAL-' <<<"$DEP_RES" || fail "D17: expected the malicious package's reasons to cite an OpenSSF MAL- advisory"
+pass "D17 dependency admission blocked a real OpenSSF-reported malicious package"
+
+# D18 — SBOM per land: generated automatically on every merge (no separate
+# "generate SBOM" step), same real-fixture pattern as D16/D17 rather than a
+# synthetic manifest — a real `npm install` output.
+SBOM_REPO="sbom-demo"
+api POST "/api/v3/repos/${OWNER}" -d "{\"name\":\"${SBOM_REPO}\"}" -o /dev/null -f || fail "D18: repo create failed"
+SBOM_CLONE="$WORKDIR/sbom-clone"
+git clone "http://x-access-token:${TOKEN}@localhost:${PORT}/${OWNER}/${SBOM_REPO}.git" "$SBOM_CLONE" >/dev/null 2>&1 \
+  || fail "D18: clone failed"
+(
+  cd "$SBOM_CLONE"
+  git checkout -B main >/dev/null 2>&1
+  git config user.email "acceptance@example.com"
+  git config user.name "Acceptance"
+  echo "# sbom-demo" > README.md
+  git add . && git commit -m "initial commit" >/dev/null
+  git push origin main >/dev/null 2>&1
+  git checkout -b feature >/dev/null 2>&1
+  # A hand-built lockfile, not server/test/fixtures/sbom-package-lock.json:
+  # core/sbom.ts's componentsFromNpmLockfile only reads packages[path].version,
+  # so a real lockfile's base64 `integrity` hashes add nothing here — and
+  # those hashes are exactly high-entropy enough to trip the real pre-receive
+  # secret scanner this push actually goes through (unlike
+  # test/e2e-sbom.test.ts, which never wires up hooks.ts at all). Same two
+  # real packages either way.
+  cat > package-lock.json <<'JSON'
+{
+  "name": "sbom-demo",
+  "version": "1.0.0",
+  "lockfileVersion": 3,
+  "packages": {
+    "": { "name": "sbom-demo", "version": "1.0.0" },
+    "node_modules/is-odd": { "version": "3.0.1" },
+    "node_modules/lodash": { "version": "4.17.15" }
+  }
+}
+JSON
+  git add . && git commit -m "add lockfile" >/dev/null
+  git push origin feature >/dev/null 2>&1
+) || fail "D18: lockfile push failed"
+SBOM_HEAD_SHA=$(git -C "$SBOM_CLONE" rev-parse feature)
+
+SBOM_PR=$(api POST "/api/v3/repos/${OWNER}/${SBOM_REPO}/pulls" \
+  -d '{"title":"Add a lockfile","head":"feature","base":"main"}')
+SBOM_PR_NUM=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(0,"utf8")).number)' <<<"$SBOM_PR")
+api POST "/api/v3/repos/${OWNER}/${SBOM_REPO}/gates" \
+  -d "{\"git_sha\":\"${SBOM_HEAD_SHA}\",\"name\":\"test\",\"status\":\"success\",\"summary\":\"ok\"}" -o /dev/null -f \
+  || fail "D18: gate report failed"
+api POST "/api/v3/repos/${OWNER}/${SBOM_REPO}/pulls/${SBOM_PR_NUM}/reviews" \
+  -d '{"state":"approved","body":"lgtm"}' -o /dev/null -f || fail "D18: review failed"
+api PUT "/api/v3/repos/${OWNER}/${SBOM_REPO}/pulls/${SBOM_PR_NUM}/merge" -d '{}' -o /dev/null -f \
+  || fail "D18: merge failed"
+
+SBOM_EVIDENCE=$(api GET "/api/adp/repos/${OWNER}/${SBOM_REPO}/evidence/${SBOM_HEAD_SHA}")
+grep -q '"name":"sbom"' <<<"$SBOM_EVIDENCE" || fail "D18: evidence bundle missing the sbom gate"
+node -e '
+  const b = JSON.parse(require("fs").readFileSync(0, "utf8"));
+  const g = b.gates.find((x) => x.name === "sbom");
+  const payload = JSON.parse(Buffer.from(g.envelope.payload, "base64").toString("utf8"));
+  if (payload.predicateType !== "https://cyclonedx.org/bom") {
+    console.error(`D18: predicateType is ${payload.predicateType}, not CycloneDX`);
+    process.exit(1);
+  }
+  const names = payload.predicate.components.map((c) => c.name);
+  for (const want of ["is-odd", "lodash"]) {
+    if (!names.includes(want)) {
+      console.error(`D18: sbom components missing ${want} (got ${JSON.stringify(names)})`);
+      process.exit(1);
+    }
+  }
+' <<<"$SBOM_EVIDENCE" || fail "D18: sbom evidence did not decode to the expected CycloneDX components"
+pass "D18 SBOM per land: a real npm lockfile became a CycloneDX evidence entry"
+
+# D19 — mirror mode: outbound (ADP -> "GitHub") and inbound ("GitHub" ->
+# ADP) against a plain local bare repo standing in for GitHub, same pattern
+# as test/e2e-mirror.test.ts — no live GitHub credential needed to prove
+# the mechanism.
+MIRROR_REPO="mirror-demo"
+api POST "/api/v3/repos/${OWNER}" -d "{\"name\":\"${MIRROR_REPO}\"}" -o /dev/null -f || fail "D19: repo create failed"
+MIRROR_STANDIN="$WORKDIR/github-standin.git"
+git init --bare -q --initial-branch main "$MIRROR_STANDIN"
+
+MIRROR_SECRET="acceptance-mirror-$(openssl rand -hex 8)"
+MIRROR_OUT=$(ADP_SERVER_URL="http://localhost:${PORT}" ADP_TOKEN="$TOKEN" node "$CLI_BIN" repo mirror "${OWNER}/${MIRROR_REPO}" \
+  --remote-url "file://${MIRROR_STANDIN}" --secret "$MIRROR_SECRET" --credential "unused-for-file-remote" --direction both) \
+  || fail "D19: adp repo mirror failed"
+
+MIRROR_CLONE="$WORKDIR/mirror-clone"
+git clone "http://x-access-token:${TOKEN}@localhost:${PORT}/${OWNER}/${MIRROR_REPO}.git" "$MIRROR_CLONE" >/dev/null 2>&1 \
+  || fail "D19: mirror repo clone failed"
+(
+  cd "$MIRROR_CLONE"
+  git checkout -B main >/dev/null 2>&1
+  git config user.email "acceptance@example.com"
+  git config user.name "Acceptance"
+  echo "outbound" > f.txt
+  git add . && git commit -m "outbound commit" >/dev/null
+  git push origin main >/dev/null 2>&1
+) || fail "D19: outbound push failed"
+MIRROR_OUT_SHA=$(git -C "$MIRROR_CLONE" rev-parse main)
+
+# Give the background poller (MIRROR_POLL_INTERVAL_MS, 5s by default) a few
+# ticks to pick up the outbox row hooks.ts queued.
+MIRROR_SYNCED=0
+for _ in $(seq 1 15); do
+  [ "$(git --git-dir="$MIRROR_STANDIN" rev-parse main 2>/dev/null)" = "$MIRROR_OUT_SHA" ] && { MIRROR_SYNCED=1; break; }
+  sleep 1
+done
+[ "$MIRROR_SYNCED" = "1" ] || fail "D19: outbound mirror sync never landed on the stand-in repo"
+pass "D19 mirror outbound: a real ADP push landed on the GitHub stand-in via the poller"
+
+MIRROR_INBOUND_CLONE="$WORKDIR/mirror-inbound-clone"
+git clone -q "$MIRROR_STANDIN" "$MIRROR_INBOUND_CLONE"
+(
+  cd "$MIRROR_INBOUND_CLONE"
+  git config user.email "acceptance@example.com"
+  git config user.name "Acceptance"
+  echo "inbound" > g.txt
+  git add . && git commit -m "inbound commit" >/dev/null
+  git push origin main >/dev/null 2>&1
+) || fail "D19: inbound (direct-to-standin) push failed"
+MIRROR_IN_SHA=$(git -C "$MIRROR_INBOUND_CLONE" rev-parse main)
+
+MIRROR_PAYLOAD="{\"ref\":\"refs/heads/main\",\"after\":\"${MIRROR_IN_SHA}\"}"
+MIRROR_SIG=$(printf '%s' "$MIRROR_PAYLOAD" | openssl dgst -sha256 -hmac "$MIRROR_SECRET" | awk '{print $2}')
+MIRROR_WEBHOOK_RES=$(curl -sS -X POST "http://localhost:${PORT}/webhooks/github/${OWNER}/${MIRROR_REPO}" \
+  -H "Content-Type: application/json" -H "X-Hub-Signature-256: sha256=${MIRROR_SIG}" -d "$MIRROR_PAYLOAD")
+grep -q '"ok":true' <<<"$MIRROR_WEBHOOK_RES" || fail "D19: inbound webhook replay failed: $MIRROR_WEBHOOK_RES"
+
+ADP_MAIN_AFTER_INBOUND=$(git --git-dir="${GIT_ROOT}/${OWNER}/${MIRROR_REPO}.git" rev-parse main)
+[ "$ADP_MAIN_AFTER_INBOUND" = "$MIRROR_IN_SHA" ] || fail "D19: ADP's main did not fast-forward to the inbound sha"
+MIRROR_EVIDENCE=$(api GET "/api/adp/repos/${OWNER}/${MIRROR_REPO}/evidence/${MIRROR_IN_SHA}")
+grep -q '"via":"mirror-inbound"' <<<"$MIRROR_EVIDENCE" || fail "D19: inbound change's provenance does not name mirror-inbound"
+pass "D19 mirror inbound: a signed GitHub-shaped webhook auto-recorded a change ADP never saw pushed to it"
+
 printf '\n\033[32m== acceptance: the §2.1 walkthrough passed end to end ==\033[0m\n'

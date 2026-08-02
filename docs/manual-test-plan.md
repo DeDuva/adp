@@ -19,7 +19,8 @@ not because nobody got to them. The automation column is the honest record of wh
 | A | Environment | `scripts/dev/bootstrap.sh`, `make up` |
 | B | The agent's loop (1–8) | `server/acceptance/run.sh` |
 | C | The human's supervision (9–12) | `server/acceptance/ui.spec.ts` (Playwright) |
-| D | Teardown | `make down` |
+| D | The M2 trust-plane ramp (13–19) | `server/acceptance/run.sh` |
+| E | Teardown | `make down` |
 
 Run the whole thing with `make acceptance`. What follows is what that command does, in a form you
 can step through by hand when something breaks and you need to find out where.
@@ -213,9 +214,128 @@ The undo is itself an operation, so the log now records the reversal too.
 
 ---
 
-## Part D — teardown
+## Part D — the M2 trust-plane ramp
 
-**D13. Tear it all down.**
+Everything in Part B and C is the M1 definition of done. M2 (`pragmatic_mvp.md`) added six more
+surfaces on top of it — this part exercises each one for real, against the same running server,
+reusing the repo Part B already set up.
+
+**D13. Telemetry.** REST and GraphQL traffic has been flowing since Part B — read it back.
+
+```bash
+curl "$PUBLIC_URL/metrics"
+```
+
+*Expect:* Prometheus text format (`# TYPE ... counter` lines), with at least one
+`adp_http_requests_total{...}` line and one `adp_graphql_operations_total{...}` line carrying a
+nonzero count — proof the counters are wired to real requests, not just present and empty.
+
+**D14. The `adp` CLI.** A second client against the same REST surface `gh` and `curl` have been
+using — build it once, then point it at the server the same way `gh` was pointed at it (`ADP_TOKEN`/
+`ADP_SERVER_URL`, the CLI's own equivalent of `GH_ENTERPRISE_TOKEN`/`GH_HOST`).
+
+```bash
+npm ci --prefix cli && npm run build --prefix cli
+ADP_SERVER_URL="$PUBLIC_URL" ADP_TOKEN=<token> node cli/dist/index.js pr list --repo <owner>/<repo>
+```
+
+*Expect:* JSON listing the PR Part B merged, `state: "MERGED"`. The CLI is a thin wrapper over the
+same endpoints `gh` and the acceptance script's `curl` calls use — this is the same data, a third way.
+
+**D15. Outbound webhooks.** Register a hook, then trigger a real signed delivery to it.
+
+```bash
+curl -X POST "$PUBLIC_URL/api/v3/repos/<owner>/<repo>/hooks" \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"config":{"url":"http://<listener>/","secret":"<secret>"},"events":["push"]}'
+```
+
+Push a new commit, then check whatever `<listener>` received.
+
+*Expect:* a POST carrying `X-ADP-Event: push` and `X-Hub-Signature-256: sha256=<hmac>` — GitHub's
+own header shape, verified with the same secret configured above — and a JSON body naming the ref,
+before/after shas, and the pushing identity. `core/webhooks.ts` retries a failing delivery three
+times before giving up and logging; a listener that is actually up gets it on the first attempt.
+
+**D16. A scanner-as-gate adapter.** ADP never runs the scanner — an adapter translates output the
+scanner already produced. `osv-scanner`'s adapter needs no install (zero runtime dependencies):
+
+```bash
+node adapters/osv-scanner/run.mjs --json adapters/test/fixtures/osv-scanner-real.json \
+  --repo <owner>/<repo> --sha <sha> --server "$PUBLIC_URL" --token <token>
+```
+
+*Expect:* `osv-scanner gate reported: failure — ...`, and the evidence bundle for `<sha>`
+(`GET /api/adp/repos/<owner>/<repo>/evidence/<sha>`) now carries a `gates` entry named
+`osv-scanner`, DSSE-signed like every other gate result.
+
+**D17. Dependency admission.** A lockfile diff becomes a typed, per-package verdict — live against
+the real OSV.dev API, not a mock:
+
+```bash
+curl -X POST "$PUBLIC_URL/api/v3/repos/<owner>/<repo>/dependency-admission" \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"git_sha":"<sha>","packages":[{"ecosystem":"npm","name":"is-odd","version":"3.0.1"},{"ecosystem":"npm","name":"sdxcode1","version":"9.9.9"}]}'
+```
+
+*Expect:* HTTP 201, `status: "failure"` — `is-odd@3.0.1` admits clean, but `sdxcode1@9.9.9` is a
+real package OpenSSF's Malicious Packages project has reported (queried through the same
+`api.osv.dev` endpoint ordinary CVE lookups use), and its `reasons` names the `MAL-` advisory id.
+A `block` verdict on any package outranks an `admit` on the rest — the gate as a whole fails.
+
+**D18. SBOM per land.** Push a branch that adds a `package-lock.json`, land it, and read back the
+SBOM that generated automatically — no separate "generate SBOM" step exists; it happens as part of
+every merge, the same way `gh pr merge` triggered gate evidence in Part B.
+
+Hand-build a minimal lockfile rather than copying one straight from `npm install`: real lockfiles
+carry base64 `integrity` hashes (`sha512-...`), and those are exactly high-entropy enough to trip the
+real pre-receive secret scanner this push actually goes through — the same scanner B4's push went
+through, just without anything in it worth flagging. `core/sbom.ts` only reads each package's name
+and version anyway, so a lockfile with just those two fields per package produces the identical SBOM.
+
+```bash
+gh pr merge <n> --repo <host>/<owner>/<repo> --merge
+curl "$PUBLIC_URL/api/adp/repos/<owner>/<repo>/evidence/<head-sha>"
+```
+
+*Expect:* a `gates` entry named `sbom`, `status: "success"`, whose DSSE envelope decodes to a
+`predicateType: "https://cyclonedx.org/bom"` statement listing the packages the lockfile named.
+Keyed by the PR's head sha (the commit CI actually validated), same as every other gate — not the
+resulting merge commit.
+
+**D19. Mirror mode.** ADP sitting alongside a repo that stays on GitHub — outbound (ADP → GitHub)
+and inbound (GitHub → ADP) are separate flows, both exercised here against a plain local bare repo
+standing in for GitHub (no live GitHub credential needed to prove the mechanism).
+
+```bash
+ADP_SERVER_URL="$PUBLIC_URL" ADP_TOKEN=<token> node cli/dist/index.js repo mirror <owner>/<repo> \
+  --remote-url "file:///path/to/standin.git" --secret <whsec> --credential <pat> --direction both
+git push origin main   # into ADP, as usual
+```
+
+*Expect (outbound):* within one poll interval (`MIRROR_POLL_INTERVAL_MS`, 5s by default), the commit
+appears on the stand-in repo's `main` — `git --git-dir=/path/to/standin.git log --oneline main`.
+`GET .../mirror` shows `last_outbound_sha` matching and a `recent_sync_log` entry with
+`status: "success"`.
+
+For inbound, push straight to the stand-in repo, then replay GitHub's own webhook shape at ADP,
+signed with the `webhook_secret` the mirror creation call returned:
+
+```bash
+curl -X POST "$PUBLIC_URL/webhooks/github/<owner>/<repo>" \
+  -H "Content-Type: application/json" -H "X-Hub-Signature-256: sha256=<hmac-of-body>" \
+  -d '{"ref":"refs/heads/main","after":"<sha>"}'
+```
+
+*Expect:* `{"ok":true}`, ADP's own `main` now resolves to `<sha>`, and the evidence bundle for
+`<sha>` shows a change whose provenance names `"via": "mirror-inbound"` — auto-recorded exactly
+like an ordinary push, just from the other direction.
+
+---
+
+## Part E — teardown
+
+**E20. Tear it all down.**
 
 ```bash
 make down
@@ -225,7 +345,7 @@ make down
 processes, temp directories or generated files. Teardown is asserted here, not assumed; if you see
 a warning, it names exactly what leaked.
 
-**D14. Return the machine.** `make down` leaves the toolchain installed, which is usually what you
+**E21. Return the machine.** `make down` leaves the toolchain installed, which is usually what you
 want. To go further:
 
 ```bash
@@ -252,5 +372,6 @@ is "does the whole thing work from nothing?" rather than "did my change break so
 | B1–B8 | **Automated** | `server/acceptance/run.sh`, against a real pinned `gh` binary |
 | C9–C11 | **Automated** | `server/acceptance/ui.spec.ts` drives a real browser and saves screenshots |
 | C12 | **Automated** | the undo is asserted against the server-side ref, not the API response |
+| D13–D19 | **Automated** | `server/acceptance/run.sh`, against the same live server B and C already used — real signed webhook delivery, real `api.osv.dev` lookups, a real `osv-scanner` fixture, and a plain bare repo standing in for GitHub for mirror mode |
 | Visual judgment | **Manual, permanently** | automation asserts the data is present and rendered; whether the UI *reads well* is a human call. The screenshots exist so that call takes a minute, not a full walkthrough. |
 | A1 on genuinely new hardware | **Manual, rarely** | CI's `bare-metal` job covers a bare container every push, which is the same provisioning problem; a physical machine adds only driver and BIOS variance, which this project cannot meaningfully test |
