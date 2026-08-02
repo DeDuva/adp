@@ -1,9 +1,20 @@
 import type { FastifyInstance } from "fastify";
-import { execute, parse, validate, specifiedRules, GraphQLError, type GraphQLSchema } from "graphql";
+import {
+  execute,
+  parse,
+  validate,
+  specifiedRules,
+  Kind,
+  GraphQLError,
+  type GraphQLSchema,
+  type DocumentNode,
+  type OperationDefinitionNode,
+} from "graphql";
 import { z } from "zod";
 import type { Db } from "../db/client.js";
 import type { GqlContext } from "./context.js";
 import { hasScope } from "../auth/plugin.js";
+import { recordGraphqlOperation } from "../core/telemetry.js";
 
 const GraphQLRequestBody = z.object({
   query: z.string(),
@@ -22,6 +33,23 @@ const GraphQLRequestBody = z.object({
 // the same reason schema.ts strips @deprecated — a known impedance mismatch
 // between graphql-js's strictness and the schema/queries we didn't write.
 const VALIDATION_RULES = specifiedRules.filter((rule) => rule.name !== "OverlappingFieldsCanBeMergedRule");
+
+// Root Query/Mutation field names are the actual traffic-shape signal
+// (core/telemetry.ts) — `operationName` is optional and most real clients,
+// including `gh`, mostly send anonymous operations, so it can't be relied on.
+// Only unambiguous documents (one operation, or `operationName` naming one)
+// get counted; an ambiguous document errors out of execute() before this
+// would matter anyway.
+function selectOperationForTelemetry(
+  document: DocumentNode,
+  operationName: string | null | undefined,
+): OperationDefinitionNode | undefined {
+  const operations = document.definitions.filter(
+    (d): d is OperationDefinitionNode => d.kind === Kind.OPERATION_DEFINITION,
+  );
+  if (operationName) return operations.find((op) => op.name?.value === operationName);
+  return operations.length === 1 ? operations[0] : undefined;
+}
 
 // Single endpoint, GitHub-shaped. Unimplemented fields resolve to a
 // GraphQL error (or null, if nullable) rather than a validation failure —
@@ -65,7 +93,7 @@ export function registerGraphQLRoute(app: FastifyInstance, schema: GraphQLSchema
       return;
     }
 
-    const contextValue: GqlContext = { db, identity: req.identity ?? null };
+    const contextValue: GqlContext = { db, identity: req.identity ?? null, log: req.log };
 
     const result = await execute({
       schema,
@@ -74,6 +102,16 @@ export function registerGraphQLRoute(app: FastifyInstance, schema: GraphQLSchema
       operationName: parsedBody.data.operationName ?? undefined,
       contextValue,
     });
+
+    const operationDef = selectOperationForTelemetry(document, parsedBody.data.operationName);
+    if (operationDef) {
+      const ok = !result.errors || result.errors.length === 0;
+      for (const selection of operationDef.selectionSet.selections) {
+        if (selection.kind === Kind.FIELD) {
+          recordGraphqlOperation(operationDef.operation, selection.name.value, ok);
+        }
+      }
+    }
 
     reply.send(result);
   });

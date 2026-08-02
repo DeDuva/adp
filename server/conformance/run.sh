@@ -99,6 +99,7 @@ PROXY_PID=$!
 export DATABASE_URL="${DATABASE_URL:-${ADP_DEFAULT_DATABASE_URL:-postgres://adp:adp@localhost:5432/adp}}"
 export GIT_ROOT="$WORKDIR/git"
 export SIGNING_KEY="conformance-test-key"
+export MIRROR_CREDENTIAL_KEY="conformance-test-mirror-key"
 export PUBLIC_URL="http://localhost:${PORT}"
 export PORT
 mkdir -p "$GIT_ROOT"
@@ -177,7 +178,10 @@ curl -sf -X POST "http://localhost:${PORT}/api/v3/repos/${OWNER}/widget/pulls/1/
 echo "-- gh pr merge --"
 "$GH_BIN" pr merge 1 --repo "$REPO" --merge || fail "gh pr merge"
 
+# merge_method defaults to "merge" — main lands on a real merge commit, so
+# this checks the feature commit is reachable from main, not that main *is*
+# the feature head (docs/m2-readiness-review.md's merge-method-fidelity item).
 MERGED_LOG=$(git --git-dir="${GIT_ROOT}/${OWNER}/widget.git" log --oneline main)
-echo "$MERGED_LOG" | grep -q "feature commit" || fail "pr merge didn't fast-forward main server-side"
+echo "$MERGED_LOG" | grep -q "feature commit" || fail "pr merge did not land the feature commit on main server-side"
 
 echo "== conformance: all gate commands passed against real, unmodified gh ${GH_VERSION} =="

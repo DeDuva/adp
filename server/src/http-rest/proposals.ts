@@ -9,6 +9,8 @@ import { recordOperation } from "../core/operations.js";
 import { findRepo } from "../core/repos-lookup.js";
 import { evaluateLandPolicy } from "../core/land-policy.js";
 import type { LandRequirement } from "../core/repo-policy.js";
+import { emitWebhookEvent } from "../core/webhooks.js";
+import { performMerge } from "../core/merge.js";
 
 const CreateProposalBody = z.object({
   title: z.string().min(1),
@@ -130,6 +132,7 @@ export function registerProposalRoutes(
           .returning();
 
         await recordOperation(tx, {
+          repoId: repo.id,
           actorId: req.identity!.identityId,
           verb: "proposal.create",
           target: `${owner}/${repoName}#${nextNumber}`,
@@ -145,18 +148,39 @@ export function registerProposalRoutes(
         return proposal!;
       });
 
+      emitWebhookEvent(
+        db,
+        repo.id,
+        "pull_request",
+        {
+          action: "opened",
+          number: proposal.number,
+          pull_request: serializeProposal(proposal, owner, repoName),
+          repository: { full_name: `${owner}/${repoName}` },
+        },
+        req.log,
+      );
+
       reply.code(201).send(serializeProposal(proposal, owner, repoName));
     },
   );
 
   app.get("/api/v3/repos/:owner/:repo/pulls", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
+    const { per_page, page } = req.query as { per_page?: string; page?: string };
     const repo = await findRepo(db, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
     }
-    const rows = await db.select().from(proposals).where(eq(proposals.repoId, repo.id));
+    const limit = Math.min(Number(per_page) || 30, 100);
+    const offset = (Math.max(Number(page) || 1, 1) - 1) * limit;
+    const rows = await db
+      .select()
+      .from(proposals)
+      .where(eq(proposals.repoId, repo.id))
+      .limit(limit)
+      .offset(offset);
     reply.send(rows.map((p) => serializeProposal(p, owner, repoName)));
   });
 
@@ -247,6 +271,7 @@ export function registerProposalRoutes(
           .returning();
 
         await recordOperation(tx, {
+          repoId: repo.id,
           actorId: req.identity!.identityId,
           verb: closing ? "proposal.close" : reopening ? "proposal.reopen" : "proposal.update",
           target: `${owner}/${repoName}#${number}`,
@@ -269,16 +294,27 @@ export function registerProposalRoutes(
     },
   );
 
-  // Fast-forward only. Land policy (core/land-policy.ts, docs/pragmatic_mvp.md
-  // M1c/§1.5 item 2) gates the merge before the fast-forward check ever
-  // runs — a non-fast-forward base is the MVP's "conflict": 409, agent
+  const MergeBody = z.object({
+    merge_method: z.enum(["merge", "squash", "rebase"]).default("merge"),
+  });
+
+  // Land policy (core/land-policy.ts, docs/pragmatic_mvp.md M1c/§1.5 item 2)
+  // gates the merge before the fast-forward-ancestry check ever runs — a
+  // base that has diverged from head is the MVP's "conflict": 409, agent
   // rebases and retries, same as it would against a real forge today (cut
-  // list, §2.5).
+  // list, §2.5). merge_method then decides what lands on the base ref: a
+  // real merge commit (default, matching GitHub's REST/GraphQL default) or a
+  // squash commit — core/merge.ts. rebase is a typed 422, not implemented.
   app.put(
     "/api/v3/repos/:owner/:repo/pulls/:number/merge",
     { preHandler: requireScope("repo:write") },
     async (req, reply) => {
       const { owner, repo: repoName, number } = req.params as { owner: string; repo: string; number: string };
+      const parsedMerge = MergeBody.safeParse(req.body ?? {});
+      if (!parsedMerge.success) {
+        reply.code(422).send({ message: "Validation failed", errors: parsedMerge.error.issues });
+        return;
+      }
       const repo = await findRepo(db, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
@@ -327,15 +363,36 @@ export function registerProposalRoutes(
         return;
       }
 
-      const updatedRef = await gitBackend.fastForwardRef(
-        owner,
-        repoName,
-        proposal.baseRef,
+      // Re-check land policy immediately before the ref CAS. evaluateLandPolicy
+      // above and performMerge below aren't one atomic step across git and
+      // Postgres — this narrows the window a superseding gate result could
+      // land in to the width of this one extra query, rather than the whole
+      // request (docs/m2-readiness-review.md's TOCTOU item).
+      const policyAtCas = await evaluateLandPolicy(db, gitBackend, instanceFloor, repo, proposal);
+      if (!policyAtCas.allowed) {
+        reply.code(422).send({ message: "Land policy not satisfied", unmet: policyAtCas.unmet });
+        return;
+      }
+
+      const author = { name: req.identity!.principal, email: `${req.identity!.principal}@adp.local` };
+      const result = await performMerge(
+        gitBackend,
+        {
+          owner,
+          name: repoName,
+          baseRef: proposal.baseRef,
+          headSha: proposal.headSha,
+          headRef: proposal.headRef,
+          number: proposal.number,
+          title: proposal.title,
+          body: proposal.body,
+        },
         currentBaseSha,
-        proposal.headSha,
+        parsedMerge.data.merge_method,
+        author,
       );
-      if (!updatedRef) {
-        reply.code(409).send({ message: `base '${proposal.baseRef}' moved concurrently, retry` });
+      if (!result.ok) {
+        reply.code(result.status).send({ message: result.message });
         return;
       }
 
@@ -347,17 +404,31 @@ export function registerProposalRoutes(
           .returning();
 
         await recordOperation(tx, {
+          repoId: repo.id,
           actorId: req.identity!.identityId,
           verb: "proposal.merge",
           target: `${owner}/${repoName}#${number}`,
           before: { baseSha: currentBaseSha },
-          after: { baseSha: proposal.headSha, mergedInto: proposal.baseRef },
+          after: { baseSha: result.sha, mergedInto: proposal.baseRef, mergeMethod: parsedMerge.data.merge_method },
         });
 
         return merged!;
       });
 
-      reply.send({ merged: true, sha: proposal.headSha, ...serializeProposal(merged, owner, repoName) });
+      emitWebhookEvent(
+        db,
+        repo.id,
+        "pull_request",
+        {
+          action: "closed",
+          number: merged.number,
+          pull_request: { ...serializeProposal(merged, owner, repoName), merged: true },
+          repository: { full_name: `${owner}/${repoName}` },
+        },
+        req.log,
+      );
+
+      reply.send({ merged: true, sha: result.sha, ...serializeProposal(merged, owner, repoName) });
     },
   );
 }

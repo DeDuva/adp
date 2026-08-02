@@ -17,6 +17,11 @@ const EnvSchema = z.object({
     .string()
     .default("gates_green,one_approval")
     .transform((s) => s.split(",").map((r) => r.trim()).filter(Boolean)),
+  // Mirror mode (M2): symmetric key credentials (a GitHub PAT per mirror)
+  // are encrypted at rest with (core/mirror-crypto.ts) — same
+  // deterministic-key-from-env shape as SIGNING_KEY.
+  MIRROR_CREDENTIAL_KEY: z.string().min(1),
+  MIRROR_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
 });
 
 export type Config = z.infer<typeof EnvSchema>;

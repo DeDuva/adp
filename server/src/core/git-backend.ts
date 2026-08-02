@@ -296,12 +296,15 @@ export class GitBackend {
     }
   }
 
-  // Newest-first, matching GitHub's `GET .../commits` ordering.
-  async log(owner: string, name: string, ref: string, limit: number): Promise<CommitInfo[]> {
-    const { stdout } = await run(
-      ["log", `--max-count=${limit}`, "--format=%H%x00%an%x00%ae%x00%aI%x00%P%x00%B%x01", ref],
-      this.repoPath(owner, name),
-    );
+  // Newest-first, matching GitHub's `GET .../commits` ordering. `skip` pages
+  // through a range in `limit`-sized chunks (http-git/hooks.ts's post-receive
+  // recording) — plain `--max-count` alone would silently drop everything
+  // past the first page.
+  async log(owner: string, name: string, ref: string, limit: number, skip = 0): Promise<CommitInfo[]> {
+    const args = ["log", `--max-count=${limit}`];
+    if (skip > 0) args.push(`--skip=${skip}`);
+    args.push("--format=%H%x00%an%x00%ae%x00%aI%x00%P%x00%B%x01", ref);
+    const { stdout } = await run(args, this.repoPath(owner, name));
     return stdout
       .split("\x01")
       .filter((entry) => entry.trim())
@@ -429,6 +432,26 @@ export class GitBackend {
         GIT_COMMITTER_EMAIL: author.email,
       },
     });
+    return stdout.trim();
+  }
+
+  // Mirror mode (M2): push/fetch against an arbitrary remote URL, never
+  // persisted as a named git remote — the credential is baked into the URL
+  // string by the caller and this way never lands in .git/config or `git
+  // remote -v` output. Fast-forward only: `git push`/`git fetch` without
+  // `--force` already reject a non-fast-forward update, which is exactly
+  // the "surface divergence, don't resolve it" behavior mirror mode wants.
+  async pushToRemote(owner: string, name: string, remoteUrl: string, refspec: string): Promise<void> {
+    await execFileAsync("git", ["push", remoteUrl, refspec], { cwd: this.repoPath(owner, name) });
+  }
+
+  // Fetches `remoteRef` from an arbitrary remote into FETCH_HEAD (never
+  // directly onto a local branch — the caller decides whether to move
+  // refs/heads/<branch>, via fastForwardRef, only after confirming with
+  // isAncestor that doing so is actually a fast-forward) and returns its sha.
+  async fetchFromRemote(owner: string, name: string, remoteUrl: string, remoteRef: string): Promise<string> {
+    await execFileAsync("git", ["fetch", remoteUrl, remoteRef], { cwd: this.repoPath(owner, name) });
+    const { stdout } = await execFileAsync("git", ["rev-parse", "FETCH_HEAD"], { cwd: this.repoPath(owner, name) });
     return stdout.trim();
   }
 
