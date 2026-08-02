@@ -13,6 +13,7 @@ const ListQuery = z.object({
   verb: z.string().optional(),
   since: z.string().datetime().optional(),
   until: z.string().datetime().optional(),
+  path: z.string().optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),
 });
 
@@ -41,6 +42,21 @@ function repoTargetFilter(owner: string, name: string) {
   return or(eq(operations.target, prefix), like(operations.target, `${prefix}#%`), like(operations.target, `${prefix}@%`));
 }
 
+// History-query by path (docs/pragmatic_mvp.md's last outstanding M1c item):
+// operations carry no path column, so this resolves the commit sha out of a
+// commit-scoped target ("owner/name@<sha>", written only by change.create —
+// see http-git/hooks.ts) and asks git which paths that commit actually
+// touched. Only commit-scoped operations can ever match; a proposal/issue/
+// candidate-set target has no path association and is filtered out.
+const COMMIT_TARGET = /^[^/]+\/[^/]+@([0-9a-f]{7,40})$/;
+
+async function matchesPath(gitBackend: GitBackend, owner: string, name: string, target: string, wantedPath: string) {
+  const match = COMMIT_TARGET.exec(target);
+  if (!match) return false;
+  const paths = await gitBackend.commitPaths(owner, name, match[1]!);
+  return paths.some((p) => p === wantedPath || p.startsWith(`${wantedPath}/`));
+}
+
 // Native plane (docs/pragmatic_mvp.md Tier 4, "/api/adp") — the op log and
 // undo have no GitHub analogue, so unlike everything else so far this
 // isn't projected onto /api/v3 at all.
@@ -67,14 +83,29 @@ export function registerOperationRoutes(app: FastifyInstance, db: Db, gitBackend
       if (parsed.data.since) conditions.push(gte(operations.createdAt, new Date(parsed.data.since)));
       if (parsed.data.until) conditions.push(lte(operations.createdAt, new Date(parsed.data.until)));
 
+      // Path filtering happens in application code (git, not SQL, knows
+      // which paths a commit touched), so when it's requested the SQL side
+      // over-fetches — capped, not unbounded — and gets narrowed down to
+      // `limit` afterward.
       const rows = await db
         .select()
         .from(operations)
         .where(and(...conditions))
         .orderBy(desc(operations.createdAt))
-        .limit(parsed.data.limit);
+        .limit(parsed.data.path ? Math.max(parsed.data.limit * 10, 500) : parsed.data.limit);
 
-      reply.send(rows.map(serializeOperation));
+      if (!parsed.data.path) {
+        reply.send(rows.map(serializeOperation));
+        return;
+      }
+
+      const wantedPath = parsed.data.path;
+      const matched: (typeof operations.$inferSelect)[] = [];
+      for (const row of rows) {
+        if (matched.length >= parsed.data.limit) break;
+        if (await matchesPath(gitBackend, owner, repoName, row.target, wantedPath)) matched.push(row);
+      }
+      reply.send(matched.map(serializeOperation));
     },
   );
 

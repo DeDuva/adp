@@ -18,10 +18,12 @@ import { Signer } from "../src/core/signing.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerChangeRoutes } from "../src/http-rest/changes.js";
+import { registerIssueRoutes } from "../src/http-rest/issues.js";
 import { registerProposalRoutes } from "../src/http-rest/proposals.js";
 import { registerOperationRoutes } from "../src/http-rest/operations.js";
 import { registerWorkspaceRoutes } from "../src/http-rest/workspaces.js";
 import { registerEvidenceRoutes } from "../src/http-rest/evidence.js";
+import { registerCandidateSetRoutes } from "../src/http-rest/candidate-sets.js";
 import { createAdpClient } from "../src/mcp/client.js";
 import { buildMcpServer } from "../src/mcp/server.js";
 
@@ -66,10 +68,12 @@ describe.skipIf(skipWithoutDb)("M1c: MCP native plane", () => {
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend);
     registerChangeRoutes(app, db, gitBackend, new Signer("e2e-mcp-signing-key"));
+    registerIssueRoutes(app, db);
     registerProposalRoutes(app, db, gitBackend, []);
     registerOperationRoutes(app, db, gitBackend);
     registerWorkspaceRoutes(app, db, gitBackend);
     registerEvidenceRoutes(app, db);
+    registerCandidateSetRoutes(app, db);
     registerGitHttpRoutes(app, gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
@@ -225,12 +229,58 @@ describe.skipIf(skipWithoutDb)("M1c: MCP native plane", () => {
     expect(body.verb).toBe("proposal.merge.undo");
   });
 
-  it("adp_candidates_open and adp_candidates_select honestly report they're not implemented", async () => {
+  it("adp_candidates_open and adp_candidates_select fan out proposals against one intent and pick a winner", async () => {
+    const issueRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/${repoName}/issues`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Speed up the build" }),
+    });
+    const issue = (await issueRes.json()) as { intent_id: string };
+
     const open = await mcp.callTool({
       name: "adp_candidates_open",
-      arguments: { owner, repo: repoName, intent_id: "00000000-0000-0000-0000-000000000000" },
+      arguments: { owner, repo: repoName, intent_id: issue.intent_id },
     });
-    expect(open.isError).toBe(true);
-    expect(textOf(open as never)).toMatch(/aren't implemented/i);
+    expect(open.isError).toBeFalsy();
+    const candidateSet = JSON.parse(textOf(open as never)) as { id: string; candidates: unknown[] };
+    expect(candidateSet.candidates).toEqual([]);
+
+    async function openProposal(branch: string) {
+      const cloneDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-mcp-cand-"));
+      const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/${repoName}.git`;
+      await execFileAsync("git", ["clone", cloneUrl, cloneDir]);
+      await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
+      await execFileAsync("git", ["config", "user.name", "Test"], { cwd: cloneDir });
+      await execFileAsync("git", ["checkout", "-b", branch], { cwd: cloneDir });
+      await execFileAsync("sh", ["-c", `echo ${branch} >> README.md`], { cwd: cloneDir });
+      await execFileAsync("git", ["commit", "-am", branch], { cwd: cloneDir });
+      await execFileAsync("git", ["push", "origin", branch], { cwd: cloneDir });
+      await rm(cloneDir, { recursive: true, force: true });
+
+      const prRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/${repoName}/pulls`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: branch, head: branch, base: "main", candidate_set_id: candidateSet.id }),
+      });
+      return (await prRes.json()) as { id: string; number: number };
+    }
+
+    const candidateA = await openProposal("cand-a");
+    const candidateB = await openProposal("cand-b");
+
+    const opened = await mcp.callTool({
+      name: "adp_history_query",
+      arguments: { owner, repo: repoName, verb: "candidateset.open" },
+    });
+    expect((JSON.parse(textOf(opened as never)) as { id: string }[]).length).toBeGreaterThan(0);
+
+    const selected = await mcp.callTool({
+      name: "adp_candidates_select",
+      arguments: { owner, repo: repoName, candidate_set_id: candidateSet.id, candidate_id: candidateB.id },
+    });
+    expect(selected.isError).toBeFalsy();
+    const resolvedSet = JSON.parse(textOf(selected as never)) as { selected_proposal_id: string };
+    expect(resolvedSet.selected_proposal_id).toBe(candidateB.id);
+    void candidateA;
   });
 });

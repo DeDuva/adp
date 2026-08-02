@@ -17,6 +17,7 @@ import { Signer } from "../src/core/signing.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerHookRoutes } from "../src/http-git/hooks.js";
+import { registerOperationRoutes } from "../src/http-rest/operations.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -55,6 +56,7 @@ describe.skipIf(skipWithoutDb)("M1c: receive-path hooks", () => {
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend);
     registerHookRoutes(app, db, gitBackend, signer);
+    registerOperationRoutes(app, db, gitBackend);
     registerGitHttpRoutes(app, gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
@@ -176,6 +178,24 @@ describe.skipIf(skipWithoutDb)("M1c: receive-path hooks", () => {
     const after = await db.select().from(changes).where(eq(changes.gitSha, cleanSha));
     expect(after).toHaveLength(1);
     expect(after[0]!.id).toBe(before[0]!.id);
+  });
+
+  it("history-query by path matches only operations whose commit touched that path", async () => {
+    const hit = await fetch(
+      `http://127.0.0.1:${port}/api/adp/repos/${owner}/${cleanRepoName}/operations?path=README.md`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    expect(hit.status).toBe(200);
+    const hitOps = (await hit.json()) as { target: string }[];
+    expect(hitOps.some((op) => op.target === `${owner}/${cleanRepoName}@${cleanSha}`)).toBe(true);
+
+    const miss = await fetch(
+      `http://127.0.0.1:${port}/api/adp/repos/${owner}/${cleanRepoName}/operations?path=nonexistent.txt`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    expect(miss.status).toBe(200);
+    const missOps = (await miss.json()) as { target: string }[];
+    expect(missOps.some((op) => op.target === `${owner}/${cleanRepoName}@${cleanSha}`)).toBe(false);
   });
 
   it("rejects a call to the internal hook endpoints from anyone but loopback", async () => {

@@ -180,8 +180,10 @@ per run, tmpfs state, no restart policies, host port discovered with `docker com
 Closes findings 3, 4 and 6, and exposed findings 10, 11 and 12 — all now fixed.
 
 Verified end to end on 2026-08-01: `make up` → `make test-all` (typecheck, build, migrate,
-**113 passed / 0 skipped**, web build, and the real-`gh` conformance gate) → `make down`
-reporting a completely clean machine.
+**113 passed / 0 skipped** — the whole suite as it stood at that commit, against a database
+created seconds earlier — plus the web build and the real-`gh` conformance gate) → `make down`
+reporting a completely clean machine. The suite has since gained a test on `main`; the count is
+recorded as the dated observation it was, not as a number to keep in sync.
 
 ### Phase 2 — bootstrap from bare metal *(done)*
 
@@ -266,7 +268,7 @@ Then the loop, on any machine:
 ```bash
 make doctor     # can this machine run the suite at all?
 make up         # ephemeral Postgres on a discovered port, writes .env.test
-make test-all   # typecheck, build, migrate, 113 tests, web build, gh conformance gate
+make test-all   # typecheck, build, migrate, the full suite, web build, gh conformance gate
 make down       # tear down, then assert the machine is clean
 ```
 

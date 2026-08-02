@@ -17,3 +17,4 @@ deploy/.env
 .env.test
 .adp-test/
 
+.claude/scratch/
