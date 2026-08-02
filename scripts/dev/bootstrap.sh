@@ -244,6 +244,24 @@ else
   ok "cli dependencies installed"
   npm ci --prefix "$ADP_REPO_ROOT/adapters"
   ok "adapters dependencies installed"
+
+  # These `npm ci` calls have no $SUDO prefix, so they normally run as
+  # whoever invoked this script — except when that *is* root (either a
+  # genuine root shell, or `sudo bash bootstrap.sh`), in which case every
+  # node_modules just got created root-owned. The human who runs `make up`/
+  # `make acceptance`/a bare `npm ci` afterward is the invoking user, not
+  # root, and can't so much as rmdir a root-owned node_modules/.bin on the
+  # next `npm ci` (EACCES). Same TARGET_USER derivation as the docker-group
+  # fix-up above, and the same reasoning: a genuine root shell has no one to
+  # chown to and is left alone.
+  if [ "$(id -u)" = "0" ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    chown -R "$SUDO_USER:$SUDO_USER" \
+      "$ADP_REPO_ROOT/server/node_modules" \
+      "$ADP_REPO_ROOT/server/web/node_modules" \
+      "$ADP_REPO_ROOT/cli/node_modules" \
+      "$ADP_REPO_ROOT/adapters/node_modules"
+    ok "node_modules ownership handed back to $SUDO_USER"
+  fi
 fi
 
 printf '\n'
