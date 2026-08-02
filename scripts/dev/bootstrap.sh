@@ -242,6 +242,8 @@ else
   ok "web dependencies installed"
   npm ci --prefix "$ADP_REPO_ROOT/cli"
   ok "cli dependencies installed"
+  npm ci --prefix "$ADP_REPO_ROOT/adapters"
+  ok "adapters dependencies installed"
 fi
 
 printf '\n'

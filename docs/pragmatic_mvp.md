@@ -678,10 +678,19 @@ traffic before this. **✓ landed:** `core/telemetry.ts` + `GET /metrics` (Prome
 REST by route pattern/method/status, GraphQL by root field/operation type/outcome. The coverage
 *widening* itself still waits on real traffic accumulating against a running instance.
 Plus the trust-plane ramp (§1.5 item 4):
-- **Scanner-as-gate adapters:** any CLI scanner drops into the gate runner — SARIF/JSON out,
-  DSSE evidence attestation in; **Wiz Code (`wizcli`) is the reference adapter** (SAST, SCA,
-  secrets, IaC in one integration), with one open engine (e.g. `osv-scanner`) as the
-  second implementation proving the adapter interface.
+- **Scanner-as-gate adapters — ✓ landed:** `adapters/` (new top-level package, standalone scripts —
+  see `adapters/README.md` for the contract). Adapters never invoke the scanner; they translate output
+  a scanner already produced (SARIF or its own JSON) and POST it to `.../gates`, same division of
+  labor as the rest of the gate runner. **`wizcli`** (`adapters/wizcli/`) is the reference adapter —
+  consumes a SARIF file from `wizcli`'s own `--sarif-output-file` flag (verified against Wiz's public
+  docs; the scan subcommand/policy flags themselves are account-specific and unverifiable without a
+  Wiz license, so left to the caller). **`osv-scanner`** (`adapters/osv-scanner/`) is the second
+  implementation, deliberately consuming its *native* JSON rather than SARIF, proving the interface
+  generalizes. Both parsers are tested against fixtures captured from a real, live `osv-scanner`
+  binary (downloaded and run against a lockfile with known CVEs) — not synthetic data guessed to
+  match the parser's own assumptions. That real run caught a live bug before it shipped: osv-scanner's
+  own SARIF output marks genuine vulnerabilities `level: "warning"`, never `"error"`, which is why the
+  SARIF adapter's default fail threshold is `warning`, not `error` (configurable via `--fail-level`).
 - **Dependency admission v0:** manifest/lockfile diffs become gate inputs — registry existence,
   age/cooldown windows, OSV + OpenSSF malicious-packages lookups; unknowns quarantine to
   supervisor approval; verdicts are typed and returned to the authoring agent.

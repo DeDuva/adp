@@ -105,6 +105,12 @@ else
   warn "cli/node_modules missing — 'make cli' (part of test-all) will fail"
   hint "npm ci --prefix cli"
 fi
+if [ -d "$ADP_REPO_ROOT/adapters/node_modules" ]; then
+  ok "adapters/node_modules present"
+else
+  warn "adapters/node_modules missing — 'make adapters' (part of test-all) will fail"
+  hint "npm ci --prefix adapters"
+fi
 
 section "database"
 if [ -n "${DATABASE_URL:-}" ]; then

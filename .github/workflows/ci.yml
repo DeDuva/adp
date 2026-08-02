@@ -96,3 +96,22 @@ jobs:
       # No Postgres needed — the CLI's own tests stand up a fake HTTP server
       # (cli/test/cli.test.ts), not a live ADP instance.
       - run: npm test
+
+  adapters:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: adapters
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: adapters/package-lock.json
+      - run: npm ci
+      # No Postgres, no live scanner binary — the adapters' tests run
+      # against fixtures captured from real `osv-scanner` runs (see
+      # adapters/test/fixtures/) and a fake local HTTP server standing in
+      # for ADP, same pattern as the cli/ job.
+      - run: npm test
