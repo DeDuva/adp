@@ -662,12 +662,16 @@ differentiators, including the two items that were outstanding as of 2026-07-26 
 path, candidate sets), are now implemented and covered by real e2e tests — **M1 is complete.**
 
 ### M2 — Adoption + trust ramp *(revised 2026-07-26; amended 2026-08-01 per [`m2-readiness-review.md`](m2-readiness-review.md))*
-**Mirror mode** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub; the single
-biggest adoption lever and cheap: push mirror + webhook ingest). **Outbound webhook emitter — ✓
-landed:** `core/webhooks.ts` (HMAC-SHA256 signing, GitHub's own `X-Hub-Signature-256` header shape,
-3-attempt retry with backoff, then logged rather than queued) + `POST/GET/DELETE
+**Mirror mode — ✓ landed** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub;
+the single biggest adoption lever and cheap: push mirror + webhook ingest). **Outbound webhook
+emitter — ✓ landed:** `core/webhooks.ts` (HMAC-SHA256 signing, GitHub's own `X-Hub-Signature-256`
+header shape, 3-attempt retry with backoff, then logged rather than queued) + `POST/GET/DELETE
 /api/v3/repos/:owner/:repo/hooks` + emission wired at push (`http-git/hooks.ts`), PR open/merge (REST
-and GraphQL), and gate report. `adp` CLI.
+and GraphQL), and gate report. **`adp` CLI — ✓ landed:** `cli/`, a new top-level package (first CLI
+in the repo, zero runtime dependencies). Thin REST wrapper — `login`, `repo mirror`, `gate report`,
+`pr list`, `pr merge` — reusing the same bearer-token auth every other client already uses.
+`~/.adp/config.json` or `ADP_SERVER_URL`/`ADP_TOKEN`, same override shape as `gh`'s own
+`GH_HOST`/`GH_TOKEN`.
 `conformance/` published against `spec/`. GraphQL coverage widened from measured real traffic —
 which makes **API-traffic telemetry a named prerequisite**, not an optimization: nothing measured
 traffic before this. **✓ landed:** `core/telemetry.ts` + `GET /metrics` (Prometheus text format) —
