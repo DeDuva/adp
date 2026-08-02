@@ -8,6 +8,7 @@ import { changes, identities } from "../db/schema.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepo } from "../core/repos-lookup.js";
 import { BundledSecretScanProvider, type SecretScanProvider } from "../core/secret-scan.js";
+import { emitWebhookEvent } from "../core/webhooks.js";
 
 const ZERO_SHA = "0".repeat(40);
 
@@ -161,6 +162,28 @@ export function registerHookRoutes(
           });
         });
       }
+
+      // Fire-and-forget (core/webhooks.ts) — the push already succeeded and
+      // must not wait on a subscriber's endpoint. Commits capped at 20,
+      // matching GitHub's own push-event payload shape.
+      emitWebhookEvent(
+        db,
+        repo.id,
+        "push",
+        {
+          ref: update.ref,
+          before: update.oldSha,
+          after: update.newSha,
+          repository: { full_name: `${owner}/${name}` },
+          pusher: { name: identity.principal },
+          commits: commits.slice(0, 20).map((c) => ({
+            id: c.sha,
+            message: c.message,
+            author: { name: c.authorName, email: c.authorEmail },
+          })),
+        },
+        req.log,
+      );
     }
 
     reply.send({ ok: true });

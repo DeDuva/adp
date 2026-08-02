@@ -65,7 +65,7 @@ export function registerGraphQLRoute(app: FastifyInstance, schema: GraphQLSchema
       return;
     }
 
-    const contextValue: GqlContext = { db, identity: req.identity ?? null };
+    const contextValue: GqlContext = { db, identity: req.identity ?? null, log: req.log };
 
     const result = await execute({
       schema,

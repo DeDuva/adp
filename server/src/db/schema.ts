@@ -172,6 +172,20 @@ export const workspaces = pgTable("workspaces", {
   destroyedAt: timestamp("destroyed_at", { withTimezone: true }),
 });
 
+// Outbound webhook subscriptions, GitHub-shaped (docs/pragmatic_mvp.md M2:
+// "outbound webhook emitter"). `secret` signs deliveries (HMAC-SHA256,
+// GitHub's own `X-Hub-Signature-256` header shape, core/webhooks.ts) — never
+// returned in a serialized response, same as GitHub's own hooks API.
+export const webhooks = pgTable("webhooks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  repoId: uuid("repo_id").notNull().references(() => repos.id),
+  targetUrl: text("target_url").notNull(),
+  secret: text("secret").notNull(),
+  events: text("events").array().notNull().default([]),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Append-only spine: every mutation writes its state change and its operations
 // row in a single transaction. This *is* the op log and the audit log.
 export const operations = pgTable("operations", {

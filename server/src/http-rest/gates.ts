@@ -8,6 +8,7 @@ import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepo } from "../core/repos-lookup.js";
 import { signStatement, type InTotoStatement } from "../core/dsse.js";
+import { emitWebhookEvent } from "../core/webhooks.js";
 
 const ReportGateBody = z.object({
   git_sha: z.string().regex(/^[0-9a-f]{40}$/),
@@ -89,6 +90,20 @@ export function registerGateRoutes(app: FastifyInstance, db: Db, signer: Signer,
 
         return row!;
       });
+
+      emitWebhookEvent(
+        db,
+        repo.id,
+        "gate_result",
+        {
+          git_sha: parsed.data.git_sha,
+          name: parsed.data.name,
+          status: parsed.data.status,
+          summary: parsed.data.summary,
+          repository: { full_name: `${owner}/${repoName}` },
+        },
+        req.log,
+      );
 
       reply.code(201).send(serializeGateResult(row));
     },

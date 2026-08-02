@@ -7,6 +7,7 @@ import { recordOperation } from "../core/operations.js";
 import { evaluateLandPolicy } from "../core/land-policy.js";
 import type { LandRequirement } from "../core/repo-policy.js";
 import { latestGateResults } from "../core/gate-results-lookup.js";
+import { emitWebhookEvent } from "../core/webhooks.js";
 import { toGlobalId, fromGlobalId } from "./global-id.js";
 import { buildConnection, type ConnectionArgs } from "./connections.js";
 import type { GqlContext } from "./context.js";
@@ -187,6 +188,26 @@ function shapePullRequest(proposal: ProposalRow, repo: Repo) {
     __repo: repo,
     __baseRef: proposal.baseRef,
     __headSha: proposal.headSha,
+  };
+}
+
+// A plain REST-ish shape for outbound webhook payloads (core/webhooks.ts) —
+// deliberately not shapePullRequest's GraphQL wrapper (global IDs, __typename,
+// __-prefixed loader hints mean nothing to an external subscriber).
+function webhookPullRequestPayload(action: "opened" | "closed", proposal: ProposalRow, repo: Repo, merged = false) {
+  return {
+    action,
+    number: proposal.number,
+    pull_request: {
+      number: proposal.number,
+      title: proposal.title,
+      body: proposal.body,
+      state: proposal.state,
+      head: { ref: proposal.headRef, sha: proposal.headSha },
+      base: { ref: proposal.baseRef },
+      ...(action === "closed" ? { merged } : {}),
+    },
+    repository: { full_name: `${repo.owner}/${repo.name}` },
   };
 }
 
@@ -582,6 +603,8 @@ export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequi
           return created!;
         });
 
+        emitWebhookEvent(ctx.db, repo.id, "pull_request", webhookPullRequestPayload("opened", proposal, repo), ctx.log);
+
         return { clientMutationId: null, pullRequest: shapePullRequest(proposal, repo) };
       },
 
@@ -745,6 +768,14 @@ export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequi
 
           return merged!;
         });
+
+        emitWebhookEvent(
+          ctx.db,
+          repo.id,
+          "pull_request",
+          webhookPullRequestPayload("closed", merged, repo, true),
+          ctx.log,
+        );
 
         return {
           clientMutationId: null,
