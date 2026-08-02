@@ -6,6 +6,7 @@ const validEnv = {
   GIT_ROOT: "/data/git",
   SIGNING_KEY: "test-key",
   PUBLIC_URL: "https://adp.example.com",
+  MIRROR_CREDENTIAL_KEY: "test-mirror-key",
 };
 
 describe("loadConfig", () => {

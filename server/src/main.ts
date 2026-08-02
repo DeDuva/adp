@@ -18,15 +18,21 @@ import { registerReviewRoutes } from "./http-rest/reviews.js";
 import { registerGitDataRoutes } from "./http-rest/git-data.js";
 import { registerHookRoutes } from "./http-git/hooks.js";
 import { registerGateRoutes } from "./http-rest/gates.js";
+import { registerDependencyAdmissionRoutes } from "./http-rest/dependency-admission.js";
 import { registerOperationRoutes } from "./http-rest/operations.js";
 import { registerWorkspaceRoutes } from "./http-rest/workspaces.js";
 import { registerEvidenceRoutes } from "./http-rest/evidence.js";
+import { registerMirrorRoutes } from "./http-rest/mirrors.js";
+import { registerMirrorWebhookRoutes, registerMirrorWebhookRawBodyParser } from "./http-rest/mirror-webhook.js";
+import { startMirrorPoller } from "./core/mirror-poller.js";
 import { registerCandidateSetRoutes } from "./http-rest/candidate-sets.js";
+import { registerWebhookRoutes } from "./http-rest/webhooks.js";
 import { LandRequirement } from "./core/repo-policy.js";
 import { loadGitHubSchema } from "./http-gql/schema.js";
 import { attachResolvers } from "./http-gql/attach-resolvers.js";
 import { createResolvers } from "./http-gql/resolvers.js";
 import { registerGraphQLRoute } from "./http-gql/route.js";
+import { recordHttpRequest, renderMetrics } from "./core/telemetry.js";
 
 async function main() {
   const config = loadConfig();
@@ -53,13 +59,33 @@ async function main() {
     ["application/x-git-upload-pack-request", "application/x-git-receive-pack-request"],
     (_req, payload, done) => done(null, payload),
   );
+  // Must be registered before authPlugin: it replaces the default
+  // application/json parser app-wide, scoped internally to only affect
+  // /webhooks/github/* (see its own comment) — GitHub's webhook signature
+  // covers the raw body bytes, which the default eager-JSON-parse discards.
+  registerMirrorWebhookRawBodyParser(app);
 
   await app.register(authPlugin(db));
+
+  // Route pattern (":owner/:repo", not the literal path) keeps cardinality
+  // bounded regardless of how many repos exist — a 404 has no matched route,
+  // so it's bucketed under one fixed label instead of one per garbage path
+  // an attacker or a typo could throw at the server.
+  app.addHook("onResponse", async (req, reply) => {
+    const route = req.routeOptions.url ?? "(unmatched)";
+    recordHttpRequest(req.method, route, reply.statusCode);
+  });
 
   app.get("/healthz", async () => ({ status: "ok" }));
   app.get("/readyz", async () => {
     await pool.query("SELECT 1");
     return { status: "ok" };
+  });
+  // Prometheus text format, unauthenticated like /healthz and /readyz — an
+  // operator's scraper, not a repo-scoped resource (docs/m2-readiness-review.md's
+  // "API-traffic telemetry" item).
+  app.get("/metrics", async (_req, reply) => {
+    reply.type("text/plain; version=0.0.4").send(renderMetrics());
   });
 
   registerIdentityRoutes(app);
@@ -71,10 +97,14 @@ async function main() {
   registerGitDataRoutes(app, db, gitBackend);
   registerHookRoutes(app, db, gitBackend, signer);
   registerGateRoutes(app, db, signer, config.PUBLIC_URL);
+  registerDependencyAdmissionRoutes(app, db, signer, config.PUBLIC_URL);
   registerOperationRoutes(app, db, gitBackend);
   registerWorkspaceRoutes(app, db, gitBackend);
   registerEvidenceRoutes(app, db);
+  registerMirrorRoutes(app, db, config.MIRROR_CREDENTIAL_KEY);
+  registerMirrorWebhookRoutes(app, db, gitBackend, signer, config.MIRROR_CREDENTIAL_KEY);
   registerCandidateSetRoutes(app, db);
+  registerWebhookRoutes(app, db);
 
   const gqlSchema = loadGitHubSchema();
   attachResolvers(gqlSchema, createResolvers(gitBackend, instanceFloor, { signer, publicUrl: config.PUBLIC_URL }));
@@ -98,6 +128,8 @@ async function main() {
   }
 
   await app.listen({ host: "0.0.0.0", port: config.PORT });
+
+  startMirrorPoller(db, gitBackend, config.MIRROR_CREDENTIAL_KEY, config.MIRROR_POLL_INTERVAL_MS);
 }
 
 main().catch((err) => {

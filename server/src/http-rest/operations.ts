@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, eq, gte, lte, or, like, desc } from "drizzle-orm";
+import { and, eq, gte, lte, desc } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
 import { operations } from "../db/schema.js";
@@ -28,18 +28,6 @@ function serializeOperation(row: typeof operations.$inferSelect) {
     parent_op: row.parentOp,
     created_at: row.createdAt.toISOString(),
   };
-}
-
-// Every target string this codebase writes is either exactly "owner/name"
-// (repo-level ops) or "owner/name" immediately followed by '#' or '@' — so
-// this is a precise repo scope, not a fuzzy prefix match: "acme/widget"
-// can't accidentally match a target that starts with "acme/widget2".
-// operations has no repoId column (docs/pragmatic_mvp.md's op log has been
-// append-only and repo-agnostic in shape from commit 1); adding one is a
-// bigger migration than this native-plane read API calls for.
-function repoTargetFilter(owner: string, name: string) {
-  const prefix = `${owner}/${name}`;
-  return or(eq(operations.target, prefix), like(operations.target, `${prefix}#%`), like(operations.target, `${prefix}@%`));
 }
 
 // History-query by path (docs/pragmatic_mvp.md's last outstanding M1c item):
@@ -77,7 +65,7 @@ export function registerOperationRoutes(app: FastifyInstance, db: Db, gitBackend
         return;
       }
 
-      const conditions = [repoTargetFilter(owner, repoName)];
+      const conditions = [eq(operations.repoId, repo.id)];
       if (parsed.data.actor) conditions.push(eq(operations.actorId, parsed.data.actor));
       if (parsed.data.verb) conditions.push(eq(operations.verb, parsed.data.verb));
       if (parsed.data.since) conditions.push(gte(operations.createdAt, new Date(parsed.data.since)));
@@ -123,7 +111,7 @@ export function registerOperationRoutes(app: FastifyInstance, db: Db, gitBackend
       const [row] = await db
         .select()
         .from(operations)
-        .where(and(eq(operations.id, id), repoTargetFilter(owner, repoName)));
+        .where(and(eq(operations.id, id), eq(operations.repoId, repo.id)));
       if (!row) {
         reply.code(404).send({ message: "Not Found" });
         return;
@@ -146,7 +134,7 @@ export function registerOperationRoutes(app: FastifyInstance, db: Db, gitBackend
       const [entry] = await db
         .select()
         .from(operations)
-        .where(and(eq(operations.id, id), repoTargetFilter(owner, repoName)));
+        .where(and(eq(operations.id, id), eq(operations.repoId, repo.id)));
       if (!entry) {
         reply.code(404).send({ message: "Not Found" });
         return;

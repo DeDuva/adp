@@ -394,7 +394,7 @@ describe.skipIf(skipWithoutDb)("M1b′ GraphQL: mutations", () => {
     expect(closed.body.data!.closeIssue.issue.state).toBe("CLOSED");
   });
 
-  it("createPullRequest, addPullRequestReview, markPullRequestReadyForReview, then mergePullRequest fast-forwards the base", async () => {
+  it("createPullRequest, addPullRequestReview, markPullRequestReadyForReview, then mergePullRequest lands it", async () => {
     const repoId = await repositoryId();
     const created = await gql<{ createPullRequest: { pullRequest: { id: string; number: number; state: string } } }>(
       `mutation($input: CreatePullRequestInput!) {

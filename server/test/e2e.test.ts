@@ -268,7 +268,7 @@ describe.skipIf(skipWithoutDb)("M0 end-to-end: token -> repo create -> clone -> 
     expect(res.status).toBe(422);
   });
 
-  it("opens a proposal, reviews it, merges it fast-forward, and rejects a second merge", async () => {
+  it("opens a proposal, reviews it, merges it with a real merge commit, and rejects a second merge", async () => {
     workDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-proposal-"));
     const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/hello.git`;
     const cloneDir = path.join(workDir, "clone");
@@ -316,11 +316,17 @@ describe.skipIf(skipWithoutDb)("M0 end-to-end: token -> repo create -> clone -> 
     const merged = (await mergeRes.json()) as { merged: boolean; sha: string; state: string };
     expect(merged.merged).toBe(true);
     expect(merged.state).toBe("merged");
+    // merge_method defaults to "merge" (GitHub's own default) — main lands on
+    // a new merge commit, not a reused copy of the head sha (the pre-M2
+    // fidelity gap: "gh pr merge --merge cannot be distinguished from GitHub
+    // behavior until history is inspected").
+    expect(merged.sha).not.toBe(proposal.head.sha);
 
-    const { stdout: mainSha } = await execFileAsync("git", ["rev-parse", "main"], {
-      cwd: new GitBackend(gitRoot).repoPath(owner, "hello"),
-    });
-    expect(mainSha.trim()).toBe(proposal.head.sha);
+    const repoPath = new GitBackend(gitRoot).repoPath(owner, "hello");
+    const { stdout: mainSha } = await execFileAsync("git", ["rev-parse", "main"], { cwd: repoPath });
+    expect(mainSha.trim()).toBe(merged.sha);
+    // the merge commit's history still reaches the feature head.
+    await execFileAsync("git", ["merge-base", "--is-ancestor", proposal.head.sha, "main"], { cwd: repoPath });
 
     const secondMergeRes = await fetch(
       `http://127.0.0.1:${port}/api/v3/repos/${owner}/hello/pulls/${proposal.number}/merge`,

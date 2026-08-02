@@ -36,6 +36,7 @@ export async function openCandidateSet(
       .returning();
 
     await recordOperation(tx, {
+      repoId: repo.id,
       actorId,
       verb: "candidateset.open",
       target: `${repo.owner}/${repo.name}@candidateset:${row!.id}`,
@@ -84,6 +85,7 @@ export async function selectCandidate(
       .returning();
 
     await recordOperation(tx, {
+      repoId: repo.id,
       actorId,
       verb: "candidateset.select",
       target: `${repo.owner}/${repo.name}@candidateset:${candidateSetId}`,

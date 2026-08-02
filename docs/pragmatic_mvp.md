@@ -662,19 +662,46 @@ differentiators, including the two items that were outstanding as of 2026-07-26 
 path, candidate sets), are now implemented and covered by real e2e tests — **M1 is complete.**
 
 ### M2 — Adoption + trust ramp *(revised 2026-07-26; amended 2026-08-01 per [`m2-readiness-review.md`](m2-readiness-review.md))*
-**Mirror mode** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub; the single
-biggest adoption lever and cheap: push mirror + webhook ingest). Outbound webhook emitter. `adp` CLI.
+**Mirror mode — ✓ landed** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub;
+the single biggest adoption lever and cheap: push mirror + webhook ingest). **Outbound webhook
+emitter — ✓ landed:** `core/webhooks.ts` (HMAC-SHA256 signing, GitHub's own `X-Hub-Signature-256`
+header shape, 3-attempt retry with backoff, then logged rather than queued) + `POST/GET/DELETE
+/api/v3/repos/:owner/:repo/hooks` + emission wired at push (`http-git/hooks.ts`), PR open/merge (REST
+and GraphQL), and gate report. **`adp` CLI — ✓ landed:** `cli/`, a new top-level package (first CLI
+in the repo, zero runtime dependencies). Thin REST wrapper — `login`, `repo mirror`, `gate report`,
+`pr list`, `pr merge` — reusing the same bearer-token auth every other client already uses.
+`~/.adp/config.json` or `ADP_SERVER_URL`/`ADP_TOKEN`, same override shape as `gh`'s own
+`GH_HOST`/`GH_TOKEN`.
 `conformance/` published against `spec/`. GraphQL coverage widened from measured real traffic —
-which makes **API-traffic telemetry a named prerequisite**, not an optimization: nothing measures
-traffic today, and the same instrumentation feeds A2's endpoint-distribution research for free.
+which makes **API-traffic telemetry a named prerequisite**, not an optimization: nothing measured
+traffic before this. **✓ landed:** `core/telemetry.ts` + `GET /metrics` (Prometheus text format) —
+REST by route pattern/method/status, GraphQL by root field/operation type/outcome. The coverage
+*widening* itself still waits on real traffic accumulating against a running instance.
 Plus the trust-plane ramp (§1.5 item 4):
-- **Scanner-as-gate adapters:** any CLI scanner drops into the gate runner — SARIF/JSON out,
-  DSSE evidence attestation in; **Wiz Code (`wizcli`) is the reference adapter** (SAST, SCA,
-  secrets, IaC in one integration), with one open engine (e.g. `osv-scanner`) as the
-  second implementation proving the adapter interface.
-- **Dependency admission v0:** manifest/lockfile diffs become gate inputs — registry existence,
-  age/cooldown windows, OSV + OpenSSF malicious-packages lookups; unknowns quarantine to
-  supervisor approval; verdicts are typed and returned to the authoring agent.
+- **Scanner-as-gate adapters — ✓ landed:** `adapters/` (new top-level package, standalone scripts —
+  see `adapters/README.md` for the contract). Adapters never invoke the scanner; they translate output
+  a scanner already produced (SARIF or its own JSON) and POST it to `.../gates`, same division of
+  labor as the rest of the gate runner. **`wizcli`** (`adapters/wizcli/`) is the reference adapter —
+  consumes a SARIF file from `wizcli`'s own `--sarif-output-file` flag (verified against Wiz's public
+  docs; the scan subcommand/policy flags themselves are account-specific and unverifiable without a
+  Wiz license, so left to the caller). **`osv-scanner`** (`adapters/osv-scanner/`) is the second
+  implementation, deliberately consuming its *native* JSON rather than SARIF, proving the interface
+  generalizes. Both parsers are tested against fixtures captured from a real, live `osv-scanner`
+  binary (downloaded and run against a lockfile with known CVEs) — not synthetic data guessed to
+  match the parser's own assumptions. That real run caught a live bug before it shipped: osv-scanner's
+  own SARIF output marks genuine vulnerabilities `level: "warning"`, never `"error"`, which is why the
+  SARIF adapter's default fail threshold is `warning`, not `error` (configurable via `--fail-level`).
+- **Dependency admission v0 — ✓ landed:** `core/dependency-admission.ts` + `POST
+  .../dependency-admission`, a typed gate (three-way `admit`/`quarantine`/`block` per package) a
+  lockfile diff reports into. One integration point covers both named checks: OpenSSF's Malicious
+  Packages project publishes directly into OSV.dev in OSV format (`MAL-` prefixed ids), so the same
+  `POST api.osv.dev/v1/query` call returns both ordinary CVE/GHSA advisories and malicious-package
+  reports — confirmed against the live API (queried a real reported-malicious npm package,
+  `sdxcode1@9.9.9` / MAL-2025-2155). Registry existence + an age/cooldown window are real for npm
+  (`registry.npmjs.org`) in v0; other ecosystems are honestly reported as unverified rather than
+  silently admitted. `quarantine` reports gate status `pending`, which `gates_green`
+  (`core/gate-results-lookup.ts`) already treats as not-green — a repo opts in by naming
+  `dependency-admission` in `adp.yaml`'s `gates:`, no land-policy code change needed.
 - **SBOM per land — ✓ landed:** `core/sbom.ts` generates a real CycloneDX 1.5 SBOM (npm lockfiles
   only in v0, same scope `dependency-admission.ts` settled on) and records it as an ordinary
   `gate_results` row (`name: "sbom"`) after every successful merge, both REST and GraphQL paths —
@@ -687,21 +714,27 @@ Plus the trust-plane ramp (§1.5 item 4):
 
 Plus the **scale hygiene forced by mirror mode** (added 2026-08-01 — mirroring imports real GitHub
 repos with real histories, which turns these from M5 speculation into M2 correctness bugs; details
-and file references in the readiness review §2):
+and file references in the readiness review §2). **✓ landed** (all five items):
 - **Chunked post-receive recording:** the 500-commit-per-ref-update cap in
   `server/src/http-git/hooks.ts` must chunk or queue, never truncate silently — a silent hole in
-  the provenance record is the one failure mode this product cannot have.
-- **Secondary-index pass:** `changes (repo_id, git_sha)`, `gate_results (repo_id, git_sha, name)`,
-  and an `operations` strategy (a `repo_id` column or an expression index serving the `target`
-  filter) — today every one of these hot paths is a sequential scan.
+  the provenance record is the one failure mode this product cannot have. Done for an existing
+  branch receiving a >500-commit push (paged via `git log --skip`, batched into one transaction per
+  page instead of one per commit). **Known residual gap, left for mirror mode itself (PR4):** a
+  brand-new branch still records its tip commit only (the pre-existing shortcut, `hooks.ts`'s
+  `oldSha === ZERO_SHA` case) — correct for an ordinary new local branch, wrong for a *first* mirror
+  import, which needs its own bulk-import path rather than reusing the push hook as-is.
+- **Secondary-index pass:** `changes (repo_id, git_sha)`, `gate_results (repo_id, git_sha, name)`
+  composite indexes, and `operations` gained a real `repo_id` column (indexed) replacing the
+  `target` LIKE-prefix scan — every one of these hot paths was a sequential scan before.
 - **Pagination on unbounded list endpoints** (`GET /pulls`, `GET /git/refs`), GitHub-shaped
   (`per_page`/`page`) — a compat-fidelity gain as well as a scale fix.
 - **Merge-method fidelity:** real merge-commit and squash support on both merge paths
-  (`merge_method` is currently read from nobody — every land silently fast-forwards, which a
-  migrator's `gh pr merge --merge` cannot distinguish from GitHub behavior until history is
-  inspected). Rebase-merge may stay unimplemented behind a typed error.
-- **Land-policy TOCTOU decision:** policy is evaluated before the ref CAS, not atomically with it;
-  either re-check at the CAS point or document the accepted window in `spec/`.
+  (`server/src/core/merge.ts`, shared by REST and GraphQL) — `merge_method`/`mergeMethod` is now
+  read and honored; default changed from silent fast-forward to a real merge commit, matching
+  GitHub's own default. Rebase-merge stays a typed 422, not implemented.
+- **Land-policy TOCTOU:** policy is now re-evaluated immediately before the ref CAS on both merge
+  paths, narrowing (not closing — git and Postgres aren't one transaction) the window a superseding
+  gate result could land in.
 
 **At kickoff:** resolve the two open questions in [`environments-plan.md`](environments-plan.md) §5
 (SIGNING_KEY custody including the retired-key trust model; dev-instance ownership and retirement
