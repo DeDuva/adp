@@ -236,7 +236,9 @@ make up && make test-all && make down  # bring up, run, tear down, assert clean
 ```
 
 `make down` asserts the machine is clean rather than assuming it — no leftover containers, volumes,
-server processes or temp directories.
+server processes or temp directories. On Windows, `tools/win/Run-CleanTest.ps1` runs the same loop
+inside a throwaway WSL distro and deletes it afterwards, so a full verification leaves nothing
+behind at all.
 
 CI runs typecheck, build, migrations against a fresh Postgres, the full unit/integration/e2e suite —
 including a real clone → push → propose → review → merge cycle — and the `gh` conformance gate, on

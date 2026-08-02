@@ -1,6 +1,6 @@
 # Test environment automation
 
-**Status:** Phases 0–3 landed; Phase 4 proposed.
+**Status:** Phases 0–4 landed. The plan is complete; §7 records what is left.
 
 The goal, stated as a test: a tester with a **brand new Windows machine** installs WSL, clones
 this repo, runs one command, watches the full manual test suite execute, and runs one more
@@ -95,8 +95,11 @@ as it is — it describes a deployment, and deployments are supposed to restart 
 
 ### Layer 2 — disposable WSL distro (minutes; on demand and nightly)
 
-A PowerShell entrypoint that `wsl --import`s a throwaway distro from a cached rootfs tarball,
-runs bootstrap → Layer 1 → the full suite → teardown inside it, then `wsl --unregister`s it.
+A PowerShell entrypoint (`tools/win/Run-CleanTest.ps1`) that creates a throwaway distro with
+`wsl --install --name`, clones the repo into it, runs bootstrap → Layer 1 → the full suite →
+teardown inside it, then `wsl --unregister`s it. (`--install --name` rather than `--import` from a
+cached rootfs tarball: it needs WSL 2.4.4+, but Microsoft distributes and caches the image, which
+is a great deal less code than managing tarballs.)
 
 The distro *is* the teardown guarantee. Nothing leaks because the filesystem ceases to exist.
 This is the only honest way to test the "brand new machine, clone the repo, follow the README"
@@ -136,7 +139,7 @@ scripts/dev/bootstrap.sh          # bare Ubuntu -> provisioned (apt, docker.io, 
 docs/manual-test-plan.md          # the walkthrough for a human, with per-step automation status [done]
 server/acceptance/run.sh          # the §2.1 definition-of-done walkthrough, executable          [done]
 server/acceptance/ui.spec.ts      # C9-C12 in a real browser, with screenshots                   [done]
-tools/win/Run-CleanTest.ps1       # import distro -> bootstrap -> test -> unregister          [Phase 4]
+tools/win/Run-CleanTest.ps1       # create distro -> clone -> bootstrap -> test -> unregister    [done]
 ```
 
 CI does **not** yet call these targets — it still runs its own step list, and it uses a Postgres
@@ -307,15 +310,73 @@ was a wrong guess about a shape never observed:
   "unexpected value: hidden". Now scoped to `.list-row`. A test that asserts on a filter dropdown
   rather than on the rows it filters would have passed against an empty log.
 
-### Phase 4 — the Windows entrypoint
+### Phase 4 — the Windows entrypoint *(done)*
 
-1 day, because by this point it only orchestrates Phase 2's script. `tools/win/Run-CleanTest.ps1`.
+`tools/win/Run-CleanTest.ps1` creates a throwaway WSL distro, clones the repo into it, runs
+`bootstrap.sh` and the full loop, and then unregisters the distro:
+
+```powershell
+.\tools\win\Run-CleanTest.ps1                          # main, in a fresh distro, destroyed after
+.\tools\win\Run-CleanTest.ps1 -Ref my-branch           # exercise a PR before merging it
+.\tools\win\Run-CleanTest.ps1 -KeepDistro              # keep it on failure, to inspect
+```
+
+It installs nothing on Windows; the only prerequisite is WSL. **The distro is the teardown
+guarantee.** `make down` asserts nothing leaked; this removes the filesystem those things lived
+on, so "returned the machine to its prior state" becomes structural rather than a claim to audit.
+`make down` still runs first — a leak regression should fail here too, not be hidden by the
+`--unregister` that follows.
+
+It clones from the remote by default rather than copying the local tree, because that is what a
+tester actually does, and it is the only way the "brand new machine" path gets exercised honestly.
+`-Ref` covers testing an unmerged branch.
+
+**Keep that file ASCII-only.** Windows PowerShell 5.1 — still the default on a new Windows
+machine, which is precisely the machine this targets — reads a BOM-less file as ANSI, not UTF-8.
+A single em dash in a comment becomes mojibake that derails the parser, and the reported error
+points at an unrelated line much further down. This cost a debugging cycle when the script was
+first written, hence the comment at the top of it.
+
+#### Why this is the layer that would have caught the bootstrap bugs
+
+Phase 2's bootstrap was verified only in containers, and Phase 3 then found four bugs in it that
+containers structurally could not show (see above) — two of which made bootstrap report success on
+a machine it had left unusable. A disposable WSL distro is the missing middle: a real WSL
+environment with no systemd, real `apt`, and a genuine fresh-machine package set, but reproducible
+and free to destroy.
+
+Running it on every change is too slow for an inner loop; running it never is how the four bugs
+survived. On demand before a release, and on a schedule, is the right cadence.
+
+**Verified on 2026-08-01**, on a Windows machine with WSL 2.7.10: a fresh `Ubuntu-24.04` distro
+created from nothing, the repo cloned from GitHub, `bootstrap.sh` installing `make`, Node 22 from
+NodeSource and `docker.io` + `docker-compose-v2`, then `make doctor` → `make up` (Postgres on
+ephemeral port 32768) → `make test-all` (**114 passed, 0 skipped**, plus the real-`gh` conformance
+gate) → `make down` reporting a clean machine → the distro unregistered and its directory removed.
+**16m03s**, start to finish, leaving nothing behind.
+
+That run is also the first time `apt-get install docker.io` was exercised in real WSL rather than
+a privileged container — the gap Phase 2 flagged as the piece most likely to rot unnoticed.
+
+**Two quirks worth knowing.** `wsl.exe` translates the *caller's* working directory into the
+target distro, so running this from a `\\wsl.localhost\<other-distro>\...` path emits
+`Failed to translate ...` on every invocation; it falls back and still works, but the script now
+passes `--cd /` so the log does not read like a fatal error. And unregistering a distro can
+briefly break WSL's binfmt interop in *other* distros — `wsl.exe` returns "Exec format error" for
+a moment afterwards. Nothing is lost; it recovers on its own.
 
 ---
 
 ## 6. Usage (as it exists today, after Phases 0–2)
 
-On a machine that has never seen this project, starting from a shell in a fresh WSL distro:
+From Windows, with nothing but WSL installed — creates a throwaway distro, runs everything, and
+deletes it:
+
+```powershell
+.\tools\win\Run-CleanTest.ps1
+```
+
+Or, starting from a shell in a WSL distro that has never seen this project:
 
 ```bash
 sudo apt-get update && sudo apt-get install -y git   # the pre-clone minimum
@@ -375,3 +436,34 @@ legitimate reason for the skip. The change is that any context which *intends* f
 says so explicitly and gets a hard failure instead of a green partial run. `make up` writes
 `ADP_REQUIRE_DB=1` into `.env.test`, so everything downstream of a real stack is enforced by
 default.
+
+---
+
+## 7. What is left
+
+The plan's four phases are done. These are the honest remainders, listed so they are not
+rediscovered as surprises.
+
+**CI does not call the Makefile targets.** `ci.yml` still runs its own step list against a
+Postgres service container. `clean-room.yml` does use them, so the targets cannot rot entirely,
+but the two definitions of "what CI runs" can still drift. `test-all` deliberately mirrors
+`ci.yml`'s step order so the drift stays visible. Converging them means either teaching `ci.yml`
+to use `make up` or accepting that it optimizes for a different thing (fast feedback) than the
+clean-room workflow does (fidelity) — a real decision, not an oversight.
+
+**No CI job installs `docker.io`.** `bare-metal` passes `--skip-docker`; `clean-room`'s runner
+already has an engine, so bootstrap takes its already-reachable branch. That path is now covered
+by `Run-CleanTest.ps1` on a real Windows machine, but that runs on demand rather than per push.
+A scheduled run would close the gap.
+
+**`gh pr checks` does not go green.** The §2.1 gap documented above: the rollup state is real,
+`contexts` is an empty connection. `acceptance/run.sh` asserts the current behavior so that
+implementing per-context detail forces the docs to be corrected.
+
+**Screenshots are reviewed by a human or not at all.** Nothing asserts that the UI looks right,
+by design. The screenshots make that review cheap; they do not make it automatic.
+
+**Phase 4 is not scheduled.** `Run-CleanTest.ps1` takes ~16 minutes and needs a Windows host, so
+it cannot be a per-push gate on GitHub's Linux runners. It is the layer that would have caught
+four bootstrap bugs automatically, which is an argument for running it on a schedule from a
+self-hosted Windows runner — a decision with a cost attached, deliberately left open.
