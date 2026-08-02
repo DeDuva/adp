@@ -675,7 +675,15 @@ Plus the trust-plane ramp (§1.5 item 4):
 - **Dependency admission v0:** manifest/lockfile diffs become gate inputs — registry existence,
   age/cooldown windows, OSV + OpenSSF malicious-packages lookups; unknowns quarantine to
   supervisor approval; verdicts are typed and returned to the authoring agent.
-- **SBOM per land:** CycloneDX emitted as ordinary evidence on every landed change.
+- **SBOM per land — ✓ landed:** `core/sbom.ts` generates a real CycloneDX 1.5 SBOM (npm lockfiles
+  only in v0, same scope `dependency-admission.ts` settled on) and records it as an ordinary
+  `gate_results` row (`name: "sbom"`) after every successful merge, both REST and GraphQL paths —
+  the exact same receiving-and-attestation shape as a gate report, so it surfaces through the
+  existing evidence bundle (`core/evidence.ts`) with no new read endpoint.
+  `predicateType: "https://cyclonedx.org/bom"` is the documented in-toto convention (the same shape
+  `cosign attest --type cyclonedx` produces), not an ADP-specific type. Purl construction for scoped
+  npm packages (`@scope/name`) is verified against purl-spec's own worked example — an earlier draft
+  double-encoded the `@scope/name` separator into an invalid purl, caught before shipping.
 
 Plus the **scale hygiene forced by mirror mode** (added 2026-08-01 — mirroring imports real GitHub
 repos with real histories, which turns these from M5 speculation into M2 correctness bugs; details
