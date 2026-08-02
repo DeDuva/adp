@@ -99,6 +99,12 @@ else
   hint "web UI checks would pass against a UI that was never built"
   hint "npm ci --prefix server/web"
 fi
+if [ -d "$ADP_REPO_ROOT/adapters/node_modules" ]; then
+  ok "adapters/node_modules present"
+else
+  warn "adapters/node_modules missing — 'make adapters' (part of test-all) will fail"
+  hint "npm ci --prefix adapters"
+fi
 
 section "database"
 if [ -n "${DATABASE_URL:-}" ]; then
