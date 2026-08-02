@@ -663,7 +663,11 @@ path, candidate sets), are now implemented and covered by real e2e tests — **M
 
 ### M2 — Adoption + trust ramp *(revised 2026-07-26; amended 2026-08-01 per [`m2-readiness-review.md`](m2-readiness-review.md))*
 **Mirror mode** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub; the single
-biggest adoption lever and cheap: push mirror + webhook ingest). Outbound webhook emitter. `adp` CLI.
+biggest adoption lever and cheap: push mirror + webhook ingest). **Outbound webhook emitter — ✓
+landed:** `core/webhooks.ts` (HMAC-SHA256 signing, GitHub's own `X-Hub-Signature-256` header shape,
+3-attempt retry with backoff, then logged rather than queued) + `POST/GET/DELETE
+/api/v3/repos/:owner/:repo/hooks` + emission wired at push (`http-git/hooks.ts`), PR open/merge (REST
+and GraphQL), and gate report. `adp` CLI.
 `conformance/` published against `spec/`. GraphQL coverage widened from measured real traffic —
 which makes **API-traffic telemetry a named prerequisite**, not an optimization: nothing measured
 traffic before this. **✓ landed:** `core/telemetry.ts` + `GET /metrics` (Prometheus text format) —

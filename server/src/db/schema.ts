@@ -187,6 +187,22 @@ export const workspaces = pgTable("workspaces", {
   destroyedAt: timestamp("destroyed_at", { withTimezone: true }),
 });
 
+// Outbound webhook subscriptions, GitHub-shaped (docs/pragmatic_mvp.md M2:
+// "outbound webhook emitter"). `secret` signs deliveries (HMAC-SHA256,
+// GitHub's own `X-Hub-Signature-256` header shape, core/webhooks.ts) — never
+// returned in a serialized response, same as GitHub's own hooks API. Distinct
+// from a mirror's own `webhookSecret` below, which verifies *inbound*
+// deliveries from GitHub rather than signing outbound ones.
+export const webhooks = pgTable("webhooks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  repoId: uuid("repo_id").notNull().references(() => repos.id),
+  targetUrl: text("target_url").notNull(),
+  secret: text("secret").notNull(),
+  events: text("events").array().notNull().default([]),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // M2 mirror mode: per-repo config for bidirectional sync with a real GitHub
 // repo. One row per repo (v0) — `credentialCiphertext` is AES-256-GCM
 // encrypted (core/mirror-crypto.ts), never the raw PAT; `webhookSecret`

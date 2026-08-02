@@ -9,6 +9,7 @@ import { findRepo } from "../core/repos-lookup.js";
 import { findMirror } from "../core/mirrors-lookup.js";
 import { recordPushedCommits } from "../core/change-recorder.js";
 import { BundledSecretScanProvider, type SecretScanProvider } from "../core/secret-scan.js";
+import { emitWebhookEvent } from "../core/webhooks.js";
 
 const ZERO_SHA = "0".repeat(40);
 
@@ -139,6 +140,34 @@ export function registerHookRoutes(
           update.oldSha,
           update.newSha,
           "push",
+        );
+
+        // Fire-and-forget (core/webhooks.ts) — the push already succeeded
+        // and must not wait on a subscriber's endpoint. A fresh, capped log
+        // call for the payload, decoupled from recordPushedCommits' own
+        // (possibly paginated) recording pass — commits capped at 20,
+        // matching GitHub's own push-event payload shape.
+        const commitsForPayload =
+          update.oldSha === ZERO_SHA
+            ? await gitBackend.log(owner, name, update.newSha, 20)
+            : await gitBackend.log(owner, name, `${update.oldSha}..${update.newSha}`, 20);
+        emitWebhookEvent(
+          db,
+          repo.id,
+          "push",
+          {
+            ref: update.ref,
+            before: update.oldSha,
+            after: update.newSha,
+            repository: { full_name: `${owner}/${name}` },
+            pusher: { name: identity.principal },
+            commits: commitsForPayload.map((c) => ({
+              id: c.sha,
+              message: c.message,
+              author: { name: c.authorName, email: c.authorEmail },
+            })),
+          },
+          req.log,
         );
       }
 

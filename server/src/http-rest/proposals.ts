@@ -9,6 +9,7 @@ import { recordOperation } from "../core/operations.js";
 import { findRepo } from "../core/repos-lookup.js";
 import { evaluateLandPolicy } from "../core/land-policy.js";
 import type { LandRequirement } from "../core/repo-policy.js";
+import { emitWebhookEvent } from "../core/webhooks.js";
 import { performMerge } from "../core/merge.js";
 
 const CreateProposalBody = z.object({
@@ -146,6 +147,19 @@ export function registerProposalRoutes(
 
         return proposal!;
       });
+
+      emitWebhookEvent(
+        db,
+        repo.id,
+        "pull_request",
+        {
+          action: "opened",
+          number: proposal.number,
+          pull_request: serializeProposal(proposal, owner, repoName),
+          repository: { full_name: `${owner}/${repoName}` },
+        },
+        req.log,
+      );
 
       reply.code(201).send(serializeProposal(proposal, owner, repoName));
     },
@@ -400,6 +414,19 @@ export function registerProposalRoutes(
 
         return merged!;
       });
+
+      emitWebhookEvent(
+        db,
+        repo.id,
+        "pull_request",
+        {
+          action: "closed",
+          number: merged.number,
+          pull_request: { ...serializeProposal(merged, owner, repoName), merged: true },
+          repository: { full_name: `${owner}/${repoName}` },
+        },
+        req.log,
+      );
 
       reply.send({ merged: true, sha: result.sha, ...serializeProposal(merged, owner, repoName) });
     },

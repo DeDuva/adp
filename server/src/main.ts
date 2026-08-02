@@ -25,6 +25,7 @@ import { registerMirrorRoutes } from "./http-rest/mirrors.js";
 import { registerMirrorWebhookRoutes, registerMirrorWebhookRawBodyParser } from "./http-rest/mirror-webhook.js";
 import { startMirrorPoller } from "./core/mirror-poller.js";
 import { registerCandidateSetRoutes } from "./http-rest/candidate-sets.js";
+import { registerWebhookRoutes } from "./http-rest/webhooks.js";
 import { LandRequirement } from "./core/repo-policy.js";
 import { loadGitHubSchema } from "./http-gql/schema.js";
 import { attachResolvers } from "./http-gql/attach-resolvers.js";
@@ -101,6 +102,7 @@ async function main() {
   registerMirrorRoutes(app, db, config.MIRROR_CREDENTIAL_KEY);
   registerMirrorWebhookRoutes(app, db, gitBackend, signer, config.MIRROR_CREDENTIAL_KEY);
   registerCandidateSetRoutes(app, db);
+  registerWebhookRoutes(app, db);
 
   const gqlSchema = loadGitHubSchema();
   attachResolvers(gqlSchema, createResolvers(gitBackend, instanceFloor));
