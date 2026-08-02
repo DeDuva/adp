@@ -281,7 +281,8 @@ Mounting there also means `gh api`, Octokit, and CI libraries work with one env 
 | Review | `POST/GET .../pulls/{n}/reviews` | Machine-readable review state — a core claim |
 | Evidence | `POST .../check-runs`, `GET .../commits/{ref}/check-runs`, `POST .../statuses/{sha}`, `GET .../commits/{ref}/status` | Evidence in the shape existing CI already emits and reads — the cheapest on-ramp there is |
 
-**Not implemented:** search, Actions/workflows/runs, releases, packages, orgs/teams/members, projects,
+**Not implemented:** search, Actions/workflows/runs *(except the read-only mirror-mode passthrough
+at M2 — see below)*, releases, packages, orgs/teams/members, projects,
 deployments/environments/secrets, branch protection, code scanning, Dependabot, notifications,
 gists, stars, forks-as-social-object, third-party webhooks (one outbound emitter at M2).
 Unsupported endpoints return `404` with a JSON body naming the ADP equivalent — a broken call that
@@ -296,8 +297,10 @@ capability. In mirror mode (M2) the repo stays on GitHub, so **GitHub Actions ke
 GitHub's runners, unchanged**, and its results arrive in ADP as evidence through webhook ingest —
 `check_run`, `workflow_run`, `status`. That is full fidelity for every Actions feature there is
 (marketplace actions, matrix, self-hosted runners, OIDC), for free, because none of it was
-reimplemented. See §2.5 and the M2 milestone for the three distinct things "support Actions" can
-mean and which of them ADP does.
+reimplemented. The API surface itself gains a **read-only passthrough for mirrored repos at M2** —
+`gh run list` and `gh run view` proxy upstream rather than 404-ing — while non-mirrored repos and
+every write path (dispatch, re-run, cancel) keep the `404`. See §2.5 and the M2 milestone for the
+three distinct things "support Actions" can mean and which of them ADP does.
 
 ### Tier 3 — GraphQL at `/api/graphql` (~14 operations)
 
@@ -357,7 +360,7 @@ adp_candidates_open / adp_candidates_select    # N solutions, one intent
 | Structural / AST merge | A6 is right: the evidence gate means merge errors need catching, not preventing. |
 | Speculative merge batching | Solves throughput we won't have. Serial land + re-verify-before-land is ~200 lines and captures the value. |
 | Hermetic incremental build graph | Bazel exists. Run declared commands in a container. |
-| Actions / workflow engine | Gates are `image + commands` in `adp.yaml`. An Actions clone is a multi-year trap. **And mirror mode means it is not a gap:** the repo stays on GitHub, GitHub runs the workflows, and the results land in ADP as evidence via webhook ingest — better fidelity than any reimplementation, since it *is* GitHub. What is genuinely cut is ADP *executing* workflow YAML, which nothing in the loop needs. |
+| Actions / workflow engine | Gates are `image + commands` in `adp.yaml`. An Actions clone is a multi-year trap. **And mirror mode means it is not a gap:** the repo stays on GitHub, GitHub runs the workflows, and the results land in ADP as evidence via webhook ingest — better fidelity than any reimplementation, since it *is* GitHub. The read API proxies upstream for mirrored repos at M2. What is genuinely cut is ADP *executing* workflow YAML, which nothing in the loop needs. |
 | Orgs, teams, per-path ACLs, SSO/SCIM | Token-scoped auth covers MVP. Enterprise identity is an M4 conversation with a real customer. |
 | Releases, packages, wikis, projects, discussions, gists, notifications | Not on the loop. |
 | Code scanning / Dependabot as *GitHub API emulation* | The capabilities ship natively instead — push protection at the receive path (M1c), dependency admission gates and scanner-as-gate adapters (M2) — per the trust plane (§1.5, brief v5 §f). First-party scanners are never built; the bundled secret engine is the only in-tree detector. |
@@ -711,7 +714,7 @@ answers:
 | Meaning | Answer | Why |
 |---|---|---|
 | Actions runs on GitHub; results flow into ADP as evidence | **Yes — every feature, for free** | The repo stays on GitHub. GitHub's runners execute the workflows exactly as before; ADP ingests `check_run`/`workflow_run`/`status` webhooks into `gate_results`. Marketplace actions, matrix builds, self-hosted runners and OIDC all work because none of them were touched |
-| ADP serves the Actions *API* (`gh run list`, `gh run view`) | **No — `404` today** | §2.4 "Not implemented". See the candidate below |
+| ADP serves the Actions *API* (`gh run list`, `gh run view`) | **Read-only, for mirrored repos, at M2** | Proxied upstream — see the passthrough below. Non-mirrored repos and all write paths keep the `404` |
 | ADP executes workflow YAML itself | **Never** | §2.5 cut list. An Actions clone is a multi-year trap |
 
 The first row is why mirror mode is described above as *the single biggest adoption lever and cheap*.
@@ -723,14 +726,28 @@ different job — `adp.yaml` `image + commands`, explicitly *"not a workflow eng
 that are **not** on GitHub, plus the scanner adapters above. At M2 its entire load is scanners over
 changed files: bursty and small, nothing resembling a CI matrix.
 
-**Candidate, not committed scope — read-only Actions passthrough.** In mirror mode the upstream repo
-is on GitHub by definition, so ADP could proxy read-only Actions endpoints upstream instead of
-returning `404`, making `gh run list` and `gh run view` work against `GH_HOST=adp` for mirrored
-repos. This is a passthrough, not an implementation: it adds no workflow engine, is mirror-mode-only
-by construction, and closes a visible hole in the §2.1 "unmodified agent, zero config" success test —
-an agent that can see its own CI results is the whole point of the evidence plane. **OPEN:** whether
-it lands in M2 or waits, and whether proxied results should also be recorded as evidence or merely
-relayed (recording them twice — once via webhook, once via proxy — needs a dedup story).
+**Read-only Actions passthrough — M2 scope** *(promoted from candidate to committed 2026-08-02)*.
+In mirror mode the upstream repo is on GitHub by definition, so ADP proxies read-only Actions
+endpoints upstream instead of returning `404`, making `gh run list` and `gh run view` work against
+`GH_HOST=adp` for mirrored repos. This is a passthrough, not an implementation: it adds no workflow
+engine, is mirror-mode-only by construction, and closes a visible hole in the §2.1 "unmodified agent,
+zero config" success test — an agent that can see its own CI results is the whole point of the
+evidence plane.
+
+- **Scope:** `GET .../actions/runs`, `.../actions/runs/{id}`, `.../actions/runs/{id}/jobs`,
+  `.../actions/workflows`. Read-only — no dispatch, no re-run, no cancel. Writes stay `404`, because
+  a write path would make ADP responsible for an execution model it deliberately does not have.
+- **Non-mirrored repos keep the `404`**, with the §2.4 body naming the ADP equivalent. The
+  passthrough is a property of *being mirrored*, not of the endpoint.
+- **Relay, do not record** *(this resolves the dedup question that was open here)*. Webhook ingest
+  already writes the authoritative evidence row when the run completes; a proxy that also recorded
+  would produce two provenance records for one CI run and leave the `operations` log describing a
+  read as though it were a state change. The proxy is a read-through view for agent convenience —
+  the evidence plane has exactly one writer, which is the ingest path. Reversible if a case appears
+  for recording proxied reads, but the default has to be one writer.
+- **Failure mode:** upstream unreachable or rate-limited returns `502` with a body naming the cause,
+  never a synthesized empty run list — an agent that believes CI passed because the proxy fabricated
+  silence is the worst outcome available here.
 
 **At kickoff:** resolve the two open questions in [`environments-plan.md`](environments-plan.md) §5
 (SIGNING_KEY custody including the retired-key trust model; dev-instance ownership and retirement
@@ -741,7 +758,10 @@ first week, not its last.
 gate posts findings as signed evidence on a proposal; a lockfile diff adding a known-malicious
 package is refused with a typed verdict the agent can act on. Added 2026-08-01: a mirrored repo
 with a >500-commit history has a signed change recorded for every commit; `gh pr merge --merge`
-and `--squash` produce GitHub-equivalent history.
+and `--squash` produce GitHub-equivalent history. Added 2026-08-02: against a mirrored repo,
+`gh run list` returns the upstream runs and a non-mirrored repo still returns the self-describing
+`404` — and exactly one evidence row exists per completed upstream run, proving the proxy relays
+without recording.
 
 ### M3 — Fleet and differentiation (weeks 16–20) *(amended 2026-08-01 per [`m2-readiness-review.md`](m2-readiness-review.md))*
 50-way fan-out orchestration over candidate sets. Cross-harness checkpoint/resume (session state as a
@@ -860,8 +880,12 @@ node_ids          (global-id mapping for GraphQL Node resolution)
 **MVP: one VM + docker compose, on GCP** *(provider decided 2026-08-01; sized and priced
 2026-08-02)*. A GCE **`n2-standard-4` — 4 vCPU, 16 GB** — with one balanced persistent disk
 (200 GB), at **~$113/month** effective after automatic sustained-use discount, ~$125–165 all-in with
-disk, address and egress. Caddy in front for automatic TLS. Compose runs server, runner, Postgres,
-MinIO, Caddy.
+disk, address and egress. Caddy in front for automatic TLS. **Compose runs server, Postgres,
+Caddy** — the three services in [`deploy/docker-compose.yml`](../deploy/docker-compose.yml) today.
+An object store (MinIO) and a gate runner join it when the features that need them land; neither is
+in the committed stack, and §4.2's object-store row and §4.6's `OBJECT_STORE_*` / `RUNNER_*` env
+vars describe that intended shape rather than what boots today *(corrected 2026-08-02 — this
+sentence previously named all five as though they already ran)*.
 
 *This replaces an earlier "`n2`/`c3-standard`, 8–16 vCPU, 64 GB", which was never measured against a
 workload and priced at $410–590/month.* Full derivation, the AWS comparison and the levers are in
@@ -920,8 +944,11 @@ smaller, and adequately handled by the container limits in §4.7 on a single box
 **M4 hosted posture:** Cloud SQL for PostgreSQL with PITR, Cloud Storage for artifacts, the git
 volume on a persistent disk with scheduled snapshots, and gate runners on a **separate** managed
 instance group — runners execute untrusted code and must never share a host with the API. Each of
-these has a self-host equivalent already in `deploy/` (Postgres, MinIO, a volume), which is the
-constraint that keeps "hosting is a convenience, never a license lever" true rather than aspirational.
+these must have a self-host equivalent in `deploy/` — Postgres and a volume are there today, and the
+object store's MinIO equivalent lands with the object store itself. That constraint is what keeps
+"hosting is a convenience, never a license lever" true rather than aspirational, and it cuts both
+ways: **a managed service may not ship in the hosted posture before its `deploy/` equivalent
+exists**, or the self-host path silently becomes second-class.
 
 **Environments below production** — a long-lived dev instance (forced by M2's inbound webhooks,
 which a laptop cannot receive) and a staging instance (forced by M4's *executed* restore drill) —
@@ -931,9 +958,10 @@ GCP for every rung.
 
 ## 4.6 Config
 
-- **Server:** 12-factor env vars validated against a Zod schema **at boot, fail fast** —
-  `DATABASE_URL`, `GIT_ROOT`, `OBJECT_STORE_*`, `SIGNING_KEY`, `RUNNER_*`, `PUBLIC_URL`.
-  `deploy/.env.example` is the documentation.
+- **Server:** 12-factor env vars validated against a Zod schema **at boot, fail fast**.
+  Validated today (`server/src/config.ts`): `DATABASE_URL`, `GIT_ROOT`, `SIGNING_KEY`, `PUBLIC_URL`,
+  `PORT`, `GIT_MAX_PACK_BYTES`, `LAND_POLICY_FLOOR`. Planned, arriving with the features that need
+  them: `OBJECT_STORE_*`, `RUNNER_*`. `deploy/.env.example` is the documentation.
 - **Repo policy:** `adp.yaml` at repo root, versioned with the code — gates, land policy
   (`require: [gates_green, one_approval]`), risk tiers by path glob, workspace TTL. Policy-as-code
   in the repo, not in a database, so policy changes are themselves reviewable changes.

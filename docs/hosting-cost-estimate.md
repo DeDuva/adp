@@ -44,10 +44,12 @@ From [`deploy/docker-compose.yml`](../deploy/docker-compose.yml), the deployed a
 containers — `postgres:16-alpine`, the Fastify server, and `caddy:2-alpine` — over three volumes.
 That is the whole production surface today.
 
-> **Drift worth fixing:** §4.5 says *"Compose runs server, runner, Postgres, MinIO, Caddy."* The
-> committed compose file has no MinIO and no separate runner service. Either the doc is ahead of the
-> code or the code is behind the doc; the cost estimate below prices what is committed, and object
-> storage is priced separately under M4 where it actually appears.
+> **Drift, since fixed:** §4.5 previously read *"Compose runs server, runner, Postgres, MinIO,
+> Caddy"* — naming five services when the committed file has three. Corrected 2026-08-02 to describe
+> the three that run, with the object store and gate runner marked as arriving with the features that
+> need them (the same correction applied to §4.6's env-var list, which named `OBJECT_STORE_*` and
+> `RUNNER_*` as though `server/src/config.ts` validated them). This estimate prices what is
+> committed; object storage is priced separately under M4, where it actually appears.
 
 Resource demand, in the order that matters:
 
@@ -231,16 +233,17 @@ Nothing here changes the single-VM posture, the provider decision, or the milest
    measurement.
 2. **`environments-plan.md`** — §5's "price the shape first" item is closed by this document; §3's
    dev shape moves from `e2-medium` to `e2-standard-2` for the burst-throttling reason in §3 above.
+3. **`pragmatic_mvp.md` §4.5, §4.6 and the M4 posture** — the compose/config drift this estimate
+   surfaced is resolved **in the code's favour**: §4.5 now names the three services
+   [`deploy/docker-compose.yml`](../deploy/docker-compose.yml) actually runs, §4.6 separates the env
+   vars `server/src/config.ts` validates today from those still planned, and the M4 posture no longer
+   claims a MinIO equivalent already sits in `deploy/`. That paragraph now states the constraint as a
+   rule with teeth: a managed service may not ship in the hosted posture before its `deploy/`
+   equivalent exists, or the self-host path silently becomes second-class.
 
 **Still open, and untouched by cost:** the two questions in `environments-plan.md` §5 —
 `SIGNING_KEY` custody (which the §4.5 runner-split trigger has since given a host-placement
 dimension) and dev-instance ownership and retirement.
-
-**Not resolved here, because it needs a decision rather than a number:** §4.5 describes compose as
-running *"server, runner, Postgres, MinIO, Caddy"*, but [`deploy/docker-compose.yml`](../deploy/docker-compose.yml)
-contains only Postgres, server and Caddy — no MinIO, no runner service. Either the doc is ahead of
-the code or the code is behind the doc. The estimate above prices what is committed; object storage
-is priced under M4, where it actually appears.
 
 ---
 
