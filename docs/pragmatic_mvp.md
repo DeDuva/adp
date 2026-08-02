@@ -367,8 +367,12 @@ that is the honest price of zero-config.
 
 ## Status ledger
 
-*Updated 2026-07-26. CI runs typecheck, build, migrations, the full three-tier test suite (113
-tests, including all e2e suites), and the `gh` conformance gate (`conformance/run.sh`) on every PR.*
+*Updated 2026-08-01. CI runs typecheck, build, migrations, the full three-tier test suite (114
+tests, including all e2e suites), the `gh` conformance gate (`conformance/run.sh`), and the §2.1
+acceptance walkthrough (`acceptance/run.sh`, plus the web UI in a real browser) on every PR — the
+last two in a separate clean-room workflow that provisions a bare container from scratch and
+asserts the machine is clean afterwards. A skipped e2e tier is now a hard failure rather than a
+silent pass; see [`test-environment-automation.md`](test-environment-automation.md).*
 
 | Milestone | Status | Evidence |
 |---|---|---|
@@ -376,8 +380,8 @@ tests, including all e2e suites), and the `gh` conformance gate (`conformance/ru
 | M1a — domain + REST core loop | **✓ core complete** | PRs #2–#3. e2e: issue→intent → comment → signed change → proposal → typed review → ff-merge → 409 on non-ff. Tier-2 tail now done (see M1b′) |
 | M1b — GraphQL + `gh` | **✓ gate met** | PR #4 (read) + the M1b′ mutation slice. GitHub's real SDL loaded unmodified; `conformance/run.sh` drives a real, unmodified, pinned `gh` v2.63.0 through `issue create/view`, `pr create/view/merge` against the live server — the definition-of-done §2.1 gate, enforced in CI on every PR |
 | M1b′ — compat completion + hardening | **✓ done** | GraphQL mutations, the Tier-2 REST tail, all five hardening items, and the `gh` conformance gate all landed — see below |
-| M1c | **◐ hooks, gate runner, land policy, op log/undo, MCP native plane, web UI done** | Real git `pre-receive`/`post-receive` hooks; `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy on both REST and GraphQL merge; native-plane (`/api/adp`) op log + `adp_undo`; workspaces and an evidence-bundle read; a real MCP server (`server/src/mcp/`) wrapping all of it as 8 tools; a read-only supervision web UI (`server/web/`, served at `/ui/*`). Outstanding: full history-query (by path), candidate sets — see below |
-| M2–M5 | not started | M2 scope revised below (trust ramp) |
+| M1c | **✓ done** | Real git `pre-receive`/`post-receive` hooks; `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy on both REST and GraphQL merge; native-plane (`/api/adp`) op log + `adp_undo` + history-query by path; workspaces, candidate sets, and an evidence-bundle read; a real MCP server (`server/src/mcp/`) wrapping all of it as 8 tools; a read-only supervision web UI (`server/web/`, served at `/ui/*`) — see below |
+| M2–M5 | not started | M2 scope revised below (trust ramp); M2/M3 amended 2026-08-01 per the pre-M2 readiness review ([`m2-readiness-review.md`](m2-readiness-review.md)) |
 
 ### M0 — Spec + walking skeleton (weeks 1–2) — ✓ done
 `spec/openapi.yaml` + JSON Schemas (change, evidence, provenance, operation). Server boots, Postgres
@@ -572,8 +576,12 @@ unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` again
     to keep that script passing.
 - ~~**Op log read API + undo**~~ **done** (native plane, `/api/adp` — no GitHub analogue, per
   the compat/native table in §2.2): `GET /api/adp/repos/{owner}/{repo}/operations` (filterable by
-  `actor`, `verb`, `since`/`until` — a lightweight cut of "history query," not the full
-  by-file-path version) and `.../operations/{id}`. `operations` has no `repoId` column (it's been
+  `actor`, `verb`, `since`/`until`, and `path` — the full history-query slice, `http-rest/operations.ts`'s
+  `matchesPath`: operations carry no path column, so a `path` filter resolves the commit sha out of a
+  commit-scoped target (`owner/name@<sha>`, written only by `change.create`) and asks git which paths
+  that commit touched via `GitBackend.commitPaths` (`git diff-tree --no-commit-id --name-only -r --root`)
+  — over-fetches from Postgres when `path` is set since the narrowing happens in application code, then
+  truncates to `limit`) and `.../operations/{id}`. `operations` has no `repoId` column (it's been
   repo-agnostic in shape since commit 1, and adding one is a bigger migration than this read API
   calls for) — repo-scoping instead matches on `target`'s shape: every target this codebase writes
   is either exactly `owner/name` or `owner/name` immediately followed by `#` or `@`, so
@@ -600,22 +608,27 @@ unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` again
     one deletes the ref for real (via `GitBackend.deleteRef`) and marks `destroyedAt` rather than
     deleting the row, so the op log stays complete.
   - `adp_history_query` / `adp_op_log`: both wrap the same operations-list query already built for
-    the REST op log (filter by actor/verb/date) — "history query" is the richer framing, "op log"
-    the raw one, over one underlying function. Filtering by file path still isn't implemented.
+    the REST op log (filter by actor/verb/date/path) — "history query" is the richer framing, "op log"
+    the raw one, over one underlying function.
   - `adp_evidence_get`: `core/evidence.ts` assembles — doesn't store — the full signed bundle for a
     commit: its `changes` row (signature + provenance) plus every `gate_results` DSSE envelope
     reported for that sha, most-recent-first per gate.
   - `adp_undo`: calls `core/undo.ts` directly, same semantics as the REST endpoint (only
     `proposal.merge` so far, refused if the branch moved since).
-  - `adp_candidates_open` / `adp_candidates_select`: **not implemented** — candidate sets have no
-    data model yet (see below) — and these two tools say so honestly (`isError: true`, a clear
-    message) rather than pretending to work.
+  - `adp_candidates_open` / `adp_candidates_select`: wrap the candidate-set data model
+    (`core/candidate-sets.ts`, a `candidate_sets` table keyed to one `intent`). Opening a set
+    creates the row; proposals join it by passing `candidate_set_id` at creation
+    (`http-rest/proposals.ts`, the existing `POST .../pulls`, not a new endpoint) — fan-out is just
+    N ordinary proposals sharing one `candidateSetId`. Selecting records the winning proposal id on
+    the set; it doesn't close or merge the losing candidates, which stay exactly as open proposals
+    an agent or human can still inspect.
   - Covered by `server/test/e2e-native-plane.test.ts` (workspace create/list/destroy against a real
     branch, evidence-bundle assembly from a real signed change + gate report) and
     `server/test/e2e-mcp.test.ts` — a real MCP `Client`/`Server` pair over the SDK's in-memory
     transport, the MCP server's real HTTP client hitting a real Fastify+Postgres instance: tool
     listing, workspace round-trip, evidence-after-op-log, history-query filtering, undo reverting a
-    real merge, and the candidate-set stubs reporting honestly.
+    real merge, and candidate-set open/fan-out/select over two real proposals against one intent.
+    `server/test/e2e-hooks.test.ts` covers history-query by path against a real pushed commit.
 - ~~**Read-only web UI**~~ **done**: `server/web/`, a Vite + React + TypeScript SPA served as
   static assets by the same Fastify server at `/ui/*` (`@fastify/static`, `main.ts` — skipped with
   a log line if the app hasn't been built yet, so a fresh checkout's plain `npm run dev` still
@@ -629,8 +642,9 @@ unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` again
   log with filters — the one interactive control granted per the plan of record ("op log with
   undo"): an **Undo** button on `proposal.merge` rows, calling the same `/api/adp` endpoint the
   MCP tool and a direct API caller would, with the result (or the server's refusal reason) shown
-  inline. Candidate-set comparison, named in the original UI scope, isn't built — candidate sets
-  don't exist yet (below).
+  inline. Candidate-set comparison, named in the original UI scope, still isn't built in the web UI
+  — candidate sets now exist as a real data model and are reachable via REST/MCP (above), but the
+  UI has no dedicated view for them yet, an honest gap rather than a blocker for M1 exit.
   - **Verification note:** this sandbox has no root and is missing the system libraries Chromium
     needs (`libnspr4`, `libnss3`, …), and neither jsdom nor happy-dom could execute the built Vite
     ES-module bundle — so this was *not* visually confirmed in a real rendered browser. What was
@@ -639,15 +653,20 @@ unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` again
     server — every endpoint the UI calls hit directly and confirmed to match the TypeScript
     interfaces in `api.ts` exactly, including a real merge-undo round trip. Worth an actual
     browser check before relying on this for anything but development.
-- **History query (full, by path), candidate sets** — as originally scoped, not yet started.
+- ~~**History query (full, by path), candidate sets**~~ **done** — see the op-log and MCP bullets
+  above. The one remaining gap is UI-only: the web UI has no candidate-set comparison view.
 
 **Exit:** §2.1 passes as a scripted E2E driven by a real unmodified agent — plus one addition, now
-**met**: a push containing a seeded secret is blocked at the wire with a typed error.
+**met**: a push containing a seeded secret is blocked at the wire with a typed error. All of M1c's
+differentiators, including the two items that were outstanding as of 2026-07-26 (history-query by
+path, candidate sets), are now implemented and covered by real e2e tests — **M1 is complete.**
 
-### M2 — Adoption + trust ramp *(revised 2026-07-26)*
+### M2 — Adoption + trust ramp *(revised 2026-07-26; amended 2026-08-01 per [`m2-readiness-review.md`](m2-readiness-review.md))*
 **Mirror mode** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub; the single
 biggest adoption lever and cheap: push mirror + webhook ingest). Outbound webhook emitter. `adp` CLI.
-`conformance/` published against `spec/`. GraphQL coverage widened from measured real traffic.
+`conformance/` published against `spec/`. GraphQL coverage widened from measured real traffic —
+which makes **API-traffic telemetry a named prerequisite**, not an optimization: nothing measures
+traffic today, and the same instrumentation feeds A2's endpoint-distribution research for free.
 Plus the trust-plane ramp (§1.5 item 4):
 - **Scanner-as-gate adapters:** any CLI scanner drops into the gate runner — SARIF/JSON out,
   DSSE evidence attestation in; **Wiz Code (`wizcli`) is the reference adapter** (SAST, SCA,
@@ -658,16 +677,49 @@ Plus the trust-plane ramp (§1.5 item 4):
   supervisor approval; verdicts are typed and returned to the authoring agent.
 - **SBOM per land:** CycloneDX emitted as ordinary evidence on every landed change.
 
+Plus the **scale hygiene forced by mirror mode** (added 2026-08-01 — mirroring imports real GitHub
+repos with real histories, which turns these from M5 speculation into M2 correctness bugs; details
+and file references in the readiness review §2):
+- **Chunked post-receive recording:** the 500-commit-per-ref-update cap in
+  `server/src/http-git/hooks.ts` must chunk or queue, never truncate silently — a silent hole in
+  the provenance record is the one failure mode this product cannot have.
+- **Secondary-index pass:** `changes (repo_id, git_sha)`, `gate_results (repo_id, git_sha, name)`,
+  and an `operations` strategy (a `repo_id` column or an expression index serving the `target`
+  filter) — today every one of these hot paths is a sequential scan.
+- **Pagination on unbounded list endpoints** (`GET /pulls`, `GET /git/refs`), GitHub-shaped
+  (`per_page`/`page`) — a compat-fidelity gain as well as a scale fix.
+- **Merge-method fidelity:** real merge-commit and squash support on both merge paths
+  (`merge_method` is currently read from nobody — every land silently fast-forwards, which a
+  migrator's `gh pr merge --merge` cannot distinguish from GitHub behavior until history is
+  inspected). Rebase-merge may stay unimplemented behind a typed error.
+- **Land-policy TOCTOU decision:** policy is evaluated before the ref CAS, not atomically with it;
+  either re-check at the CAS point or document the accepted window in `spec/`.
+
+**At kickoff:** resolve the two open questions in [`environments-plan.md`](environments-plan.md) §5
+(SIGNING_KEY custody including the retired-key trust model; dev-instance ownership and retirement
+condition) — the dev environment is forced by M2's inbound webhooks, so these block the milestone's
+first week, not its last.
+
 **Exit:** an existing GitHub repo gets ADP workspaces + evidence without migrating; a `wizcli`
 gate posts findings as signed evidence on a proposal; a lockfile diff adding a known-malicious
-package is refused with a typed verdict the agent can act on.
+package is refused with a typed verdict the agent can act on. Added 2026-08-01: a mirrored repo
+with a >500-commit history has a signed change recorded for every commit; `gh pr merge --merge`
+and `--squash` produce GitHub-equivalent history.
 
-### M3 — Fleet and differentiation (weeks 16–20)
+### M3 — Fleet and differentiation (weeks 16–20) *(amended 2026-08-01 per [`m2-readiness-review.md`](m2-readiness-review.md))*
 50-way fan-out orchestration over candidate sets. Cross-harness checkpoint/resume (session state as a
 first-class ADP object — the §e demo). Statistical land criteria v0: flaky-gate quarantine,
 confidence-interval gating — the A8 contribution. Benchmark harness published (tokens / tool calls /
 error rate / wall clock: GitHub+`gh` vs ADP-MCP vs ADP-via-`gh`) — note this now measures all three
-arms for free, because both planes exist.
+arms for free, because both planes exist. Added 2026-08-01, two further benchmark arms — the
+merge-bottleneck thesis currently has zero first-party measurement, and the M5 gates need telemetry
+to cite:
+- **Merge-contention arm:** land throughput and retry behavior under N concurrent agents targeting
+  one branch, including conflict-rate telemetry (ForgeMark-comparable; feeds A17 and the M5
+  speculative-batching gate).
+- **Fan-out-vs-serial arm:** cost and outcome comparison of K parallel candidate-set attempts vs
+  one serial checkpoint-resume session on the same tasks (feeds A16).
+
 **Exit:** D1 and D2 from the prototype doc are demonstrable; benchmark published with methodology.
 
 ### M4 — Multi-tenant hosted preview (weeks 21–26)
@@ -724,7 +776,7 @@ Boundaries preserve the option to split; a service mesh at week 3 does not.
 | **Git transport** | `git http-backend` (CGI) proxied behind auth middleware | The reference implementation of the wire protocol, already installed |
 | **Database** | PostgreSQL 16, Drizzle (migrations + typed queries) | Transactional spine |
 | **Job queue** | `pg-boss` (Postgres-backed) | No Redis. One stateful dependency is enough, and gate jobs want transactional enqueue alongside the change record |
-| **Object store** | S3-compatible: MinIO local, S3/R2 hosted. Content-addressed keys `sha256/<hash>` | Gate logs, junit XML, evidence payloads, trajectories. Content addressing gives dedup and makes A9 sealed payloads natural later |
+| **Object store** | S3-compatible: MinIO self-hosted, Cloud Storage hosted (its XML API keeps the same client). Content-addressed keys `sha256/<hash>` | Gate logs, junit XML, evidence payloads, trajectories. Content addressing gives dedup and makes A9 sealed payloads natural later. Staying S3-compatible rather than adopting a GCS-native client is what keeps the self-host path real |
 | **Gate runner** | Separate process, Docker/Podman. Reads `adp.yaml` (`image`, `setup`, `gates:[{name,run,weight}]`), materializes a checkout, runs commands, uploads logs+junit, posts a check-run | Not a workflow engine. No matrix, no marketplace, no DAG |
 | **MCP** | Official TS SDK, streamable-HTTP, bearer auth, same process | MCP is a projection of the same domain layer, not a second system |
 | **Web UI** | Vite + React SPA, read-only, served as static assets. Views: repo, history graph, change detail (intent/diff/evidence/provenance), proposal, candidate-set comparison, op log with undo, gate logs | Humans supervise, agents act. Deliberately small |
@@ -768,21 +820,38 @@ node_ids          (global-id mapping for GraphQL Node resolution)
 
 ## 4.5 Hosting
 
-**MVP: one VM + docker compose.** Hetzner CCX or EC2 `m7i`-class, 8–16 vCPU, 64 GB, one NVMe volume.
-Caddy in front for automatic TLS. Compose runs server, runner, Postgres, MinIO, Caddy.
+**MVP: one VM + docker compose, on GCP** *(provider decided 2026-08-01)*. A GCE instance in the
+`n2`/`c3-standard` family, 8–16 vCPU, 64 GB, one SSD persistent disk. Caddy in front for automatic
+TLS. Compose runs server, runner, Postgres, MinIO, Caddy.
 
 Defense: the workload is stateful (git repos on disk), needs a Docker socket for gate execution, and
-has one user (us) for weeks. Kubernetes, Fly.io, and serverless all fight at least one of those.
-A single box is ~$100/month, deploys with `git pull && docker compose up -d`, rebuilds from `deploy/`
-in ten minutes. Revisit at M4, not before.
+has one user (us) for weeks. Kubernetes, Cloud Run, and serverless all fight at least one of those —
+the shape of the answer is unchanged by the choice of provider. It deploys with
+`git pull && docker compose up -d` and rebuilds from `deploy/` in ten minutes. Revisit at M4, not
+before.
+
+**One number needs re-checking.** This section previously read "~$100/month", which was a Hetzner
+figure. GCP list pricing for the same shape is several times that. The levers are a smaller initial
+instance (the MVP has one user), committed-use discounts, and not running the box when nobody is
+using it. Price it before provisioning rather than inheriting a stale number — and note that
+choosing one provider for every rung was a deliberate trade of money for operational simplicity,
+argued in [`environments-plan.md`](environments-plan.md).
 
 **TLS and hostname matter more than usual here:** `gh` only takes the GHES `/api/v3` + `/api/graphql`
 path for a non-`github.com` host, and expects HTTPS. A real DNS name with a real certificate is a
 week-1 requirement, not a polish item.
 
-**M4 hosted posture:** managed Postgres with PITR (RDS/Neon), S3 or R2, git volume on EBS with
-snapshots, and gate runners on a **separate** autoscaling pool — runners execute untrusted code and
-must never share a host with the API.
+**M4 hosted posture:** Cloud SQL for PostgreSQL with PITR, Cloud Storage for artifacts, the git
+volume on a persistent disk with scheduled snapshots, and gate runners on a **separate** managed
+instance group — runners execute untrusted code and must never share a host with the API. Each of
+these has a self-host equivalent already in `deploy/` (Postgres, MinIO, a volume), which is the
+constraint that keeps "hosting is a convenience, never a license lever" true rather than aspirational.
+
+**Environments below production** — a long-lived dev instance (forced by M2's inbound webhooks,
+which a laptop cannot receive) and a staging instance (forced by M4's *executed* restore drill) —
+are planned separately in [`environments-plan.md`](environments-plan.md). That document is
+additive to this section, not a replacement: the single-VM production posture above stands, on
+GCP for every rung.
 
 ## 4.6 Config
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { skipWithoutDb } from "./require-db.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -24,7 +25,7 @@ const execFileAsync = promisify(execFile);
 // (docs/pragmatic_mvp.md §1.5 item 2) — this is the enforcement point the
 // receive-path hooks and evidence bundles all feed into: a merge is refused
 // until the resolved requirements (instance floor ∧ repo adp.yaml) are met.
-describe.skipIf(!process.env.DATABASE_URL)("M1c: gate runner + land policy", () => {
+describe.skipIf(skipWithoutDb)("M1c: gate runner + land policy", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;

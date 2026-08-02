@@ -1,39 +1,60 @@
-# ADP server — M0 skeleton + M1a + M1b read slice
+# ADP server — M0 through M1c (most of it)
 
 Fastify + PostgreSQL server. Working end to end: token-authenticated repo creation, git
 smart-HTTP (clone/push) proxied to the real `git http-backend` binary, issues (which each
 file an intent) with comments, typed changes (a git commit bound to an intent and a
 server-signed provenance record), proposals (PR-shaped, opened against a head/base branch),
-typed reviews, fast-forward-only merge, and a GraphQL read path at `/api/graphql` backed by
-GitHub's real, unmodified public schema (`spec/graphql/github.graphql`).
+typed reviews, and merges under a two-level land policy (instance floor ∧ repo `adp.yaml`,
+fast-forward only). GraphQL at `/api/graphql` is backed by GitHub's real, unmodified public
+schema (`spec/graphql/github.graphql`) with both queries and mutations resolved.
 
 **GraphQL scope, precisely:** `Query.repository`, `Query.node`, `Query.viewer`,
 `Repository.{owner,defaultBranchRef,issue,issues,pullRequest,pullRequests}`,
-`Issue.author`, `PullRequest.author` have resolvers — enough to back `gh repo view`,
-`gh issue list`/`view`, `gh pr list`/`view` in principle. Mutations (`gh pr create`/`merge`/
-`review`, `gh issue create`/`close`) are REST-only for now; GraphQL mutation resolvers are
-next. **Not yet validated against the real `gh` binary** — that's the record-replay
-conformance suite (`docs/pragmatic_mvp.md` §5), a separate follow-up. What's tested here is
-that hand-written queries shaped like `gh`'s actually resolve correctly, and that fields we
-haven't backed fail as a GraphQL resolver error, never a schema validation error — the
-entire point of loading the real SDL unmodified.
+`Issue.author`, `PullRequest.author` have resolvers, plus all 9 mutations
+(`createIssue`, `closeIssue`, `createPullRequest`, `mergePullRequest`, `closePullRequest`,
+`reopenPullRequest`, `markPullRequestReadyForReview`, `addPullRequestReview`, `addComment`) —
+enough to back `gh repo view`, `gh issue list/view/create/close`, `gh pr list/view/create/
+merge/review` for real. **Validated against the real `gh` binary**: `conformance/run.sh`,
+pinned to `gh` v2.63.0, drives the actual unmodified binary through
+`issue create` → `issue view` → `pr create` → `pr view` → `pr merge` against a live server
+in CI on every PR — see `docs/pragmatic_mvp.md` §M1b′ item 3 for what that gate does and
+doesn't cover (it isn't record-replay against production github.com).
 
-Not yet implemented: GraphQL mutations, gate runners, evidence bundles, land policy beyond
-fast-forward, the native MCP plane, candidate sets, and automatic change recording on push
-(changes are currently recorded via an explicit API call, not a git hook). Proposal/issue
-numbering are independent sequences rather than GitHub's shared one — a known fidelity gap.
+Real git `pre-receive`/`post-receive` hooks auto-record signed changes on every push and run
+push protection against committed secrets (bundled regex+entropy scanner). Gate results
+(`POST .../gates`) are stored as DSSE-signed in-toto evidence envelopes and rolled up into
+`Commit.statusCheckRollup`. A native plane at `/api/adp` (op log and history query
+filterable by actor/verb/date/path, undo of a landed fast-forward merge, workspaces,
+evidence-bundle read, candidate sets) is wrapped by a real MCP server (`server/src/mcp/`,
+8 tools) and by a read-only web UI (`server/web/`, served at `/ui/*`).
+
+Proposal/issue numbering are independent sequences rather than GitHub's shared one — a
+known fidelity gap.
 Refresh the vendored GraphQL schema with `scripts/update-graphql-schema.sh`.
-See `docs/pragmatic_mvp.md` for the milestone plan.
+See `docs/pragmatic_mvp.md` for the milestone plan and status ledger.
 
 ## Local development
 
-Requires Node 22+, a `git` binary with `git-http-backend`, and a reachable Postgres.
+Requires Node 22 (pinned in `../.nvmrc`), a `git` binary with `git-http-backend`, and a
+reachable Postgres. Check all of that in one shot before anything else:
+
+```bash
+bash ../scripts/dev/doctor.sh
+```
 
 ```bash
 cp ../deploy/.env.example .env   # then edit DATABASE_URL / GIT_ROOT / etc for local use
 npm install
 npm run migrate
 npm run dev
+```
+
+`.env.example`'s `DATABASE_URL` points at the compose service hostname `postgres` and will
+**not** resolve on the host — for local dev use the canonical local DSN
+(`scripts/dev/config.sh`, shared with CI and the conformance gate):
+
+```bash
+export DATABASE_URL=postgres://adp:adp@localhost:5432/adp
 ```
 
 Mint the first token (there's no signup flow yet — this is the bootstrap path):
@@ -74,15 +95,30 @@ Three tiers, matching how much infrastructure each needs. All run under
 | Integration | `src/**/*.test.ts` (git-backend, http-git proxy) | a real `git` binary (no DB) | bare repo creation, and a full `git clone`/`push` through Fastify into `git http-backend`, with auth stubbed to a fixed identity |
 | End-to-end | `test/e2e.test.ts` | Postgres (`DATABASE_URL`) | the actual M0 exit criterion: mint a token, create a repo over REST, `git clone`/`push` with that token as the git password, confirm the commit landed |
 
+The supported way to run the whole thing is from the repo root, against an ephemeral Postgres
+that is created and destroyed per run (`docs/test-environment-automation.md`):
+
+```bash
+make up && make test-all && make down
+```
+
+`make down` asserts that nothing leaked — containers, volumes, server processes, temp
+directories. Directly, without the Makefile:
+
 ```bash
 npm test              # everything the current environment supports
 npm run typecheck      # tsc --noEmit, including test files
+
+# the full suite with the e2e tier actually enforced
+ADP_REQUIRE_DB=1 DATABASE_URL=postgres://adp:adp@localhost:5432/adp npm test
 ```
 
-The e2e suite uses `describe.skipIf(!process.env.DATABASE_URL)` — it's silently skipped
-without a database (e.g. a laptop with no Postgres running) so `npm test` stays usable
-everywhere, but it always runs in CI, which provides Postgres as a service container. If
-you have a local Postgres, set `DATABASE_URL` before running `npm test` to exercise it too.
+The e2e suites gate on `DATABASE_URL` via `test/require-db.ts` — without a database they
+skip, so `npm test` stays usable on a laptop with no Postgres running. **That is also a
+trap:** a skipped tier still exits 0, so a green `npm test` can mean 49 of 114 tests never
+ran. Any context that intends full coverage must say so with `ADP_REQUIRE_DB=1`, which turns
+a missing `DATABASE_URL` into a hard collection failure instead of a silent skip. CI sets it
+unconditionally. See `docs/test-environment-automation.md`.
 
 **CI** (`.github/workflows/ci.yml`) runs on every push to `main` and every PR: typecheck,
 build, migrate against a fresh Postgres service container, then the full test suite

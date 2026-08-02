@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { skipWithoutDb } from "./require-db.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -25,9 +26,10 @@ const execFileAsync = promisify(execFile);
 // This is the M0 exit criterion from docs/pragmatic_mvp.md: "a real repo can
 // be pushed to and cloned from the server over HTTPS with a token." Requires
 // a real Postgres — set DATABASE_URL to run it locally, or rely on CI, which
-// provides one as a service container. Silently skipped otherwise so `npm
-// test` stays usable on a machine with no database.
-describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create -> clone -> push", () => {
+// provides one as a service container. Skipped otherwise so `npm test` stays
+// usable on a machine with no database; set ADP_REQUIRE_DB=1 to turn that skip
+// into a hard failure instead (test/require-db.ts).
+describe.skipIf(skipWithoutDb)("M0 end-to-end: token -> repo create -> clone -> push", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;
@@ -155,25 +157,36 @@ describe.skipIf(!process.env.DATABASE_URL)("M0 end-to-end: token -> repo create 
   });
 
   it("rejects a clone attempt with no credentials", async () => {
-    // credential.helper= disables a configured helper, but on some
-    // machines (observed: WSL resolving Windows Git Credential Manager)
-    // something still intercepts the 401 and waits on an interactive
-    // prompt instead of failing fast, hanging the test until it times out.
-    // GIT_TERMINAL_PROMPT=0 forces git to fail immediately no matter what
-    // credential machinery is configured on the host.
-    await expect(
-      execFileAsync(
-        "git",
-        [
-          "-c",
-          "credential.helper=",
-          "clone",
-          `http://127.0.0.1:${port}/${owner}/hello.git`,
-          path.join(await mkdtemp(path.join(tmpdir(), "adp-e2e-noauth-")), "clone"),
-        ],
-        { env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
-      ),
-    ).rejects.toThrow();
+    // Its own directory, removed in `finally`. This test asserts the clone
+    // *fails*, so anything relying on a later statement to clean up never runs
+    // — which is how it used to leak one /tmp directory per run. Reusing the
+    // suite's `workDir` is not an option either: the preceding test removes it
+    // at its own end, and `git clone` recreates missing leading directories,
+    // so the leak would simply come back under a different name.
+    const noAuthDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-noauth-"));
+    try {
+      // credential.helper= disables a configured helper, but on some
+      // machines (observed: WSL resolving Windows Git Credential Manager)
+      // something still intercepts the 401 and waits on an interactive
+      // prompt instead of failing fast, hanging the test until it times out.
+      // GIT_TERMINAL_PROMPT=0 forces git to fail immediately no matter what
+      // credential machinery is configured on the host.
+      await expect(
+        execFileAsync(
+          "git",
+          [
+            "-c",
+            "credential.helper=",
+            "clone",
+            `http://127.0.0.1:${port}/${owner}/hello.git`,
+            path.join(noAuthDir, "clone"),
+          ],
+          { env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await rm(noAuthDir, { recursive: true, force: true });
+    }
   });
 
   it("creates an issue, which files an intent, then a comment on it", async () => {

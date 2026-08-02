@@ -157,16 +157,21 @@ is a server an **unmodified** agent can use instead of GitHub, with zero configu
 
 Working today, verified in CI end-to-end: git smart-HTTP (clone/push) delegated to `git
 http-backend` behind token auth; the GitHub-shaped REST core loop (issues — each of which files a
-typed **intent** — comments, PR-shaped proposals, typed review states, fast-forward landing); typed
-**changes** binding a git commit to intent and provenance, Ed25519-signed server-side; an
-append-only **operation log** written in the same transaction as every mutation; and a GraphQL
-read path served from GitHub's real published SDL, so `gh`-shaped queries validate correctly and
-unimplemented fields fail as resolver errors, never schema errors.
+typed **intent** — comments, PR-shaped proposals, typed review states, landing under a two-level
+land policy); typed **changes** binding a git commit to intent and provenance, Ed25519-signed
+server-side; an append-only **operation log** written in the same transaction as every mutation;
+and GraphQL served from GitHub's real published SDL with both queries and mutations resolved,
+validated against the real, unmodified `gh` binary in CI (`conformance/run.sh`, the record-replay
+conformance gate, pinned to `gh` v2.63.0). Real git `pre-receive`/`post-receive` hooks auto-record
+signed changes on push and block pushes containing secrets — a first slice of the §f trust plane.
+Gate results are DSSE-signed in-toto evidence bundles; the operation log supports undo of a landed
+merge; history-query by actor, verb, date, and file path; **candidate sets** — N competing
+proposals against one intent, the primitive with no GitHub analogue; and a native MCP plane
+(8 tools) plus a read-only web UI alongside the compat surface.
 
-Not yet built, stated plainly: GraphQL mutations and validation against the unmodified `gh` binary
-(the record-replay conformance gate); gate runners and evidence bundles; land policy; undo and the
-history-query API; candidate sets; the native MCP plane; and the §f trust plane. The milestone
-plan, including the next set, is `pragmatic_mvp.md` Part 3.
+Not yet built, stated plainly: the rest of the §f trust plane beyond push protection and evidence
+bundles — org-enforced policy, dependency admission, and scanner-as-gate integrations. The
+milestone plan, including the next set, is `pragmatic_mvp.md` Part 3.
 
 ## Why frontier labs specifically — and the ask
 
@@ -273,6 +278,24 @@ The brief above states our positions with conviction; this appendix states them 
 **Current bet:** Evidence bundles, SBOM-per-land, and signed provenance double as the artifacts CRA reporting, ISO/IEC 42001 audits, and EU-AI-Act traceability requests will ask for — compliance output at near-zero marginal schema cost, and a wedge with enterprise buyers whose reporting obligations began ticking September 2026.
 **What would change it:** Compliance-driven design is a known tarpit: auditors want certified report formats and workflow attestations, not raw attestation envelopes; chasing framework-specific outputs (CRA annexes, 42001 evidence catalogs, FedRAMP-style controls) in-core would bloat the schema and the roadmap. If pull hardens in that direction, the boundary is: ADP guarantees the *evidentiary substrate* (signed, queryable, exportable); GRC tooling — a partner ecosystem, not us — renders reports from it.
 **Research:** Map the evidence schema against the CRA reporting fields and a 42001 evidence catalog with one design partner's compliance team; ship one audit-export endpoint and observe what auditors actually reject.
+
+## A16. Wide fan-out vs. long serial sessions *(added 2026-08-01, pre-M2 review)*
+
+**Current bet:** The dominant fleet pattern is wide speculative fan-out — an orchestrator runs hundreds of parallel attempts and a selector lands one — making candidate sets and the eval-gated queue the load-bearing primitives.
+**What would change it:** Test-time-compute economics may favor one strong agent iterating *serially* — checkpoint, evaluate, continue — over parallel attempts, and current harness evolution (long-horizon sessions, context compaction, persistent memory) points at least partly that way. In a serial-dominant world, candidate sets matter less; checkpoint/resume, operation-log continuity, and session-state versioning matter more. The roadmap is partially hedged — cross-harness checkpoint/resume is already M3 scope — but the investment split between the two patterns should follow evidence, not the thesis image.
+**Research:** The M3 benchmark gains a fan-out-vs-serial arm: cost and outcome for K parallel candidate-set attempts vs one serial checkpoint-resume session on the same tasks, across task difficulty. Track harness-side signals (session length distributions, parallelism defaults in shipping orchestrators).
+
+## A17. Merge contention may be avoided upstream *(added 2026-08-01, pre-M2 review)*
+
+**Current bet:** Fleets bottleneck on the merge/verification path — thousands of concurrent writers contending on shared refs, resolved by a speculative eval-gated merge queue (Layer 3).
+**What would change it:** Orchestrators may partition work upstream — by ownership, file sets, or build-graph blast radius — so ref-level contention rarely occurs, the way engineering orgs already shard work across teams. If real fleet conflict rates are low, the bottleneck moves to eval compute and review latency: the speculative-batching bet weakens, while the statistical-gating bet (A8) binds regardless of where contention lives. The MVP's serial fast-forward land is compatible with both worlds, so nothing built so far is at risk — but M5's "speculative merge batching" gate should demand conflict-rate telemetry, not just throughput telemetry.
+**Research:** Measure real conflict rates and land throughput under N concurrent agents targeting one branch (the M3 merge-contention benchmark arm, ForgeMark-comparable); characterize how production orchestrators partition work today.
+
+## A18. Erosion of the PR shape *(added 2026-08-01, pre-M2 review)*
+
+**Current bet:** The proposal (PR-shaped) is the unit of review and landing, because the compat plane demands GitHub fidelity and humans review intent + evidence attached to it.
+**What would change it:** Agents may converge on continuous micro-landing — stacked changes, land-as-stream, trunk-based development with the merge queue as the only integration point — and on regeneration-over-maintenance, where the durable artifact is the *intent* and the diff is a disposable projection regenerated on demand. Both erode the PR as the unit of anything. The domain model is positioned acceptably (intent is first-class; proposals reference intents, not vice versa), but the discipline to protect is schema-level: evidence, provenance, and history must hang off changes and operations — never off `proposal` — so the native plane survives any change-shape. If PR erosion materializes, the compat plane becomes a legacy adapter earlier than planned and the native change-stream surface becomes the main road.
+**Research:** Watch for land-as-stream primitives in shipping forges and orchestrators (merge-queue-only workflows, stacked-diff defaults); audit the ADP schema for any place `proposal` is load-bearing for evidence or history and fix it while cheap.
 
 ---
 

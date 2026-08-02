@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { skipWithoutDb } from "./require-db.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -21,7 +22,7 @@ const execFileAsync = promisify(execFile);
 // M1b′ item 2: the Tier-2 REST tail (docs/pragmatic_mvp.md) — contents,
 // commits/compare, git/refs|blobs|trees|commits, PR files/diff, and the
 // GitHub-standard repo-create paths. All backed by the real `git` binary.
-describe.skipIf(!process.env.DATABASE_URL)("M1b′ REST: Tier-2 tail", () => {
+describe.skipIf(skipWithoutDb)("M1b′ REST: Tier-2 tail", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;

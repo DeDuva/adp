@@ -3,7 +3,7 @@ import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
-import { proposals, changes } from "../db/schema.js";
+import { proposals, changes, candidateSets } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepo } from "../core/repos-lookup.js";
@@ -16,6 +16,7 @@ const CreateProposalBody = z.object({
   head: z.string().min(1),
   base: z.string().min(1),
   change_id: z.string().uuid().optional(),
+  candidate_set_id: z.string().uuid().optional(),
 });
 
 const UpdateProposalBody = z.object({
@@ -34,6 +35,7 @@ function serializeProposal(proposal: typeof proposals.$inferSelect, owner: strin
     head: { ref: proposal.headRef, sha: proposal.headSha },
     base: { ref: proposal.baseRef },
     change_id: proposal.changeId,
+    candidate_set_id: proposal.candidateSetId,
     created_at: proposal.createdAt.toISOString(),
     closed_at: proposal.closedAt?.toISOString() ?? null,
     merged_at: proposal.mergedAt?.toISOString() ?? null,
@@ -86,6 +88,19 @@ export function registerProposalRoutes(
         }
       }
 
+      if (parsed.data.candidate_set_id) {
+        const [candidateSet] = await db
+          .select()
+          .from(candidateSets)
+          .where(and(eq(candidateSets.id, parsed.data.candidate_set_id), eq(candidateSets.repoId, repo.id)));
+        if (!candidateSet) {
+          reply
+            .code(422)
+            .send({ message: `Candidate set ${parsed.data.candidate_set_id} not found in this repository` });
+          return;
+        }
+      }
+
       const proposal = await db.transaction(async (tx) => {
         // Same repo-row-lock pattern as issue numbering (issues.ts) — a
         // second sequence, deliberately not shared with issue numbers (see
@@ -109,6 +124,7 @@ export function registerProposalRoutes(
             headSha,
             baseRef: parsed.data.base,
             changeId: parsed.data.change_id ?? null,
+            candidateSetId: parsed.data.candidate_set_id ?? null,
             authorId: req.identity!.identityId,
           })
           .returning();
@@ -117,7 +133,13 @@ export function registerProposalRoutes(
           actorId: req.identity!.identityId,
           verb: "proposal.create",
           target: `${owner}/${repoName}#${nextNumber}`,
-          after: { id: proposal!.id, head: parsed.data.head, base: parsed.data.base, headSha },
+          after: {
+            id: proposal!.id,
+            head: parsed.data.head,
+            base: parsed.data.base,
+            headSha,
+            candidateSetId: parsed.data.candidate_set_id ?? null,
+          },
         });
 
         return proposal!;

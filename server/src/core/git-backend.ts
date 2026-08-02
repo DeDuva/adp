@@ -358,6 +358,17 @@ export class GitBackend {
     return { additions, deletions, changedFiles: lines.length };
   }
 
+  // Paths a single commit touched, diffed against its first parent (or the
+  // empty tree for a root commit) — used to answer "history query by path"
+  // without needing a second stored index of file paths per commit.
+  async commitPaths(owner: string, name: string, sha: string): Promise<string[]> {
+    const { stdout } = await run(
+      ["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha],
+      this.repoPath(owner, name),
+    );
+    return stdout.split("\n").filter(Boolean);
+  }
+
   async diffPatch(owner: string, name: string, base: string, head: string): Promise<string> {
     const { stdout } = await run(["diff", `${base}...${head}`], this.repoPath(owner, name));
     return stdout;
