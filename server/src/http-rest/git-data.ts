@@ -147,6 +147,15 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     });
   });
 
+  // GitHub-shaped per_page/page, same precedent as GET /commits above — a
+  // repo mirrored from GitHub can carry far more refs (branches + tags) than
+  // fits comfortably in one unbounded response.
+  function paginateRefs(refs: { ref: string; sha: string }[], query: { per_page?: string; page?: string }) {
+    const limit = Math.min(Number(query.per_page) || 30, 100);
+    const offset = (Math.max(Number(query.page) || 1, 1) - 1) * limit;
+    return refs.slice(offset, offset + limit);
+  }
+
   app.get("/api/v3/repos/:owner/:repo/git/refs/*", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const refTail = (req.params as { "*": string })["*"] ?? "";
@@ -160,7 +169,8 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
       reply.code(404).send({ message: "Not Found" });
       return;
     }
-    reply.send(refs.map((r) => ({ ref: r.ref, object: { sha: r.sha, type: "commit" } })));
+    const page = paginateRefs(refs, req.query as { per_page?: string; page?: string });
+    reply.send(page.map((r) => ({ ref: r.ref, object: { sha: r.sha, type: "commit" } })));
   });
 
   app.get("/api/v3/repos/:owner/:repo/git/refs", { preHandler: requireScope("repo:read") }, async (req, reply) => {
@@ -171,7 +181,8 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
       return;
     }
     const refs = await gitBackend.listRefs(owner, repoName, "refs/");
-    reply.send(refs.map((r) => ({ ref: r.ref, object: { sha: r.sha, type: "commit" } })));
+    const page = paginateRefs(refs, req.query as { per_page?: string; page?: string });
+    reply.send(page.map((r) => ({ ref: r.ref, object: { sha: r.sha, type: "commit" } })));
   });
 
   const CreateRefBody = z.object({ ref: z.string().min(1), sha: z.string().min(1) });
