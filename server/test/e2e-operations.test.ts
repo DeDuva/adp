@@ -119,7 +119,14 @@ describe.skipIf(skipWithoutDb)("M1c: operations log + undo", () => {
       body: "{}",
     });
     expect(mergeRes.status).toBe(200);
-    expect(await gitBackend.resolveRef(owner, repoName, "main")).toBe(headSha);
+    // merge_method defaults to "merge" — main lands on a new merge commit
+    // whose history still reaches the feature head, not headSha reused verbatim.
+    const mergedSha = (mergeRes.body as { sha: string }).sha;
+    expect(mergedSha).not.toBe(headSha);
+    expect(await gitBackend.resolveRef(owner, repoName, "main")).toBe(mergedSha);
+    await execFileAsync("git", ["merge-base", "--is-ancestor", headSha, mergedSha], {
+      cwd: gitBackend.repoPath(owner, repoName),
+    });
 
     const list = await api(`/api/adp/repos/${owner}/${repoName}/operations?verb=proposal.merge`);
     expect(list.status).toBe(200);

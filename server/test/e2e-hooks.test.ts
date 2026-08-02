@@ -18,6 +18,7 @@ import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerHookRoutes } from "../src/http-git/hooks.js";
 import { registerOperationRoutes } from "../src/http-rest/operations.js";
+import { findRepo } from "../src/core/repos-lookup.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -197,6 +198,51 @@ describe.skipIf(skipWithoutDb)("M1c: receive-path hooks", () => {
     const missOps = (await miss.json()) as { target: string }[];
     expect(missOps.some((op) => op.target === `${owner}/${cleanRepoName}@${cleanSha}`)).toBe(false);
   });
+
+  it(
+    "post-receive chunks a >500-commit push instead of truncating it (docs/m2-readiness-review.md)",
+    async () => {
+      const repoName = "mirror-import";
+      await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: repoName }),
+      });
+
+      const cloneDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-hooks-chunk-"));
+      const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/${repoName}.git`;
+      await execFileAsync("git", ["clone", cloneUrl, cloneDir]);
+      await execFileAsync("git", ["checkout", "-B", "main"], { cwd: cloneDir });
+      await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
+      await execFileAsync("git", ["config", "user.name", "Test"], { cwd: cloneDir });
+      await execFileAsync("sh", ["-c", "echo hi > README.md"], { cwd: cloneDir });
+      await execFileAsync("git", ["add", "."], { cwd: cloneDir });
+      await execFileAsync("git", ["commit", "-m", "root"], { cwd: cloneDir });
+      // A brand-new branch (push #1) takes a separate "record the tip only"
+      // path (oldSha === ZERO_SHA, just above in hooks.ts) — pushing this
+      // root commit first, then a follow-up push of >500 more, is what
+      // exercises the `oldSha..newSha` chunking loop instead.
+      await execFileAsync("git", ["push", "origin", "main"], { cwd: cloneDir });
+
+      // One more than RECORD_BATCH_SIZE (500, http-git/hooks.ts) — a single
+      // `git log --max-count=500` used to silently drop everything past the
+      // newest 500 of these; empty commits keep the fixture cheap to build.
+      const BULK_COMMIT_COUNT = 511;
+      for (let i = 0; i < BULK_COMMIT_COUNT; i++) {
+        await execFileAsync("git", ["commit", "--allow-empty", "-m", `bulk ${i}`], { cwd: cloneDir });
+      }
+      await execFileAsync("git", ["push", "origin", "main"], { cwd: cloneDir });
+      await rm(cloneDir, { recursive: true, force: true });
+
+      // Two batches' worth of transactions to wait for, not one.
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      const repo = await findRepo(db, owner, repoName);
+      const recorded = await db.select().from(changes).where(eq(changes.repoId, repo!.id));
+      expect(recorded).toHaveLength(BULK_COMMIT_COUNT + 1); // +1 for "root"
+    },
+    60_000,
+  );
 
   it("rejects a call to the internal hook endpoints from anyone but loopback", async () => {
     // Fastify's supertest-less `inject()` lets us set a fake remote address,
