@@ -77,9 +77,24 @@ infrastructure are in [`docs/pragmatic_mvp.md`](docs/pragmatic_mvp.md).
 
 The server (Fastify + Postgres + the real `git` binary) runs locally or via Docker Compose —
 setup, bootstrap, and the three-tier test suite are documented in
-[`server/README.md`](server/README.md). CI runs typecheck, build, migrations, and the full test
-suite (unit / integration / end-to-end, including a real clone→push→propose→review→merge cycle)
-on every pull request.
+[`server/README.md`](server/README.md).
+
+On a machine that has never seen this project, one command provisions it and one loop runs
+everything against a throwaway database that is destroyed afterwards:
+
+```bash
+bash scripts/dev/bootstrap.sh          # toolchain, Docker, dependencies
+make up && make test-all && make down  # bring up, run, tear down, assert clean
+```
+
+`make down` asserts the machine is clean rather than assuming it — no leftover containers,
+volumes, server processes or temp directories. See
+[`docs/test-environment-automation.md`](docs/test-environment-automation.md).
+
+CI runs typecheck, build, migrations, and the full test suite (unit / integration / end-to-end,
+including a real clone→push→propose→review→merge cycle) on every pull request. A separate
+clean-room workflow provisions a bare container from scratch and runs the same loop, so the
+"brand new machine" path is verified continuously rather than assumed.
 
 ## License
 

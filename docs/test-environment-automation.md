@@ -1,6 +1,6 @@
 # Test environment automation
 
-**Status:** Phases 0 and 1 landed; Phases 2–4 proposed.
+**Status:** Phases 0, 1 and 2 landed; Phases 3–4 proposed.
 
 The goal, stated as a test: a tester with a **brand new Windows machine** installs WSL, clones
 this repo, runs one command, watches the full manual test suite execute, and runs one more
@@ -131,8 +131,8 @@ deploy/docker-compose.test.yml    # Postgres only, tmpfs, ephemeral port, no res
 scripts/dev/up.sh                 # ephemeral compose, wait healthy, discover port, emit .env.test [done]
 scripts/dev/down.sh               # compose down -v --remove-orphans, then verify                   [done]
 scripts/dev/env.sh                # generate .env.test: random SIGNING_KEY, discovered port         [done]
-scripts/dev/bootstrap.sh          # bare Ubuntu -> provisioned (apt, docker.io, Node 22)      [Phase 2]
-.github/workflows/clean-room.yml  # runs bootstrap.sh on a bare runner so it cannot rot       [Phase 2]
+scripts/dev/bootstrap.sh          # bare Ubuntu -> provisioned (apt, docker.io, Node 22)       [done]
+.github/workflows/clean-room.yml  # bare-metal + full-loop jobs, so bootstrap cannot rot       [done]
 docs/manual-test-plan.md          # written first, then progressively emptied into tests      [Phase 3]
 server/test/acceptance/           # the §2.1 definition-of-done walkthrough, executable       [Phase 3]
 tools/win/Run-CleanTest.ps1       # import distro -> bootstrap -> test -> unregister          [Phase 4]
@@ -183,15 +183,51 @@ Verified end to end on 2026-08-01: `make up` → `make test-all` (typecheck, bui
 **113 passed / 0 skipped**, web build, and the real-`gh` conformance gate) → `make down`
 reporting a completely clean machine.
 
-### Phase 2 — bootstrap from bare metal
+### Phase 2 — bootstrap from bare metal *(done)*
 
-2–3 days. `bootstrap.sh` taking a bare Ubuntu to fully provisioned, with in-distro `docker.io`,
-plus `clean-room.yml` running it on a clean CI runner on every push.
+`scripts/dev/bootstrap.sh` takes a bare Debian/Ubuntu system to "can run the suite": system
+packages, Node 22 from NodeSource, distribution `docker.io`, and `npm ci` for both workspaces.
+Idempotent — every step checks before it acts, so re-running after a failure is safe.
 
-The CI job is not optional. A bootstrap script that CI does not execute is a work of fiction
-within a month — it is the only way to know the "brand new machine" path still works.
+`.github/workflows/clean-room.yml` is what keeps it true, and it is deliberately *not* `ci.yml`.
+`ci.yml` optimizes for fast feedback: `actions/setup-node`, a Postgres service container, cached
+dependencies — none of which a tester on a new laptop has, which makes it a poor witness for
+"can someone actually set this up?". The clean-room workflow provides none of that. Two jobs:
+
+- **`bare-metal`** runs in a stock `ubuntu:24.04` container with only git, curl and
+  ca-certificates preinstalled — the irreducible pre-clone minimum, since you cannot check out a
+  repo without git. Everything else is bootstrap's job. It then asserts the toolchain is what was
+  asked for, runs the unit and integration tiers, and **runs bootstrap a second time** to prove
+  idempotency.
+- **`clean-room`** runs on a normal runner with a working Docker daemon and does the full loop:
+  bootstrap → `verify-clean --strict` → `up` → `test-all` → `down` → `verify-clean --strict`.
+  The final assertion is the one the workflow exists for.
 
 Closes finding 2.
+
+**Why NodeSource rather than fnm/nvm.** A version manager is the better developer tool and the
+repo's `.nvmrc` supports it, but it installs per-user and needs a shell hook to be on `PATH`. A
+provisioning script wants the boring system-wide answer that works in the next shell, in a
+service, and in a CI step without ceremony.
+
+**One honest gap.** Neither CI job exercises the `apt-get install docker.io` path: `bare-metal`
+passes `--skip-docker` (Docker-in-Docker inside a job container is a different problem), and
+`clean-room` runs on a runner where Docker is already present, so bootstrap takes its
+already-reachable branch. It is the one part of Phase 2 that can rot without CI noticing, and the
+part Phase 4's disposable distro depends on most.
+
+It was verified by hand instead, in a privileged `ubuntu:24.04` container — and that verification
+earned its keep immediately. The first version launched the daemon as
+`service docker start || dockerd &`, which fails two ways at once: the daemon becomes a child this
+script blocks in `wait()` forever, *and* it inherits the script's stdout, so any caller that pipes
+bootstrap's output never sees EOF. GitHub Actions pipes every `run:` step — the `clean-room` job
+would have hung until its job timeout on the first push, with no error to explain it. The daemon
+is now launched through an inner shell that exits immediately, and the regression test pipes
+bootstrap's output deliberately, because piping is what exposed it.
+
+The general lesson, which applies to anything Phase 4 adds: **a background process must not
+inherit the launching script's stdout.** Redirecting the command is not enough — the backgrounded
+shell holds the descriptor too.
 
 ### Phase 3 — the manual suite, executable
 
@@ -215,9 +251,17 @@ Closes finding 8 — the UI build stops being optional because a test depends on
 
 ---
 
-## 6. Usage (as it exists today, after Phases 0 and 1)
+## 6. Usage (as it exists today, after Phases 0–2)
 
-The whole loop:
+On a machine that has never seen this project, starting from a shell in a fresh WSL distro:
+
+```bash
+sudo apt-get update && sudo apt-get install -y git   # the pre-clone minimum
+git clone <repo> adp && cd adp
+bash scripts/dev/bootstrap.sh                        # toolchain, Docker, dependencies
+```
+
+Then the loop, on any machine:
 
 ```bash
 make doctor     # can this machine run the suite at all?

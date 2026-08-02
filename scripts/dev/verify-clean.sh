@@ -7,20 +7,33 @@
 # polluted by leftovers reports a *wrong* answer rather than an obviously
 # broken one. See docs/test-environment-automation.md.
 #
-#   bash scripts/dev/verify-clean.sh          # report; exit 1 if anything leaked
-#   bash scripts/dev/verify-clean.sh --fix    # remove what it finds, then re-verify
+#   bash scripts/dev/verify-clean.sh           # report; exit 1 if anything leaked
+#   bash scripts/dev/verify-clean.sh --fix     # remove what it finds, then re-verify
+#   bash scripts/dev/verify-clean.sh --strict  # warnings are failures too
 #
 # --fix removes containers, volumes and networks carrying the adp-test-* prefix,
 # and ADP's own temp directories. It deliberately does NOT kill processes: a
 # stray test server and your own `npm run dev` look identical from here, and
 # killing the wrong one is worse than reporting it.
+#
+# --strict is for CI. Interactively, a leaked temp directory or a running server
+# is usually *yours* and warning is right; on a runner that finished its work
+# nothing should be left at all, and a warning nobody reads is how leak
+# regressions get reintroduced.
 set -uo pipefail
 
 # shellcheck source=scripts/dev/lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 FIX=0
-[ "${1:-}" = "--fix" ] && FIX=1
+STRICT=0
+for arg in "$@"; do
+  case "$arg" in
+    --fix)    FIX=1 ;;
+    --strict) STRICT=1 ;;
+    *) fail "unknown argument: $arg"; exit 1 ;;
+  esac
+done
 
 P="$ADP_TEST_PROJECT_PREFIX"
 
@@ -129,5 +142,11 @@ for target in "$ADP_REPO_ROOT/.env.test" "$ADP_REPO_ROOT/.adp-test"; do
     ok "$rel absent"
   fi
 done
+
+if [ "$STRICT" = "1" ] && [ "$ADP_WARNINGS" -gt 0 ]; then
+  ADP_FAILURES=$((ADP_FAILURES + ADP_WARNINGS))
+  ADP_WARNINGS=0
+  printf '\n  %s--%s    --strict: warnings counted as failures\n' "$_c_dim" "$_c_off"
+fi
 
 adp_summary "verify-clean"

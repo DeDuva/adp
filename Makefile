@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help doctor clean-check up down down-all nuke deps test test-unit test-all conformance web
+.PHONY: help bootstrap doctor clean-check up down down-all nuke deps test test-unit test-all conformance web
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -30,6 +30,9 @@ help: ## Show this help
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
 		| awk 'BEGIN{FS=":.*?## "}{printf "  \033[1m%-14s\033[0m %s\n", $$1, $$2}'
 	@echo
+
+bootstrap: ## Provision a bare Debian/Ubuntu machine to run the suite (needs root/sudo)
+	@bash scripts/dev/bootstrap.sh
 
 doctor: ## Preflight: is this machine able to run the suite?
 	@bash scripts/dev/doctor.sh
