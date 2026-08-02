@@ -50,6 +50,13 @@
       "when": 1785120411215,
       "tag": "0006_loud_ultimates",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785651324124,
+      "tag": "0007_warm_hellfire_club",
+      "breakpoints": true
     }
   ]
 }

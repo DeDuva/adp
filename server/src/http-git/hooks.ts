@@ -1,13 +1,14 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
 import type { Signer } from "../core/signing.js";
-import { changes, identities } from "../db/schema.js";
-import { recordOperation } from "../core/operations.js";
+import { identities } from "../db/schema.js";
 import { findRepo } from "../core/repos-lookup.js";
 import { BundledSecretScanProvider, type SecretScanProvider } from "../core/secret-scan.js";
+import { recordNewCommits } from "../core/change-recording.js";
+import { findMirror, pushToMirror } from "../core/mirror.js";
 
 const ZERO_SHA = "0".repeat(40);
 
@@ -132,35 +133,12 @@ export function registerHookRoutes(
       // always resolve).
       if (!identity) continue;
 
-      for (const commit of commits) {
-        const [existing] = await db
-          .select()
-          .from(changes)
-          .where(and(eq(changes.repoId, repo.id), eq(changes.gitSha, commit.sha)));
-        if (existing) continue;
+      await recordNewCommits(db, signer, repo, owner, name, identity, commits, "push");
 
-        const provenance = { kind: identity.kind, principal: identity.principal, via: "push" };
-        const signature = signer.sign({
-          repo: `${owner}/${name}`,
-          git_sha: commit.sha,
-          intent_id: null,
-          provenance,
-        });
-
-        await db.transaction(async (tx) => {
-          const [change] = await tx
-            .insert(changes)
-            .values({ repoId: repo.id, gitSha: commit.sha, intentId: null, provenance, signature })
-            .returning();
-
-          await recordOperation(tx, {
-            actorId: identity.id,
-            verb: "change.create",
-            target: `${owner}/${name}@${commit.sha}`,
-            after: { id: change!.id, gitSha: commit.sha, via: "push" },
-          });
-        });
-      }
+      // Mirror mode's outbound leg (core/mirror.ts) — fire-and-forget, same
+      // as everything else in this handler: the push already succeeded.
+      const mirror = await findMirror(db, repo.id);
+      if (mirror) pushToMirror(gitBackend, owner, name, mirror, update.ref, req.log);
     }
 
     reply.send({ ok: true });

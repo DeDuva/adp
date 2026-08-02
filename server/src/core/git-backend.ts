@@ -439,4 +439,23 @@ export class GitBackend {
   async deleteRef(owner: string, name: string, ref: string): Promise<void> {
     await run(["update-ref", "-d", ref], this.repoPath(owner, name));
   }
+
+  // Mirror mode's outbound leg (docs/pragmatic_mvp.md M2, core/mirror.ts):
+  // pushes one local ref verbatim to an external remote. `remoteUrl` is
+  // expected to already carry credentials (`https://x-access-token:<token>@
+  // github.com/...`), the same shape git itself expects in a remote URL —
+  // no separate credential-helper plumbing for a one-shot push.
+  async pushToRemote(owner: string, name: string, remoteUrl: string, ref: string): Promise<void> {
+    await execFileAsync("git", ["push", remoteUrl, `${ref}:${ref}`], { cwd: this.repoPath(owner, name) });
+  }
+
+  // Mirror mode's inbound leg: fetches one ref from an external remote into
+  // this bare repo (as FETCH_HEAD, not directly into refs/heads/* — the
+  // caller decides whether/how to move the local ref, same CAS-guarded path
+  // a normal push would) and returns the sha it resolved to.
+  async fetchFromRemote(owner: string, name: string, remoteUrl: string, ref: string): Promise<string> {
+    await execFileAsync("git", ["fetch", remoteUrl, ref], { cwd: this.repoPath(owner, name) });
+    const { stdout } = await execFileAsync("git", ["rev-parse", "FETCH_HEAD"], { cwd: this.repoPath(owner, name) });
+    return stdout.trim();
+  }
 }

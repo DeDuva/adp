@@ -1,5 +1,6 @@
 import { pgTable, text, timestamp, uuid, jsonb, boolean, integer, unique } from "drizzle-orm/pg-core";
 
+
 export const repos = pgTable("repos", {
   id: uuid("id").primaryKey().defaultRandom(),
   owner: text("owner").notNull(),
@@ -170,6 +171,30 @@ export const workspaces = pgTable("workspaces", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   destroyedAt: timestamp("destroyed_at", { withTimezone: true }),
+});
+
+// Mirror mode (docs/pragmatic_mvp.md M2): one row per repo, at most — a repo
+// stays on GitHub and gets an ADP workspace alongside it. `remoteUrl` carries
+// credentials in the URL itself (`https://x-access-token:<token>@github.com/
+// owner/repo.git`), the same shape git already expects; `webhookSecret`
+// verifies *inbound* deliveries from GitHub (core/mirror.ts), a different
+// secret from any of this repo's own outbound `webhooks.secret` rows.
+// `configuredById` is who inbound-mirrored commits get attributed to —
+// GitHub's webhook payload names a pusher login, not an ADP identity.
+export const mirrors = pgTable("mirrors", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  repoId: uuid("repo_id")
+    .notNull()
+    .references(() => repos.id)
+    .unique(),
+  remoteUrl: text("remote_url").notNull(),
+  direction: text("direction", { enum: ["push", "pull", "both"] }).notNull().default("both"),
+  webhookSecret: text("webhook_secret").notNull(),
+  configuredById: uuid("configured_by_id")
+    .notNull()
+    .references(() => identities.id),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // Append-only spine: every mutation writes its state change and its operations

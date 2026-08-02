@@ -662,8 +662,15 @@ differentiators, including the two items that were outstanding as of 2026-07-26 
 path, candidate sets), are now implemented and covered by real e2e tests — **M1 is complete.**
 
 ### M2 — Adoption + trust ramp *(revised 2026-07-26; amended 2026-08-01 per [`m2-readiness-review.md`](m2-readiness-review.md))*
-**Mirror mode** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub; the single
-biggest adoption lever and cheap: push mirror + webhook ingest). Outbound webhook emitter. `adp` CLI.
+**Mirror mode — ✓ landed** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub;
+the single biggest adoption lever and cheap: push mirror + webhook ingest). `core/mirror.ts`: outbound
+push (fire-and-forget after post-receive, same shape as the webhook emitter) and inbound ingest (a
+`POST .../mirror/webhook` endpoint verifying GitHub's own `X-Hub-Signature-256` shape, then
+`git fetch`-ing the referenced commits from the mirror's remote before recording them — the webhook
+payload is a notification to go get the truth, not the truth itself). Tested against a real second
+bare repo standing in for GitHub (real `git fetch`/`push`, not fixtures) — genuine live delivery from
+github.com still needs the deferred public HTTPS endpoint (`environments-plan.md`). Outbound webhook
+emitter. `adp` CLI.
 `conformance/` published against `spec/`. GraphQL coverage widened from measured real traffic —
 which makes **API-traffic telemetry a named prerequisite**, not an optimization: nothing measures
 traffic today, and the same instrumentation feeds A2's endpoint-distribution research for free.

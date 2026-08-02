@@ -22,6 +22,7 @@ import { registerOperationRoutes } from "./http-rest/operations.js";
 import { registerWorkspaceRoutes } from "./http-rest/workspaces.js";
 import { registerEvidenceRoutes } from "./http-rest/evidence.js";
 import { registerCandidateSetRoutes } from "./http-rest/candidate-sets.js";
+import { registerMirrorRoutes } from "./http-rest/mirrors.js";
 import { LandRequirement } from "./core/repo-policy.js";
 import { loadGitHubSchema } from "./http-gql/schema.js";
 import { attachResolvers } from "./http-gql/attach-resolvers.js";
@@ -75,6 +76,7 @@ async function main() {
   registerWorkspaceRoutes(app, db, gitBackend);
   registerEvidenceRoutes(app, db);
   registerCandidateSetRoutes(app, db);
+  registerMirrorRoutes(app, db, gitBackend, signer);
 
   const gqlSchema = loadGitHubSchema();
   attachResolvers(gqlSchema, createResolvers(gitBackend, instanceFloor));
