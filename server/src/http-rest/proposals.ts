@@ -51,6 +51,10 @@ export function registerProposalRoutes(
   app: FastifyInstance,
   db: Db,
   gitBackend: GitBackend,
+  // Decrypts webhooks.secretCiphertext before signing outbound deliveries
+  // (core/webhooks.ts's emitWebhookEvent) — required, unlike sbom below,
+  // since webhook emission isn't an opt-in feature the way SBOM recording is.
+  credentialKey: string,
   instanceFloor: LandRequirement[] = [],
   // Optional: SBOM-per-land (docs/pragmatic_mvp.md M2) needs a signer and a
   // public URL for the DSSE statement's subject, same as gates.ts — kept
@@ -166,6 +170,7 @@ export function registerProposalRoutes(
           repository: { full_name: `${owner}/${repoName}` },
         },
         req.log,
+        credentialKey,
       );
 
       reply.code(201).send(serializeProposal(proposal, owner, repoName));
@@ -447,6 +452,7 @@ export function registerProposalRoutes(
           repository: { full_name: `${owner}/${repoName}` },
         },
         req.log,
+        credentialKey,
       );
 
       reply.send({ merged: true, sha: result.sha, ...serializeProposal(merged, owner, repoName) });

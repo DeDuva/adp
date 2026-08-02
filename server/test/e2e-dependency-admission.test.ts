@@ -69,7 +69,7 @@ describe.skipIf(skipWithoutDb)("M2: dependency admission", () => {
     );
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend);
-    registerProposalRoutes(app, db, gitBackend, ["gates_green"]);
+    registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key", ["gates_green"]);
     registerReviewRoutes(app, db);
     registerDependencyAdmissionRoutes(app, db, signer, "https://adp.example.com");
     registerGitHttpRoutes(app, gitBackend);

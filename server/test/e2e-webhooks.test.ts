@@ -79,10 +79,11 @@ describe.skipIf(skipWithoutDb)("M2: outbound webhook emitter", () => {
       (_req, payload, done) => done(null, payload),
     );
     await app.register(authPlugin(db));
+    const credentialKey = "e2e-webhooks-credential-key";
     registerRepoRoutes(app, db, gitBackend);
-    registerProposalRoutes(app, db, gitBackend);
-    registerGateRoutes(app, db, signer, "http://localhost");
-    registerWebhookRoutes(app, db);
+    registerProposalRoutes(app, db, gitBackend, credentialKey);
+    registerGateRoutes(app, db, signer, "http://localhost", credentialKey);
+    registerWebhookRoutes(app, db, credentialKey);
     registerGitHttpRoutes(app, gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });

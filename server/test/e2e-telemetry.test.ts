@@ -55,7 +55,7 @@ describe.skipIf(skipWithoutDb)("M2: API-traffic telemetry", () => {
 
     registerRepoRoutes(app, db, gitBackend);
     const schema = loadGitHubSchema();
-    attachResolvers(schema, createResolvers(gitBackend));
+    attachResolvers(schema, createResolvers(gitBackend, "e2e-test-credential-key"));
     registerGraphQLRoute(app, schema, db);
 
     await app.listen({ host: "127.0.0.1", port: 0 });

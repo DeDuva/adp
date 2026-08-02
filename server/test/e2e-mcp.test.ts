@@ -69,7 +69,7 @@ describe.skipIf(skipWithoutDb)("M1c: MCP native plane", () => {
     registerRepoRoutes(app, db, gitBackend);
     registerChangeRoutes(app, db, gitBackend, new Signer("e2e-mcp-signing-key"));
     registerIssueRoutes(app, db);
-    registerProposalRoutes(app, db, gitBackend, []);
+    registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key", []);
     registerOperationRoutes(app, db, gitBackend);
     registerWorkspaceRoutes(app, db, gitBackend);
     registerEvidenceRoutes(app, db);

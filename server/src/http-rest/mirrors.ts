@@ -74,7 +74,7 @@ export function registerMirrorRoutes(app: FastifyInstance, db: Db, credentialKey
           direction,
           remoteUrl: remote_url,
           credentialCiphertext,
-          webhookSecret,
+          webhookSecretCiphertext: encryptCredential(webhookSecret, credentialKey),
           identityId,
         })
         .returning();

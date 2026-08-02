@@ -243,6 +243,9 @@ async function resolveAuthor(ctx: GqlContext, authorId: string) {
 
 export function createResolvers(
   gitBackend: GitBackend,
+  // Required — same reasoning as proposals.ts's registerProposalRoutes:
+  // decrypts webhooks.secretCiphertext before signing outbound deliveries.
+  credentialKey: string,
   instanceFloor: LandRequirement[] = [],
   // Optional, same reasoning as proposals.ts's registerProposalRoutes: SBOM
   // per land (docs/pragmatic_mvp.md M2) needs a signer + public URL, kept
@@ -623,7 +626,14 @@ export function createResolvers(
           return created!;
         });
 
-        emitWebhookEvent(ctx.db, repo.id, "pull_request", webhookPullRequestPayload("opened", proposal, repo), ctx.log);
+        emitWebhookEvent(
+          ctx.db,
+          repo.id,
+          "pull_request",
+          webhookPullRequestPayload("opened", proposal, repo),
+          ctx.log,
+          credentialKey,
+        );
 
         return { clientMutationId: null, pullRequest: shapePullRequest(proposal, repo) };
       },
@@ -837,6 +847,7 @@ export function createResolvers(
           "pull_request",
           webhookPullRequestPayload("closed", merged, repo, true),
           ctx.log,
+          credentialKey,
         );
 
         return {

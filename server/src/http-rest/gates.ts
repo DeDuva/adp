@@ -36,7 +36,7 @@ function serializeGateResult(row: typeof gateResults.$inferSelect) {
 // GitHub doesn't run the tests either). Scanner-as-gate adapters
 // (SARIF/JSON in, DSSE out) are M2 scope; this is the substrate they'll
 // report into.
-export function registerGateRoutes(app: FastifyInstance, db: Db, signer: Signer, publicUrl: string) {
+export function registerGateRoutes(app: FastifyInstance, db: Db, signer: Signer, publicUrl: string, credentialKey: string) {
   app.post(
     "/api/v3/repos/:owner/:repo/gates",
     { preHandler: requireScope("repo:write") },
@@ -104,6 +104,7 @@ export function registerGateRoutes(app: FastifyInstance, db: Db, signer: Signer,
           repository: { full_name: `${owner}/${repoName}` },
         },
         req.log,
+        credentialKey,
       );
 
       reply.code(201).send(serializeGateResult(row));

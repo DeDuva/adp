@@ -59,7 +59,8 @@ export function registerMirrorWebhookRoutes(app: FastifyInstance, db: Db, gitBac
       return;
     }
 
-    if (!verifySignature(mirror.webhookSecret, rawBody, req.headers["x-hub-signature-256"] as string | undefined)) {
+    const webhookSecret = decryptCredential(mirror.webhookSecretCiphertext, credentialKey);
+    if (!verifySignature(webhookSecret, rawBody, req.headers["x-hub-signature-256"] as string | undefined)) {
       reply.code(401).send({ message: "invalid signature" });
       return;
     }
