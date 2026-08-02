@@ -59,6 +59,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 .argcard{border:1px solid var(--line);background:var(--panel);border-radius:4px;padding:26px 24px}
 .argk{font:500 12px var(--mono);letter-spacing:.12em;color:var(--cyan);margin-bottom:14px}
 .argb{font:400 15px/1.65 var(--sans);color:var(--sub);margin:0}
+.ref{border-bottom:none;font:500 11px var(--mono);color:var(--dim);vertical-align:super;margin-left:1px}
+.ref:hover{color:var(--cyan);border-bottom:none}
+.refs{margin:18px 0 0;padding-left:22px;font:400 13px/1.8 var(--mono);color:var(--dim)}
+.refs li{margin-bottom:6px}
 .hero-stage{position:relative;height:330px;border:1px solid var(--line);border-radius:4px;background:linear-gradient(180deg,#101215 0%,#0e1013 100%);overflow:hidden;margin-top:60px}
 .hlab{position:absolute;font:500 11px var(--mono);letter-spacing:.12em;color:var(--dim)}
 .dot{position:absolute;width:9px;height:9px;border-radius:50%;left:-2%;top:var(--y0);background:var(--c);opacity:0;animation:flow var(--t,7.5s) linear infinite;animation-delay:var(--d)}
@@ -122,10 +126,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 </div>
 
 <div style="display:flex;gap:14px;margin-top:28px;flex-wrap:wrap">
-<div class="chip"><div class="chipv" style="color:var(--fg)">~75%</div><div class="chipk">of new code at Google is AI-generated and engineer-approved (April 2026)</div></div>
-<div class="chip"><div class="chipv" style="color:var(--amber)">5.3×</div><div class="chipk">longer wait for reviewer pickup on agent-authored PRs — 1,055 vs 201 minutes</div></div>
-<div class="chip"><div class="chipv" style="color:var(--red)">32.7%</div><div class="chipk">acceptance rate of agent-authored PRs, against 84.4% for human-authored ones</div></div>
-<div class="chip"><div class="chipv" style="color:var(--amber)">2×</div><div class="chipk">the baseline secret-leak rate in AI-co-authored commits on public GitHub</div></div>
+<div class="chip"><div class="chipv" style="color:var(--fg)">~75%</div><div class="chipk">of new code at Google is AI-generated and engineer-approved (April 2026)<a class="ref" href="#ref-1">1</a></div></div>
+<div class="chip"><div class="chipv" style="color:var(--amber)">5.3×</div><div class="chipk">longer wait for reviewer pickup on agent-authored PRs — 1,055 vs 201 minutes<a class="ref" href="#ref-2">2</a></div></div>
+<div class="chip"><div class="chipv" style="color:var(--red)">32.7%</div><div class="chipk">acceptance rate of agent-authored PRs, against 84.4% for human-authored ones<a class="ref" href="#ref-2">2</a></div></div>
+<div class="chip"><div class="chipv" style="color:var(--amber)">2×</div><div class="chipk">the baseline secret-leak rate in AI-assisted commits on public GitHub<a class="ref" href="#ref-3">3</a></div></div>
 </div>
 
 <div style="display:flex;flex-wrap:wrap;gap:28px;margin-top:44px;padding-top:24px;border-top:1px solid var(--line);font:400 13px var(--mono);color:var(--dim)">
@@ -139,7 +143,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 <section class="wrap">
 <div class="kick" style="color:var(--cyan)">01 · WHY</div>
 <h2 class="t" style="max-width:26ch">Verification is the new bottleneck</h2>
-<p class="b">For seventy years, writing code was the expensive part, so every practice we have — pull requests, line-by-line review, branch protection, CI on the branch head — amortizes verification against slow authoring. Agents inverted the ratio. Teams using AI merge <strong style="color:var(--fg);font-weight:500">98% more pull requests</strong>, while review time per change rises <strong style="color:var(--fg);font-weight:500">91%</strong>. Developer trust in AI output fell to <strong style="color:var(--fg);font-weight:500">29%</strong> in the same period — the code got faster and less trusted at once.</p>
+<p class="b">For seventy years, writing code was the expensive part, so every practice we have — pull requests, line-by-line review, branch protection, CI on the branch head — amortizes verification against slow authoring. Agents inverted the ratio. Teams using AI merge <strong style="color:var(--fg);font-weight:500">98% more pull requests</strong>, while review time per change rises <strong style="color:var(--fg);font-weight:500">91%</strong><a class="ref" href="#ref-4">4</a>. Developer trust in AI output fell to <strong style="color:var(--fg);font-weight:500">29%</strong> in the same period<a class="ref" href="#ref-5">5</a> — the code got faster and less trusted at once.</p>
 <p class="b">This is not a gap a better review UI closes. Any process whose unit of assurance is <em style="font-style:normal;color:var(--fg)">human attention per change</em> fails arithmetically once changes arrive at machine rate. Drag the slider: the constant is one team's thorough-review capacity, roughly 25 changes a day.</p>
 
 <figure class="fig" style="margin-top:36px">
@@ -172,7 +176,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 <section class="wrap">
 <div class="kick" style="color:var(--amber)">02 · TWO FUTURES</div>
 <h2 class="t" style="max-width:28ch">The swarm, and the super-agent</h2>
-<p class="b">How agents will actually produce software is genuinely unsettled, and honest infrastructure has to survive both plausible outcomes. The evidence cuts both ways. For the <strong style="color:var(--amber);font-weight:500">swarm</strong>: Google Research measured multi-agent coordination at +81% on parallelizable tasks; production systems already run hundreds of agents concurrently; and the first large-scale dataset of merge conflicts in agent pull requests (AgenticFlict, AIware '26) documents what happens when they collide. For the <strong style="color:var(--cyan);font-weight:500">super-agent</strong>: the same study found up to 70% degradation on sequential tasks under multi-agent coordination, multi-agent token overhead runs 4–220×, and harness evolution — long-horizon sessions, context compaction, persistent memory — points at one strong agent iterating serially. Most organizations will run both: partitioned fleets for breadth, serial deep work for hard problems.</p>
+<p class="b">How agents will actually produce software is genuinely unsettled, and honest infrastructure has to survive both plausible outcomes. The evidence cuts both ways. For the <strong style="color:var(--amber);font-weight:500">swarm</strong>: Google Research measured multi-agent coordination at +81% on parallelizable tasks<a class="ref" href="#ref-6">6</a>; production systems already run hundreds of agents concurrently; and the first large-scale dataset of merge conflicts in agent pull requests (AgenticFlict, AIware '26) documents what happens when they collide<a class="ref" href="#ref-8">8</a>. For the <strong style="color:var(--cyan);font-weight:500">super-agent</strong>: the same study found 39–70% degradation on sequential tasks under multi-agent coordination<a class="ref" href="#ref-6">6</a>, multi-agent token overhead runs 4–220×<a class="ref" href="#ref-7">7</a>, and harness evolution — long-horizon sessions, context compaction, persistent memory — points at one strong agent iterating serially. Most organizations will run both: partitioned fleets for breadth, serial deep work for hard problems.</p>
 <p class="b">Neither future works on today's machinery — and they break it in <em style="font-style:normal;color:var(--fg)">different places</em>. Step through each.</p>
 
 <figure class="fig">
@@ -367,7 +371,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 <div class="stat"><div class="statk">WASTE FACTOR</div><div class="statv">{{ ratio }}</div></div>
 </div>
 </div>
-<figcaption class="figcap">Oak reports ~50% fewer VCS tokens and ~90% faster operations from mounting instead of cloning; Cursor demonstrated 100k+ clones/hour against one repository — the number the server sees.</figcaption>
+<figcaption class="figcap">Oak reports ~50% fewer VCS tokens and ~90% faster operations from mounting instead of cloning<a class="ref" href="#ref-12">12</a>; Cursor demoed ~296,000 clones/hour against one repository<a class="ref" href="#ref-9">9</a> — the number the server sees.</figcaption>
 </figure>
 </div>
 </sc-if>
@@ -570,13 +574,13 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 <div class="mxn" onClick="{{ r2Tog }}"><span class="accarrow">{{ r2Arrow }}</span>Cursor Origin</div>
 <div class="mxc part">◐</div><div class="mxc part">◐</div><div class="mxc part">◐</div><div class="mxc none">○</div><div class="mxc part">◐</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc none">○</div>
 <sc-if value="{{ r2Open }}" hint-placeholder-val="{{ false }}">
-<div class="mxd">Announced June 16, 2026 at Compile; waitlist-gated with GA slated fall 2026, so most cells are claims rather than product. The design center is right — a forge for parallel agents: stacked PRs (Graphite acquisition), merge queues, machine-readable review states, MCP-drivable, 22.6 commits/sec demoed. Nothing published on evidence semantics, operation logs, or policy. Proprietary and product-captive: building on Origin means building on a competitor's closed stack, which is precisely the vertical-integration play a neutral protocol exists to prevent.</div>
+<div class="mxd">Announced June 16, 2026 at Compile; waitlist-gated with GA slated fall 2026, so most cells are claims rather than product. The design center is right — a forge for parallel agents: stacked PRs (Graphite acquisition), merge queues, machine-readable review states, MCP-drivable, 22.6 commits/sec and ~296k clones/hour demoed<a class="ref" href="#ref-9">9</a>. Nothing published on evidence semantics, operation logs, or policy. Proprietary and product-captive: building on Origin means building on a competitor's closed stack, which is precisely the vertical-integration play a neutral protocol exists to prevent.</div>
 </sc-if>
 
 <div class="mxn" onClick="{{ r3Tog }}"><span class="accarrow">{{ r3Arrow }}</span>Entire</div>
 <div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc part">◐</div><div class="mxc full">●</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc part">◐</div>
 <sc-if value="{{ r3Open }}" hint-placeholder-val="{{ false }}">
-<div class="mxd">Founded by Thomas Dohmke (ex-GitHub CEO); record $60M seed. Checkpoints version agent sessions, prompts, tool calls, and reasoning traces as git-native objects — the intent/provenance half of our thesis, nearly verbatim, and the strongest capture story shipping. Distributed git network in public preview since July 2026, with ForgeMark, an open push-throughput benchmark. The gap is the other half: capture without merge-time evidence binding is the audit half without the trust half — and the business model centers on hosting the agent-session data layer, so labs would rent their own provenance.</div>
+<div class="mxd">Founded by Thomas Dohmke (ex-GitHub CEO); record $60M seed<a class="ref" href="#ref-10">10</a>. Checkpoints version agent sessions, prompts, tool calls, and reasoning traces as git-native objects — the intent/provenance half of our thesis, nearly verbatim, and the strongest capture story shipping. Distributed git network in public preview since July 2026, with ForgeMark, an open push-throughput benchmark. The gap is the other half: capture without merge-time evidence binding is the audit half without the trust half — and the business model centers on hosting the agent-session data layer, so labs would rent their own provenance.</div>
 </sc-if>
 
 <div class="mxn" onClick="{{ r4Tog }}"><span class="accarrow">{{ r4Arrow }}</span>Diversion</div>
@@ -594,13 +598,13 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 <div class="mxn" onClick="{{ r6Tog }}"><span class="accarrow">{{ r6Arrow }}</span>Oak</div>
 <div class="mxc full">●</div><div class="mxc none">○</div><div class="mxc part">◐</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc none">○</div>
 <sc-if value="{{ r6Open }}" hint-placeholder-val="{{ false }}">
-<div class="mxd">Purpose-built Rust VCS in public beta: ~1s virtual mounts, no full clone, per-task branch isolation for parallel agents; claims ~50% fewer VCS tokens and ~90% faster operations. Validates token cost and mount latency as first-order VCS metrics — numbers this page cites. Early-stage: no server-side collaboration, verification, or policy story yet.</div>
+<div class="mxd">Purpose-built Rust VCS in public beta: ~1s virtual mounts, no full clone, per-task branch isolation for parallel agents; claims ~50% fewer VCS tokens and ~90% faster operations<a class="ref" href="#ref-12">12</a>. Validates token cost and mount latency as first-order VCS metrics — numbers this page cites. Early-stage: no server-side collaboration, verification, or policy story yet.</div>
 </sc-if>
 
 <div class="mxn" onClick="{{ r7Tog }}"><span class="accarrow">{{ r7Arrow }}</span>jj · GitButler · Sapling</div>
 <div class="mxc part">◐</div><div class="mxc full">●</div><div class="mxc part">◐</div><div class="mxc full">●</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc full">●</div>
 <sc-if value="{{ r7Open }}" hint-placeholder-val="{{ false }}">
-<div class="mxd">The open-source ecosystem supplies the change model ADP builds on. Jujutsu: operation log, universal undo, first-class commit-able conflicts — the ideal agent change semantics, but client-side only, with no server or collaboration layer. GitButler: agent hooks plus the 300-run benchmark showing agent-oriented VCS interfaces completing tasks ~60% faster with ~80% fewer commands. Sapling/EdenFS proved git can be a facade over different internals at Meta scale, though the server was never fully productionized externally. Fragments, not a substrate: none combines change model, storage, verification, and a server.</div>
+<div class="mxd">The open-source ecosystem supplies the change model ADP builds on. Jujutsu: operation log, universal undo, first-class commit-able conflicts — the ideal agent change semantics, but client-side only, with no server or collaboration layer. GitButler: agent hooks plus the 300-run vcbench benchmark showing agent-oriented VCS interfaces completing tasks ~65% faster with ~78% fewer commands than raw git<a class="ref" href="#ref-11">11</a>. Sapling/EdenFS proved git can be a facade over different internals at Meta scale, though the server was never fully productionized externally. Fragments, not a substrate: none combines change model, storage, verification, and a server.</div>
 </sc-if>
 
 <div class="mxn" onClick="{{ r8Tog }}"><span class="accarrow">{{ r8Arrow }}</span>Harness-private state</div>
@@ -651,7 +655,22 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 <a href="https://github.com/DeDuva/adp/blob/main/docs/server-stack-tutorial.md">docs/server-stack-tutorial.md</a>
 <span>Apache-2.0 code · CC-BY prose</span>
 </div>
-<div style="margin-top:20px;font:400 12px/1.7 var(--mono);color:#5a6068;max-width:100ch">Sources for figures cited above: Google AI-code share and review-bottleneck telemetry via industry reporting (Apr 2026); agent-PR pickup latency and acceptance rates, LinearB / Codacy engineering analytics (2026); Stack Overflow Developer Survey 2025 (trust); Google Research agent-scaling study (+81% parallel / −70% sequential); UIUC multi-agent token-cost study; AgenticFlict merge-conflict dataset, AIware '26 (arXiv:2604.03551); GitGuardian secret-leak telemetry; GitButler 300-run VCS agent benchmark; Oak public benchmarks; vendor announcements as of August 2026. Full citations in the technical brief.</div>
+<div style="margin-top:28px;font:500 12px var(--mono);letter-spacing:.12em;color:var(--dim)">REFERENCES</div>
+<ol class="refs">
+<li id="ref-1">Sundar Pichai, April 2026: 75% of new code at Google is AI-generated and engineer-approved — <a href="https://www.fastcompany.com/91531519/google-ceo-says-75-of-the-companys-code-is-ai-generated">Fast Company</a>, <a href="https://devops.com/google-ceo-says-75-of-new-code-is-ai-generated/">DevOps.com</a></li>
+<li id="ref-2">LinearB, 2026 Software Engineering Benchmarks Report (8.1M PRs, 4,800 teams): agent-PR reviewer pickup 5.3× slower at p75 (1,055 vs 201 min); acceptance 32.7% vs 84.4% — <a href="https://linearb.io/resources/software-engineering-benchmarks-report">linearb.io</a></li>
+<li id="ref-3">GitGuardian, The State of Secrets Sprawl 2026: AI-assisted commits leak secrets at 3.2%, roughly 2× the GitHub-wide baseline; 28.65M new secrets in 2025 (+34% YoY) — <a href="https://blog.gitguardian.com/the-state-of-secrets-sprawl-2026/">blog.gitguardian.com</a></li>
+<li id="ref-4">Faros AI, The AI Productivity Paradox (10,000-developer telemetry): high-AI-adoption teams complete 21% more tasks and merge 98% more PRs; review time rises 91% — <a href="https://www.faros.ai/blog/ai-software-engineering">faros.ai</a></li>
+<li id="ref-5">Stack Overflow Developer Survey 2025: 29% of developers trust AI output accuracy, down from 40%; 66% report time lost to "almost-right" AI code — <a href="https://survey.stackoverflow.co/2025/ai">survey.stackoverflow.co</a></li>
+<li id="ref-6">Google Research, "Towards a science of scaling agent systems" (180 agent configurations): multi-agent coordination +81% on parallelizable tasks; 39–70% degradation on sequential ones — <a href="https://research.google/blog/towards-a-science-of-scaling-agent-systems-when-and-why-agent-systems-work/">research.google</a></li>
+<li id="ref-7">UIUC multi-agent token-cost study (7 datasets, 6 models): multi-agent systems consume 4–220× more tokens than single-agent equivalents — as analyzed in <a href="https://www.augmentcode.com/guides/single-agent-vs-multi-agent-ai">Augment Code's single-vs-multi-agent guide</a></li>
+<li id="ref-8">AgenticFlict: A Large-Scale Dataset of Merge Conflicts in AI Coding Agent Pull Requests on GitHub, AIware '26 — <a href="https://arxiv.org/abs/2604.03551">arXiv:2604.03551</a></li>
+<li id="ref-9">Cursor Origin announcement, Compile, June 16 2026: 22.6 commits/sec, ~296k clones and ~81k pushes/hour demoed (not independently verified); waitlist-gated, GA slated fall 2026 — <a href="https://mlq.ai/news/cursor-unveils-15-trillion-parameter-in-house-ai-model-git-platform-origin-and-mobile-app/">MLQ</a>, <a href="https://www.eesel.ai/blog/what-is-cursor-origin">eesel</a></li>
+<li id="ref-10">Entire launch: $60M seed (largest dev-tools seed on record) and Checkpoints, capturing agent context on every commit — <a href="https://entire.io/news/former-github-ceo-thomas-dohmke-raises-60-million-seed-round">entire.io</a>, <a href="https://techcrunch.com/2026/02/10/former-github-ceo-raises-record-60m-dev-tool-seed-round-at-300m-valuation/">TechCrunch</a></li>
+<li id="ref-11">GitButler, vcbench (300 graded runs; Claude Code + Codex × 3 toolsets): agent-oriented VCS ~65% faster than git with ~78% fewer commands — <a href="https://blog.gitbutler.com/vcbench">blog.gitbutler.com</a>, <a href="https://vcbench.dev/">vcbench.dev</a></li>
+<li id="ref-12">Oak: ~50% fewer VCS-related tokens, ~90% faster per operation, ~1s virtual mounts — <a href="https://oak.space/">oak.space</a></li>
+<li id="ref-13">Supply-chain and trust-plane claims (slopsquatting rates, Shai-Hulud lineage, MCP attack data, CRA deadlines) are individually sourced in <a href="https://github.com/DeDuva/adp/blob/main/docs/agent-native-vcs-brief-v5.md">the technical brief, §f</a></li>
+</ol>
 </footer>
 
 </div>
