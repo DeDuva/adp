@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -106,8 +106,20 @@ describe.skipIf(!process.env.DATABASE_URL)("M2: mirror mode", () => {
       }),
     });
     expect(res.status).toBe(201);
-    return (await res.json()) as { webhook_secret: string };
+    return (await res.json()) as { id: string; webhook_secret: string };
   }
+
+  // mirrors.repo_id is unique, so a mirror left over from a prior test whose
+  // assertions failed before reaching its own DELETE call would otherwise
+  // make every later createMirror() in this suite fail with 422 — a single
+  // real assertion failure cascading into unrelated ones. Runs after every
+  // test regardless of outcome, not just at the end of a passing test body.
+  afterEach(async () => {
+    await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/${repoName}/mirror`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  });
 
   it("outbound: a real push into ADP is pushed out to the mirror by the poller", async () => {
     await createMirror("outbound");
@@ -136,15 +148,10 @@ describe.skipIf(!process.env.DATABASE_URL)("M2: mirror mode", () => {
     const body = (await getRes.json()) as { last_outbound_sha: string; recent_sync_log: { status: string }[] };
     expect(body.last_outbound_sha).toBe(sha);
     expect(body.recent_sync_log.some((r) => r.status === "success")).toBe(true);
-
-    await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/${repoName}/mirror`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
   });
 
   it("inbound: a push straight to the mirror, ingested via a signed webhook, auto-records a change", async () => {
-    const { webhook_secret } = await createMirror("inbound");
+    const { id: mirrorId, webhook_secret } = await createMirror("inbound");
 
     const cloneDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-mirror-clone-in-"));
     await execFileAsync("git", ["clone", githubStandIn.repoPath(owner, repoName), cloneDir]);
@@ -178,13 +185,8 @@ describe.skipIf(!process.env.DATABASE_URL)("M2: mirror mode", () => {
     const [op] = await db.select().from(operations).where(eq(operations.target, `${owner}/${repoName}@${sha}`));
     expect(op).toBeTruthy();
 
-    const [mirror] = await db.select().from(mirrors).where(eq(mirrors.repoId, (await db.select().from(mirrors))[0]!.repoId));
+    const [mirror] = await db.select().from(mirrors).where(eq(mirrors.id, mirrorId));
     expect(mirror!.lastInboundSha).toBe(sha);
-
-    await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/${repoName}/mirror`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
   });
 
   it("rejects a webhook call with a bad signature, writing nothing", async () => {
@@ -203,11 +205,6 @@ describe.skipIf(!process.env.DATABASE_URL)("M2: mirror mode", () => {
 
     const after = await db.select().from(mirrorSyncLog);
     expect(after.length).toBe(before.length);
-
-    await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/${repoName}/mirror`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
   });
 
   it("diverged histories: neither direction force-moves a ref, both surface as failed", async () => {
@@ -268,10 +265,5 @@ describe.skipIf(!process.env.DATABASE_URL)("M2: mirror mode", () => {
     // ADP's ref is untouched by the failed inbound fetch.
     expect(await gitBackend.resolveRef(owner, repoName, "main")).toBe(adpSha);
     void priorSha;
-
-    await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/${repoName}/mirror`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
   });
 });
