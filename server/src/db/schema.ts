@@ -172,6 +172,50 @@ export const workspaces = pgTable("workspaces", {
   destroyedAt: timestamp("destroyed_at", { withTimezone: true }),
 });
 
+// M2 mirror mode: per-repo config for bidirectional sync with a real GitHub
+// repo. One row per repo (v0) — `credentialCiphertext` is AES-256-GCM
+// encrypted (core/mirror-crypto.ts), never the raw PAT; `webhookSecret`
+// verifies inbound `X-Hub-Signature-256` from GitHub. `lastOutboundSha` /
+// `lastInboundSha` track the defaultBranch tip last synced in each
+// direction — v0 tracks a single branch, not every ref.
+export const mirrors = pgTable(
+  "mirrors",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repoId: uuid("repo_id").notNull().references(() => repos.id),
+    direction: text("direction", { enum: ["outbound", "inbound", "both"] }).notNull(),
+    remoteUrl: text("remote_url").notNull(),
+    credentialCiphertext: text("credential_ciphertext").notNull(),
+    webhookSecret: text("webhook_secret").notNull(),
+    // Auto-record actor for inbound commits (operations.actorId is a hard
+    // FK) — a system identity created alongside an inbound-capable mirror,
+    // principal "mirror:github:<owner>/<name>". Null for outbound-only.
+    identityId: uuid("identity_id").references(() => identities.id),
+    enabled: boolean("enabled").notNull().default(true),
+    lastOutboundSha: text("last_outbound_sha"),
+    lastInboundSha: text("last_inbound_sha"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique().on(table.repoId)],
+);
+
+// Outbox for outbound pushes (populated inside post-receive's transaction,
+// drained by core/mirror-poller.ts) and audit trail for both directions
+// (inbound rows are written synchronously, already resolved).
+export const mirrorSyncLog = pgTable("mirror_sync_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  mirrorId: uuid("mirror_id").notNull().references(() => mirrors.id),
+  direction: text("direction", { enum: ["outbound", "inbound"] }).notNull(),
+  ref: text("ref").notNull(),
+  sha: text("sha").notNull(),
+  status: text("status", { enum: ["pending", "in_progress", "success", "failed"] }).notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Append-only spine: every mutation writes its state change and its operations
 // row in a single transaction. This *is* the op log and the audit log.
 export const operations = pgTable("operations", {

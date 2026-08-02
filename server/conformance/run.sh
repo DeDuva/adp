@@ -99,6 +99,7 @@ PROXY_PID=$!
 export DATABASE_URL="${DATABASE_URL:-${ADP_DEFAULT_DATABASE_URL:-postgres://adp:adp@localhost:5432/adp}}"
 export GIT_ROOT="$WORKDIR/git"
 export SIGNING_KEY="conformance-test-key"
+export MIRROR_CREDENTIAL_KEY="conformance-test-mirror-key"
 export PUBLIC_URL="http://localhost:${PORT}"
 export PORT
 mkdir -p "$GIT_ROOT"
