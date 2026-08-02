@@ -76,3 +76,22 @@ jobs:
       # M1b′ gate (docs/pragmatic_mvp.md): the real, unmodified `gh` binary
       # against this server — gh issue view / pr create / pr view / pr merge.
       - run: bash conformance/run.sh
+
+  adapters:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: adapters
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: adapters/package-lock.json
+      - run: npm ci
+      # No Postgres, no live scanner binary — the adapters' tests run
+      # against fixtures captured from real `osv-scanner` runs (see
+      # adapters/test/fixtures/) and a fake local HTTP server standing in
+      # for ADP, same pattern as the cli/ job.
+      - run: npm test

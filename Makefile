@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor clean-check up down down-all nuke deps test test-unit test-all conformance acceptance acceptance-ui browser browser-deps web
+.PHONY: help bootstrap doctor clean-check up down down-all nuke deps test test-unit test-all conformance acceptance acceptance-ui browser browser-deps web adapters
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -49,9 +49,10 @@ down: ## Tear down this checkout's stack and verify it is gone
 down-all: ## Tear down every adp-test-* stack on this machine
 	@bash scripts/dev/down.sh --all
 
-deps: ## Install node dependencies (server and web)
+deps: ## Install node dependencies (server, web, and adapters)
 	npm ci --prefix server
 	npm ci --prefix server/web
+	npm ci --prefix adapters
 
 test-unit: ## Unit + integration tiers only (no database needed)
 	npm test --prefix server
@@ -85,20 +86,24 @@ web: ## Typecheck and build the supervision UI
 	npm run typecheck --prefix server/web
 	npm run build --prefix server/web
 
-test-all: ## Everything CI runs: build, full suite, web, conformance + acceptance
+adapters: ## Test the scanner-as-gate adapters (no database needed)
+	npm test --prefix adapters
+
+test-all: ## Everything CI runs: build, full suite, web, adapters, conformance + acceptance
 	$(REQUIRE_ENV)
 	@$(LOAD_ENV) npm run typecheck --prefix server
 	@$(LOAD_ENV) npm run build --prefix server
 	@$(LOAD_ENV) npm run migrate --prefix server
 	@$(LOAD_ENV) npm test --prefix server
 	@$(MAKE) web
+	@$(MAKE) adapters
 	@$(LOAD_ENV) bash server/conformance/run.sh
 	@$(LOAD_ENV) bash server/acceptance/run.sh
 
 nuke: ## Full teardown: every stack, all generated files, deps and caches
 	-@bash scripts/dev/down.sh --all
 	-@bash scripts/dev/verify-clean.sh --fix
-	rm -rf server/node_modules server/dist server/web/node_modules server/web/dist
+	rm -rf server/node_modules server/dist server/web/node_modules server/web/dist adapters/node_modules
 	rm -rf $(ENV_FILE) .adp-test
 	rm -rf $${GH_CACHE_DIR:-$$HOME/.cache/adp-conformance-gh}
 	@echo "nuked — 'make deps && make up' to start over"
