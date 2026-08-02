@@ -357,9 +357,9 @@ for _ in $(seq 1 20); do [ -s "$WEBHOOK_RECEIVED" ] && break; sleep 0.5; done
 kill_tree "$WEBHOOK_LISTENER_PID"
 [ -s "$WEBHOOK_RECEIVED" ] || fail "D15: webhook listener never received a delivery"
 
-WEBHOOK_BODY=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).body)' "$WEBHOOK_RECEIVED")
+WEBHOOK_BODY=$(node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).body))' "$WEBHOOK_RECEIVED")
 WEBHOOK_SIG=$(printf '%s' "$WEBHOOK_BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | awk '{print $2}')
-WEBHOOK_GOT_SIG=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).headers["x-hub-signature-256"])' "$WEBHOOK_RECEIVED")
+WEBHOOK_GOT_SIG=$(node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).headers["x-hub-signature-256"]))' "$WEBHOOK_RECEIVED")
 [ "$WEBHOOK_GOT_SIG" = "sha256=${WEBHOOK_SIG}" ] || fail "D15: webhook signature did not verify against the configured secret"
 grep -q '"ref":"refs/heads/webhook-trigger"' <<<"$WEBHOOK_BODY" || fail "D15: webhook payload missing the pushed ref"
 pass "D15 outbound webhook delivered a correctly HMAC-signed push event"
@@ -429,7 +429,11 @@ SBOM_HEAD_SHA=$(git -C "$SBOM_CLONE" rev-parse feature)
 
 SBOM_PR=$(api POST "/api/v3/repos/${OWNER}/${SBOM_REPO}/pulls" \
   -d '{"title":"Add a lockfile","head":"feature","base":"main"}')
-SBOM_PR_NUM=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(0,"utf8")).number)' <<<"$SBOM_PR")
+# process.stdout.write(String(...)), not console.log: console.log runs
+# non-string values through util.inspect, which colorizes numbers (ANSI
+# codes) whenever the environment sets FORCE_COLOR — silently corrupting a
+# value this script feeds straight back into a URL path.
+SBOM_PR_NUM=$(node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(0,"utf8")).number))' <<<"$SBOM_PR")
 api POST "/api/v3/repos/${OWNER}/${SBOM_REPO}/gates" \
   -d "{\"git_sha\":\"${SBOM_HEAD_SHA}\",\"name\":\"test\",\"status\":\"success\",\"summary\":\"ok\"}" -o /dev/null -f \
   || fail "D18: gate report failed"
