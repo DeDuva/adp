@@ -76,3 +76,22 @@ jobs:
       # M1b′ gate (docs/pragmatic_mvp.md): the real, unmodified `gh` binary
       # against this server — gh issue view / pr create / pr view / pr merge.
       - run: bash conformance/run.sh
+
+  cli:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      # No Postgres needed — the CLI's own tests stand up a fake HTTP server
+      # (cli/test/cli.test.ts), not a live ADP instance.
+      - run: npm test

@@ -663,7 +663,11 @@ path, candidate sets), are now implemented and covered by real e2e tests — **M
 
 ### M2 — Adoption + trust ramp *(revised 2026-07-26; amended 2026-08-01 per [`m2-readiness-review.md`](m2-readiness-review.md))*
 **Mirror mode** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub; the single
-biggest adoption lever and cheap: push mirror + webhook ingest). Outbound webhook emitter. `adp` CLI.
+biggest adoption lever and cheap: push mirror + webhook ingest). Outbound webhook emitter. **`adp`
+CLI — ✓ landed:** `cli/`, a new top-level package (first CLI in the repo, zero runtime dependencies).
+Thin REST wrapper — `login`, `repo mirror`, `gate report`, `pr list`, `pr merge` — reusing the same
+bearer-token auth every other client already uses. `~/.adp/config.json` or `ADP_SERVER_URL`/
+`ADP_TOKEN`, same override shape as `gh`'s own `GH_HOST`/`GH_TOKEN`.
 `conformance/` published against `spec/`. GraphQL coverage widened from measured real traffic —
 which makes **API-traffic telemetry a named prerequisite**, not an optimization: nothing measures
 traffic today, and the same instrumentation feeds A2's endpoint-distribution research for free.
