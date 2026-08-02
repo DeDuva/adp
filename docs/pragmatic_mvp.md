@@ -367,8 +367,12 @@ that is the honest price of zero-config.
 
 ## Status ledger
 
-*Updated 2026-07-26. CI runs typecheck, build, migrations, the full three-tier test suite (113
-tests, including all e2e suites), and the `gh` conformance gate (`conformance/run.sh`) on every PR.*
+*Updated 2026-08-01. CI runs typecheck, build, migrations, the full three-tier test suite (114
+tests, including all e2e suites), the `gh` conformance gate (`conformance/run.sh`), and the §2.1
+acceptance walkthrough (`acceptance/run.sh`, plus the web UI in a real browser) on every PR — the
+last two in a separate clean-room workflow that provisions a bare container from scratch and
+asserts the machine is clean afterwards. A skipped e2e tier is now a hard failure rather than a
+silent pass; see [`test-environment-automation.md`](test-environment-automation.md).*
 
 | Milestone | Status | Evidence |
 |---|---|---|
@@ -796,6 +800,14 @@ week-1 requirement, not a polish item.
 **M4 hosted posture:** managed Postgres with PITR (RDS/Neon), S3 or R2, git volume on EBS with
 snapshots, and gate runners on a **separate** autoscaling pool — runners execute untrusted code and
 must never share a host with the API.
+
+**Environments below production** — a long-lived dev instance (forced by M2's inbound webhooks,
+which a laptop cannot receive) and a staging instance (forced by M4's *executed* restore drill) —
+are planned separately in [`environments-plan.md`](environments-plan.md). That document is
+additive to this section, not a replacement: the single-VM production posture above stands. It
+does flag one genuine conflict to resolve — this section names Hetzner/EC2 while GCP is under
+consideration for the lower rungs, and running two providers should be a decision rather than an
+accident.
 
 ## 4.6 Config
 

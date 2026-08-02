@@ -463,7 +463,13 @@ implementing per-context detail forces the docs to be corrected.
 **Screenshots are reviewed by a human or not at all.** Nothing asserts that the UI looks right,
 by design. The screenshots make that review cheap; they do not make it automatic.
 
-**Phase 4 is not scheduled.** `Run-CleanTest.ps1` takes ~16 minutes and needs a Windows host, so
-it cannot be a per-push gate on GitHub's Linux runners. It is the layer that would have caught
-four bootstrap bugs automatically, which is an argument for running it on a schedule from a
-self-hosted Windows runner — a decision with a cost attached, deliberately left open.
+**Phase 4 is a local tool, not a gate — decided.** `Run-CleanTest.ps1` exists so a human can
+answer "does this work from nothing?" on demand. It is deliberately **not** wired into CI and
+should not be: it needs a Windows host, takes ~16 minutes, and a self-hosted Windows runner is
+real infrastructure to buy, secure and maintain in exchange for catching a class of bug that
+`clean-room.yml` already catches most of on every push. Run it before a release, after touching
+`bootstrap.sh`, or when a fresh-machine claim needs proving. Do not add it to a workflow.
+
+The remaining coverage gap it leaves — nothing automatically exercises `apt-get install docker.io`
+— is real but small, and is better closed by the dev environment in
+[`environments-plan.md`](environments-plan.md) than by a Windows runner.
