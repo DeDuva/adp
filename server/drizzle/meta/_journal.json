@@ -64,6 +64,13 @@
       "when": 1785681057064,
       "tag": "0008_ambitious_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785682334100,
+      "tag": "0009_majestic_krista_starr",
+      "breakpoints": true
     }
   ]
 }
