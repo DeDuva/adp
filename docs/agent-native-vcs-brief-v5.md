@@ -279,6 +279,24 @@ The brief above states our positions with conviction; this appendix states them 
 **What would change it:** Compliance-driven design is a known tarpit: auditors want certified report formats and workflow attestations, not raw attestation envelopes; chasing framework-specific outputs (CRA annexes, 42001 evidence catalogs, FedRAMP-style controls) in-core would bloat the schema and the roadmap. If pull hardens in that direction, the boundary is: ADP guarantees the *evidentiary substrate* (signed, queryable, exportable); GRC tooling — a partner ecosystem, not us — renders reports from it.
 **Research:** Map the evidence schema against the CRA reporting fields and a 42001 evidence catalog with one design partner's compliance team; ship one audit-export endpoint and observe what auditors actually reject.
 
+## A16. Wide fan-out vs. long serial sessions *(added 2026-08-01, pre-M2 review)*
+
+**Current bet:** The dominant fleet pattern is wide speculative fan-out — an orchestrator runs hundreds of parallel attempts and a selector lands one — making candidate sets and the eval-gated queue the load-bearing primitives.
+**What would change it:** Test-time-compute economics may favor one strong agent iterating *serially* — checkpoint, evaluate, continue — over parallel attempts, and current harness evolution (long-horizon sessions, context compaction, persistent memory) points at least partly that way. In a serial-dominant world, candidate sets matter less; checkpoint/resume, operation-log continuity, and session-state versioning matter more. The roadmap is partially hedged — cross-harness checkpoint/resume is already M3 scope — but the investment split between the two patterns should follow evidence, not the thesis image.
+**Research:** The M3 benchmark gains a fan-out-vs-serial arm: cost and outcome for K parallel candidate-set attempts vs one serial checkpoint-resume session on the same tasks, across task difficulty. Track harness-side signals (session length distributions, parallelism defaults in shipping orchestrators).
+
+## A17. Merge contention may be avoided upstream *(added 2026-08-01, pre-M2 review)*
+
+**Current bet:** Fleets bottleneck on the merge/verification path — thousands of concurrent writers contending on shared refs, resolved by a speculative eval-gated merge queue (Layer 3).
+**What would change it:** Orchestrators may partition work upstream — by ownership, file sets, or build-graph blast radius — so ref-level contention rarely occurs, the way engineering orgs already shard work across teams. If real fleet conflict rates are low, the bottleneck moves to eval compute and review latency: the speculative-batching bet weakens, while the statistical-gating bet (A8) binds regardless of where contention lives. The MVP's serial fast-forward land is compatible with both worlds, so nothing built so far is at risk — but M5's "speculative merge batching" gate should demand conflict-rate telemetry, not just throughput telemetry.
+**Research:** Measure real conflict rates and land throughput under N concurrent agents targeting one branch (the M3 merge-contention benchmark arm, ForgeMark-comparable); characterize how production orchestrators partition work today.
+
+## A18. Erosion of the PR shape *(added 2026-08-01, pre-M2 review)*
+
+**Current bet:** The proposal (PR-shaped) is the unit of review and landing, because the compat plane demands GitHub fidelity and humans review intent + evidence attached to it.
+**What would change it:** Agents may converge on continuous micro-landing — stacked changes, land-as-stream, trunk-based development with the merge queue as the only integration point — and on regeneration-over-maintenance, where the durable artifact is the *intent* and the diff is a disposable projection regenerated on demand. Both erode the PR as the unit of anything. The domain model is positioned acceptably (intent is first-class; proposals reference intents, not vice versa), but the discipline to protect is schema-level: evidence, provenance, and history must hang off changes and operations — never off `proposal` — so the native plane survives any change-shape. If PR erosion materializes, the compat plane becomes a legacy adapter earlier than planned and the native change-stream surface becomes the main road.
+**Research:** Watch for land-as-stream primitives in shipping forges and orchestrators (merge-queue-only workflows, stacked-diff defaults); audit the ADP schema for any place `proposal` is load-bearing for evidence or history and fix it while cheap.
+
 ---
 
 *Published for open discussion; the primary audience remains technical leadership at frontier labs

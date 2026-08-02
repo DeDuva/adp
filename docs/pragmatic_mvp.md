@@ -381,7 +381,7 @@ silent pass; see [`test-environment-automation.md`](test-environment-automation.
 | M1b — GraphQL + `gh` | **✓ gate met** | PR #4 (read) + the M1b′ mutation slice. GitHub's real SDL loaded unmodified; `conformance/run.sh` drives a real, unmodified, pinned `gh` v2.63.0 through `issue create/view`, `pr create/view/merge` against the live server — the definition-of-done §2.1 gate, enforced in CI on every PR |
 | M1b′ — compat completion + hardening | **✓ done** | GraphQL mutations, the Tier-2 REST tail, all five hardening items, and the `gh` conformance gate all landed — see below |
 | M1c | **✓ done** | Real git `pre-receive`/`post-receive` hooks; `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy on both REST and GraphQL merge; native-plane (`/api/adp`) op log + `adp_undo` + history-query by path; workspaces, candidate sets, and an evidence-bundle read; a real MCP server (`server/src/mcp/`) wrapping all of it as 8 tools; a read-only supervision web UI (`server/web/`, served at `/ui/*`) — see below |
-| M2–M5 | not started | M2 scope revised below (trust ramp) |
+| M2–M5 | not started | M2 scope revised below (trust ramp); M2/M3 amended 2026-08-01 per the pre-M2 readiness review ([`m2-readiness-review.md`](m2-readiness-review.md)) |
 
 ### M0 — Spec + walking skeleton (weeks 1–2) — ✓ done
 `spec/openapi.yaml` + JSON Schemas (change, evidence, provenance, operation). Server boots, Postgres
@@ -661,10 +661,12 @@ unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` again
 differentiators, including the two items that were outstanding as of 2026-07-26 (history-query by
 path, candidate sets), are now implemented and covered by real e2e tests — **M1 is complete.**
 
-### M2 — Adoption + trust ramp *(revised 2026-07-26)*
+### M2 — Adoption + trust ramp *(revised 2026-07-26; amended 2026-08-01 per [`m2-readiness-review.md`](m2-readiness-review.md))*
 **Mirror mode** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub; the single
 biggest adoption lever and cheap: push mirror + webhook ingest). Outbound webhook emitter. `adp` CLI.
-`conformance/` published against `spec/`. GraphQL coverage widened from measured real traffic.
+`conformance/` published against `spec/`. GraphQL coverage widened from measured real traffic —
+which makes **API-traffic telemetry a named prerequisite**, not an optimization: nothing measures
+traffic today, and the same instrumentation feeds A2's endpoint-distribution research for free.
 Plus the trust-plane ramp (§1.5 item 4):
 - **Scanner-as-gate adapters:** any CLI scanner drops into the gate runner — SARIF/JSON out,
   DSSE evidence attestation in; **Wiz Code (`wizcli`) is the reference adapter** (SAST, SCA,
@@ -675,16 +677,49 @@ Plus the trust-plane ramp (§1.5 item 4):
   supervisor approval; verdicts are typed and returned to the authoring agent.
 - **SBOM per land:** CycloneDX emitted as ordinary evidence on every landed change.
 
+Plus the **scale hygiene forced by mirror mode** (added 2026-08-01 — mirroring imports real GitHub
+repos with real histories, which turns these from M5 speculation into M2 correctness bugs; details
+and file references in the readiness review §2):
+- **Chunked post-receive recording:** the 500-commit-per-ref-update cap in
+  `server/src/http-git/hooks.ts` must chunk or queue, never truncate silently — a silent hole in
+  the provenance record is the one failure mode this product cannot have.
+- **Secondary-index pass:** `changes (repo_id, git_sha)`, `gate_results (repo_id, git_sha, name)`,
+  and an `operations` strategy (a `repo_id` column or an expression index serving the `target`
+  filter) — today every one of these hot paths is a sequential scan.
+- **Pagination on unbounded list endpoints** (`GET /pulls`, `GET /git/refs`), GitHub-shaped
+  (`per_page`/`page`) — a compat-fidelity gain as well as a scale fix.
+- **Merge-method fidelity:** real merge-commit and squash support on both merge paths
+  (`merge_method` is currently read from nobody — every land silently fast-forwards, which a
+  migrator's `gh pr merge --merge` cannot distinguish from GitHub behavior until history is
+  inspected). Rebase-merge may stay unimplemented behind a typed error.
+- **Land-policy TOCTOU decision:** policy is evaluated before the ref CAS, not atomically with it;
+  either re-check at the CAS point or document the accepted window in `spec/`.
+
+**At kickoff:** resolve the two open questions in [`environments-plan.md`](environments-plan.md) §5
+(SIGNING_KEY custody including the retired-key trust model; dev-instance ownership and retirement
+condition) — the dev environment is forced by M2's inbound webhooks, so these block the milestone's
+first week, not its last.
+
 **Exit:** an existing GitHub repo gets ADP workspaces + evidence without migrating; a `wizcli`
 gate posts findings as signed evidence on a proposal; a lockfile diff adding a known-malicious
-package is refused with a typed verdict the agent can act on.
+package is refused with a typed verdict the agent can act on. Added 2026-08-01: a mirrored repo
+with a >500-commit history has a signed change recorded for every commit; `gh pr merge --merge`
+and `--squash` produce GitHub-equivalent history.
 
-### M3 — Fleet and differentiation (weeks 16–20)
+### M3 — Fleet and differentiation (weeks 16–20) *(amended 2026-08-01 per [`m2-readiness-review.md`](m2-readiness-review.md))*
 50-way fan-out orchestration over candidate sets. Cross-harness checkpoint/resume (session state as a
 first-class ADP object — the §e demo). Statistical land criteria v0: flaky-gate quarantine,
 confidence-interval gating — the A8 contribution. Benchmark harness published (tokens / tool calls /
 error rate / wall clock: GitHub+`gh` vs ADP-MCP vs ADP-via-`gh`) — note this now measures all three
-arms for free, because both planes exist.
+arms for free, because both planes exist. Added 2026-08-01, two further benchmark arms — the
+merge-bottleneck thesis currently has zero first-party measurement, and the M5 gates need telemetry
+to cite:
+- **Merge-contention arm:** land throughput and retry behavior under N concurrent agents targeting
+  one branch, including conflict-rate telemetry (ForgeMark-comparable; feeds A17 and the M5
+  speculative-batching gate).
+- **Fan-out-vs-serial arm:** cost and outcome comparison of K parallel candidate-set attempts vs
+  one serial checkpoint-resume session on the same tasks (feeds A16).
+
 **Exit:** D1 and D2 from the prototype doc are demonstrable; benchmark published with methodology.
 
 ### M4 — Multi-tenant hosted preview (weeks 21–26)
