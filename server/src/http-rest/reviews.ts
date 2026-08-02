@@ -69,6 +69,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Db) {
           .returning();
 
         await recordOperation(tx, {
+          repoId: repo.id,
           actorId: req.identity!.identityId,
           verb: "review.create",
           target: `${owner}/${repoName}#${number}`,

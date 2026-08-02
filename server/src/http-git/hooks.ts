@@ -1,12 +1,13 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
 import type { Signer } from "../core/signing.js";
-import { changes, identities } from "../db/schema.js";
-import { recordOperation } from "../core/operations.js";
+import { identities, mirrorSyncLog } from "../db/schema.js";
 import { findRepo } from "../core/repos-lookup.js";
+import { findMirror } from "../core/mirrors-lookup.js";
+import { recordPushedCommits } from "../core/change-recorder.js";
 import { BundledSecretScanProvider, type SecretScanProvider } from "../core/secret-scan.js";
 import { emitWebhookEvent } from "../core/webhooks.js";
 
@@ -112,78 +113,76 @@ export function registerHookRoutes(
     }
 
     const identity = identityId ? (await db.select().from(identities).where(eq(identities.id, identityId)))[0] : undefined;
+    const mirror = await findMirror(db, repo.id);
+    const mirrorOutbound = mirror?.enabled && (mirror.direction === "outbound" || mirror.direction === "both") ? mirror : null;
 
     for (const update of updates) {
       if (update.newSha === ZERO_SHA) continue;
-
-      // A brand-new branch (oldSha all-zero) usually forks from history
-      // that's already recorded via whatever ref it was pushed from —
-      // recording the tip only (not the whole reachable history) avoids
-      // re-recording everything on every new branch. `existing change`
-      // dedup below covers the rest regardless.
-      const commits =
-        update.oldSha === ZERO_SHA
-          ? await gitBackend.log(owner, name, update.newSha, 1)
-          : await gitBackend.log(owner, name, `${update.oldSha}..${update.newSha}`, 500);
 
       // operations.actorId is a hard FK to identities — without a resolved
       // identity there's no valid actor to attribute this to, so there's
       // nothing safe to record (this shouldn't happen in practice: pushing
       // at all requires an authenticated identity, so identityId should
       // always resolve).
-      if (!identity) continue;
+      if (identity) {
+        // Chunking past a single 500-commit `git log` call (a >500-commit
+        // mirror import, not an ordinary push) lives inside
+        // recordPushedCommits itself (core/change-recorder.ts) — shared with
+        // the inbound mirror webhook, so both callers get the fix.
+        await recordPushedCommits(
+          db,
+          gitBackend,
+          signer,
+          owner,
+          name,
+          repo.id,
+          { id: identity.id, kind: identity.kind, principal: identity.principal },
+          update.oldSha,
+          update.newSha,
+          "push",
+        );
 
-      for (const commit of commits) {
-        const [existing] = await db
-          .select()
-          .from(changes)
-          .where(and(eq(changes.repoId, repo.id), eq(changes.gitSha, commit.sha)));
-        if (existing) continue;
-
-        const provenance = { kind: identity.kind, principal: identity.principal, via: "push" };
-        const signature = signer.sign({
-          repo: `${owner}/${name}`,
-          git_sha: commit.sha,
-          intent_id: null,
-          provenance,
-        });
-
-        await db.transaction(async (tx) => {
-          const [change] = await tx
-            .insert(changes)
-            .values({ repoId: repo.id, gitSha: commit.sha, intentId: null, provenance, signature })
-            .returning();
-
-          await recordOperation(tx, {
-            actorId: identity.id,
-            verb: "change.create",
-            target: `${owner}/${name}@${commit.sha}`,
-            after: { id: change!.id, gitSha: commit.sha, via: "push" },
-          });
-        });
+        // Fire-and-forget (core/webhooks.ts) — the push already succeeded
+        // and must not wait on a subscriber's endpoint. A fresh, capped log
+        // call for the payload, decoupled from recordPushedCommits' own
+        // (possibly paginated) recording pass — commits capped at 20,
+        // matching GitHub's own push-event payload shape.
+        const commitsForPayload =
+          update.oldSha === ZERO_SHA
+            ? await gitBackend.log(owner, name, update.newSha, 20)
+            : await gitBackend.log(owner, name, `${update.oldSha}..${update.newSha}`, 20);
+        emitWebhookEvent(
+          db,
+          repo.id,
+          "push",
+          {
+            ref: update.ref,
+            before: update.oldSha,
+            after: update.newSha,
+            repository: { full_name: `${owner}/${name}` },
+            pusher: { name: identity.principal },
+            commits: commitsForPayload.map((c) => ({
+              id: c.sha,
+              message: c.message,
+              author: { name: c.authorName, email: c.authorEmail },
+            })),
+          },
+          req.log,
+        );
       }
 
-      // Fire-and-forget (core/webhooks.ts) — the push already succeeded and
-      // must not wait on a subscriber's endpoint. Commits capped at 20,
-      // matching GitHub's own push-event payload shape.
-      emitWebhookEvent(
-        db,
-        repo.id,
-        "push",
-        {
+      // Queue the outbound push-out as an outbox row rather than pushing to
+      // GitHub inline here — see core/mirror-poller.ts's comment for why
+      // (keeps this hook's latency independent of GitHub's availability).
+      if (mirrorOutbound) {
+        await db.insert(mirrorSyncLog).values({
+          mirrorId: mirrorOutbound.id,
+          direction: "outbound",
           ref: update.ref,
-          before: update.oldSha,
-          after: update.newSha,
-          repository: { full_name: `${owner}/${name}` },
-          pusher: { name: identity.principal },
-          commits: commits.slice(0, 20).map((c) => ({
-            id: c.sha,
-            message: c.message,
-            author: { name: c.authorName, email: c.authorEmail },
-          })),
-        },
-        req.log,
-      );
+          sha: update.newSha,
+          status: "pending",
+        });
+      }
     }
 
     reply.send({ ok: true });

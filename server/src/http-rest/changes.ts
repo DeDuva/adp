@@ -105,6 +105,7 @@ export function registerChangeRoutes(
           .returning();
 
         await recordOperation(tx, {
+          repoId: repo.id,
           actorId: req.identity!.identityId,
           verb: "change.create",
           target: `${owner}/${repoName}@${parsed.data.git_sha}`,

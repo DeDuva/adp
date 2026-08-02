@@ -54,8 +54,15 @@
     {
       "idx": 7,
       "version": "7",
-      "when": 1785650815726,
-      "tag": "0007_clean_talisman",
+      "when": 1785679501003,
+      "tag": "0007_silky_red_shift",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785681057064,
+      "tag": "0008_ambitious_tarantula",
       "breakpoints": true
     }
   ]

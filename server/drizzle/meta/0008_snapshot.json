@@ -1,6 +1,6 @@
 {
-  "id": "05309a8e-0066-4e5f-90e4-0845b8beadfc",
-  "prevId": "2b3b1c9a-183e-4c44-899e-045c8e4c5ce0",
+  "id": "f56333c4-0f38-4b5a-9b91-636f477a39a6",
+  "prevId": "05309a8e-0066-4e5f-90e4-0845b8beadfc",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -138,7 +138,29 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "changes_repo_id_git_sha_idx": {
+          "name": "changes_repo_id_git_sha_idx",
+          "columns": [
+            {
+              "expression": "repo_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "git_sha",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "changes_repo_id_repos_id_fk": {
           "name": "changes_repo_id_repos_id_fk",
@@ -235,7 +257,35 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "gate_results_repo_id_git_sha_name_idx": {
+          "name": "gate_results_repo_id_git_sha_name_idx",
+          "columns": [
+            {
+              "expression": "repo_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "git_sha",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "gate_results_repo_id_repos_id_fk": {
           "name": "gate_results_repo_id_repos_id_fk",
@@ -806,6 +856,12 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
+        "repo_id": {
+          "name": "repo_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "actor_id": {
           "name": "actor_id",
           "type": "uuid",
@@ -850,8 +906,37 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "operations_repo_id_idx": {
+          "name": "operations_repo_id_idx",
+          "columns": [
+            {
+              "expression": "repo_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
+        "operations_repo_id_repos_id_fk": {
+          "name": "operations_repo_id_repos_id_fk",
+          "tableFrom": "operations",
+          "tableTo": "repos",
+          "columnsFrom": [
+            "repo_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
         "operations_actor_id_identities_id_fk": {
           "name": "operations_actor_id_identities_id_fk",
           "tableFrom": "operations",

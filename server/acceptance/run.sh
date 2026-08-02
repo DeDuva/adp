@@ -74,6 +74,7 @@ step "A — environment"
 [ -n "${DATABASE_URL:-}" ] || fail "DATABASE_URL is not set (run 'make up' first, or use 'make acceptance')"
 export GIT_ROOT="$WORKDIR/git"
 export SIGNING_KEY="acceptance-$(openssl rand -hex 8)"
+export MIRROR_CREDENTIAL_KEY="acceptance-$(openssl rand -hex 8)"
 export PUBLIC_URL="http://localhost:${PORT}"
 export PORT
 mkdir -p "$GIT_ROOT" "$ARTIFACTS"
@@ -223,12 +224,18 @@ PR_OUT=$("$GH_BIN" pr view 1 --repo "$GH_REPO") || fail "B7: gh pr view failed"
 grep -q "Describe the widget" <<<"$PR_OUT" || fail "B7: PR title missing from gh output"
 pass "B7 typed review recorded, gh pr view shows the PR"
 
-# B8 — land
+# B8 — land. merge_method defaults to "merge" (GitHub's own default, and
+# `--merge` asks for it explicitly) — main lands on a real merge commit, not
+# a reused copy of the feature head, so main != HEAD_SHA is the fidelity win
+# here (docs/m2-readiness-review.md's merge-method-fidelity item), and the
+# feature head must still be reachable from main afterward.
 MAIN_BEFORE=$(git --git-dir="${GIT_ROOT}/${OWNER}/${REPO}.git" rev-parse main)
 "$GH_BIN" pr merge 1 --repo "$GH_REPO" --merge >/dev/null || fail "B8: gh pr merge failed"
 MAIN_AFTER=$(git --git-dir="${GIT_ROOT}/${OWNER}/${REPO}.git" rev-parse main)
-[ "$MAIN_AFTER" = "$HEAD_SHA" ] || fail "B8: main did not fast-forward to the feature head server-side"
-pass "B8 gh pr merge landed it (main $(cut -c1-8 <<<"$MAIN_BEFORE") -> $(cut -c1-8 <<<"$MAIN_AFTER"))"
+[ "$MAIN_AFTER" != "$HEAD_SHA" ] || fail "B8: main should have landed on a new merge commit, not the reused feature head"
+git --git-dir="${GIT_ROOT}/${OWNER}/${REPO}.git" merge-base --is-ancestor "$HEAD_SHA" "$MAIN_AFTER" \
+  || fail "B8: feature head is not reachable from main after the merge"
+pass "B8 gh pr merge landed it as a merge commit (main $(cut -c1-8 <<<"$MAIN_BEFORE") -> $(cut -c1-8 <<<"$MAIN_AFTER"))"
 
 step "C — the human's supervision"
 
