@@ -232,9 +232,16 @@ want. To go further:
 make nuke   # also removes dependencies, build output and the pinned gh cache
 ```
 
-For a true "return the machine to its prior state," the toolchain has to go too — which is what a
-disposable WSL distro gives you, and why Phase 4 of
-[`test-environment-automation.md`](test-environment-automation.md) exists.
+For a true "return the machine to its prior state," the toolchain has to go too. That is what the
+Windows entrypoint does — it runs everything above inside a throwaway WSL distro and then deletes
+it, so there is nothing left to clean up:
+
+```powershell
+.\tools\win\Run-CleanTest.ps1
+```
+
+Nothing is installed on Windows; the only prerequisite is WSL itself. Use this when the question
+is "does the whole thing work from nothing?" rather than "did my change break something?"
 
 ---
 
