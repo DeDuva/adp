@@ -85,6 +85,7 @@ export function registerDependencyAdmissionRoutes(app: FastifyInstance, db: Db, 
           .returning();
 
         await recordOperation(tx, {
+          repoId: repo.id,
           actorId: req.identity!.identityId,
           verb: "gate.report",
           target: `${owner}/${repoName}@${parsed.data.git_sha}#${parsed.data.gate_name}`,
