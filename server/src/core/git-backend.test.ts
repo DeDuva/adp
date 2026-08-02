@@ -136,8 +136,21 @@ describe("GitBackend", () => {
         await backend.pushToRemote("acme", "hello", remotePath, `${aheadSha}:refs/heads/scratch`);
 
         const treeSha = (await execFileAsync("git", ["rev-parse", `${baseSha}^{tree}`], { cwd: remotePath })).stdout.trim();
+        // Explicit author/committer env, not inherited global git config —
+        // a bare CI container has none set, unlike a developer's machine,
+        // and commit-tree refuses to run without one (core/git-backend.ts's
+        // own createCommit sets these same four vars for the same reason).
         const divergedSha = (
-          await execFileAsync("git", ["commit-tree", treeSha, "-p", baseSha, "-m", "diverged"], { cwd: remotePath })
+          await execFileAsync("git", ["commit-tree", treeSha, "-p", baseSha, "-m", "diverged"], {
+            cwd: remotePath,
+            env: {
+              ...process.env,
+              GIT_AUTHOR_NAME: "Test",
+              GIT_AUTHOR_EMAIL: "test@example.com",
+              GIT_COMMITTER_NAME: "Test",
+              GIT_COMMITTER_EMAIL: "test@example.com",
+            },
+          })
         ).stdout.trim();
         await execFileAsync("git", ["update-ref", "refs/heads/main", divergedSha], { cwd: remotePath });
 
