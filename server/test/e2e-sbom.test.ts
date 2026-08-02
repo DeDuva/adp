@@ -110,11 +110,11 @@ describe.skipIf(skipWithoutDb)("M2: SBOM per land", () => {
     );
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend);
-    registerProposalRoutes(app, db, gitBackend, [], { signer, publicUrl: "https://adp.example.com" });
+    registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key", [], { signer, publicUrl: "https://adp.example.com" });
     registerEvidenceRoutes(app, db);
 
     const schema = loadGitHubSchema();
-    attachResolvers(schema, createResolvers(gitBackend, [], { signer, publicUrl: "https://adp.example.com" }));
+    attachResolvers(schema, createResolvers(gitBackend, "e2e-test-credential-key", [], { signer, publicUrl: "https://adp.example.com" }));
     registerGraphQLRoute(app, schema, db);
 
     registerGitHttpRoutes(app, gitBackend);

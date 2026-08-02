@@ -17,9 +17,13 @@ const EnvSchema = z.object({
     .string()
     .default("gates_green,one_approval")
     .transform((s) => s.split(",").map((r) => r.trim()).filter(Boolean)),
-  // Mirror mode (M2): symmetric key credentials (a GitHub PAT per mirror)
-  // are encrypted at rest with (core/mirror-crypto.ts) — same
-  // deterministic-key-from-env shape as SIGNING_KEY.
+  // At-rest AES-256-GCM key (core/mirror-crypto.ts) — same
+  // deterministic-key-from-env shape as SIGNING_KEY. Originally just the
+  // mirror credential (a GitHub PAT per mirror), now also covers both
+  // webhook-signing secrets (webhooks.secretCiphertext,
+  // mirrors.webhookSecretCiphertext) — kept as one env var rather than
+  // introducing a second required secret for the same "no plaintext secret
+  // at rest" bar.
   MIRROR_CREDENTIAL_KEY: z.string().min(1),
   MIRROR_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
 });

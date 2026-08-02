@@ -62,7 +62,7 @@ describe.skipIf(skipWithoutDb)("M0 end-to-end: token -> repo create -> clone -> 
     registerRepoRoutes(app, db, gitBackend);
     registerIssueRoutes(app, db);
     registerChangeRoutes(app, db, gitBackend, new Signer("e2e-test-signing-key"));
-    registerProposalRoutes(app, db, gitBackend);
+    registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key");
     registerReviewRoutes(app, db);
     registerGitHttpRoutes(app, gitBackend);
 

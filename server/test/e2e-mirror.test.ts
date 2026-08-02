@@ -65,7 +65,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M2: mirror mode", () => {
     registerMirrorWebhookRawBodyParser(app);
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend);
-    registerHookRoutes(app, db, gitBackend, signer);
+    registerHookRoutes(app, db, gitBackend, signer, CREDENTIAL_KEY);
     registerMirrorRoutes(app, db, CREDENTIAL_KEY);
     registerMirrorWebhookRoutes(app, db, gitBackend, signer, CREDENTIAL_KEY);
     registerGitHttpRoutes(app, gitBackend);

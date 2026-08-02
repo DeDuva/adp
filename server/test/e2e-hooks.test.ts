@@ -56,7 +56,7 @@ describe.skipIf(skipWithoutDb)("M1c: receive-path hooks", () => {
     );
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend);
-    registerHookRoutes(app, db, gitBackend, signer);
+    registerHookRoutes(app, db, gitBackend, signer, "e2e-test-credential-key");
     registerOperationRoutes(app, db, gitBackend);
     registerGitHttpRoutes(app, gitBackend);
 

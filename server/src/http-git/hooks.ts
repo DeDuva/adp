@@ -52,6 +52,7 @@ export function registerHookRoutes(
   db: Db,
   gitBackend: GitBackend,
   signer: Signer,
+  credentialKey: string,
   scanner: SecretScanProvider = new BundledSecretScanProvider(),
 ) {
   // Pre-receive: runs before refs move. A nonzero-equivalent {block: true}
@@ -168,6 +169,7 @@ export function registerHookRoutes(
             })),
           },
           req.log,
+          credentialKey,
         );
       }
 

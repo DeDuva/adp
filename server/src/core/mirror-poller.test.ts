@@ -68,7 +68,7 @@ describe.skipIf(!process.env.DATABASE_URL)("mirror-poller", () => {
         direction: "outbound",
         remoteUrl: `file://${mirrorBackend.repoPath("github-owner", "repo")}`,
         credentialCiphertext: encryptCredential("unused-for-file-remote", CREDENTIAL_KEY),
-        webhookSecret: "unused",
+        webhookSecretCiphertext: encryptCredential("unused", CREDENTIAL_KEY),
       })
       .returning();
     mirrorId = mirror!.id;

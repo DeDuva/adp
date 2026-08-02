@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { webhooks } from "../db/schema.js";
+import { decryptCredential } from "./mirror-crypto.js";
 
 export type WebhookEventType = "push" | "pull_request" | "gate_result";
 
@@ -71,6 +72,7 @@ export function emitWebhookEvent(
   eventType: WebhookEventType,
   payload: unknown,
   logger: WebhookLogger,
+  credentialKey: string,
 ): void {
   const body = JSON.stringify(payload);
   db.select()
@@ -79,7 +81,8 @@ export function emitWebhookEvent(
     .then((hooks) => {
       for (const hook of hooks) {
         if (!hook.events.includes(eventType)) continue;
-        void deliverWithRetry(hook.targetUrl, hook.secret, eventType, body, logger);
+        const secret = decryptCredential(hook.secretCiphertext, credentialKey);
+        void deliverWithRetry(hook.targetUrl, secret, eventType, body, logger);
       }
     })
     .catch((err) => {

@@ -1,9 +1,13 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
-// AES-256-GCM at rest for mirror credentials (a GitHub PAT), keyed by the
-// MIRROR_CREDENTIAL_KEY env var — same deterministic-key-from-env shape as
-// Signer (core/signing.ts). Not KMS/vault-grade (that's M4 multi-tenant
-// hardening); the bar here is "no plaintext PAT in a DB row or a log line".
+// AES-256-GCM at rest, keyed by the MIRROR_CREDENTIAL_KEY env var — same
+// deterministic-key-from-env shape as Signer (core/signing.ts). Originally
+// just mirror credentials (a GitHub PAT), now also used for the two
+// webhook-signing secrets (core/webhooks.ts's secretCiphertext,
+// http-rest/mirror-webhook.ts's webhookSecretCiphertext) — the function
+// names stayed generic-by-accident and turned out generic-on-purpose. Not
+// KMS/vault-grade (that's M4 multi-tenant hardening); the bar here is "no
+// plaintext secret in a DB row or a log line".
 function deriveKey(keySeed: string): Buffer {
   return createHash("sha256").update(keySeed).digest();
 }

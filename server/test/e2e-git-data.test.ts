@@ -63,7 +63,7 @@ describe.skipIf(skipWithoutDb)("M1b′ REST: Tier-2 tail", () => {
     );
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend);
-    registerProposalRoutes(app, db, gitBackend);
+    registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key");
     registerGitDataRoutes(app, db, gitBackend);
     registerGitHttpRoutes(app, gitBackend);
 

@@ -67,9 +67,9 @@ describe.skipIf(skipWithoutDb)("M1c: gate runner + land policy", () => {
     registerRepoRoutes(app, db, gitBackend);
     // Instance floor requires both — same default as config.ts's
     // LAND_POLICY_FLOOR, made explicit here rather than relying on it.
-    registerProposalRoutes(app, db, gitBackend, ["gates_green", "one_approval"]);
+    registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key", ["gates_green", "one_approval"]);
     registerReviewRoutes(app, db);
-    registerGateRoutes(app, db, signer, "https://adp.example.com");
+    registerGateRoutes(app, db, signer, "https://adp.example.com", "e2e-test-credential-key");
     registerGitHttpRoutes(app, gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });

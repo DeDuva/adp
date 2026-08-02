@@ -6,6 +6,7 @@ import { webhooks } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { findRepo } from "../core/repos-lookup.js";
 import type { WebhookEventType } from "../core/webhooks.js";
+import { encryptCredential } from "../core/mirror-crypto.js";
 
 const WEBHOOK_EVENTS: [WebhookEventType, ...WebhookEventType[]] = ["push", "pull_request", "gate_result"];
 
@@ -35,7 +36,7 @@ function serializeWebhook(hook: typeof webhooks.$inferSelect) {
 // Delivery mechanics (signing, retry) live in core/webhooks.ts; this is
 // just the subscription CRUD other mutation routes' emitWebhookEvent calls
 // read from.
-export function registerWebhookRoutes(app: FastifyInstance, db: Db) {
+export function registerWebhookRoutes(app: FastifyInstance, db: Db, credentialKey: string) {
   app.post("/api/v3/repos/:owner/:repo/hooks", { preHandler: requireScope("repo:write") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const parsed = CreateWebhookBody.safeParse(req.body);
@@ -54,7 +55,7 @@ export function registerWebhookRoutes(app: FastifyInstance, db: Db) {
       .values({
         repoId: repo.id,
         targetUrl: parsed.data.config.url,
-        secret: parsed.data.config.secret,
+        secretCiphertext: encryptCredential(parsed.data.config.secret, credentialKey),
         events: parsed.data.events,
         active: parsed.data.active,
       })

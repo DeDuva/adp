@@ -92,11 +92,14 @@ async function main() {
   registerRepoRoutes(app, db, gitBackend);
   registerIssueRoutes(app, db);
   registerChangeRoutes(app, db, gitBackend, signer);
-  registerProposalRoutes(app, db, gitBackend, instanceFloor, { signer, publicUrl: config.PUBLIC_URL });
+  registerProposalRoutes(app, db, gitBackend, config.MIRROR_CREDENTIAL_KEY, instanceFloor, {
+    signer,
+    publicUrl: config.PUBLIC_URL,
+  });
   registerReviewRoutes(app, db);
   registerGitDataRoutes(app, db, gitBackend);
-  registerHookRoutes(app, db, gitBackend, signer);
-  registerGateRoutes(app, db, signer, config.PUBLIC_URL);
+  registerHookRoutes(app, db, gitBackend, signer, config.MIRROR_CREDENTIAL_KEY);
+  registerGateRoutes(app, db, signer, config.PUBLIC_URL, config.MIRROR_CREDENTIAL_KEY);
   registerDependencyAdmissionRoutes(app, db, signer, config.PUBLIC_URL);
   registerOperationRoutes(app, db, gitBackend);
   registerWorkspaceRoutes(app, db, gitBackend);
@@ -104,10 +107,13 @@ async function main() {
   registerMirrorRoutes(app, db, config.MIRROR_CREDENTIAL_KEY);
   registerMirrorWebhookRoutes(app, db, gitBackend, signer, config.MIRROR_CREDENTIAL_KEY);
   registerCandidateSetRoutes(app, db);
-  registerWebhookRoutes(app, db);
+  registerWebhookRoutes(app, db, config.MIRROR_CREDENTIAL_KEY);
 
   const gqlSchema = loadGitHubSchema();
-  attachResolvers(gqlSchema, createResolvers(gitBackend, instanceFloor, { signer, publicUrl: config.PUBLIC_URL }));
+  attachResolvers(
+    gqlSchema,
+    createResolvers(gitBackend, config.MIRROR_CREDENTIAL_KEY, instanceFloor, { signer, publicUrl: config.PUBLIC_URL }),
+  );
   registerGraphQLRoute(app, gqlSchema, db);
 
   registerGitHttpRoutes(app, gitBackend, config.GIT_MAX_PACK_BYTES);
