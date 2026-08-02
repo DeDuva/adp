@@ -367,8 +367,12 @@ that is the honest price of zero-config.
 
 ## Status ledger
 
-*Updated 2026-07-26. CI runs typecheck, build, migrations, the full three-tier test suite (113
-tests, including all e2e suites), and the `gh` conformance gate (`conformance/run.sh`) on every PR.*
+*Updated 2026-08-01. CI runs typecheck, build, migrations, the full three-tier test suite (114
+tests, including all e2e suites), the `gh` conformance gate (`conformance/run.sh`), and the §2.1
+acceptance walkthrough (`acceptance/run.sh`, plus the web UI in a real browser) on every PR — the
+last two in a separate clean-room workflow that provisions a bare container from scratch and
+asserts the machine is clean afterwards. A skipped e2e tier is now a hard failure rather than a
+silent pass; see [`test-environment-automation.md`](test-environment-automation.md).*
 
 | Milestone | Status | Evidence |
 |---|---|---|
@@ -737,7 +741,7 @@ Boundaries preserve the option to split; a service mesh at week 3 does not.
 | **Git transport** | `git http-backend` (CGI) proxied behind auth middleware | The reference implementation of the wire protocol, already installed |
 | **Database** | PostgreSQL 16, Drizzle (migrations + typed queries) | Transactional spine |
 | **Job queue** | `pg-boss` (Postgres-backed) | No Redis. One stateful dependency is enough, and gate jobs want transactional enqueue alongside the change record |
-| **Object store** | S3-compatible: MinIO local, S3/R2 hosted. Content-addressed keys `sha256/<hash>` | Gate logs, junit XML, evidence payloads, trajectories. Content addressing gives dedup and makes A9 sealed payloads natural later |
+| **Object store** | S3-compatible: MinIO self-hosted, Cloud Storage hosted (its XML API keeps the same client). Content-addressed keys `sha256/<hash>` | Gate logs, junit XML, evidence payloads, trajectories. Content addressing gives dedup and makes A9 sealed payloads natural later. Staying S3-compatible rather than adopting a GCS-native client is what keeps the self-host path real |
 | **Gate runner** | Separate process, Docker/Podman. Reads `adp.yaml` (`image`, `setup`, `gates:[{name,run,weight}]`), materializes a checkout, runs commands, uploads logs+junit, posts a check-run | Not a workflow engine. No matrix, no marketplace, no DAG |
 | **MCP** | Official TS SDK, streamable-HTTP, bearer auth, same process | MCP is a projection of the same domain layer, not a second system |
 | **Web UI** | Vite + React SPA, read-only, served as static assets. Views: repo, history graph, change detail (intent/diff/evidence/provenance), proposal, candidate-set comparison, op log with undo, gate logs | Humans supervise, agents act. Deliberately small |
@@ -781,21 +785,38 @@ node_ids          (global-id mapping for GraphQL Node resolution)
 
 ## 4.5 Hosting
 
-**MVP: one VM + docker compose.** Hetzner CCX or EC2 `m7i`-class, 8–16 vCPU, 64 GB, one NVMe volume.
-Caddy in front for automatic TLS. Compose runs server, runner, Postgres, MinIO, Caddy.
+**MVP: one VM + docker compose, on GCP** *(provider decided 2026-08-01)*. A GCE instance in the
+`n2`/`c3-standard` family, 8–16 vCPU, 64 GB, one SSD persistent disk. Caddy in front for automatic
+TLS. Compose runs server, runner, Postgres, MinIO, Caddy.
 
 Defense: the workload is stateful (git repos on disk), needs a Docker socket for gate execution, and
-has one user (us) for weeks. Kubernetes, Fly.io, and serverless all fight at least one of those.
-A single box is ~$100/month, deploys with `git pull && docker compose up -d`, rebuilds from `deploy/`
-in ten minutes. Revisit at M4, not before.
+has one user (us) for weeks. Kubernetes, Cloud Run, and serverless all fight at least one of those —
+the shape of the answer is unchanged by the choice of provider. It deploys with
+`git pull && docker compose up -d` and rebuilds from `deploy/` in ten minutes. Revisit at M4, not
+before.
+
+**One number needs re-checking.** This section previously read "~$100/month", which was a Hetzner
+figure. GCP list pricing for the same shape is several times that. The levers are a smaller initial
+instance (the MVP has one user), committed-use discounts, and not running the box when nobody is
+using it. Price it before provisioning rather than inheriting a stale number — and note that
+choosing one provider for every rung was a deliberate trade of money for operational simplicity,
+argued in [`environments-plan.md`](environments-plan.md).
 
 **TLS and hostname matter more than usual here:** `gh` only takes the GHES `/api/v3` + `/api/graphql`
 path for a non-`github.com` host, and expects HTTPS. A real DNS name with a real certificate is a
 week-1 requirement, not a polish item.
 
-**M4 hosted posture:** managed Postgres with PITR (RDS/Neon), S3 or R2, git volume on EBS with
-snapshots, and gate runners on a **separate** autoscaling pool — runners execute untrusted code and
-must never share a host with the API.
+**M4 hosted posture:** Cloud SQL for PostgreSQL with PITR, Cloud Storage for artifacts, the git
+volume on a persistent disk with scheduled snapshots, and gate runners on a **separate** managed
+instance group — runners execute untrusted code and must never share a host with the API. Each of
+these has a self-host equivalent already in `deploy/` (Postgres, MinIO, a volume), which is the
+constraint that keeps "hosting is a convenience, never a license lever" true rather than aspirational.
+
+**Environments below production** — a long-lived dev instance (forced by M2's inbound webhooks,
+which a laptop cannot receive) and a staging instance (forced by M4's *executed* restore drill) —
+are planned separately in [`environments-plan.md`](environments-plan.md). That document is
+additive to this section, not a replacement: the single-VM production posture above stands, on
+GCP for every rung.
 
 ## 4.6 Config
 
