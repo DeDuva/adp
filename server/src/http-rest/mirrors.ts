@@ -80,6 +80,7 @@ export function registerMirrorRoutes(app: FastifyInstance, db: Db, credentialKey
         .returning();
 
       await recordOperation(tx, {
+        repoId: repo.id,
         actorId: req.identity!.identityId,
         verb: "mirror.create",
         target: `${owner}/${name}`,
@@ -146,6 +147,7 @@ export function registerMirrorRoutes(app: FastifyInstance, db: Db, credentialKey
       await tx.delete(mirrors).where(eq(mirrors.id, mirror.id));
 
       await recordOperation(tx, {
+        repoId: repo.id,
         actorId: req.identity!.identityId,
         verb: "mirror.delete",
         target: `${owner}/${name}`,

@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
 import type { Signer } from "../core/signing.js";
@@ -124,6 +124,10 @@ export function registerHookRoutes(
       // at all requires an authenticated identity, so identityId should
       // always resolve).
       if (identity) {
+        // Chunking past a single 500-commit `git log` call (a >500-commit
+        // mirror import, not an ordinary push) lives inside
+        // recordPushedCommits itself (core/change-recorder.ts) — shared with
+        // the inbound mirror webhook, so both callers get the fix.
         await recordPushedCommits(
           db,
           gitBackend,

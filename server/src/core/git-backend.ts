@@ -296,12 +296,15 @@ export class GitBackend {
     }
   }
 
-  // Newest-first, matching GitHub's `GET .../commits` ordering.
-  async log(owner: string, name: string, ref: string, limit: number): Promise<CommitInfo[]> {
-    const { stdout } = await run(
-      ["log", `--max-count=${limit}`, "--format=%H%x00%an%x00%ae%x00%aI%x00%P%x00%B%x01", ref],
-      this.repoPath(owner, name),
-    );
+  // Newest-first, matching GitHub's `GET .../commits` ordering. `skip` pages
+  // through a range in `limit`-sized chunks (http-git/hooks.ts's post-receive
+  // recording) — plain `--max-count` alone would silently drop everything
+  // past the first page.
+  async log(owner: string, name: string, ref: string, limit: number, skip = 0): Promise<CommitInfo[]> {
+    const args = ["log", `--max-count=${limit}`];
+    if (skip > 0) args.push(`--skip=${skip}`);
+    args.push("--format=%H%x00%an%x00%ae%x00%aI%x00%P%x00%B%x01", ref);
+    const { stdout } = await run(args, this.repoPath(owner, name));
     return stdout
       .split("\x01")
       .filter((entry) => entry.trim())

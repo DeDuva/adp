@@ -32,6 +32,7 @@ async function createRepo(
     const [repo] = await tx.insert(repos).values({ owner, name, defaultBranch }).returning();
 
     await recordOperation(tx, {
+      repoId: repo!.id,
       actorId,
       verb: "repo.create",
       target: `${owner}/${name}`,
