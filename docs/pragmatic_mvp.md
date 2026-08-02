@@ -665,8 +665,10 @@ path, candidate sets), are now implemented and covered by real e2e tests — **M
 **Mirror mode** (bidirectional GitHub sync — ADP alongside a repo that stays on GitHub; the single
 biggest adoption lever and cheap: push mirror + webhook ingest). Outbound webhook emitter. `adp` CLI.
 `conformance/` published against `spec/`. GraphQL coverage widened from measured real traffic —
-which makes **API-traffic telemetry a named prerequisite**, not an optimization: nothing measures
-traffic today, and the same instrumentation feeds A2's endpoint-distribution research for free.
+which makes **API-traffic telemetry a named prerequisite**, not an optimization: nothing measured
+traffic before this. **✓ landed:** `core/telemetry.ts` + `GET /metrics` (Prometheus text format) —
+REST by route pattern/method/status, GraphQL by root field/operation type/outcome. The coverage
+*widening* itself still waits on real traffic accumulating against a running instance.
 Plus the trust-plane ramp (§1.5 item 4):
 - **Scanner-as-gate adapters:** any CLI scanner drops into the gate runner — SARIF/JSON out,
   DSSE evidence attestation in; **Wiz Code (`wizcli`) is the reference adapter** (SAST, SCA,
