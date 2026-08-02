@@ -1,6 +1,6 @@
 # Test environment automation
 
-**Status:** Phases 0, 1 and 2 landed; Phases 3–4 proposed.
+**Status:** Phases 0–3 landed; Phase 4 proposed.
 
 The goal, stated as a test: a tester with a **brand new Windows machine** installs WSL, clones
 this repo, runs one command, watches the full manual test suite execute, and runs one more
@@ -133,8 +133,9 @@ scripts/dev/down.sh               # compose down -v --remove-orphans, then verif
 scripts/dev/env.sh                # generate .env.test: random SIGNING_KEY, discovered port         [done]
 scripts/dev/bootstrap.sh          # bare Ubuntu -> provisioned (apt, docker.io, Node 22)       [done]
 .github/workflows/clean-room.yml  # bare-metal + full-loop jobs, so bootstrap cannot rot       [done]
-docs/manual-test-plan.md          # written first, then progressively emptied into tests      [Phase 3]
-server/test/acceptance/           # the §2.1 definition-of-done walkthrough, executable       [Phase 3]
+docs/manual-test-plan.md          # the walkthrough for a human, with per-step automation status [done]
+server/acceptance/run.sh          # the §2.1 definition-of-done walkthrough, executable          [done]
+server/acceptance/ui.spec.ts      # C9-C12 in a real browser, with screenshots                   [done]
 tools/win/Run-CleanTest.ps1       # import distro -> bootstrap -> test -> unregister          [Phase 4]
 ```
 
@@ -231,21 +232,80 @@ The general lesson, which applies to anything Phase 4 adds: **a background proce
 inherit the launching script's stdout.** Redirecting the command is not enough — the backgrounded
 shell holds the descriptor too.
 
-### Phase 3 — the manual suite, executable
+#### What a container could not tell us
 
-2–3 days. Write `docs/manual-test-plan.md` first — it does not exist today, which is why
-finding 9 exists — then automate it step by step.
+Containers were not enough. Running `bootstrap.sh` on a real WSL machine during Phase 3 — an
+Ubuntu 26.04 distro that had Docker Desktop installed and broken — surfaced four more bugs, none
+of which any container could have shown, because each depends on state a fresh image does not
+have:
 
-The spine is the §2.1 definition of done in `docs/pragmatic_mvp.md`: clone → `gh issue view` →
-edit → push → `gh pr create` → `gh pr checks` green → `gh pr view` shows a typed review →
-`gh pr merge` → a human opens the web UI and sees intent, signed evidence bundle, provenance and
-op log → clicks undo.
+| Bug | Why containers missed it |
+|---|---|
+| The engine install was skipped entirely: `docker_state` reported "client present, daemon unreachable", which the script read as "installed but stopped". The client was Docker Desktop's WSL-integration symlink into `/mnt/wsl/docker-desktop/`, a mount that exists only while Desktop runs — so it dangled, and the script tried to start a `dockerd` that was never installed. Now keyed on `dockerd`, the thing it is about to start. | A container has no Docker Desktop, so `docker` is either properly installed or absent — never a dangling symlink to a stopped Windows app |
+| `docker.io` installs the engine and CLI but **not** the compose plugin, so bootstrap reported `bootstrap: ok` on a machine where `make up` could not work. `doctor` caught it correctly, but bootstrap should not have got there. The compose check is now unconditional — a machine can have a healthy daemon and no plugin. | Every container run either skipped Docker or ran where compose was already present |
+| The group-add was keyed on `$USER` and a non-empty `$SUDO`, so `sudo bash bootstrap.sh` — the normal way a human runs it — skipped it entirely and installed a daemon the user then could not reach. Now uses `$SUDO_USER`. | Containers run as root, where there is no one to add and the branch is correctly skipped |
+| The daemon-failure hint named `/var/log/docker.log`; the script writes `/var/log/dockerd.log`. It now prints the log inline instead of naming it. | The hint only fires on failure, and the daemon always started in a privileged container |
 
-`server/conformance/run.sh` already covers roughly 60% of that against a real, pinned, unmodified
-`gh` binary. The gaps are: `gh pr checks` going green, the web UI assertions, and undo. Playwright
-with pinned browsers, headless, screenshots written to an artifacts directory.
+Two of these made bootstrap claim success on a machine it had left unusable. That is worse than
+failing, and it is the specific risk of testing a provisioning script only in the environment it
+was written against. **A container is a clean machine; a developer's laptop is a dirty one, and
+the dirt is the point.** Phase 4's disposable distro is the honest middle: fresh enough to be
+reproducible, real enough to be WSL.
 
-Closes finding 8 — the UI build stops being optional because a test depends on it.
+### Phase 3 — the manual suite, executable *(done)*
+
+`docs/manual-test-plan.md` is the §2.1 definition of done written out as steps a person can
+follow, with an honest per-step record of what is automated. `server/acceptance/run.sh` is the
+same walkthrough executable, and `server/acceptance/ui.spec.ts` drives the last steps in a real
+browser. `make acceptance` runs it; `make acceptance-ui` adds the browser.
+
+It is related to but deliberately separate from `conformance/run.sh`. That gate asks one narrow
+question — "does a real, unmodified `gh` work against this server?" — and stays narrow so it
+remains a stable compatibility signal. Acceptance asks the whole §2.1 question, including what
+`gh` cannot see: the evidence bundle, the operation log, and undo.
+
+Closes finding 8 — the UI build stops being optional, because `run.sh` fails outright if
+`server/web/dist` is missing rather than letting the server skip `/ui/*` with a log line.
+
+**Undo is performed, not simulated.** §2.1 says the human *clicks undo*, so with the UI enabled
+the Playwright spec clicks the button and `run.sh` asserts only the consequence — that `main`
+moved back server-side, checked with `git rev-parse` against the bare repo. An API response
+saying "ok" is not evidence that a merge was reverted.
+
+**Screenshots are the deliverable for what stays manual.** Whether the UI *reads well* is a human
+call that cannot be asserted. Five screenshots per run (`.adp-test/acceptance/`, uploaded as a CI
+artifact) reduce that call to a minute of looking rather than a full manual walkthrough.
+
+#### The one part of §2.1 that is not met
+
+"Watches `gh pr checks` go green" **does not work today**, and the acceptance suite says so out
+loud. The rollup *state* is real and correct — `statusCheckRollup { state }` resolves to `SUCCESS`
+and the land policy gates on it — but `gh pr checks` enumerates `contexts`, which
+`http-gql/resolvers.ts` returns as a deliberately empty connection. So `gh` reports "no checks
+reported" and exits non-zero however green the rollup is. Confirmed against the real pinned `gh`
+binary, not inferred.
+
+`run.sh` asserts **both** halves: the rollup is `SUCCESS`, *and* `gh pr checks` still fails in
+exactly this way. The second assertion is the useful one — when per-context detail gets
+implemented, that test fails and demands the gap be closed in `manual-test-plan.md` and the
+README's `gh` table, instead of passing quietly and leaving three documents describing a
+limitation that no longer exists.
+
+#### Bugs found by running it
+
+The suite was written by reading the code and then corrected by executing it — every one of these
+was a wrong guess about a shape never observed:
+
+- **`Repository.object(oid:)` has no resolver.** The rollup check queried it and got `null`, which
+  would have read as "the gate never landed" forever. Commits are reachable through
+  `PullRequest.commits` — the same traversal `gh pr checks` performs.
+- **`Content-Type: application/json` on a bodyless POST** made Fastify reject every undo with a
+  400 (`FST_ERR_CTP_EMPTY_JSON_BODY`). `server/web/src/api.ts` already sets the header only when
+  there is a body; the shell helper now does the same.
+- **A Playwright selector matched a form control instead of data.** `getByText("issue.create")`
+  resolved to the hidden `<option>` in the op-log verb filter rather than the log row, failing with
+  "unexpected value: hidden". Now scoped to `.list-row`. A test that asserts on a filter dropdown
+  rather than on the rows it filters would have passed against an empty log.
 
 ### Phase 4 — the Windows entrypoint
 
@@ -266,10 +326,18 @@ bash scripts/dev/bootstrap.sh                        # toolchain, Docker, depend
 Then the loop, on any machine:
 
 ```bash
-make doctor     # can this machine run the suite at all?
-make up         # ephemeral Postgres on a discovered port, writes .env.test
-make test-all   # typecheck, build, migrate, the full suite, web build, gh conformance gate
-make down       # tear down, then assert the machine is clean
+make doctor         # can this machine run the suite at all?
+make up             # ephemeral Postgres on a discovered port, writes .env.test
+make test-all       # typecheck, build, migrate, suite, web, conformance, acceptance
+make acceptance-ui  # the §2.1 walkthrough with the web UI in a real browser
+make down           # tear down, then assert the machine is clean
+```
+
+`make acceptance-ui` needs Chromium's system libraries, which require root. They are installed
+separately and once, so that no ordinary target can trigger a password prompt half way through:
+
+```bash
+sudo npx --prefix server playwright install-deps chromium
 ```
 
 `make down` ends by running `verify-clean.sh`, so teardown is asserted rather than assumed. A

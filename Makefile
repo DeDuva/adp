@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor clean-check up down down-all nuke deps test test-unit test-all conformance web
+.PHONY: help bootstrap doctor clean-check up down down-all nuke deps test test-unit test-all conformance acceptance acceptance-ui browser browser-deps web
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -65,11 +65,27 @@ conformance: ## The gh gate: real, unmodified gh against a live server
 	$(REQUIRE_ENV)
 	@$(LOAD_ENV) bash server/conformance/run.sh
 
+acceptance: ## The §2.1 definition-of-done walkthrough (docs/manual-test-plan.md)
+	$(REQUIRE_ENV)
+	@$(LOAD_ENV) bash server/acceptance/run.sh
+
+acceptance-ui: ## ...including the web UI, driven by a real browser
+	$(REQUIRE_ENV)
+	@$(MAKE) web
+	@$(MAKE) browser
+	@$(LOAD_ENV) ADP_ACCEPTANCE_UI=1 bash server/acceptance/run.sh
+
+browser: ## Download the pinned Chromium build Playwright drives
+	@npx --prefix server playwright install chromium
+
+browser-deps: ## Install Chromium's system libraries (needs root)
+	npx --prefix server playwright install-deps chromium
+
 web: ## Typecheck and build the supervision UI
 	npm run typecheck --prefix server/web
 	npm run build --prefix server/web
 
-test-all: ## Everything CI runs: build, full suite, web, conformance gate
+test-all: ## Everything CI runs: build, full suite, web, conformance + acceptance
 	$(REQUIRE_ENV)
 	@$(LOAD_ENV) npm run typecheck --prefix server
 	@$(LOAD_ENV) npm run build --prefix server
@@ -77,6 +93,7 @@ test-all: ## Everything CI runs: build, full suite, web, conformance gate
 	@$(LOAD_ENV) npm test --prefix server
 	@$(MAKE) web
 	@$(LOAD_ENV) bash server/conformance/run.sh
+	@$(LOAD_ENV) bash server/acceptance/run.sh
 
 nuke: ## Full teardown: every stack, all generated files, deps and caches
 	-@bash scripts/dev/down.sh --all

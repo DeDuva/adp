@@ -132,11 +132,21 @@ else
   case $docker_status in
     0) ok "docker daemon already reachable" ;;
     1|2)
-      if [ "$docker_status" = "2" ]; then
-        # Distribution docker.io, not Docker Desktop: it lives inside this
-        # machine, starts when this script says so, and dies with it. That is
-        # what makes a disposable WSL distro a real teardown boundary rather
-        # than a hope (docs/test-environment-automation.md §3).
+      # Install when the *daemon* is missing — never infer that from the client.
+      #
+      # On a WSL distro with Docker Desktop integration enabled, /usr/bin/docker
+      # is a symlink into /mnt/wsl/docker-desktop/, a mount that exists only
+      # while Docker Desktop is running. Stop Desktop and the client is still on
+      # PATH but the symlink dangles, so "client present, daemon unreachable"
+      # looks identical to "engine installed but stopped" — and this branch went
+      # on to start a dockerd that had never been installed. Observed on a real
+      # machine after Docker Desktop failed to launch.
+      #
+      # Distribution docker.io, not Docker Desktop: it lives inside this
+      # machine, starts when this script says so, and dies with it. That is what
+      # makes a disposable WSL distro a real teardown boundary rather than a
+      # hope (docs/test-environment-automation.md §3).
+      if ! have dockerd; then
         apt_install docker.io
         ok "installed docker.io"
       fi
@@ -163,18 +173,60 @@ else
         ok "docker daemon reachable"
       else
         fail "docker daemon did not come up"
-        hint "in WSL, check /var/log/docker.log; some kernels need iptables-legacy:"
+        # Show the log rather than naming it — and name it correctly. This
+        # printed the wrong path (docker.log, not dockerd.log) the first time it
+        # actually fired, which is exactly when a wrong hint costs the most.
+        for log in /var/log/dockerd.log /var/log/docker.log; do
+          if [ -s "$log" ]; then
+            hint "last lines of $log:"
+            $SUDO tail -n 15 "$log" 2>/dev/null | sed 's/^/        /'
+            break
+          fi
+        done
+        hint "some WSL kernels need iptables-legacy:"
         hint "  sudo update-alternatives --set iptables /usr/sbin/iptables-legacy"
         exit 1
       fi
-      # Without this, every docker call needs sudo. Takes effect on the next
-      # login, so this run may still be root-only — deliberately not fatal.
-      if [ -n "${SUDO}" ] && ! id -nG "$USER" | tr ' ' '\n' | grep -qx docker; then
-        $SUDO usermod -aG docker "$USER" || true
-        warn "added $USER to the docker group — log out and back in for it to apply"
+      # Without this, every docker call needs sudo.
+      #
+      # The user to add is whoever will actually run `docker` afterwards, which
+      # is NOT `$USER` when this script was invoked as `sudo bash bootstrap.sh`
+      # — sudo sets USER=root, so the earlier version keyed on `$USER` and
+      # `$SUDO` being non-empty skipped this branch entirely and left the human
+      # unable to use the daemon it had just installed. `$SUDO_USER` is the
+      # invoking account and is only set under sudo, so this covers all three
+      # cases: sudo (use SUDO_USER), plain user with passwordless sudo (USER),
+      # and a genuine root shell such as a container (no one to add).
+      TARGET_USER="${SUDO_USER:-${USER:-}}"
+      if [ -n "$TARGET_USER" ] && [ "$TARGET_USER" != "root" ] \
+         && ! id -nG "$TARGET_USER" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
+        $SUDO usermod -aG docker "$TARGET_USER" || true
+        warn "added $TARGET_USER to the docker group — not active in this shell yet"
+        hint "start a new login shell, or run: newgrp docker"
+        hint "in WSL, 'wsl --shutdown' from Windows then reopening the terminal also works"
       fi
       ;;
   esac
+
+  # The compose plugin ships separately from the engine and is checked
+  # unconditionally, not inside the install branch above: a machine can have a
+  # perfectly working daemon and no `docker compose` at all. Ubuntu's docker.io
+  # is exactly that case — it installs the engine and CLI but not the plugin, so
+  # bootstrap reported success and `make up` then failed on the first compose
+  # call. deploy/docker-compose.test.yml needs v2 (the plugin), never the
+  # long-deprecated standalone docker-compose v1.
+  if docker compose version >/dev/null 2>&1; then
+    ok "docker compose $(docker compose version --short 2>/dev/null)"
+  else
+    apt_install docker-compose-v2
+    if docker compose version >/dev/null 2>&1; then
+      ok "installed docker compose $(docker compose version --short 2>/dev/null)"
+    else
+      fail "'docker compose' still unavailable after installing docker-compose-v2"
+      hint "on Debian or a non-distro engine, the package is 'docker-compose-plugin'"
+      exit 1
+    fi
+  fi
 fi
 
 section "project dependencies"
