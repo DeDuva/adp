@@ -143,6 +143,7 @@ export async function recordSbomEvidence(
       .returning();
 
     await recordOperation(tx, {
+      repoId: repo.id,
       actorId: reporterId,
       verb: "sbom.generate",
       target: `${repo.owner}/${repo.name}@${sha}#sbom`,

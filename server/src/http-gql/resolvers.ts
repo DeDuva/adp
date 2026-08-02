@@ -819,12 +819,15 @@ export function createResolvers(
 
         if (sbom) {
           try {
-            await recordSbomEvidence(ctx.db, gitBackend, sbom.signer, sbom.publicUrl, repo, result.sha, identity.identityId);
+            // Keyed by the PR's head sha, not the resulting merge commit —
+            // same convention every other gate result uses (land-policy.ts's
+            // gates_green looks up by proposal.headSha too).
+            await recordSbomEvidence(ctx.db, gitBackend, sbom.signer, sbom.publicUrl, repo, proposal.headSha, identity.identityId);
           } catch (err) {
             // Bookkeeping about a merge that already succeeded — logged,
             // doesn't fail the mutation. See proposals.ts's REST merge
             // route for the same call and the same reasoning.
-            console.error(`SBOM generation for ${repo.owner}/${repo.name}@${result.sha} failed:`, err);
+            console.error(`SBOM generation for ${repo.owner}/${repo.name}@${proposal.headSha} failed:`, err);
           }
         }
 

@@ -424,11 +424,15 @@ export function registerProposalRoutes(
 
       if (sbom) {
         try {
-          await recordSbomEvidence(db, gitBackend, sbom.signer, sbom.publicUrl, repo, result.sha, req.identity!.identityId);
+          // Keyed by the PR's head sha, not the resulting merge commit —
+          // same convention every other gate result uses (land-policy.ts's
+          // gates_green looks up by proposal.headSha too), since that's the
+          // commit whose tree the SBOM actually describes.
+          await recordSbomEvidence(db, gitBackend, sbom.signer, sbom.publicUrl, repo, proposal.headSha, req.identity!.identityId);
         } catch (err) {
           // Bookkeeping about a merge that already succeeded, same as
           // post-receive's auto-record — log it, don't fail the response.
-          req.log.error(`SBOM generation for ${owner}/${repoName}@${result.sha} failed: ${err}`);
+          req.log.error(`SBOM generation for ${owner}/${repoName}@${proposal.headSha} failed: ${err}`);
         }
       }
 
