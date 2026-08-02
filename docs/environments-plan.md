@@ -24,11 +24,17 @@ that becomes pressing at a different time. The proposal is therefore **additive*
 single-VM production posture, and add environments below it as specific milestones create the
 need.
 
-**OPEN — cloud provider.** §4.5 names Hetzner and EC2; the ask here names GCP. These should not
-stay split. GCP is a reasonable choice (Cloud SQL, Artifact Registry, and a clean OIDC path from
-GitHub Actions with no long-lived keys), but "one VM on Hetzner for prod, GCP for everything else"
-is two providers to learn and pay for. Decide once, and update §4.5 to match, rather than letting
-the documents drift.
+**Provider: GCP — decided 2026-08-01.** One provider for every rung, production included. Two
+providers would mean two billing relationships, two IAM models and two sets of operational habits,
+to save money on one box. §4.5 has been updated to match, so the documents no longer disagree.
+
+What GCP gives this project specifically: Cloud SQL for Postgres with PITR (M4's restore drill),
+Cloud Storage for evidence artifacts, Artifact Registry for images, Secret Manager for
+`SIGNING_KEY`, and — the one that is awkward to retrofit — **workload identity federation**, so
+GitHub Actions authenticates by OIDC with no long-lived service-account key in a secret anywhere.
+
+The cost is that GCP list pricing for a given shape is materially higher than the Hetzner figure
+§4.5 was written against. That is a real trade, not a rounding error; see the note in §4.5.
 
 ---
 
@@ -147,8 +153,19 @@ construction.
 ## 5. Immediate next step
 
 Nothing needs building until M2 begins. When it does, the first task is a public HTTPS endpoint —
-which means the dev rung, which means answering the **OPEN** questions above first:
+which means the dev rung.
 
-1. One cloud provider, or GCP for dev and Hetzner/EC2 for prod? Update §4.5 either way.
-2. `SIGNING_KEY` management for an instance that outlives a single run.
-3. Who owns the dev instance, and what condition retires it.
+**Settled:** the provider is GCP, for every rung (§1).
+
+**Still OPEN, and worth answering before the first long-lived instance rather than after:**
+
+1. **`SIGNING_KEY` management.** It is the root of the provenance claim. Local runs mint a random
+   one per run, which is right there and wrong for anything long-lived. Secret Manager is the
+   obvious home; the harder half is what happens to signatures made with a retired key, and that
+   question belongs to the trust model, not to operations.
+2. **Who owns the dev instance, and what condition retires it.** An idle VM bills the same as a
+   busy one.
+
+**And one to do first, before provisioning anything:** price the shape in §4.5. That section
+carried a Hetzner-era "~$100/month" that GCP will not honour, and the sizing predates knowing what
+the MVP actually needs — it has one user.
