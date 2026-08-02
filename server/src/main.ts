@@ -92,7 +92,7 @@ async function main() {
   registerRepoRoutes(app, db, gitBackend);
   registerIssueRoutes(app, db);
   registerChangeRoutes(app, db, gitBackend, signer);
-  registerProposalRoutes(app, db, gitBackend, instanceFloor);
+  registerProposalRoutes(app, db, gitBackend, instanceFloor, { signer, publicUrl: config.PUBLIC_URL });
   registerReviewRoutes(app, db);
   registerGitDataRoutes(app, db, gitBackend);
   registerHookRoutes(app, db, gitBackend, signer);
@@ -107,7 +107,7 @@ async function main() {
   registerWebhookRoutes(app, db);
 
   const gqlSchema = loadGitHubSchema();
-  attachResolvers(gqlSchema, createResolvers(gitBackend, instanceFloor));
+  attachResolvers(gqlSchema, createResolvers(gitBackend, instanceFloor, { signer, publicUrl: config.PUBLIC_URL }));
   registerGraphQLRoute(app, gqlSchema, db);
 
   registerGitHttpRoutes(app, gitBackend, config.GIT_MAX_PACK_BYTES);

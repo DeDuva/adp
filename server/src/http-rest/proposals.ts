@@ -3,12 +3,14 @@ import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
+import type { Signer } from "../core/signing.js";
 import { proposals, changes, candidateSets } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepo } from "../core/repos-lookup.js";
 import { evaluateLandPolicy } from "../core/land-policy.js";
 import type { LandRequirement } from "../core/repo-policy.js";
+import { recordSbomEvidence } from "../core/sbom.js";
 import { emitWebhookEvent } from "../core/webhooks.js";
 import { performMerge } from "../core/merge.js";
 
@@ -50,6 +52,11 @@ export function registerProposalRoutes(
   db: Db,
   gitBackend: GitBackend,
   instanceFloor: LandRequirement[] = [],
+  // Optional: SBOM-per-land (docs/pragmatic_mvp.md M2) needs a signer and a
+  // public URL for the DSSE statement's subject, same as gates.ts — kept
+  // optional rather than required so every existing test app that doesn't
+  // care about SBOMs doesn't have to start passing one.
+  sbom?: { signer: Signer; publicUrl: string },
 ) {
   app.post(
     "/api/v3/repos/:owner/:repo/pulls",
@@ -414,6 +421,20 @@ export function registerProposalRoutes(
 
         return merged!;
       });
+
+      if (sbom) {
+        try {
+          // Keyed by the PR's head sha, not the resulting merge commit —
+          // same convention every other gate result uses (land-policy.ts's
+          // gates_green looks up by proposal.headSha too), since that's the
+          // commit whose tree the SBOM actually describes.
+          await recordSbomEvidence(db, gitBackend, sbom.signer, sbom.publicUrl, repo, proposal.headSha, req.identity!.identityId);
+        } catch (err) {
+          // Bookkeeping about a merge that already succeeded, same as
+          // post-receive's auto-record — log it, don't fail the response.
+          req.log.error(`SBOM generation for ${owner}/${repoName}@${proposal.headSha} failed: ${err}`);
+        }
+      }
 
       emitWebhookEvent(
         db,

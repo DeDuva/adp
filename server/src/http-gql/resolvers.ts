@@ -14,6 +14,8 @@ import { buildConnection, type ConnectionArgs } from "./connections.js";
 import type { GqlContext } from "./context.js";
 import type { ResolverMap } from "./attach-resolvers.js";
 import type { GitBackend } from "../core/git-backend.js";
+import type { Signer } from "../core/signing.js";
+import { recordSbomEvidence } from "../core/sbom.js";
 
 type Repo = typeof repos.$inferSelect;
 type IssueRow = typeof issues.$inferSelect;
@@ -239,7 +241,14 @@ async function resolveAuthor(ctx: GqlContext, authorId: string) {
   return identity ? shapeUser(identity) : null;
 }
 
-export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequirement[] = []): ResolverMap {
+export function createResolvers(
+  gitBackend: GitBackend,
+  instanceFloor: LandRequirement[] = [],
+  // Optional, same reasoning as proposals.ts's registerProposalRoutes: SBOM
+  // per land (docs/pragmatic_mvp.md M2) needs a signer + public URL, kept
+  // optional so existing callers/tests that don't care don't need one.
+  sbom?: { signer: Signer; publicUrl: string },
+): ResolverMap {
   return {
     Query: {
       repository: async (_root, args: { owner: string; name: string }, ctx: GqlContext) => {
@@ -807,6 +816,20 @@ export function createResolvers(gitBackend: GitBackend, instanceFloor: LandRequi
 
           return merged!;
         });
+
+        if (sbom) {
+          try {
+            // Keyed by the PR's head sha, not the resulting merge commit —
+            // same convention every other gate result uses (land-policy.ts's
+            // gates_green looks up by proposal.headSha too).
+            await recordSbomEvidence(ctx.db, gitBackend, sbom.signer, sbom.publicUrl, repo, proposal.headSha, identity.identityId);
+          } catch (err) {
+            // Bookkeeping about a merge that already succeeded — logged,
+            // doesn't fail the mutation. See proposals.ts's REST merge
+            // route for the same call and the same reasoning.
+            console.error(`SBOM generation for ${repo.owner}/${repo.name}@${proposal.headSha} failed:`, err);
+          }
+        }
 
         emitWebhookEvent(
           ctx.db,
