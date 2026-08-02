@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { skipWithoutDb } from "./require-db.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -26,7 +27,7 @@ const execFileAsync = promisify(execFile);
 // `git` binary end to end: these hooks only fire because GitBackend writes
 // real hooks/pre-receive|post-receive scripts into the bare repo, invoked by
 // `git receive-pack` itself during a real `git push`.
-describe.skipIf(!process.env.DATABASE_URL)("M1c: receive-path hooks", () => {
+describe.skipIf(skipWithoutDb)("M1c: receive-path hooks", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { skipWithoutDb } from "./require-db.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -35,7 +36,7 @@ interface GraphQLResponse<T = unknown> {
 // issue create/close via GraphQL — those exist over REST already), and
 // running the actual `gh` binary against this — that's the record-replay
 // conformance suite, a separate follow-up per docs/pragmatic_mvp.md §2.4.
-describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
+describe.skipIf(skipWithoutDb)("M1b GraphQL: read path", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;
@@ -254,7 +255,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M1b GraphQL: read path", () => {
 // mutations `gh issue create/close/comment` and `gh pr create/merge/close/
 // reopen/ready/review` send. Own repo/fixtures so it doesn't interleave with
 // the read-path suite's assertions above.
-describe.skipIf(!process.env.DATABASE_URL)("M1b′ GraphQL: mutations", () => {
+describe.skipIf(skipWithoutDb)("M1b′ GraphQL: mutations", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { skipWithoutDb } from "./require-db.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -22,7 +23,7 @@ const execFileAsync = promisify(execFile);
 // plane, "no GitHub analogue"). No land-policy floor here (empty instance
 // floor) — this suite is about the op log and undo mechanics, not policy,
 // which is already covered by e2e-gates.test.ts.
-describe.skipIf(!process.env.DATABASE_URL)("M1c: operations log + undo", () => {
+describe.skipIf(skipWithoutDb)("M1c: operations log + undo", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;

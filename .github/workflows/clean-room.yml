@@ -1,0 +1,111 @@
+# The clean-room gate: prove that a machine with nothing on it can be taken to
+# a full passing test run, and back to nothing, without a human.
+#
+# This is deliberately NOT ci.yml. ci.yml optimizes for fast feedback — it uses
+# actions/setup-node, a Postgres service container, and cached dependencies,
+# none of which a tester on a new laptop has. That makes it a poor witness for
+# "can someone actually set this up?", which is the question
+# docs/test-environment-automation.md exists to answer.
+#
+# So nothing here is provided by the runner image where it can be avoided:
+# scripts/dev/bootstrap.sh installs the toolchain, scripts/dev/up.sh creates the
+# database, and scripts/dev/verify-clean.sh --strict asserts the machine is
+# clean afterwards. If bootstrap.sh rots, this fails — which is the entire point
+# of running it on every push rather than trusting it.
+name: Clean room
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Does bootstrap.sh really work on a bare system? A GitHub runner image is
+  # far from bare — it ships Node, Docker, build tools — so provisioning bugs
+  # hide there. A stock ubuntu container has none of that.
+  bare-metal:
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    steps:
+      # The irreducible pre-clone minimum: you cannot check out a git repo
+      # without git. Everything past this point is bootstrap.sh's job, and
+      # keeping this step to exactly these three packages is what stops the
+      # workflow from quietly provisioning the thing under test.
+      - name: Install the pre-clone minimum
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            git curl ca-certificates
+
+      - uses: actions/checkout@v4
+
+      # No --skip-deps: installing dependencies on a machine with no Node yet is
+      # the step most likely to break, so it is the step most worth testing.
+      # --skip-docker because Docker-in-Docker inside a job container is a
+      # different problem than the one this job is asking about; the clean-room
+      # job below covers the Docker path.
+      - name: Bootstrap
+        run: bash scripts/dev/bootstrap.sh --skip-docker
+
+      - name: Verify the toolchain is what we asked for
+        run: |
+          set -eux
+          node -v | grep -E '^v22\.'
+          test -x "$(git --exec-path)/git-http-backend"
+          make --version >/dev/null
+
+      # Unit and integration tiers only — this job has no database by design.
+      # require-db.ts lets these skip; the clean-room job enforces the rest.
+      - name: Unit and integration tiers
+        run: make test-unit
+
+      # Idempotency is a real requirement: a tester who re-runs bootstrap after
+      # a failure must not get a different machine. Second run must be a no-op.
+      - name: Bootstrap is idempotent
+        run: bash scripts/dev/bootstrap.sh --skip-docker
+
+  # The full loop, on a runner that has a working Docker daemon: bring the
+  # dependencies up, run everything, tear it down, and assert nothing survived.
+  clean-room:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Deliberately no actions/setup-node and no actions/cache. The runner
+      # image's Node is the wrong major; bootstrap.sh replacing it is exactly
+      # the behavior under test.
+      - name: Bootstrap
+        run: bash scripts/dev/bootstrap.sh
+
+      - name: Doctor
+        run: make doctor
+
+      # Before, not just after: a run that inherits leftovers reports a wrong
+      # answer rather than an obviously broken one.
+      - name: Assert a clean starting state
+        run: bash scripts/dev/verify-clean.sh --strict
+
+      - name: Bring up the ephemeral dependency stack
+        run: make up
+
+      - name: Full suite, web build, and the gh conformance gate
+        run: make test-all
+
+      - name: Tear down
+        run: make down
+
+      # The assertion this whole workflow exists for: after teardown, no
+      # containers, volumes, networks, server processes, temp directories or
+      # generated files remain. --strict so a leak fails the build instead of
+      # printing a warning nobody reads.
+      - name: Assert the machine is clean
+        run: bash scripts/dev/verify-clean.sh --strict
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          echo "== containers =="; docker ps -a || true
+          echo "== volumes ==";    docker volume ls || true
+          echo "== networks ==";   docker network ls || true
+          echo "== verify-clean =="; bash scripts/dev/verify-clean.sh || true

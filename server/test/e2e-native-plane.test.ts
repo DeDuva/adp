@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { skipWithoutDb } from "./require-db.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -24,7 +25,7 @@ const execFileAsync = promisify(execFile);
 // M1c native plane, remaining slices: workspaces (a branch with lifecycle
 // metadata, docs/pragmatic_mvp.md §2.2) and adp_evidence_get's REST backing
 // (the consolidated signed-change + gate-results view).
-describe.skipIf(!process.env.DATABASE_URL)("M1c: workspaces + evidence bundle", () => {
+describe.skipIf(skipWithoutDb)("M1c: workspaces + evidence bundle", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;

@@ -227,9 +227,21 @@ npm run migrate
 npm run dev
 ```
 
+On a machine that has never seen this project, one command provisions it and one loop runs
+everything against a throwaway database that is destroyed afterwards:
+
+```bash
+bash scripts/dev/bootstrap.sh          # toolchain, Docker, dependencies
+make up && make test-all && make down  # bring up, run, tear down, assert clean
+```
+
+`make down` asserts the machine is clean rather than assuming it — no leftover containers, volumes,
+server processes or temp directories.
+
 CI runs typecheck, build, migrations against a fresh Postgres, the full unit/integration/e2e suite —
 including a real clone → push → propose → review → merge cycle — and the `gh` conformance gate, on
-every pull request.
+every pull request. A separate clean-room workflow provisions a bare container from scratch and runs
+the same loop, so the "brand new machine" path stays verified rather than assumed.
 
 ---
 
@@ -240,6 +252,7 @@ every pull request.
 | [`docs/agent-native-vcs-brief-v5.md`](docs/agent-native-vcs-brief-v5.md) | The thesis: the case for a neutral agent-native substrate — the GitHub interface question, the competitive landscape, architectural tradeoffs, the agent-harness boundary, and enterprise/supply-chain controls. Its appendix states the open decisions and names the evidence that would change each position. |
 | [`docs/pragmatic_mvp.md`](docs/pragmatic_mvp.md) | The plan of record: scope, the exact GitHub surface that ships, the cut list and why each cut is defensible, and the status ledger. |
 | [`docs/server-stack-tutorial.md`](docs/server-stack-tutorial.md) | The server stack explained piece by piece, no prior familiarity assumed. |
+| [`docs/test-environment-automation.md`](docs/test-environment-automation.md) | How the test environment is brought up, run, and torn down reproducibly — the preflight and leak-detection tooling, the ephemeral dependency stack, and the bare-metal bootstrap. |
 
 ---
 
