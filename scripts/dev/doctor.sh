@@ -99,6 +99,12 @@ else
   hint "web UI checks would pass against a UI that was never built"
   hint "npm ci --prefix server/web"
 fi
+if [ -d "$ADP_REPO_ROOT/cli/node_modules" ]; then
+  ok "cli/node_modules present"
+else
+  warn "cli/node_modules missing — 'make cli' (part of test-all) will fail"
+  hint "npm ci --prefix cli"
+fi
 
 section "database"
 if [ -n "${DATABASE_URL:-}" ]; then
