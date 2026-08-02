@@ -290,6 +290,15 @@ Branch protection, code scanning, and Dependabot stay unimplemented *as API surf
 capabilities arrive natively through the trust plane — land-policy floor, push protection,
 dependency admission, scanner adapters (§1.5) — not as endpoint emulation.
 
+**Actions is a special case of that distinction, and the most commonly misread one.** "Not
+implemented" refers to the *API surface* (`/actions/runs`, `/actions/workflows`), not to the
+capability. In mirror mode (M2) the repo stays on GitHub, so **GitHub Actions keeps running on
+GitHub's runners, unchanged**, and its results arrive in ADP as evidence through webhook ingest —
+`check_run`, `workflow_run`, `status`. That is full fidelity for every Actions feature there is
+(marketplace actions, matrix, self-hosted runners, OIDC), for free, because none of it was
+reimplemented. See §2.5 and the M2 milestone for the three distinct things "support Actions" can
+mean and which of them ADP does.
+
 ### Tier 3 — GraphQL at `/api/graphql` (~14 operations)
 
 This is the MVP's single largest new-risk item, so the approach matters more than the list.
@@ -348,7 +357,7 @@ adp_candidates_open / adp_candidates_select    # N solutions, one intent
 | Structural / AST merge | A6 is right: the evidence gate means merge errors need catching, not preventing. |
 | Speculative merge batching | Solves throughput we won't have. Serial land + re-verify-before-land is ~200 lines and captures the value. |
 | Hermetic incremental build graph | Bazel exists. Run declared commands in a container. |
-| Actions / workflow engine | Gates are `image + commands` in `adp.yaml`. An Actions clone is a multi-year trap. |
+| Actions / workflow engine | Gates are `image + commands` in `adp.yaml`. An Actions clone is a multi-year trap. **And mirror mode means it is not a gap:** the repo stays on GitHub, GitHub runs the workflows, and the results land in ADP as evidence via webhook ingest — better fidelity than any reimplementation, since it *is* GitHub. What is genuinely cut is ADP *executing* workflow YAML, which nothing in the loop needs. |
 | Orgs, teams, per-path ACLs, SSO/SCIM | Token-scoped auth covers MVP. Enterprise identity is an M4 conversation with a real customer. |
 | Releases, packages, wikis, projects, discussions, gists, notifications | Not on the loop. |
 | Code scanning / Dependabot as *GitHub API emulation* | The capabilities ship natively instead — push protection at the receive path (M1c), dependency admission gates and scanner-as-gate adapters (M2) — per the trust plane (§1.5, brief v5 §f). First-party scanners are never built; the bundled secret engine is the only in-tree detector. |
@@ -695,6 +704,34 @@ and file references in the readiness review §2):
 - **Land-policy TOCTOU decision:** policy is evaluated before the ref CAS, not atomically with it;
   either re-check at the CAS point or document the accepted window in `spec/`.
 
+**What mirror mode means for GitHub Actions** (clarified 2026-08-02 — this is the most frequently
+misread part of the milestone). "Support Actions" means three different things with three different
+answers:
+
+| Meaning | Answer | Why |
+|---|---|---|
+| Actions runs on GitHub; results flow into ADP as evidence | **Yes — every feature, for free** | The repo stays on GitHub. GitHub's runners execute the workflows exactly as before; ADP ingests `check_run`/`workflow_run`/`status` webhooks into `gate_results`. Marketplace actions, matrix builds, self-hosted runners and OIDC all work because none of them were touched |
+| ADP serves the Actions *API* (`gh run list`, `gh run view`) | **No — `404` today** | §2.4 "Not implemented". See the candidate below |
+| ADP executes workflow YAML itself | **Never** | §2.5 cut list. An Actions clone is a multi-year trap |
+
+The first row is why mirror mode is described above as *the single biggest adoption lever and cheap*.
+It is also a cost argument: the expensive part of CI stays on GitHub's runners and never appears on
+an ADP bill — see [`hosting-cost-estimate.md`](hosting-cost-estimate.md).
+
+**Runners required for Actions: none.** ADP's gate runner (§4.2) is a different component for a
+different job — `adp.yaml` `image + commands`, explicitly *"not a workflow engine"* — serving repos
+that are **not** on GitHub, plus the scanner adapters above. At M2 its entire load is scanners over
+changed files: bursty and small, nothing resembling a CI matrix.
+
+**Candidate, not committed scope — read-only Actions passthrough.** In mirror mode the upstream repo
+is on GitHub by definition, so ADP could proxy read-only Actions endpoints upstream instead of
+returning `404`, making `gh run list` and `gh run view` work against `GH_HOST=adp` for mirrored
+repos. This is a passthrough, not an implementation: it adds no workflow engine, is mirror-mode-only
+by construction, and closes a visible hole in the §2.1 "unmodified agent, zero config" success test —
+an agent that can see its own CI results is the whole point of the evidence plane. **OPEN:** whether
+it lands in M2 or waits, and whether proxied results should also be recorded as evidence or merely
+relayed (recording them twice — once via webhook, once via proxy — needs a dedup story).
+
 **At kickoff:** resolve the two open questions in [`environments-plan.md`](environments-plan.md) §5
 (SIGNING_KEY custody including the retired-key trust model; dev-instance ownership and retirement
 condition) — the dev environment is forced by M2's inbound webhooks, so these block the milestone's
@@ -820,9 +857,27 @@ node_ids          (global-id mapping for GraphQL Node resolution)
 
 ## 4.5 Hosting
 
-**MVP: one VM + docker compose, on GCP** *(provider decided 2026-08-01)*. A GCE instance in the
-`n2`/`c3-standard` family, 8–16 vCPU, 64 GB, one SSD persistent disk. Caddy in front for automatic
-TLS. Compose runs server, runner, Postgres, MinIO, Caddy.
+**MVP: one VM + docker compose, on GCP** *(provider decided 2026-08-01; sized and priced
+2026-08-02)*. A GCE **`n2-standard-4` — 4 vCPU, 16 GB** — with one balanced persistent disk
+(200 GB), at **~$113/month** effective after automatic sustained-use discount, ~$125–165 all-in with
+disk, address and egress. Caddy in front for automatic TLS. Compose runs server, runner, Postgres,
+MinIO, Caddy.
+
+*This replaces an earlier "`n2`/`c3-standard`, 8–16 vCPU, 64 GB", which was never measured against a
+workload and priced at $410–590/month.* Full derivation, the AWS comparison and the levers are in
+[`hosting-cost-estimate.md`](hosting-cost-estimate.md). Three things that estimate settled:
+
+- **Right-sizing is the entire saving** — $270–450/month, dwarfing every discount mechanism. The
+  scale envelope this has to serve is stated in [`m2-readiness-review.md`](m2-readiness-review.md)
+  and is explicitly not Chromium-class; sizing should match that envelope, not the aspiration.
+  Revisit at M4 *with measurements*, which is the same instruction as before but now with a number
+  to beat.
+- **N2 over E2, deliberately.** `e2-standard-4` lists 31% cheaper, but sustained-use discounts apply
+  to N2 and not to E2/C3/C4/N4/N4A, which cuts the real gap to ~14% — and N2 buys non-shared CPU,
+  which matters because git pack generation is this system's CPU spike.
+- **No committed-use discounts yet.** They are worth 37%/55%, but the shape changes at M4 when
+  runners split off (see the trigger note below) and Postgres becomes managed. A one-year commitment
+  on the wrong shape is worse than list.
 
 Defense: the workload is stateful (git repos on disk), needs a Docker socket for gate execution, and
 has one user (us) for weeks. Kubernetes, Cloud Run, and serverless all fight at least one of those —
@@ -830,16 +885,37 @@ the shape of the answer is unchanged by the choice of provider. It deploys with
 `git pull && docker compose up -d` and rebuilds from `deploy/` in ten minutes. Revisit at M4, not
 before.
 
-**One number needs re-checking.** This section previously read "~$100/month", which was a Hetzner
-figure. GCP list pricing for the same shape is several times that. The levers are a smaller initial
-instance (the MVP has one user), committed-use discounts, and not running the box when nobody is
-using it. Price it before provisioning rather than inheriting a stale number — and note that
-choosing one provider for every rung was a deliberate trade of money for operational simplicity,
-argued in [`environments-plan.md`](environments-plan.md).
+**On the provider trade.** Choosing one provider for every rung was a deliberate trade of money for
+operational simplicity, argued in [`environments-plan.md`](environments-plan.md). The 2026-08-02
+pricing check quantified it and the trade holds comfortably: like-for-like AWS lands **within ~10%
+in either direction** — `c3-standard-8` and `m7i.2xlarge` are both $0.4032/hr, to the cent — with
+GCP ahead on sustained-use discounts, Arm and managed Postgres, and AWS ahead on block storage and
+egress. A 10% compute delta does not buy back two billing relationships, two IAM models and two sets
+of operational habits. **The provider decision survived the pricing check; the sizing did not.**
 
 **TLS and hostname matter more than usual here:** `gh` only takes the GHES `/api/v3` + `/api/graphql`
 path for a non-`github.com` host, and expects HTTPS. A real DNS name with a real certificate is a
 week-1 requirement, not a polish item.
+
+**When the runner host must split from the API host — the trigger is a capability, not a milestone**
+*(added 2026-08-02)*. The M4 posture below puts gate runners on a separate pool, which is right but
+dates the split to the wrong event. The precise trigger is **the change that first makes `adp.yaml`
+executable** — today `server/src/core/repo-policy.ts` parses only gate *names* and land
+requirements, there is no `image` or `run` key, and no executor exists anywhere in the tree (no
+Docker socket, no `dockerode`). Nothing can execute, so there is nothing to escape from, and
+colocation is currently safe.
+
+The moment `adp.yaml` can name an image and commands, the box is running **arbitrary
+repo-specified code next to a mounted Docker socket** — which is root-equivalent on the host. On a
+colocated box that code shares a machine with Postgres and with `SIGNING_KEY`, and `SIGNING_KEY` is
+the root of the entire provenance claim: a gate that can read it can forge evidence, which is the
+one failure this product cannot absorb. **Split the host in the same change that ships the
+executor**, whichever milestone that lands in.
+
+M2's scanner adapters sit between the two states and do not trip the trigger: `wizcli` and
+`osv-scanner` are chosen binaries rather than repo-supplied code. They do parse untrusted repo
+content, so the exposure is parser vulnerability, not arbitrary execution — real, materially
+smaller, and adequately handled by the container limits in §4.7 on a single box.
 
 **M4 hosted posture:** Cloud SQL for PostgreSQL with PITR, Cloud Storage for artifacts, the git
 volume on a persistent disk with scheduled snapshots, and gate runners on a **separate** managed
@@ -874,7 +950,7 @@ GCP for every rung.
 | Restore | A documented, **actually executed** restore drill is an M4 exit criterion. Untested backups are not backups |
 | Audit | The `operations` table. No second system |
 | GC | Workspaces expire on TTL; garbage refs swept nightly. Git objects **never** pruned in MVP — cheap insurance for undo correctness |
-| Runner isolation | Network-deny by default with an `adp.yaml` allowlist; no host mounts; no ambient secrets; CPU/memory/wall-clock caps |
+| Runner isolation | Network-deny by default with an `adp.yaml` allowlist; no host mounts; no ambient secrets; CPU/memory/wall-clock caps. **Host separation is not optional once `adp.yaml` becomes executable** — a mounted Docker socket is root on the host, and `SIGNING_KEY` must not be on that host (§4.5) |
 | Secrets | Env only. No repo-scoped secret store — avoids becoming a secrets-management product |
 
 ## 4.8 Licensing and neutrality

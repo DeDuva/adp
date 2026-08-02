@@ -33,8 +33,12 @@ Cloud Storage for evidence artifacts, Artifact Registry for images, Secret Manag
 `SIGNING_KEY`, and — the one that is awkward to retrofit — **workload identity federation**, so
 GitHub Actions authenticates by OIDC with no long-lived service-account key in a secret anywhere.
 
-The cost is that GCP list pricing for a given shape is materially higher than the Hetzner figure
-§4.5 was written against. That is a real trade, not a rounding error; see the note in §4.5.
+The cost is that hyperscaler list pricing for a given shape is materially higher than the Hetzner
+figure §4.5 was written against. That is a real trade, not a rounding error. *Quantified 2026-08-02
+in [`hosting-cost-estimate.md`](hosting-cost-estimate.md):* the premium is **hyperscaler-vs-Hetzner,
+not GCP-vs-AWS** — AWS priced within ~10% of GCP in either direction on identical shapes, so this
+paragraph's trade is the price of leaving bare metal, and is not reduced by switching cloud. What
+the estimate did find is that most of the apparent expense was **sizing** rather than provider.
 
 ---
 
@@ -91,10 +95,16 @@ amount of local tooling substitutes for one.
 
 Recommended shape, chosen to be the smallest thing that answers dev's question:
 
-- **One small VM** (GCE `e2-medium`-class) running the existing `deploy/docker-compose.yml`, so the
-  artifact under test is the one §4.5 says production will run. Not Cloud Run: the workload needs
-  persistent disk for git repos and a Docker socket for gate execution, and fighting that on a dev
-  box teaches nothing about the product.
+- **One small VM** — GCE **`e2-standard-2`** (2 vCPU, 8 GB) with a 50 GB balanced disk, **~$58/month**
+  all-in *(sized 2026-08-02; see [`hosting-cost-estimate.md`](hosting-cost-estimate.md))* — running
+  the existing `deploy/docker-compose.yml`, so the artifact under test is the one §4.5 says
+  production will run. Not Cloud Run: the workload needs persistent disk for git repos and a Docker
+  socket for gate execution, and fighting that on a dev box teaches nothing about the product.
+  **Not `e2-medium`** (this document's earlier recommendation, $24/month): it is *shared-core* with a
+  burst-credit model, and 4 GB has to hold Postgres, Node, Caddy, a gate runner **and** git pack
+  generation at once. Sustained mirror imports — which are the whole point of M2 — are precisely the
+  workload a burstable instance throttles, so `e2-medium` would answer dev's question incorrectly
+  rather than cheaply. $24/month is worth paying not to be lied to.
 - **A real DNS name and a real certificate** — Caddy already does this automatically, and it is
   what makes `gh` work without the TLS-proxy scaffolding.
 - **Deployed by pushing an image**, so the deploy path is exercised continuously rather than by
@@ -102,7 +112,9 @@ Recommended shape, chosen to be the smallest thing that answers dev's question:
 - **Treated as disposable.** No backups, no PITR, wiped without ceremony. The moment it acquires
   data anyone minds losing, it has quietly become staging without the care staging deserves.
 
-Cost is roughly the same order as the single production VM in §4.5.
+Cost is roughly half the right-sized production VM in §4.5 — ~$58/month against ~$125–165. Note that
+a stopped VM still bills for its disk and static address, so powering it down outside working hours
+lands near ~$25/month rather than near zero; budget the floor, not the fantasy.
 
 ### Staging — when M4 starts
 
@@ -136,6 +148,15 @@ run (`scripts/dev/env.sh`); a long-lived environment needs a real answer — Sec
 rotation, and a decision about what happens to signatures made with a retired key. **OPEN**, and it
 should be answered before the first long-lived instance exists rather than retrofitted.
 
+*Added 2026-08-02:* custody has a **host-placement** half that is easy to miss while framing this as
+a secret-storage question. `pragmatic_mvp.md` §4.5 now states the trigger for splitting the runner
+host from the API host — the change that first makes `adp.yaml` executable, because a mounted Docker
+socket is root-equivalent on its host. `SIGNING_KEY` must never be resident on a host that executes
+gates: a gate that can read it can forge evidence, which defeats the provenance claim more
+completely than losing the key would. Whatever answer this question gets must therefore survive the
+runner/API split, not just satisfy a single-box deployment. Today no executor exists, so nothing is
+currently exposed.
+
 **Auth from CI.** GitHub Actions → GCP should use OIDC workload identity federation, not a
 long-lived service-account key. It is a strictly better default and awkward to retrofit once a key
 is in circulation.
@@ -166,6 +187,11 @@ which means the dev rung.
 2. **Who owns the dev instance, and what condition retires it.** An idle VM bills the same as a
    busy one.
 
-**And one to do first, before provisioning anything:** price the shape in §4.5. That section
-carried a Hetzner-era "~$100/month" that GCP will not honour, and the sizing predates knowing what
-the MVP actually needs — it has one user.
+**And one to do first, before provisioning anything:** ~~price the shape in §4.5~~ — **done
+2026-08-02**, in [`hosting-cost-estimate.md`](hosting-cost-estimate.md). The finding: §4.5's stated
+8–16 vCPU / 64 GB shape costs **$410–590/month** on GCP list, not `~$100`, and the sizing rather than
+the provider is what makes it expensive. Right-sized to `n2-standard-4` the production rung is
+~$125–165/month, and the dev rung is ~$58/month. AWS priced within ~10% either direction on the same
+shapes, which does not come close to justifying a second provider — **the GCP decision in §1 survives
+pricing scrutiny; the sizing in §4.5 does not.** The two consequent edits — `pragmatic_mvp.md` §4.5's
+shape and price, and this document's §3 dev shape — **were applied 2026-08-02**.
