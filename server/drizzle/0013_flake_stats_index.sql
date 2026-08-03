@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS "gate_results_repo_id_name_created_at_idx" ON "gate_results" USING btree ("repo_id","name","created_at");

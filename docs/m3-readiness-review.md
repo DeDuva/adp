@@ -343,6 +343,15 @@ Derive, do not denormalize: flake statistics are computed from `gate_results`, w
 every rerun rather than overwriting. A second table would be a dual-write and the plan forbids those
 on principle. Add whatever index the trailing-window query needs and measure it.
 
+*Measured (2026-08-03).* The existing `(repo_id, git_sha, name)` index does not serve this query —
+it asks for the trailing N results for one *gate across commits*, so the planner could only bitmap-
+scan on `(repo_id, name)` and then sort every result that gate had ever produced. At 20,000 results
+for one gate: **11.7 ms** with a top-N heapsort, versus **0.078 ms** as an ordered index scan once
+`(repo_id, name, created_at)` exists — and the unindexed cost grows with history while the indexed
+one does not. Land policy is evaluated twice per merge plus once per candidate during a 50-way
+fan-out, so this is squarely the "sequential scan a history import turns quadratic" class the M2
+readiness review pulled forward. Migration `0013`.
+
 **Flake rate.** For gate `g` in repo `r`: over the trailing `min_runs` results, a *flip* is a
 `git_sha` for which `g` reported both `success` and `failure`. Flake rate is flips ÷ distinct shas
 observed.
