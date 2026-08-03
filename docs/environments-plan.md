@@ -247,3 +247,48 @@ the provider is what makes it expensive. Right-sized to `n2-standard-4` the prod
 shapes, which does not come close to justifying a second provider — **the GCP decision in §1 survives
 pricing scrutiny; the sizing in §4.5 does not.** The two consequent edits — `pragmatic_mvp.md` §4.5's
 shape and price, and this document's §3 dev shape — **were applied 2026-08-02**.
+
+### 5.3 Asking whether dev is healthy — `make env-status`
+
+Everything above describes a box that redeploys itself from `main` on every scheduled boot and stops
+itself every evening, both silently. Until now the way an operator found out either had gone wrong
+was by noticing something that depended on it didn't work. `make env-status` asks directly:
+
+```
+make env-status          # human-readable, exits 1 on failures, 0 on warnings
+make env-status ARGS=--json
+```
+
+It answers from four independent vantage points, so a green line means something:
+
+| Section | What it asks | How it asks |
+|---|---|---|
+| `instance` | is the box on, for how long, and should it be? are the start/stop jobs enabled and did they run? | `gcloud compute instances describe`, `gcloud scheduler jobs describe`, and the schedule from `terraform.tfvars` |
+| `dns + tls` | does the hostname still point at the static IP, and how long is the certificate good for? | `dig`/`getent` against `gcloud compute addresses describe`, then `openssl s_client` |
+| `app` | do the probes pass, and **is the deployed commit `origin/main`?** | `curl` on `/healthz`, `/readyz`, and `/version` vs `git ls-remote` |
+| `derived` | **are inbound webhooks being delivered right now?** | inferred: a stopped instance drops them |
+| `cost` | has `retire-after` passed? | the instance label, falling back to `terraform.tfvars` |
+
+Two of those checks exist because nothing else reports them.
+
+**The deployed SHA.** `GET /version` returns `{sha, ref, builtAt, startedAt, uptimeSeconds}`, captured
+by `infra/dev/startup.sh` at the moment it deploys and passed into the container — not read per
+request, which on a container with no checkout would answer for the wrong tree or not at all. A
+deployed SHA behind `origin/main` is a **failure**, not a warning: it means the box is running code
+that has already been reviewed away.
+
+**Webhook deliverability.** While the instance is stopped, inbound GitHub webhooks are dropped and
+GitHub does not retry indefinitely (§5.2). Nothing on this side records a delivery that never
+arrived, so the only honest way to report it is to derive it from power state — which is what the
+`derived` section does, before mirror mode silently misses a sync.
+
+Reading the output: **`FAIL` means broken and exits 1**; `warn` means worth knowing and still exits 0
+(a box stopped outside its scheduler window warns about dropped webhooks — that is the arrangement
+working as designed, not a fault); `--` is context, never a verdict.
+
+`gcloud` is not required. Without it — or with it installed but logged into nothing — the cloud
+sections warn and skip, and the DNS, TLS and app checks still run over plain `curl`. Configuration
+comes from `infra/dev/terraform.tfvars` (gitignored, so this is the only on-disk record of which box
+a checkout provisioned); `ADP_DEV_HOST`, `ADP_DEV_PROJECT`, `ADP_DEV_ZONE`, `ADP_DEV_REGION` and
+`ADP_DEV_URL` override it for anyone working against a different one.
+

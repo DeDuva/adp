@@ -13,6 +13,7 @@ import { registerApiRoutes } from "./routes.js";
 import { startMirrorPoller } from "./core/mirror-poller.js";
 import { LandRequirement } from "./core/repo-policy.js";
 import { recordHttpRequest, renderMetrics } from "./core/telemetry.js";
+import { registerVersionRoute, resolveBuildInfo } from "./core/version.js";
 
 async function main() {
   const config = loadConfig();
@@ -74,6 +75,11 @@ async function main() {
   app.get("/metrics", async (_req, reply) => {
     reply.type("text/plain; version=0.0.4").send(renderMetrics());
   });
+  // Same unauthenticated set, same reason: "what is deployed here?" is an
+  // operator's question about the process, not a repo-scoped resource. Read
+  // once at boot — the deployed container has no checkout to consult per
+  // request, and re-reading one would answer for the wrong tree anyway.
+  registerVersionRoute(app, resolveBuildInfo(), new Date());
 
   // The full route table lives in routes.ts so the spec-coverage test can
   // enumerate exactly what this process serves (server/src/spec-coverage.test.ts).
