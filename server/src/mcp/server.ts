@@ -128,7 +128,14 @@ export function buildMcpServer(client: AdpClient): McpServer {
         owner: z.string(),
         repo: z.string(),
         intent_id: z.string().uuid(),
-        selection_policy: z.string().optional().describe("Defaults to 'manual'"),
+        selection_policy: z
+          .enum(["manual", "first_green", "best_score"])
+          .optional()
+          .describe(
+            "How adp_candidates_resolve picks the winner. 'manual' (default) needs an explicit " +
+              "selection; 'first_green' takes the earliest candidate that satisfies land policy; " +
+              "'best_score' takes the highest 'score' gate result, ties going to the earliest candidate.",
+          ),
       },
     },
     async ({ owner, repo, intent_id, selection_policy }) => {
@@ -153,6 +160,33 @@ export function buildMcpServer(client: AdpClient): McpServer {
     },
     async ({ owner, repo, candidate_set_id, candidate_id }) => {
       const res = await client.post(`/api/adp/repos/${owner}/${repo}/candidate-sets/${candidate_set_id}/select`, {
+        proposal_id: candidate_id,
+      });
+      return res.ok ? ok(res.body) : err(res.message);
+    },
+  );
+
+  server.registerTool(
+    "adp_candidates_resolve",
+    {
+      description:
+        "Resolve a candidate set: pick the winner by the set's selection policy, land it (squash — one " +
+        "landed change per set), and reclaim the losing candidates' workspaces. Losers are closed and " +
+        "their branches deleted, but stay queryable in the history. This is the call that finishes a " +
+        "fan-out; adp_candidates_select only records a choice.",
+      inputSchema: {
+        owner: z.string(),
+        repo: z.string(),
+        candidate_set_id: z.string().uuid(),
+        candidate_id: z
+          .string()
+          .uuid()
+          .optional()
+          .describe("Resolve this specific candidate regardless of policy. Required for an unselected 'manual' set."),
+      },
+    },
+    async ({ owner, repo, candidate_set_id, candidate_id }) => {
+      const res = await client.post(`/api/adp/repos/${owner}/${repo}/candidate-sets/${candidate_set_id}/resolve`, {
         proposal_id: candidate_id,
       });
       return res.ok ? ok(res.body) : err(res.message);

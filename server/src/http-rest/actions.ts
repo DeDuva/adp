@@ -70,7 +70,20 @@ export function registerActionsRoutes(
         }
 
         const mirror = await findMirror(db, repo.id);
-        if (!mirror) {
+        // A disabled mirror is treated exactly like no mirror at all. The
+        // passthrough decrypts and forwards the operator's PAT upstream, and
+        // `enabled: false` is how an operator stops ADP talking to GitHub for
+        // this repo — mirror-webhook.ts already honours it on ingest, so a
+        // read path that ignored it would leave "disabled" meaning two
+        // different things in two files.
+        //
+        // Direction is deliberately *not* checked. An outbound-only mirror is
+        // still a repo whose code is on GitHub with Actions running against it,
+        // and since the webhook route only ingests for inbound|both, this
+        // passthrough is the sole way such a repo's CI results are visible at
+        // all — narrowing by direction would remove that rather than tighten
+        // anything.
+        if (!mirror || !mirror.enabled) {
           // The passthrough is a property of *being mirrored*, not of the
           // endpoint. A self-describing 404 (§2.4) costs an agent one turn;
           // a hang or a 500 costs it the trajectory.

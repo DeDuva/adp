@@ -7,7 +7,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq, and } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
-import { gateResults, identities, operations } from "../src/db/schema.js";
+import { gateResults, identities, mirrors, operations, repos } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
@@ -289,6 +289,41 @@ describe.skipIf(!process.env.DATABASE_URL)("M2: Actions ingest + passthrough", (
     // A broken call that explains itself costs an agent one turn (§2.4).
     expect(body.adp_equivalent).toContain("adp.yaml");
     expect(body.adp_equivalent).toContain("/gates");
+  });
+
+  // A disabled mirror is the operator saying "stop talking to GitHub for this
+  // repo". mirror-webhook.ts has always honoured that on ingest; the relay used
+  // to decrypt and forward the PAT upstream anyway, which left "disabled"
+  // meaning two different things in two files.
+  it("stops relaying once the mirror is disabled, without ever calling upstream", async () => {
+    const name = "disabled-mirror-repo";
+    await createRepo(name);
+    await createMirror(name);
+
+    let upstreamCalls = 0;
+    upstreamHandler = () => {
+      upstreamCalls++;
+      return { status: 200, body: '{"total_count":0,"workflow_runs":[]}' };
+    };
+
+    const enabledRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/${name}/actions/runs`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(enabledRes.status).toBe(200);
+    expect(upstreamCalls).toBe(1);
+
+    const [repo] = await db.select().from(repos).where(and(eq(repos.owner, owner), eq(repos.name, name)));
+    await db.update(mirrors).set({ enabled: false }).where(eq(mirrors.repoId, repo!.id));
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/${name}/actions/runs`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { adp_equivalent?: string };
+    expect(body.adp_equivalent).toContain("adp.yaml");
+    // The point isn't the status code, it's that the credential never left the
+    // box: a 404 that still made the upstream call would be the same leak.
+    expect(upstreamCalls).toBe(1);
   });
 
   it("returns 502 when upstream fails, never a fabricated empty run list", async () => {

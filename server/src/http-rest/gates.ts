@@ -15,6 +15,14 @@ const ReportGateBody = z.object({
   name: z.string().min(1),
   status: z.enum(["success", "failure", "pending"]),
   summary: z.string().default(""),
+  // M3: an optional numeric score, carried into the signed predicate so a
+  // candidate set's `best_score` policy ranks on attested evidence rather than
+  // on something a caller asserted out of band (core/candidate-sets.ts).
+  //
+  // Deliberately one typed field rather than a general "predicate" passthrough:
+  // the predicate is what gets signed, and letting callers write arbitrary
+  // content into it would turn the attestation into a claim ADP merely relayed.
+  score: z.number().finite().optional(),
 });
 
 function serializeGateResult(row: typeof gateResults.$inferSelect) {
@@ -63,6 +71,7 @@ export function registerGateRoutes(app: FastifyInstance, db: Db, signer: Signer,
           status: parsed.data.status,
           summary: parsed.data.summary,
           reporter: req.identity!.principal,
+          ...(parsed.data.score !== undefined ? { score: parsed.data.score } : {}),
         },
       };
       const envelope = signStatement(signer, statement);

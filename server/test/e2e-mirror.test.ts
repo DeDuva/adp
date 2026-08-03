@@ -9,7 +9,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq, and } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
-import { changes, identities, mirrors, mirrorSyncLog, operations } from "../src/db/schema.js";
+import { changes, identities, mirrors, mirrorSyncLog, operations, repos } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
@@ -188,6 +188,89 @@ describe.skipIf(!process.env.DATABASE_URL)("M2: mirror mode", () => {
     const [mirror] = await db.select().from(mirrors).where(eq(mirrors.id, mirrorId));
     expect(mirror!.lastInboundSha).toBe(sha);
   });
+
+  // M2's exit criterion in its own words: "a mirrored repo with a >500-commit
+  // history has a signed change recorded for every commit". The suite already
+  // covered the *chunking* half (e2e-hooks.test.ts) but did so by pushing a
+  // root commit first, deliberately stepping around the brand-new-ref path —
+  // which is the only path a first mirror import ever takes. That path used to
+  // record the tip commit and nothing else, so a repo mirrored in from GitHub
+  // arrived with one signed change standing in for its entire history.
+  //
+  // Everything here is deliberately a repo ADP has never seen: its own bare
+  // repo on the stand-in "GitHub" side, its own empty repo on the ADP side, and
+  // a first webhook delivery for a branch that does not exist locally yet.
+  it(
+    "inbound first import: a >500-commit history ADP has never seen records a signed change per commit",
+    async () => {
+      const importRepo = "first-import";
+      await githubStandIn.initBareRepo(owner, importRepo, "main");
+      await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: importRepo }),
+      });
+
+      const res = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/${importRepo}/mirror`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          remote_url: `file://${githubStandIn.repoPath(owner, importRepo)}`,
+          direction: "inbound",
+          credential: "unused-for-file-remote",
+        }),
+      });
+      expect(res.status).toBe(201);
+      const { webhook_secret } = (await res.json()) as { webhook_secret: string };
+
+      // One more than RECORD_BATCH_SIZE (500, core/change-recorder.ts) so the
+      // walk has to page rather than fit in a single `git log` call. Built in
+      // one shell loop instead of 511 execFile round-trips — same history,
+      // meaningfully faster to construct.
+      const HISTORY_LENGTH = 511;
+      const cloneDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-mirror-import-"));
+      await execFileAsync("git", ["clone", githubStandIn.repoPath(owner, importRepo), cloneDir]);
+      await execFileAsync("git", ["checkout", "-B", "main"], { cwd: cloneDir });
+      await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
+      await execFileAsync("git", ["config", "user.name", "Test"], { cwd: cloneDir });
+      await execFileAsync("sh", ["-c", `for i in $(seq 1 ${HISTORY_LENGTH}); do git commit -q --allow-empty -m "history $i"; done`], {
+        cwd: cloneDir,
+      });
+      await execFileAsync("git", ["push", "origin", "main"], { cwd: cloneDir });
+      const sha = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: cloneDir })).stdout.trim();
+      await rm(cloneDir, { recursive: true, force: true });
+
+      // ADP has no refs/heads/main for this repo at all — this is what makes
+      // the webhook take the brand-new-ref path rather than a fast-forward.
+      expect(await gitBackend.resolveRef(owner, importRepo, "main")).toBeNull();
+
+      const payload = JSON.stringify({ ref: "refs/heads/main", after: sha });
+      const signature = "sha256=" + createHmac("sha256", webhook_secret).update(payload).digest("hex");
+      const hook = await fetch(`http://127.0.0.1:${port}/webhooks/github/${owner}/${importRepo}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Hub-Signature-256": signature },
+        body: payload,
+      });
+      expect(hook.status).toBe(200);
+      expect(((await hook.json()) as { ok: boolean }).ok).toBe(true);
+
+      const repoRow = await db.select().from(repos).where(and(eq(repos.owner, owner), eq(repos.name, importRepo)));
+      const recorded = await db.select().from(changes).where(eq(changes.repoId, repoRow[0]!.id));
+      expect(recorded).toHaveLength(HISTORY_LENGTH);
+      // Signed, and attributed to the mirror rather than to a push — a record
+      // that exists but is unsigned would satisfy a count and nothing else.
+      for (const change of recorded) {
+        expect(change.signature).toBeTruthy();
+        expect((change.provenance as { via: string }).via).toBe("mirror-inbound");
+      }
+
+      await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/${importRepo}/mirror`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    },
+    180_000,
+  );
 
   it("rejects a webhook call with a bad signature, writing nothing", async () => {
     const { webhook_secret } = await createMirror("inbound");

@@ -394,7 +394,8 @@ silent pass; see [`test-environment-automation.md`](test-environment-automation.
 | M1b′ — compat completion + hardening | **✓ done** | GraphQL mutations, the Tier-2 REST tail, all five hardening items, and the `gh` conformance gate all landed — see below |
 | M1c | **✓ done** | Real git `pre-receive`/`post-receive` hooks; `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy on both REST and GraphQL merge; native-plane (`/api/adp`) op log + `adp_undo` + history-query by path; workspaces, candidate sets, and an evidence-bundle read; a real MCP server (`server/src/mcp/`) wrapping all of it as 8 tools; a read-only supervision web UI (`server/web/`, served at `/ui/*`) — see below |
 | M2 — adoption + trust ramp | **✓ complete 2026-08-03** | Mirror mode, outbound webhook emitter, `adp` CLI, API-traffic telemetry, scanner-as-gate adapters (`wizcli`, `osv-scanner`), dependency admission v0, SBOM per land, all five scale-hygiene items, and the read-only Actions passthrough with its `workflow_run` ingest — see below. Scope revised 2026-07-26, amended 2026-08-01 per the pre-M2 readiness review ([`m2-readiness-review.md`](m2-readiness-review.md)). Dev environment built 2026-08-02 ([`infra/dev/`](../infra/dev/)); mirror-mode inbound proven against real github.com 2026-08-03, and both [`environments-plan.md`](environments-plan.md) §5 questions answered |
-| M3–M5 | not started | |
+| M3 — fleet + differentiation | **in progress** | Scope clarified and sequenced 2026-08-03 by the pre-M3 readiness review ([`m3-readiness-review.md`](m3-readiness-review.md)), which also found M2's first-mirror-import provenance gap and carries the executable work plan (M3-0 … M3-6) |
+| M4–M5 | not started | |
 
 ### M0 — Spec + walking skeleton (weeks 1–2) — ✓ done
 `spec/openapi.yaml` + JSON Schemas (change, evidence, provenance, operation). Server boots, Postgres
@@ -812,7 +813,7 @@ and `--squash` produce GitHub-equivalent history. Added 2026-08-02: against a mi
 `404` — and exactly one evidence row exists per completed upstream run, proving the proxy relays
 without recording.
 
-### M3 — Fleet and differentiation (weeks 16–20) *(amended 2026-08-01 per [`m2-readiness-review.md`](m2-readiness-review.md))*
+### M3 — Fleet and differentiation (weeks 16–20) *(amended 2026-08-01 per [`m2-readiness-review.md`](m2-readiness-review.md); clarified and sequenced 2026-08-03 per [`m3-readiness-review.md`](m3-readiness-review.md), which carries the executable work plan)*
 50-way fan-out orchestration over candidate sets. Cross-harness checkpoint/resume (session state as a
 first-class ADP object — the §e demo). Statistical land criteria v0: flaky-gate quarantine,
 confidence-interval gating — the A8 contribution. Benchmark harness published (tokens / tool calls /
@@ -826,7 +827,46 @@ to cite:
 - **Fan-out-vs-serial arm:** cost and outcome comparison of K parallel candidate-set attempts vs
   one serial checkpoint-resume session on the same tasks (feeds A16).
 
+**Clarified 2026-08-03** (no scope added; the M3 review's §2 explains each):
+- **D1 is satisfied by serial land, not speculative batching.** D1's own text says "speculatively
+  batch", but speculative merge batching is an M5 item gated on M3/M4 telemetry — the telemetry the
+  merge-contention arm above exists to produce. Read literally, the exit criterion would require the
+  thing it is meant to generate evidence for. Serial land (§2.5) satisfies every observable D1
+  describes, and the M5 gate stays shut.
+- **"50-way fan-out orchestration" means completing the candidate-set lifecycle**, not building it:
+  the data model landed in M1c. What is missing is resolution — real selection policies
+  (`manual`/`first_green`/`best_score`), land-on-select through the existing `core/merge.ts` path,
+  and candidate-set-scoped reclamation of losing workspaces. Losers stay queryable; only their refs
+  are reclaimed.
+- **The candidate-set comparison view** (the one gap M1 closed out with) is M3 scope — D1's stated
+  payoff is that history view.
+- **Sessions and checkpoints** are specified in the review: a checkpoint is signed evidence (DSSE,
+  same shape as a gate result) whose signature is verified *at resume*, resume creates a new session
+  linked by `resumed_from_session_id` and `parentOp`, and per **A18** sessions hang off `operations`
+  and `changes` — never off `proposal`.
+- **Statistical gating** uses a Wilson score interval lower bound (not the normal approximation,
+  which is wrong in the permissive direction at the small run counts this will see), derives flake
+  statistics from `gate_results` rather than a second table, and treats quarantine as always visible:
+  a gate that silently stops mattering is worse than a flaky one.
+- **Benchmark split:** the merge-contention arm is deterministic, needs no model, and is CI-enforced.
+  The three-way cost comparison and fan-out-vs-serial arms are agent-backed and run out of band,
+  publishing captured run records so a reader can re-derive every number without re-running an agent.
+
+**Added 2026-08-03 — M2 debt paid first.** M2's exit criterion "a mirrored repo with a >500-commit
+history has a signed change recorded for every commit" was met only for incremental pushes: a *first*
+mirror import took `change-recorder.ts`'s brand-new-ref shortcut and recorded the tip commit alone,
+and the test covering the criterion pushed a root commit first to step around that path. M3's own
+benchmarks run against mirrored repos, so this is a prerequisite of the milestone's measurements
+rather than leftover tidying. Two minor M2 defects ride along: webhook CRUD never wrote to the
+operation log (M4's audit-log export is a projection of that table), and the Actions passthrough
+relayed for mirrors marked disabled.
+
 **Exit:** D1 and D2 from the prototype doc are demonstrable; benchmark published with methodology.
+Added 2026-08-03: a repo mirrored in from GitHub with a >500-commit history has a signed change per
+commit **on first import**, proven by a test that mirrors rather than one that pushes over HTTP; a
+session checkpointed under one harness identifier and resumed under another yields one signed,
+lineage-linked history in a single op-log query; a gate that fails intermittently is quarantined
+visibly rather than blocking or silently passing.
 
 ### M4 — Multi-tenant hosted preview (weeks 21–26)
 Org/user model, OIDC login, scoped tokens, quotas and GC. Managed Postgres + object store.

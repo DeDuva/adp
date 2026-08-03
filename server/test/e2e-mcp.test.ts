@@ -73,7 +73,7 @@ describe.skipIf(skipWithoutDb)("M1c: MCP native plane", () => {
     registerOperationRoutes(app, db, gitBackend);
     registerWorkspaceRoutes(app, db, gitBackend);
     registerEvidenceRoutes(app, db);
-    registerCandidateSetRoutes(app, db);
+    registerCandidateSetRoutes(app, db, gitBackend);
     registerGitHttpRoutes(app, gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });

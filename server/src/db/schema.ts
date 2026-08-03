@@ -130,8 +130,23 @@ export const candidateSets = pgTable("candidate_sets", {
   id: uuid("id").primaryKey().defaultRandom(),
   repoId: uuid("repo_id").notNull().references(() => repos.id),
   intentId: uuid("intent_id").notNull().references(() => intents.id),
-  selectionPolicy: text("selection_policy").notNull().default("manual"),
+  // M3: constrained from free text to the three policies core/candidate-sets.ts
+  // actually implements. `manual` is an explicit select call; `first_green` takes
+  // the first candidate whose land policy evaluates clean; `best_score` takes the
+  // highest `score` gate result, breaking ties by earliest proposal number so a
+  // benchmark run is reproducible rather than merely likely.
+  selectionPolicy: text("selection_policy", { enum: ["manual", "first_green", "best_score"] })
+    .notNull()
+    .default("manual"),
   selectedProposalId: uuid("selected_proposal_id"),
+  // A set is `open` until it resolves. Resolving lands the winner and reclaims
+  // the losers' workspaces — D1's "GC the rest". Losing rows are never deleted,
+  // only their refs reclaimed, because D1's whole point is that the 49 discarded
+  // attempts stay queryable without polluting history.
+  status: text("status", { enum: ["open", "resolved", "abandoned"] })
+    .notNull()
+    .default("open"),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -201,6 +216,62 @@ export const workspaces = pgTable("workspaces", {
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   destroyedAt: timestamp("destroyed_at", { withTimezone: true }),
 });
+
+// M3 (docs/m3-readiness-review.md §4, M3-1): a unit of agent work that
+// outlives any one harness — the object D2 ("cross-harness portability") is
+// about. `harness` is just an identifier the caller supplies; ADP never
+// branches on its value, which is what makes the protocol harness-neutral
+// rather than harness-aware.
+//
+// Per A18 (brief v5 appendix), sessions deliberately hang off `operations` and
+// `changes` and never off `proposal` — proposals are a compat-plane shape that
+// may erode, and evidence, provenance, and history must not erode with them.
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repoId: uuid("repo_id").notNull().references(() => repos.id),
+    intentId: uuid("intent_id").references(() => intents.id),
+    harness: text("harness").notNull(),
+    actorId: uuid("actor_id").notNull().references(() => identities.id),
+    workspaceId: uuid("workspace_id").references(() => workspaces.id),
+    status: text("status", { enum: ["active", "suspended", "resumed", "closed"] })
+      .notNull()
+      .default("active"),
+    // The lineage link D2 turns into "one continuous history": set when this
+    // session was created by resuming another. Self-referencing, so a chain of
+    // resumes across three harnesses is walkable without a join table.
+    resumedFromSessionId: uuid("resumed_from_session_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("sessions_repo_id_status_idx").on(table.repoId, table.status)],
+);
+
+// A signed, ordered point a session can be resumed from. `envelope` is the
+// same DSSE-wrapped in-toto Statement shape `gate_results.envelope` uses and
+// plays the same role: the evidence *is* the envelope, the other columns are a
+// queryable projection of it rather than a second source of truth.
+//
+// Two rules on `state` hold from the first commit. It is **opaque** — ADP never
+// parses it or branches on it, so a harness storing its own format needs no ADP
+// change. And it is **covered by the signature**: the statement binds `git_sha`
+// together with a hash of `state`, so a resume under a different harness can
+// verify it received what was written rather than trusting the transport.
+export const checkpoints = pgTable(
+  "checkpoints",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id").notNull().references(() => sessions.id),
+    seq: integer("seq").notNull(),
+    gitSha: text("git_sha").notNull(),
+    harness: text("harness").notNull(),
+    state: jsonb("state").notNull(),
+    envelope: jsonb("envelope").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("checkpoints_session_id_seq_idx").on(table.sessionId, table.seq)],
+);
 
 // Outbound webhook subscriptions, GitHub-shaped (docs/pragmatic_mvp.md M2:
 // "outbound webhook emitter"). The decrypted secret signs deliveries

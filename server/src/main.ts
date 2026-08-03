@@ -115,7 +115,7 @@ async function main() {
   registerMirrorRoutes(app, db, config.MIRROR_CREDENTIAL_KEY);
   registerMirrorWebhookRoutes(app, db, gitBackend, signer, config.MIRROR_CREDENTIAL_KEY, config.PUBLIC_URL);
   registerActionsRoutes(app, db, config.MIRROR_CREDENTIAL_KEY);
-  registerCandidateSetRoutes(app, db);
+  registerCandidateSetRoutes(app, db, gitBackend, instanceFloor, { signer, publicUrl: config.PUBLIC_URL });
   registerWebhookRoutes(app, db, config.MIRROR_CREDENTIAL_KEY);
 
   const gqlSchema = loadGitHubSchema();

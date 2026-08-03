@@ -5,15 +5,28 @@ import type { Db } from "../db/client.js";
 import { candidateSets, proposals } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { findRepo } from "../core/repos-lookup.js";
-import { openCandidateSet, selectCandidate, listCandidates } from "../core/candidate-sets.js";
+import { openCandidateSet, selectCandidate, listCandidates, resolveCandidateSet } from "../core/candidate-sets.js";
+import type { GitBackend } from "../core/git-backend.js";
+import type { Signer } from "../core/signing.js";
+import type { LandRequirement } from "../core/repo-policy.js";
 
 const OpenCandidateSetBody = z.object({
   intent_id: z.string().uuid(),
-  selection_policy: z.string().min(1).default("manual"),
+  // Constrained to the policies core/candidate-sets.ts implements. It used to
+  // be free text, which meant a typo'd policy was accepted at open time and
+  // only discovered — as an unknown-policy error — when the set tried to
+  // resolve, long after the fan-out had been paid for.
+  selection_policy: z.enum(["manual", "first_green", "best_score"]).default("manual"),
 });
 
 const SelectCandidateBody = z.object({
   proposal_id: z.string().uuid(),
+});
+
+const ResolveCandidateSetBody = z.object({
+  // Optional override: resolve this specific candidate regardless of policy.
+  // Required in practice for `manual` sets that haven't called /select.
+  proposal_id: z.string().uuid().optional(),
 });
 
 function serializeCandidateSet(row: typeof candidateSets.$inferSelect) {
@@ -22,6 +35,8 @@ function serializeCandidateSet(row: typeof candidateSets.$inferSelect) {
     intent_id: row.intentId,
     selection_policy: row.selectionPolicy,
     selected_proposal_id: row.selectedProposalId,
+    status: row.status,
+    resolved_at: row.resolvedAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
   };
 }
@@ -30,7 +45,17 @@ function serializeCandidateSet(row: typeof candidateSets.$inferSelect) {
 // candidate set is opened for an intent; proposals join it by passing
 // `candidate_set_id` at creation (http-rest/proposals.ts); selecting a
 // winner records which proposal that is, it doesn't merge or close the rest.
-export function registerCandidateSetRoutes(app: FastifyInstance, db: Db) {
+export function registerCandidateSetRoutes(
+  app: FastifyInstance,
+  db: Db,
+  // Resolution lands the winner, so this route family now needs everything the
+  // merge path needs. Kept optional-with-defaults for the same reason
+  // proposals.ts does: existing test apps that only open and select shouldn't
+  // have to start constructing a land environment.
+  gitBackend: GitBackend,
+  instanceFloor: LandRequirement[] = [],
+  sbom?: { signer: Signer; publicUrl: string },
+) {
   app.post(
     "/api/adp/repos/:owner/:repo/candidate-sets",
     { preHandler: requireScope("repo:write") },
@@ -116,6 +141,50 @@ export function registerCandidateSetRoutes(app: FastifyInstance, db: Db) {
         return;
       }
       reply.send(serializeCandidateSet(result.candidateSet));
+    },
+  );
+
+  // M3 (D1): resolving is what makes a fan-out finish — pick the winner by the
+  // set's selection policy, land it through the shared land path, and reclaim
+  // the losers' workspaces. `/select` still only *records* a choice; this is
+  // the call that acts on one.
+  app.post(
+    "/api/adp/repos/:owner/:repo/candidate-sets/:id/resolve",
+    { preHandler: requireScope("repo:write") },
+    async (req, reply) => {
+      const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
+      const parsed = ResolveCandidateSetBody.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        return;
+      }
+      const repo = await findRepo(db, owner, repoName);
+      if (!repo) {
+        reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
+        return;
+      }
+
+      const result = await resolveCandidateSet(
+        { db, gitBackend, instanceFloor, sbom, logError: (message, err) => req.log.error(`${message}: ${err}`) },
+        gitBackend,
+        { id: repo.id, owner, name: repoName },
+        id,
+        { identityId: req.identity!.identityId, principal: req.identity!.principal },
+        parsed.data.proposal_id,
+      );
+      if (!result.ok) {
+        reply.code(result.status).send({
+          message: result.message,
+          ...(result.unmet ? { unmet: result.unmet } : {}),
+        });
+        return;
+      }
+
+      reply.send({
+        ...serializeCandidateSet(result.candidateSet),
+        landed: { proposal_id: result.landed.id, number: result.landed.number, sha: result.sha },
+        reclaimed: result.reclaimed.map((r) => ({ proposal_id: r.proposalId, workspace_id: r.workspaceId })),
+      });
     },
   );
 }

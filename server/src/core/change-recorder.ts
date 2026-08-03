@@ -29,8 +29,8 @@ async function recordCommitsBatch(
   actor: RecordActor,
   commits: CommitInfo[],
   via: "push" | "mirror-inbound",
-): Promise<void> {
-  if (commits.length === 0) return;
+): Promise<number> {
+  if (commits.length === 0) return 0;
   const shas = commits.map((c) => c.sha);
   const existingRows = await db
     .select({ gitSha: changes.gitSha })
@@ -38,7 +38,7 @@ async function recordCommitsBatch(
     .where(and(eq(changes.repoId, repoId), inArray(changes.gitSha, shas)));
   const existing = new Set(existingRows.map((r) => r.gitSha));
   const toRecord = commits.filter((c) => !existing.has(c.sha));
-  if (toRecord.length === 0) return;
+  if (toRecord.length === 0) return 0;
 
   // One transaction per batch (not per commit) — a >500-commit mirror import
   // used to do one DB round-trip per commit; this keeps the per-commit
@@ -68,6 +68,8 @@ async function recordCommitsBatch(
       });
     }
   });
+
+  return toRecord.length;
 }
 
 // Shared by the post-receive hook (a direct push through ADP) and the
@@ -88,32 +90,36 @@ export async function recordPushedCommits(
 ): Promise<void> {
   if (newSha === ZERO_SHA) return;
 
-  // A brand-new branch (oldSha all-zero) usually forks from history that's
-  // already recorded via whatever ref it was pushed from — recording the
-  // tip only (not the whole reachable history) avoids re-recording
-  // everything on every new branch. `existing change` dedup in
-  // recordCommitsBatch covers the rest regardless.
+  // A brand-new ref (oldSha all-zero) has no range to walk, so it walks the
+  // full history reachable from the tip and lets dedup decide where to stop:
+  // each page is recorded, and the first page that records *nothing* new
+  // means every remaining ancestor is already in `changes` too.
   //
-  // This shortcut is wrong for one case this function doesn't handle yet: a
-  // *first* mirror import, where a branch is pushed as brand-new on the ADP
-  // side but carries real, never-before-seen history (there's nothing else
-  // it could have forked from that's "already recorded"). Mirror mode's
-  // first-import path needs its own bulk-import call that walks full
-  // history rather than relying on this heuristic.
-  if (oldSha === ZERO_SHA) {
-    const commits = await gitBackend.log(owner, name, newSha, 1);
-    await recordCommitsBatch(db, signer, repoId, owner, name, actor, commits, via);
-    return;
-  }
+  // Both callers need that. An ordinary new local branch forks from history
+  // this repo already recorded, so it walks one or two pages and stops —
+  // which is what the old "record the tip only" shortcut was protecting. A
+  // *first* mirror import is the case that shortcut got wrong: the branch is
+  // brand-new on the ADP side but carries real, never-before-seen history,
+  // so nothing is deduped and the walk runs to the root. That is M2's exit
+  // criterion ("a mirrored repo with a >500-commit history has a signed
+  // change recorded for every commit") applied to the import itself rather
+  // than only to subsequent pushes.
+  //
+  // Deliberately not `git log <tip> --not --exclude=<ref> --all` to compute
+  // "history no other ref has": `--all` includes HEAD, which in a bare repo
+  // resolves to the default branch, so that form returns nothing at all for
+  // exactly the first-import case — silently, and looking like success.
+  const range = oldSha === ZERO_SHA ? newSha : `${oldSha}..${newSha}`;
 
-  // Page through the whole range in RECORD_BATCH_SIZE-sized batches — this
-  // is what turns a >500-commit mirror import into a complete record
-  // instead of a truncated one.
+  // Page through in RECORD_BATCH_SIZE-sized batches — this is what turns a
+  // >500-commit mirror import into a complete record instead of a truncated
+  // one.
   let skip = 0;
   for (;;) {
-    const batch = await gitBackend.log(owner, name, `${oldSha}..${newSha}`, RECORD_BATCH_SIZE, skip);
+    const batch = await gitBackend.log(owner, name, range, RECORD_BATCH_SIZE, skip);
     if (batch.length === 0) break;
-    await recordCommitsBatch(db, signer, repoId, owner, name, actor, batch, via);
+    const recorded = await recordCommitsBatch(db, signer, repoId, owner, name, actor, batch, via);
+    if (oldSha === ZERO_SHA && recorded === 0) break;
     if (batch.length < RECORD_BATCH_SIZE) break;
     skip += RECORD_BATCH_SIZE;
   }
