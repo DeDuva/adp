@@ -106,6 +106,16 @@ const MERGE_METHOD_TO_INTERNAL: Record<string, MergeMethod> = {
   REBASE: "rebase",
 };
 
+// gate_results.status -> GitHub's StatusState enum. Note `pending` maps to
+// PENDING and not EXPECTED: EXPECTED means "a required check that has not
+// reported at all", whereas a `pending` gate has reported and is still running.
+// gh renders the two differently, and the distinction is the honest one.
+const GATE_STATUS_TO_STATUS_STATE: Record<"success" | "failure" | "pending", string> = {
+  success: "SUCCESS",
+  failure: "FAILURE",
+  pending: "PENDING",
+};
+
 function shapePullRequestReview(review: ReviewRow) {
   return {
     __typename: "PullRequestReview",
@@ -251,6 +261,11 @@ export function createResolvers(
   // optional so existing callers/tests that don't care don't need one.
   sbom?: { signer: Signer; publicUrl: string },
 ): ResolverMap {
+  // StatusContext.targetUrl needs an absolute URL. It comes from the same
+  // PUBLIC_URL every other absolute-URL producer uses (repos.ts, gates.ts);
+  // when a caller supplied no sbom config there is no configured public URL to
+  // build from, and a guessed hostname would be worse than none.
+  const publicUrl = sbom?.publicUrl ?? null;
   return {
     Query: {
       repository: async (_root, args: { owner: string; name: string }, ctx: GqlContext) => {
@@ -409,12 +424,10 @@ export function createResolvers(
     },
 
     // Evidence bundles (core/dsse.ts, core/gate-results-lookup.ts) projected
-    // onto the compat plane (docs/pragmatic_mvp.md M1c). Per-context detail
-    // (`contexts`) isn't implemented — an empty connection, honest about
-    // what's missing rather than an error — but the aggregate `state` is
-    // real. Returns null entirely (StatusCheckRollup is a nullable field)
-    // when nothing has been reported for this commit, same as a repo with
-    // no CI configured at all on real GitHub.
+    // onto the compat plane (docs/pragmatic_mvp.md M1c). Returns null entirely
+    // (StatusCheckRollup is a nullable field) when nothing has been reported
+    // for this commit, same as a repo with no CI configured at all on real
+    // GitHub.
     Commit: {
       statusCheckRollup: async (parent: { oid: string; __repoId?: string }, _args, ctx: GqlContext) => {
         if (!parent.__repoId) return null;
@@ -432,7 +445,64 @@ export function createResolvers(
           __typename: "StatusCheckRollup",
           id: toGlobalId("StatusCheckRollup", `${parent.__repoId}:${parent.oid}`),
           state,
-          contexts: buildConnection([], {}),
+          __repoId: parent.__repoId,
+          __oid: parent.oid,
+        };
+      },
+    },
+
+    // `contexts` is what `gh pr checks` actually enumerates — the aggregate
+    // `state` above was already real, but an empty connection here made gh
+    // report "no checks reported" and exit nonzero on a green rollup. That was
+    // the last §2.1 gap: an agent that cannot see why its own CI passed or
+    // failed is exactly the hole the evidence plane exists to close.
+    //
+    // Each gate result projects to a StatusContext rather than a CheckRun. A
+    // CheckRun belongs to a CheckSuite belongs to a WorkflowRun — an Actions
+    // execution model ADP deliberately does not have (§2.5) — so claiming that
+    // shape would be a lie about what produced the result. StatusContext is the
+    // honest mapping: an external system reported a named status against a
+    // commit, which is precisely what a gate is.
+    StatusCheckRollup: {
+      contexts: async (parent: { __repoId: string; __oid: string }, args: ConnectionArgs, ctx: GqlContext) => {
+        const latest = await latestGateResults(ctx.db, parent.__repoId, parent.__oid);
+        const repo = await loadRepoById(ctx.db, parent.__repoId);
+
+        const items = [...latest.values()]
+          .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+          .map((row) => ({
+            __typename: "StatusContext" as const,
+            id: toGlobalId("StatusContext", `${parent.__repoId}:${parent.__oid}:${row.name}`),
+            context: row.name,
+            state: GATE_STATUS_TO_STATUS_STATE[row.status],
+            description: row.summary,
+            // Points at the evidence bundle, which is where the DSSE envelope
+            // behind this verdict actually lives — the one link an agent
+            // following up on a red gate wants. Null rather than a guessed
+            // hostname when the deployment did not configure a public URL.
+            targetUrl: publicUrl
+              ? `${publicUrl.replace(/\/$/, "")}/api/adp/repos/${repo.owner}/${repo.name}/evidence/${parent.__oid}`
+              : null,
+            createdAt: row.createdAt.toISOString(),
+            avatarUrl: null,
+            creator: null,
+            // Land policy decides what is required, and it does so per repo
+            // from adp.yaml rather than per context here. Reporting `true`
+            // would tell gh a gate blocks merging when the repo may not
+            // require it at all.
+            isRequired: false,
+          }));
+
+        const counts = new Map<string, number>();
+        for (const item of items) counts.set(item.state, (counts.get(item.state) ?? 0) + 1);
+
+        return {
+          ...buildConnection(items, args),
+          // Every context is a StatusContext, never a CheckRun — see above.
+          checkRunCount: 0,
+          checkRunCountsByState: [],
+          statusContextCount: items.length,
+          statusContextCountsByState: [...counts].map(([state, count]) => ({ state, count })),
         };
       },
     },

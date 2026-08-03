@@ -278,6 +278,51 @@ describe.skipIf(skipWithoutDb)("M3: cross-harness checkpoint and resume (D2)", (
     expect(rows).toHaveLength(0);
   }, 60_000);
 
+  // Two harnesses checkpointing one session at the same instant both used to
+  // compute the same `seq` off max(seq); the unique index turned the loser into
+  // an unhandled 23505, i.e. a 500 where the caller deserves either a
+  // checkpoint or a typed error. The session row is now locked for the
+  // allocation, so they serialize instead.
+  it("allocates checkpoint sequences correctly under concurrent writes", async () => {
+    const ws = await api(`/api/adp/repos/${owner}/${repoName}/workspaces`, {
+      method: "POST",
+      body: JSON.stringify({ base_ref: "main" }),
+    });
+    const branch = ws.body.branch as string;
+    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code", workspace_id: ws.body.id }),
+    });
+    const sessionId = started.body.id as string;
+
+    const CONCURRENT = 8;
+    let sha = mainSha;
+    const shas: string[] = [];
+    for (let i = 0; i < CONCURRENT; i++) {
+      sha = await commitOn(branch, sha, `concurrent ${i}`);
+      shas.push(sha);
+    }
+
+    const results = await Promise.all(
+      shas.map((s) =>
+        api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/checkpoints`, {
+          method: "POST",
+          body: JSON.stringify({ git_sha: s, state: { s } }),
+        }),
+      ),
+    );
+
+    expect(results.every((r) => r.status === 201)).toBe(true);
+    // 1..N with no gaps and no duplicates — the property the unique index
+    // protects and the lock is what makes achievable rather than merely
+    // enforced.
+    const seqs = (results.map((r) => r.body.seq) as number[]).sort((a, b) => a - b);
+    expect(seqs).toEqual(Array.from({ length: CONCURRENT }, (_unused, i) => i + 1));
+
+    const rows = await db.select().from(checkpointsTable).where(eq(checkpointsTable.sessionId, sessionId));
+    expect(rows).toHaveLength(CONCURRENT);
+  }, 120_000);
+
   it("refuses to resume a session that has never checkpointed", async () => {
     const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
       method: "POST",

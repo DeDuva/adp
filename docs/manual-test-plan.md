@@ -126,13 +126,22 @@ curl -X POST "$PUBLIC_URL/api/v3/repos/<owner>/<repo>/gates" \
 gh pr checks 1
 ```
 
-*Expect:* **`gh pr checks` reports "no checks reported" and exits non-zero — this is the one part
-of §2.1 that is not met today.** The rollup *state* is real and correct (`SUCCESS`), and the land
-policy gates on it, but `gh pr checks` enumerates `contexts`, which
-`http-gql/resolvers.ts` returns as a deliberately empty connection. So there is nothing for `gh` to
-list, however green the rollup is.
+*Expect:* a row per reported gate, naming the gate, its verdict, and a link — something like:
 
-Verify the part that does work directly:
+```
+test    pass    0    <PUBLIC_URL>/api/adp/repos/<owner>/<repo>/evidence/<sha>    12 passed
+```
+
+The link is the **evidence bundle**, not a CI dashboard: the DSSE envelope behind the verdict,
+which is the one follow-up an agent looking at a red gate actually wants.
+
+Each gate result projects to a `StatusContext` rather than a `CheckRun`. A `CheckRun` belongs to a
+`CheckSuite` belongs to a `WorkflowRun` — an Actions execution model ADP deliberately does not have
+(§2.5) — so claiming that shape would misrepresent what produced the result. `StatusContext` is the
+honest mapping: an external system reported a named status against a commit, which is exactly what a
+gate is.
+
+Verify the aggregate directly too:
 
 ```bash
 gh api graphql -f query='query { repository(owner:"<owner>", name:"<repo>") {
@@ -141,11 +150,9 @@ gh api graphql -f query='query { repository(owner:"<owner>", name:"<repo>") {
 
 *Expect:* `"state": "SUCCESS"`.
 
-`acceptance/run.sh` asserts both halves — the rollup is `SUCCESS`, *and* `gh pr checks` still
-fails in exactly this way. The second assertion is deliberate: when per-context detail gets
-implemented, that test fails and demands the gap be closed here and in the README's `gh` table,
-rather than quietly passing and leaving three documents claiming a limitation that no longer
-exists.
+`acceptance/run.sh` asserts the gate name, the verdict, and the evidence link — not just the exit
+code, since `gh pr checks` exits zero whenever nothing is failing, including when it found nothing
+at all. That was the shape of the bug this used to document.
 
 **B7. Get a typed review.**
 
