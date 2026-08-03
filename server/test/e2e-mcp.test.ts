@@ -66,7 +66,7 @@ describe.skipIf(skipWithoutDb)("M1c: MCP native plane", () => {
       (_req, payload, done) => done(null, payload),
     );
     await app.register(authPlugin(db));
-    registerRepoRoutes(app, db, gitBackend);
+    registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerChangeRoutes(app, db, gitBackend, new Signer("e2e-mcp-signing-key"));
     registerIssueRoutes(app, db);
     registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key", []);

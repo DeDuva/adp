@@ -80,7 +80,7 @@ describe.skipIf(skipWithoutDb)("M2: outbound webhook emitter", () => {
     );
     await app.register(authPlugin(db));
     const credentialKey = "e2e-webhooks-credential-key";
-    registerRepoRoutes(app, db, gitBackend);
+    registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerProposalRoutes(app, db, gitBackend, credentialKey);
     registerGateRoutes(app, db, signer, "http://localhost", credentialKey);
     registerWebhookRoutes(app, db, credentialKey);
