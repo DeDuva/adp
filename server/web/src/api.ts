@@ -118,6 +118,37 @@ export interface GateResult {
   created_at: string;
 }
 
+// M3 / D1: N proposals fanned out against one intent, one landed, the rest
+// reclaimed but still queryable. The comparison view is the "money shot" the
+// prototype doc's D1 exits on.
+export interface CandidateSetSummary {
+  id: string;
+  intent_id: string;
+  selection_policy: "manual" | "first_green" | "best_score";
+  selected_proposal_id: string | null;
+  status: "open" | "resolved" | "abandoned";
+  resolved_at: string | null;
+  created_at: string;
+  candidate_count: number;
+}
+
+export interface Candidate {
+  id: string;
+  number: number;
+  title: string;
+  state: "open" | "closed" | "merged";
+  head_ref: string;
+  head_sha: string;
+  // null means "not measured", not zero — a candidate with no score gate was
+  // never ranked, which is a different thing from ranking badly.
+  score: number | null;
+  gates: { name: string; status: "success" | "failure" | "pending"; summary: string }[];
+}
+
+export interface CandidateSetDetail extends Omit<CandidateSetSummary, "candidate_count"> {
+  candidates: Candidate[];
+}
+
 export interface EvidenceBundle {
   git_sha: string;
   change: { id: string; intent_id: string | null; provenance: unknown; signature: string; created_at: string } | null;
@@ -157,6 +188,11 @@ export const api = {
       method: "POST",
       body: "{}",
     }),
+
+  listCandidateSets: (conn: Connection) =>
+    request<CandidateSetSummary[]>(conn, `/api/adp/repos/${conn.owner}/${conn.repo}/candidate-sets`),
+  getCandidateSet: (conn: Connection, id: string) =>
+    request<CandidateSetDetail>(conn, `/api/adp/repos/${conn.owner}/${conn.repo}/candidate-sets/${id}`),
 
   getEvidence: (conn: Connection, gitSha: string) =>
     request<EvidenceBundle>(conn, `/api/adp/repos/${conn.owner}/${conn.repo}/evidence/${gitSha}`),

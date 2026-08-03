@@ -420,6 +420,22 @@ with the rest of the supervision UI. Covered by the acceptance run's UI tier.
 
 ---
 
+## 4a. Status (updated 2026-08-03)
+
+M3-0 through M3-4, M3-5's arm 1, and M3-6 have landed; see the M3 section of the plan of record for
+the per-item detail. What is outstanding is called out here rather than left to be inferred:
+**M3-5 arms 2 and 3**, the agent-backed cost comparison and fan-out-vs-serial arms, which need a
+real agent and (for arm 2) a real GitHub PAT and therefore run out of band. Until they run, the
+benchmark is published with one arm complete and the other two reported as not run — which is the
+contract in §4's M3-5, not a shortfall against it.
+
+One finding worth recording from running arm 1, because it was not predicted: total attempts track
+**N(N+1)/2 exactly** at every N measured. Writer *k* retries *k* times, so work grows quadratically
+while lands grow linearly. That is the merge-bottleneck thesis showing up as a clean closed form in
+first-party data for the first time. It is not on its own an argument for M5's speculative batching —
+A17 has to fail first, i.e. real orchestrators have to actually contend — but it is exactly the
+telemetry that gate was written to demand.
+
 ## 5. M3 exit criteria, restated
 
 The original two, plus what §3 adds. All of these should be executable checks, not judgements:

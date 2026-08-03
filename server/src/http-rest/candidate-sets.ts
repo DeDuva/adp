@@ -1,11 +1,18 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { candidateSets, proposals } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { findRepo } from "../core/repos-lookup.js";
-import { openCandidateSet, selectCandidate, listCandidates, resolveCandidateSet } from "../core/candidate-sets.js";
+import {
+  openCandidateSet,
+  selectCandidate,
+  listCandidates,
+  resolveCandidateSet,
+  candidateScore,
+} from "../core/candidate-sets.js";
+import { latestGateResults } from "../core/gate-results-lookup.js";
 import type { GitBackend } from "../core/git-backend.js";
 import type { Signer } from "../core/signing.js";
 import type { LandRequirement } from "../core/repo-policy.js";
@@ -105,11 +112,57 @@ export function registerCandidateSetRoutes(
         reply.code(404).send({ message: "Not Found" });
         return;
       }
+      // The comparison view (D1's "money shot") needs each candidate's head sha,
+      // its score, and its gate verdicts side by side — otherwise a reader can
+      // see that one candidate won but not *why*, which is the whole question a
+      // 50-way fan-out raises.
       const candidates = await listCandidates(db, id);
-      reply.send({
-        ...serializeCandidateSet(row),
-        candidates: candidates.map((c) => ({ id: c.id, number: c.number, title: c.title, state: c.state })),
-      });
+      const enriched = await Promise.all(
+        candidates.map(async (c) => {
+          const latest = await latestGateResults(db, repo.id, c.headSha);
+          return {
+            id: c.id,
+            number: c.number,
+            title: c.title,
+            state: c.state,
+            head_ref: c.headRef,
+            head_sha: c.headSha,
+            score: await candidateScore(db, repo.id, c.headSha),
+            gates: [...latest.values()].map((g) => ({ name: g.name, status: g.status, summary: g.summary })),
+          };
+        }),
+      );
+
+      reply.send({ ...serializeCandidateSet(row), candidates: enriched });
+    },
+  );
+
+  // Listing sets is what makes the comparison view reachable at all — before
+  // this, a set could only be fetched by an id the caller already had.
+  app.get(
+    "/api/adp/repos/:owner/:repo/candidate-sets",
+    { preHandler: requireScope("repo:read") },
+    async (req, reply) => {
+      const { owner, repo: repoName } = req.params as { owner: string; repo: string };
+      const repo = await findRepo(db, owner, repoName);
+      if (!repo) {
+        reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
+        return;
+      }
+      const rows = await db
+        .select()
+        .from(candidateSets)
+        .where(eq(candidateSets.repoId, repo.id))
+        .orderBy(desc(candidateSets.createdAt));
+
+      reply.send(
+        await Promise.all(
+          rows.map(async (row) => ({
+            ...serializeCandidateSet(row),
+            candidate_count: (await listCandidates(db, row.id)).length,
+          })),
+        ),
+      );
     },
   );
 

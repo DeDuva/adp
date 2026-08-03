@@ -1,0 +1,54 @@
+{
+  "recordedAt": "2026-08-03T15:11:37.195Z",
+  "arm": "merge-contention",
+  "deterministic": true,
+  "environment": {
+    "node": "v24.18.0",
+    "platform": "linux/x64",
+    "serverUrl": "http://127.0.0.1:3000",
+    "serverCommit": "7d4f7a477cd01e45ba26c9609aab88f8b621e2b9"
+  },
+  "result": {
+    "arm": "merge-contention",
+    "config": {
+      "writers": 16,
+      "baseRef": "main",
+      "maxRetriesPerWriter": 50
+    },
+    "landed": 16,
+    "failed": 0,
+    "wallClockMs": 29984.638073000002,
+    "landsPerSecond": 0.5336065741746396,
+    "totalAttempts": 136,
+    "totalConflicts": 120,
+    "conflictRate": 0.8823529411764706,
+    "retriesPerWriter": {
+      "max": 15,
+      "mean": 7.5,
+      "distribution": [
+        3,
+        2,
+        8,
+        6,
+        9,
+        10,
+        14,
+        1,
+        13,
+        5,
+        0,
+        11,
+        4,
+        7,
+        15,
+        12
+      ]
+    },
+    "landLatencyMs": {
+      "p50": 22151.519243,
+      "p95": 29980.716468,
+      "max": 29980.716468
+    },
+    "failures": []
+  }
+}

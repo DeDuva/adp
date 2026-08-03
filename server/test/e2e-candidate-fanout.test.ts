@@ -252,6 +252,37 @@ describe.skipIf(skipWithoutDb)("M3: candidate-set fan-out, resolution, and recla
       const [setRow] = await db.select().from(candidateSets).where(eq(candidateSets.id, candidateSetId));
       expect(setRow!.selectedProposalId).toBe(expectedWinner.proposalId);
       expect(setRow!.resolvedAt).not.toBeNull();
+
+      // The comparison view's read path (M3-6). The list makes a set reachable
+      // without already knowing its id, and the detail carries the evidence that
+      // decided the outcome — score and gates per candidate — because a view
+      // showing only that one candidate won, without why, would make a 50-way
+      // fan-out indistinguishable from a single proposal.
+      const list = await api(`/api/adp/repos/${owner}/${repoName}/candidate-sets`);
+      expect(list.status).toBe(200);
+      const summaries = list.body as unknown as { id: string; status: string; candidate_count: number }[];
+      const summary = summaries.find((s) => s.id === candidateSetId);
+      expect(summary).toBeTruthy();
+      expect(summary!.status).toBe("resolved");
+      expect(summary!.candidate_count).toBe(FAN_OUT);
+
+      const detail = await api(`/api/adp/repos/${owner}/${repoName}/candidate-sets/${candidateSetId}`);
+      expect(detail.status).toBe(200);
+      const detailCandidates = detail.body.candidates as {
+        id: string;
+        state: string;
+        head_sha: string;
+        score: number | null;
+        gates: { name: string; status: string }[];
+      }[];
+      expect(detailCandidates).toHaveLength(FAN_OUT);
+      const winnerRow = detailCandidates.find((c) => c.id === expectedWinner.proposalId)!;
+      expect(winnerRow.state).toBe("merged");
+      expect(winnerRow.score).toBe(FAN_OUT - 1);
+      expect(winnerRow.gates.map((g) => g.name)).toContain("score");
+      // Losers keep their evidence — that is what "queryable but not polluting
+      // history" has to mean for the view to be worth having.
+      expect(detailCandidates.filter((c) => c.score !== null)).toHaveLength(FAN_OUT);
     },
     300_000,
   );

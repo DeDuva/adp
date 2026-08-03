@@ -115,3 +115,25 @@ jobs:
       # adapters/test/fixtures/) and a fake local HTTP server standing in
       # for ADP, same pattern as the cli/ job.
       - run: npm test
+
+  bench:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The benchmark's reproducibility contract (bench/README.md), enforced:
+      # every published number is derived from a committed run record, so
+      # regenerating the report must be a no-op. A diff here means a figure was
+      # edited by hand or a run record changed without the report following —
+      # either way the published numbers stopped being reproducible.
+      #
+      # The merge-contention measurement itself is enforced separately, by
+      # server/test/e2e-merge-contention.test.ts in the `server` job, which
+      # drives bench/lib/merge-contention.mjs directly rather than a copy.
+      - run: npm run report
+      - run: git diff --exit-code report/

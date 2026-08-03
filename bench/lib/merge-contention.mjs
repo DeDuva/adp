@@ -42,6 +42,20 @@ class Api {
   get = (p) => this.call("GET", p);
   post = (p, b) => this.call("POST", p, b);
   put = (p, b) => this.call("PUT", p, b);
+
+  // GET /git/refs/<path> is a *prefix* match returning an array (GitHub's own
+  // shape), so `refs/heads/main` would also match `refs/heads/main-2`. Pick the
+  // exact ref rather than trusting position — as this arm creates a branch per
+  // attempt, the array is not small and its order is not a contract.
+  async refSha(owner, repo, ref) {
+    const res = await this.get(`/api/v3/repos/${owner}/${repo}/git/${ref}`);
+    if (res.status !== 200 || !Array.isArray(res.body)) {
+      throw new Error(`cannot read ${ref}: ${res.status} ${JSON.stringify(res.body)}`);
+    }
+    const match = res.body.find((r) => r.ref === ref);
+    if (!match) throw new Error(`ref ${ref} not found among ${res.body.length} matches`);
+    return match.object.sha;
+  }
 }
 
 function percentile(sorted, p) {
@@ -76,11 +90,8 @@ export async function runMergeContention({
 }) {
   const api = new Api(baseUrl, token);
 
-  const head = await api.get(`/api/v3/repos/${owner}/${repo}/git/refs/heads/${baseRef}`);
-  if (head.status !== 200) {
-    throw new Error(`cannot read ${baseRef}: ${head.status} ${JSON.stringify(head.body)}`);
-  }
-  const startingSha = head.body.object.sha;
+  const fullBaseRef = `refs/heads/${baseRef}`;
+  const startingSha = await api.refSha(owner, repo, fullBaseRef);
 
   const attemptsByWriter = new Array(writers).fill(0);
   const conflictsByWriter = new Array(writers).fill(0);
@@ -99,11 +110,13 @@ export async function runMergeContention({
 
         // Rebuild on the *current* base each attempt — that is what "rebase and
         // retry" means, and reusing a stale commit would just 409 forever.
-        const refreshed = await api.get(`/api/v3/repos/${owner}/${repo}/git/refs/heads/${baseRef}`);
-        baseSha = refreshed.body.object.sha;
+        baseSha = await api.refSha(owner, repo, fullBaseRef);
 
+        // `base_tree` takes the commit sha directly: the server resolves it with
+        // `git ls-tree`, which accepts any commit-ish. That saves a round-trip
+        // per attempt, and round-trips per attempt are the thing being measured.
         const tree = await api.post(`/api/v3/repos/${owner}/${repo}/git/trees`, {
-          base_tree: (await api.get(`/api/v3/repos/${owner}/${repo}/git/commits/${baseSha}`)).body.tree.sha,
+          base_tree: baseSha,
           tree: [{ path: `writer-${i}.txt`, mode: "100644", type: "blob", content: `writer ${i} attempt ${attempt}\n` }],
         });
 

@@ -1,0 +1,12 @@
+{
+  "name": "@adp/bench",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ADP benchmark harness (D4 / A1). Zero runtime dependencies, same as adapters/.",
+  "scripts": {
+    "merge-contention": "node arms/merge-contention.mjs",
+    "report": "node report/build-report.mjs",
+    "test": "node --test test/"
+  }
+}

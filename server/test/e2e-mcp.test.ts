@@ -128,11 +128,15 @@ describe.skipIf(skipWithoutDb)("M1c: MCP native plane", () => {
     await rm(gitRoot, { recursive: true, force: true });
   });
 
-  it("lists all 8 native-plane tools", async () => {
+  // An exact list, not a subset check: the native plane is the product surface
+  // agents actually see, so a tool appearing or disappearing should be a
+  // deliberate edit here rather than something that slips in unnoticed.
+  it("lists exactly the native-plane tools", async () => {
     const { tools } = await mcp.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
       [
+        // M1c
         "adp_candidates_open",
         "adp_candidates_select",
         "adp_evidence_get",
@@ -141,6 +145,12 @@ describe.skipIf(skipWithoutDb)("M1c: MCP native plane", () => {
         "adp_undo",
         "adp_workspace_create",
         "adp_workspace_destroy",
+        // M3: candidate-set resolution (D1) and sessions (D2)
+        "adp_candidates_resolve",
+        "adp_checkpoint_create",
+        "adp_session_get",
+        "adp_session_resume",
+        "adp_session_start",
       ].sort(),
     );
   });

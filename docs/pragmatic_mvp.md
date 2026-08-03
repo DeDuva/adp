@@ -861,6 +861,38 @@ rather than leftover tidying. Two minor M2 defects ride along: webhook CRUD neve
 operation log (M4's audit-log export is a projection of that table), and the Actions passthrough
 relayed for mirrors marked disabled.
 
+**Progress (2026-08-03).** Landed so far:
+- **M3-0 — M2 debt paid — ✓ landed.** First-import provenance (`core/change-recorder.ts` now walks
+  the full history on a new ref and lets dedup decide where to stop); webhook CRUD writes to the
+  operation log; the Actions passthrough honours a disabled mirror.
+- **M3-1 — schema — ✓ landed.** `sessions`, `checkpoints`, and candidate-set resolution state
+  (migration `0012`).
+- **M3-2 — candidate-set lifecycle — ✓ landed.** `manual`/`first_green`/`best_score` selection
+  policies, land-on-select through the shared land path, and reclamation of losing workspaces.
+  Gate reports gained an optional typed `score` carried into the signed predicate, so `best_score`
+  ranks on attested evidence rather than an out-of-band assertion. The land sequence itself moved to
+  `core/land.ts` and is now shared by the REST route, the GraphQL mutation, and candidate resolution
+  — it had been duplicated across the first two, and resolution would have made three.
+- **M3-3 — sessions and checkpoints — ✓ landed.** DSSE-signed checkpoints whose signature covers a
+  digest of the opaque harness state; resume verifies both and refuses on mismatch; lineage via
+  `resumed_from_session_id` plus `parentOp`. Four MCP tools, `spec/schemas/session.json` and
+  `checkpoint.json`.
+- **M3-4 — statistical land criteria — ✓ landed.** `gates_confident` on a Wilson lower bound, and
+  visible flake quarantine recorded as `gate.quarantine` at the point it permits a land.
+- **M3-5 arm 1 — merge contention — ✓ landed and run.** `bench/`, deterministic and CI-enforced.
+  First first-party measurement of the merge-bottleneck thesis: total attempts track N(N+1)/2
+  exactly at N = 2, 4, 8, 16 — quadratic work for linear lands, with conflict rate converging on
+  (N−1)/(N+1). See [`bench/report/merge-contention.md`](../bench/report/merge-contention.md).
+- **M3-6 — candidate-set comparison view — ✓ landed.** `server/web/`, plus the list endpoint and the
+  per-candidate score/gate projection the view needs. Losing candidates are shown alongside the
+  winner with the evidence that decided against them — a view showing only the winner would make a
+  50-way fan-out indistinguishable from a single proposal, which is the thing GitHub cannot express.
+
+Outstanding: **M3-5 arms 2 and 3** — the agent-backed three-way cost comparison and the
+fan-out-vs-serial arm. Both need a real agent burning real tokens, and arm 2 additionally needs a
+real GitHub repo and PAT, so they run out of band rather than in CI. The benchmark is published with
+arm 1 complete and these two reported as not run.
+
 **Exit:** D1 and D2 from the prototype doc are demonstrable; benchmark published with methodology.
 Added 2026-08-03: a repo mirrored in from GitHub with a >500-commit history has a signed change per
 commit **on first import**, proven by a test that mirrors rather than one that pushes over HTTP; a
@@ -903,6 +935,8 @@ adp/
     db/  auth/  gates/
   runner/       container gate executor (Postgres job queue)
   cli/          adp CLI (M2)
+  adapters/     scanner-as-gate adapters — wizcli, osv-scanner (M2)
+  bench/        benchmark harness — arms, captured run records, derived report (M3)
   web/          read-only supervision UI
   conformance/  black-box HTTP suite + gh record-replay ← future multi-vendor artifact
   deploy/       Dockerfile, docker-compose.yml, .env.example, Caddyfile, helm/ (M4)
