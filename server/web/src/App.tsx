@@ -7,6 +7,7 @@ import ProposalList from "./components/ProposalList.js";
 import ProposalDetail from "./components/ProposalDetail.js";
 import OperationsLog from "./components/OperationsLog.js";
 import EvidenceView from "./components/EvidenceView.js";
+import { CandidateSetList, CandidateSetDetailView } from "./components/CandidateSets.js";
 
 type Route =
   | { view: "issues" }
@@ -14,6 +15,8 @@ type Route =
   | { view: "proposals" }
   | { view: "proposal"; number: number }
   | { view: "operations" }
+  | { view: "candidate-sets" }
+  | { view: "candidate-set"; id: string }
   | { view: "evidence"; sha: string; back: Route };
 
 export default function App() {
@@ -26,7 +29,16 @@ export default function App() {
 
   if (!conn) return <Connect onConnected={setConn} />;
 
-  const tab = route.view === "issue" ? "issues" : route.view === "proposal" ? "proposals" : route.view === "evidence" ? null : route.view;
+  const tab =
+    route.view === "issue"
+      ? "issues"
+      : route.view === "proposal"
+        ? "proposals"
+        : route.view === "candidate-set"
+          ? "candidate-sets"
+          : route.view === "evidence"
+            ? null
+            : route.view;
 
   return (
     <div className="shell">
@@ -43,6 +55,12 @@ export default function App() {
           </button>
           <button className={tab === "proposals" ? "active" : ""} onClick={() => setRoute({ view: "proposals" })}>
             Pull requests
+          </button>
+          <button
+            className={tab === "candidate-sets" ? "active" : ""}
+            onClick={() => setRoute({ view: "candidate-sets" })}
+          >
+            Candidate sets
           </button>
           <button className={tab === "operations" ? "active" : ""} onClick={() => setRoute({ view: "operations" })}>
             Operation log
@@ -72,6 +90,17 @@ export default function App() {
             conn={conn}
             number={route.number}
             onBack={() => setRoute({ view: "proposals" })}
+            onViewEvidence={(sha) => setRoute({ view: "evidence", sha, back: route })}
+          />
+        )}
+        {route.view === "candidate-sets" && (
+          <CandidateSetList conn={conn} onOpen={(id) => setRoute({ view: "candidate-set", id })} />
+        )}
+        {route.view === "candidate-set" && (
+          <CandidateSetDetailView
+            conn={conn}
+            id={route.id}
+            onBack={() => setRoute({ view: "candidate-sets" })}
             onViewEvidence={(sha) => setRoute({ view: "evidence", sha, back: route })}
           />
         )}

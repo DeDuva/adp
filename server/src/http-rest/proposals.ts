@@ -8,11 +8,9 @@ import { proposals, changes, candidateSets } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepo } from "../core/repos-lookup.js";
-import { evaluateLandPolicy } from "../core/land-policy.js";
 import type { LandRequirement } from "../core/repo-policy.js";
-import { recordSbomEvidence } from "../core/sbom.js";
 import { emitWebhookEvent } from "../core/webhooks.js";
-import { performMerge } from "../core/merge.js";
+import { landProposal } from "../core/land.js";
 
 const CreateProposalBody = z.object({
   title: z.string().min(1),
@@ -341,105 +339,21 @@ export function registerProposalRoutes(
         reply.code(404).send({ message: "Not Found" });
         return;
       }
-      if (proposal.state === "merged") {
-        reply.code(422).send({ message: "Already merged" });
-        return;
-      }
-      if (proposal.state === "closed") {
-        reply.code(422).send({ message: "Cannot merge a closed proposal" });
-        return;
-      }
-
-      const policy = await evaluateLandPolicy(db, gitBackend, instanceFloor, repo, proposal);
-      if (!policy.allowed) {
-        reply.code(422).send({ message: "Land policy not satisfied", unmet: policy.unmet });
-        return;
-      }
-
-      const currentBaseSha = await gitBackend.resolveRef(owner, repoName, proposal.baseRef);
-      if (!currentBaseSha) {
-        reply.code(422).send({ message: `base branch '${proposal.baseRef}' no longer exists` });
-        return;
-      }
-
-      const isFastForward = await gitBackend.isAncestor(
-        owner,
-        repoName,
-        currentBaseSha,
-        proposal.headSha,
-      );
-      if (!isFastForward) {
-        reply.code(409).send({
-          message: `base '${proposal.baseRef}' has diverged from head '${proposal.headRef}' — not a fast-forward, rebase and retry`,
-        });
-        return;
-      }
-
-      // Re-check land policy immediately before the ref CAS. evaluateLandPolicy
-      // above and performMerge below aren't one atomic step across git and
-      // Postgres — this narrows the window a superseding gate result could
-      // land in to the width of this one extra query, rather than the whole
-      // request (docs/m2-readiness-review.md's TOCTOU item).
-      const policyAtCas = await evaluateLandPolicy(db, gitBackend, instanceFloor, repo, proposal);
-      if (!policyAtCas.allowed) {
-        reply.code(422).send({ message: "Land policy not satisfied", unmet: policyAtCas.unmet });
-        return;
-      }
-
-      const author = { name: req.identity!.principal, email: `${req.identity!.principal}@adp.local` };
-      const result = await performMerge(
-        gitBackend,
-        {
-          owner,
-          name: repoName,
-          baseRef: proposal.baseRef,
-          headSha: proposal.headSha,
-          headRef: proposal.headRef,
-          number: proposal.number,
-          title: proposal.title,
-          body: proposal.body,
-        },
-        currentBaseSha,
+      const result = await landProposal(
+        { db, gitBackend, instanceFloor, sbom, logError: (message, err) => req.log.error(`${message}: ${err}`) },
+        { id: repo.id, owner, name: repoName },
+        proposal,
         parsedMerge.data.merge_method,
-        author,
+        { identityId: req.identity!.identityId, principal: req.identity!.principal },
       );
       if (!result.ok) {
-        reply.code(result.status).send({ message: result.message });
+        reply.code(result.status).send({
+          message: result.message,
+          ...(result.unmet ? { unmet: result.unmet } : {}),
+        });
         return;
       }
-
-      const merged = await db.transaction(async (tx) => {
-        const [merged] = await tx
-          .update(proposals)
-          .set({ state: "merged", mergedAt: new Date() })
-          .where(eq(proposals.id, proposal.id))
-          .returning();
-
-        await recordOperation(tx, {
-          repoId: repo.id,
-          actorId: req.identity!.identityId,
-          verb: "proposal.merge",
-          target: `${owner}/${repoName}#${number}`,
-          before: { baseSha: currentBaseSha },
-          after: { baseSha: result.sha, mergedInto: proposal.baseRef, mergeMethod: parsedMerge.data.merge_method },
-        });
-
-        return merged!;
-      });
-
-      if (sbom) {
-        try {
-          // Keyed by the PR's head sha, not the resulting merge commit —
-          // same convention every other gate result uses (land-policy.ts's
-          // gates_green looks up by proposal.headSha too), since that's the
-          // commit whose tree the SBOM actually describes.
-          await recordSbomEvidence(db, gitBackend, sbom.signer, sbom.publicUrl, repo, proposal.headSha, req.identity!.identityId);
-        } catch (err) {
-          // Bookkeeping about a merge that already succeeded, same as
-          // post-receive's auto-record — log it, don't fail the response.
-          req.log.error(`SBOM generation for ${owner}/${repoName}@${proposal.headSha} failed: ${err}`);
-        }
-      }
+      const merged = result.proposal;
 
       emitWebhookEvent(
         db,

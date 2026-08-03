@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor clean-check up down down-all nuke deps test test-unit test-all conformance acceptance acceptance-ui browser browser-deps web cli adapters
+.PHONY: help bootstrap doctor clean-check up down down-all nuke deps test test-unit test-all conformance acceptance acceptance-ui browser browser-deps web cli adapters bench
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -95,6 +95,11 @@ cli: ## Typecheck, build, and test the adp CLI (no database needed)
 adapters: ## Test the scanner-as-gate adapters (no database needed)
 	npm test --prefix adapters
 
+bench: ## Regenerate the benchmark report from bench/runs/ and assert it is unchanged
+	npm run report --prefix bench
+	@git diff --exit-code bench/report/ || { \
+		echo "bench/report/ is stale — commit the regenerated report"; exit 1; }
+
 test-all: ## Everything CI runs: build, full suite, web, cli, adapters, conformance + acceptance
 	$(REQUIRE_ENV)
 	@$(LOAD_ENV) npm run typecheck --prefix server
@@ -104,6 +109,7 @@ test-all: ## Everything CI runs: build, full suite, web, cli, adapters, conforma
 	@$(MAKE) web
 	@$(MAKE) cli
 	@$(MAKE) adapters
+	@$(MAKE) bench
 	@$(LOAD_ENV) bash server/conformance/run.sh
 	@$(LOAD_ENV) bash server/acceptance/run.sh
 

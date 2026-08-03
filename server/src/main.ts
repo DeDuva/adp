@@ -22,6 +22,7 @@ import { registerDependencyAdmissionRoutes } from "./http-rest/dependency-admiss
 import { registerOperationRoutes } from "./http-rest/operations.js";
 import { registerWorkspaceRoutes } from "./http-rest/workspaces.js";
 import { registerEvidenceRoutes } from "./http-rest/evidence.js";
+import { registerSessionRoutes } from "./http-rest/sessions.js";
 import { registerMirrorRoutes } from "./http-rest/mirrors.js";
 import { registerActionsRoutes } from "./http-rest/actions.js";
 import { registerMirrorWebhookRoutes, registerMirrorWebhookRawBodyParser } from "./http-rest/mirror-webhook.js";
@@ -112,10 +113,11 @@ async function main() {
   registerOperationRoutes(app, db, gitBackend);
   registerWorkspaceRoutes(app, db, gitBackend);
   registerEvidenceRoutes(app, db);
+  registerSessionRoutes(app, db, gitBackend, signer, config.PUBLIC_URL);
   registerMirrorRoutes(app, db, config.MIRROR_CREDENTIAL_KEY);
   registerMirrorWebhookRoutes(app, db, gitBackend, signer, config.MIRROR_CREDENTIAL_KEY, config.PUBLIC_URL);
   registerActionsRoutes(app, db, config.MIRROR_CREDENTIAL_KEY);
-  registerCandidateSetRoutes(app, db);
+  registerCandidateSetRoutes(app, db, gitBackend, instanceFloor, { signer, publicUrl: config.PUBLIC_URL });
   registerWebhookRoutes(app, db, config.MIRROR_CREDENTIAL_KEY);
 
   const gqlSchema = loadGitHubSchema();

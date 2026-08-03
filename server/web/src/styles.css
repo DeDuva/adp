@@ -133,6 +133,9 @@ h3 { font-size: 0.95rem; margin: 1.25rem 0 0.5rem; color: var(--ink-soft); text-
 .list-row:hover { background: var(--paper-raised); }
 .list-row .num { font-family: var(--mono); color: var(--ink-soft); font-size: 0.82rem; flex: none; width: 2.5rem; }
 .list-row .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The one candidate a set landed. Marked with a rule rather than colour alone
+   so the distinction survives a greyscale screenshot and colour-blind readers. */
+.list-row.winner { border-left: 3px solid var(--accent); background: var(--accent-soft); }
 
 .pill {
   font-family: var(--mono);

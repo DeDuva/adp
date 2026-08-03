@@ -4,9 +4,9 @@ import { hasScope } from "../auth/plugin.js";
 import { identities, issueComments, issues, proposals, repos, reviews, intents } from "../db/schema.js";
 import { findRepo } from "../core/repos-lookup.js";
 import { recordOperation } from "../core/operations.js";
-import { evaluateLandPolicy } from "../core/land-policy.js";
 import type { LandRequirement } from "../core/repo-policy.js";
-import { performMerge, type MergeMethod } from "../core/merge.js";
+import { type MergeMethod } from "../core/merge.js";
+import { landProposal } from "../core/land.js";
 import { latestGateResults } from "../core/gate-results-lookup.js";
 import { emitWebhookEvent } from "../core/webhooks.js";
 import { toGlobalId, fromGlobalId } from "./global-id.js";
@@ -15,7 +15,6 @@ import type { GqlContext } from "./context.js";
 import type { ResolverMap } from "./attach-resolvers.js";
 import type { GitBackend } from "../core/git-backend.js";
 import type { Signer } from "../core/signing.js";
-import { recordSbomEvidence } from "../core/sbom.js";
 
 type Repo = typeof repos.$inferSelect;
 type IssueRow = typeof issues.$inferSelect;
@@ -747,99 +746,32 @@ export function createResolvers(
           });
         }
 
-        const policy = await evaluateLandPolicy(ctx.db, gitBackend, instanceFloor, repo, proposal);
-        if (!policy.allowed) {
-          throw new GraphQLError(`Land policy not satisfied: ${policy.unmet.join("; ")}`, {
-            extensions: { code: "BAD_USER_INPUT" },
-          });
-        }
-
-        const currentBaseSha = await gitBackend.resolveRef(repo.owner, repo.name, proposal.baseRef);
-        if (!currentBaseSha) {
-          throw new GraphQLError(`base branch '${proposal.baseRef}' no longer exists`, {
-            extensions: { code: "BAD_USER_INPUT" },
-          });
-        }
-
-        const isFastForward = await gitBackend.isAncestor(
-          repo.owner,
-          repo.name,
-          currentBaseSha,
-          proposal.headSha,
-        );
-        if (!isFastForward) {
-          throw new GraphQLError(
-            `base '${proposal.baseRef}' has diverged from head '${proposal.headRef}' — not a fast-forward, rebase and retry`,
-            { extensions: { code: "CONFLICT" } },
-          );
-        }
-
-        // Re-check land policy immediately before the ref CAS — see the REST
-        // merge route's comment (proposals.ts) for why this doesn't close the
-        // window entirely, only narrows it.
-        const policyAtCas = await evaluateLandPolicy(ctx.db, gitBackend, instanceFloor, repo, proposal);
-        if (!policyAtCas.allowed) {
-          throw new GraphQLError(`Land policy not satisfied: ${policyAtCas.unmet.join("; ")}`, {
-            extensions: { code: "BAD_USER_INPUT" },
-          });
-        }
-
         const mergeMethod = MERGE_METHOD_TO_INTERNAL[args.input.mergeMethod ?? "MERGE"] ?? "merge";
-        const author = { name: identity.principal, email: `${identity.principal}@adp.local` };
-        const result = await performMerge(
-          gitBackend,
+        // The land sequence itself — policy, fast-forward precondition, the
+        // TOCTOU re-check at the CAS point, the merge, and the post-merge
+        // bookkeeping — is core/land.ts, shared with the REST merge route and
+        // with candidate-set resolution. Only the error shaping and the
+        // webhook payload are GraphQL's own.
+        const result = await landProposal(
           {
-            owner: repo.owner,
-            name: repo.name,
-            baseRef: proposal.baseRef,
-            headSha: proposal.headSha,
-            headRef: proposal.headRef,
-            number: proposal.number,
-            title: proposal.title,
-            body: proposal.body,
+            db: ctx.db,
+            gitBackend,
+            instanceFloor,
+            sbom,
+            logError: (message: string, err: unknown) => console.error(`${message}:`, err),
           },
-          currentBaseSha,
+          repo,
+          proposal,
           mergeMethod,
-          author,
+          { identityId: identity.identityId, principal: identity.principal },
         );
         if (!result.ok) {
-          throw new GraphQLError(result.message, {
-            extensions: { code: result.status === 409 ? "CONFLICT" : "BAD_USER_INPUT" },
-          });
+          throw new GraphQLError(
+            result.unmet ? `Land policy not satisfied: ${result.unmet.join("; ")}` : result.message,
+            { extensions: { code: result.status === 409 ? "CONFLICT" : "BAD_USER_INPUT" } },
+          );
         }
-
-        const merged = await ctx.db.transaction(async (tx) => {
-          const [merged] = await tx
-            .update(proposals)
-            .set({ state: "merged", mergedAt: new Date() })
-            .where(eq(proposals.id, proposal.id))
-            .returning();
-
-          await recordOperation(tx, {
-            repoId: repo.id,
-            actorId: identity.identityId,
-            verb: "proposal.merge",
-            target: `${repo.owner}/${repo.name}#${proposal.number}`,
-            before: { baseSha: currentBaseSha },
-            after: { baseSha: result.sha, mergedInto: proposal.baseRef, mergeMethod },
-          });
-
-          return merged!;
-        });
-
-        if (sbom) {
-          try {
-            // Keyed by the PR's head sha, not the resulting merge commit —
-            // same convention every other gate result uses (land-policy.ts's
-            // gates_green looks up by proposal.headSha too).
-            await recordSbomEvidence(ctx.db, gitBackend, sbom.signer, sbom.publicUrl, repo, proposal.headSha, identity.identityId);
-          } catch (err) {
-            // Bookkeeping about a merge that already succeeded — logged,
-            // doesn't fail the mutation. See proposals.ts's REST merge
-            // route for the same call and the same reasoning.
-            console.error(`SBOM generation for ${repo.owner}/${repo.name}@${proposal.headSha} failed:`, err);
-          }
-        }
+        const merged = result.proposal;
 
         emitWebhookEvent(
           ctx.db,

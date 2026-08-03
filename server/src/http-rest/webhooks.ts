@@ -7,6 +7,7 @@ import { requireScope } from "../auth/plugin.js";
 import { findRepo } from "../core/repos-lookup.js";
 import type { WebhookEventType } from "../core/webhooks.js";
 import { encryptCredential } from "../core/mirror-crypto.js";
+import { recordOperation } from "../core/operations.js";
 
 const WEBHOOK_EVENTS: [WebhookEventType, ...WebhookEventType[]] = ["push", "pull_request", "gate_result"];
 
@@ -50,18 +51,35 @@ export function registerWebhookRoutes(app: FastifyInstance, db: Db, credentialKe
       return;
     }
 
-    const [hook] = await db
-      .insert(webhooks)
-      .values({
-        repoId: repo.id,
-        targetUrl: parsed.data.config.url,
-        secretCiphertext: encryptCredential(parsed.data.config.secret, credentialKey),
-        events: parsed.data.events,
-        active: parsed.data.active,
-      })
-      .returning();
+    const hook = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(webhooks)
+        .values({
+          repoId: repo.id,
+          targetUrl: parsed.data.config.url,
+          secretCiphertext: encryptCredential(parsed.data.config.secret, credentialKey),
+          events: parsed.data.events,
+          active: parsed.data.active,
+        })
+        .returning();
 
-    reply.code(201).send(serializeWebhook(hook!));
+      // Pointing a signed feed of repository activity at an arbitrary URL is
+      // exactly the kind of act an audit log exists to record — and M4's
+      // audit-log export is a projection of this table, so a write path that
+      // skips it is a hole in that export. `secret` is never recorded, same
+      // reason serializeWebhook never returns it.
+      await recordOperation(tx, {
+        repoId: repo.id,
+        actorId: req.identity!.identityId,
+        verb: "webhook.create",
+        target: `${owner}/${repoName}@webhook:${row!.id}`,
+        after: { id: row!.id, url: row!.targetUrl, events: row!.events, active: row!.active, secret: { configured: true } },
+      });
+
+      return row!;
+    });
+
+    reply.code(201).send(serializeWebhook(hook));
   });
 
   app.get("/api/v3/repos/:owner/:repo/hooks", { preHandler: requireScope("repo:read") }, async (req, reply) => {
@@ -107,10 +125,23 @@ export function registerWebhookRoutes(app: FastifyInstance, db: Db, credentialKe
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
       }
-      const deleted = await db
-        .delete(webhooks)
-        .where(and(eq(webhooks.id, hookId), eq(webhooks.repoId, repo.id)))
-        .returning();
+      const deleted = await db.transaction(async (tx) => {
+        const rows = await tx
+          .delete(webhooks)
+          .where(and(eq(webhooks.id, hookId), eq(webhooks.repoId, repo.id)))
+          .returning();
+        if (rows.length === 0) return rows;
+
+        await recordOperation(tx, {
+          repoId: repo.id,
+          actorId: req.identity!.identityId,
+          verb: "webhook.delete",
+          target: `${owner}/${repoName}@webhook:${hookId}`,
+          before: { id: rows[0]!.id, url: rows[0]!.targetUrl, events: rows[0]!.events, active: rows[0]!.active },
+        });
+
+        return rows;
+      });
       if (deleted.length === 0) {
         reply.code(404).send({ message: "Not Found" });
         return;

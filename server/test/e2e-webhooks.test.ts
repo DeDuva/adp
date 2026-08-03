@@ -10,7 +10,8 @@ import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
-import { identities } from "../src/db/schema.js";
+import { eq } from "drizzle-orm";
+import { identities, operations } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
@@ -223,5 +224,21 @@ describe.skipIf(skipWithoutDb)("M2: outbound webhook emitter", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(afterDelete.status).toBe(404);
+
+    // Both writes are in the operation log. Registering an outbound webhook
+    // points a signed feed of repository activity at an arbitrary URL, and M4's
+    // audit-log export is a projection of this table — a write path that skips
+    // it is a hole in that export, so this asserts the pair rather than the
+    // response codes alone.
+    const ops = await db
+      .select()
+      .from(operations)
+      .where(eq(operations.target, `${owner}/${repoName}@webhook:${hook.id}`));
+    const verbs = ops.map((op) => op.verb).sort();
+    expect(verbs).toEqual(["webhook.create", "webhook.delete"]);
+
+    // The secret is the one thing that must never reach the log, same reason
+    // the API never echoes it back.
+    expect(JSON.stringify(ops)).not.toContain("shh");
   });
 });

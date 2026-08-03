@@ -85,6 +85,13 @@
       "when": 1785764000000,
       "tag": "0011_gate_results_external_id",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785768233284,
+      "tag": "0012_m3_sessions_checkpoints_candidate_resolution",
+      "breakpoints": true
     }
   ]
 }
