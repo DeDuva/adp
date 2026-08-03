@@ -49,6 +49,13 @@ async function main() {
   // need to depend on core/repo-policy.ts's enum.
   const instanceFloor = LandRequirement.array().parse(config.LAND_POLICY_FLOOR);
 
+  // Deliberately NOT ignoreTrailingSlash. It is the tidy-looking fix for `gh
+  // auth status` probing `GET /api/v3/` (see http-rest/identity.ts) and it
+  // does fix that — but it also breaks @fastify/static's directory-index
+  // route: with the flag on, `/ui/` 404s while `/ui/index.html` still serves,
+  // which takes the whole supervision UI offline. Buying one path's tolerance
+  // with a global routing change is a bad trade; identity.ts registers both
+  // spellings itself instead.
   const app = Fastify({ logger: true });
 
   // git smart-HTTP payloads (pack data) must reach the CGI subprocess

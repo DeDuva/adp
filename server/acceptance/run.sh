@@ -109,6 +109,20 @@ done
 curl -sf "http://localhost:${PORT}/healthz" >/dev/null || { cat "$WORKDIR/server.log"; fail "server never became healthy"; }
 pass "server healthy on :$PORT"
 
+# Serving /ui/ is a route-registration property, not a browser one — a plain
+# 200 check catches an entire class of breakage (a global Fastify routing
+# option shadowing @fastify/static's directory index) without needing
+# Playwright, and therefore runs on every acceptance pass rather than only
+# under ADP_ACCEPTANCE_UI=1. That gap is exactly how such a regression once
+# reached main: the fast CI job never loaded /ui/ at all.
+if [ -d web/dist ]; then
+  ui_code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${PORT}/ui/")
+  [ "$ui_code" = "200" ] || fail "A6: GET /ui/ returned ${ui_code}, expected 200 (web/dist is built)"
+  pass "A6 /ui/ is served"
+else
+  note "A6 skipped: server/web/dist not built"
+fi
+
 # `gh` refuses plain HTTP for any non-github.com host (B1 in the manual plan).
 openssl req -x509 -newkey rsa:2048 -keyout "$WORKDIR/key.pem" -out "$WORKDIR/cert.pem" \
   -days 1 -nodes -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost" >/dev/null 2>&1
@@ -127,6 +141,17 @@ pass "repo ${OWNER}/${REPO}"
 export GH_ENTERPRISE_TOKEN="$TOKEN"
 export SSL_CERT_FILE="$WORKDIR/cert.pem"
 GH_REPO="${GH_HOST}/${OWNER}/${REPO}"
+
+# The first thing a human runs after pointing gh at a new host, and — until
+# 2026-08-03 — the one gh command nothing here or in conformance/ ever
+# exercised. It probes `GET /api/v3/` *with* a trailing slash, which Fastify
+# treated as a distinct route from the registered `/api/v3` and 404'd, so gh
+# declared a perfectly valid token invalid. Fixed by ignoreTrailingSlash in
+# src/main.ts; this asserts it, because that option lives in main.ts and no
+# unit test that builds its own Fastify instance can guard it.
+GH_HOST="$GH_HOST" gh auth status 2>&1 | grep -q "Logged in to ${GH_HOST}" \
+  || fail "A5: gh auth status did not report a working login"
+pass "A5 gh auth status"
 
 step "B — the agent's loop"
 
