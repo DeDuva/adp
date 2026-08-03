@@ -289,6 +289,11 @@ describe.skipIf(!process.env.DATABASE_URL)("M2: Actions ingest + passthrough", (
     // A broken call that explains itself costs an agent one turn (§2.4).
     expect(body.adp_equivalent).toContain("adp.yaml");
     expect(body.adp_equivalent).toContain("/gates");
+    // ...but only if the endpoint it names is real. This body used to point at
+    // `/commits/{ref}/check-runs`, which this server has never served, so the
+    // self-describing 404 cost an agent two turns instead of saving it one.
+    expect(body.adp_equivalent).toContain("/commits/{sha}/gates");
+    expect(body.adp_equivalent).not.toContain("check-runs");
   });
 
   // A disabled mirror is the operator saying "stop talking to GitHub for this

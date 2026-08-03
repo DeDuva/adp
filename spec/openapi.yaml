@@ -3,10 +3,20 @@ info:
   title: ADP API
   version: 0.0.0-mvp
   description: >
-    Native and compat-plane HTTP surface for ADP. This file grows with each
-    milestone; M0 only covers the walking-skeleton endpoints. GitHub REST
-    compatibility endpoints (mounted at /api/v3) are a separate obligation
-    tracked here as they're implemented — see docs/pragmatic_mvp.md §2.4.
+    Native and compat-plane HTTP surface for ADP — see docs/pragmatic_mvp.md
+    §2.4 for what is in scope and §2.5 for what is deliberately cut.
+
+    Two planes share this file. `/api/v3` is the GitHub-compatible surface, kept
+    faithful enough that unmodified `gh` works against it. `/api/adp` is the
+    native plane, which has no GitHub analogue: workspaces, candidate sets,
+    sessions and checkpoints, the operation log, and evidence bundles.
+
+    Completeness is enforced, not aspirational: server/src/spec-coverage.test.ts
+    enumerates the server's real route table and fails if this file and the
+    implementation describe different APIs in either direction. Deliberate
+    omissions are the git smart-HTTP wire protocol (specified by git itself and
+    proxied verbatim), the loopback-only receive-path hook endpoints, and the
+    inbound GitHub webhook receiver, whose payload contract is GitHub's.
 servers:
   - url: /
 paths:
@@ -322,11 +332,33 @@ paths:
       - $ref: "#/components/parameters/number"
     put:
       summary: >
-        Merge a proposal. Fast-forward only — no evidence/gate check yet
-        (that's M1c's land policy). A non-fast-forward base is the MVP's
-        conflict model: 409, the agent rebases and retries.
+        Land a proposal, gated on evidence.
+
+        Land policy is resolved two-level — instance floor ∧ the repo's
+        `adp.yaml` — and re-checked immediately before the ref compare-and-swap,
+        which narrows but does not close the window a superseding gate result
+        could land in (git and Postgres are not one transaction). Requirements
+        are `gates_green`, `one_approval`, and `gates_confident`, the last
+        gating on the Wilson lower bound of a gate's trailing pass rate. A gate
+        that disagrees with itself often enough is quarantined: it stops
+        blocking, but visibly, and the quarantine is recorded as an operation.
+
+        A non-fast-forward base is the MVP's conflict model: 409, the agent
+        rebases and retries. `merge_method` then decides what lands —
+        `merge` (default, matching GitHub) or `squash`. `rebase` is a typed 422,
+        not implemented.
       security:
         - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                merge_method:
+                  type: string
+                  enum: [merge, squash, rebase]
+                  default: merge
       responses:
         "200":
           description: Merged
@@ -335,7 +367,9 @@ paths:
         "409":
           description: Base has diverged from head — not a fast-forward
         "422":
-          description: Already merged, or the proposal is closed
+          description: >
+            Land policy not satisfied (body carries `unmet`), already merged,
+            the proposal is closed, or `merge_method: rebase`.
   /api/v3/repos/{owner}/{repo}/pulls/{number}/reviews:
     parameters:
       - $ref: "#/components/parameters/owner"
@@ -367,6 +401,942 @@ paths:
           description: OK
         "404":
           description: Not found
+  /metrics:
+    get:
+      summary: >
+        Prometheus text-format counters — REST by route pattern/method/status,
+        GraphQL by root field/operation type/outcome. Unauthenticated, like the
+        probes above: an operator's scraper, not a repo-scoped resource.
+      responses:
+        "200":
+          description: Prometheus exposition format
+  /api/v3/:
+    get:
+      summary: >
+        Same as /api/v3. Registered under both spellings deliberately: `gh auth
+        status` probes the trailing-slash form, and the tidy fix
+        (ignoreTrailingSlash) breaks the static UI's directory index.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: API root
+  /api/v3/user/repos:
+    post:
+      summary: Create a repository owned by the authenticated user (GitHub-shaped).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRepoRequest"
+      responses:
+        "201":
+          description: Created
+        "422":
+          description: Validation failed, or the repository already exists
+  /api/v3/orgs/{org}/repos:
+    parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Create a repository owned by an org (GitHub-shaped).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRepoRequest"
+      responses:
+        "201":
+          description: Created
+        "422":
+          description: Validation failed, or the repository already exists
+  /api/v3/repos/{owner}/{repo}/contents/{path}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/path"
+    get:
+      summary: File or directory contents at a ref (`?ref=`), GitHub-shaped.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: A file object, or an array of entries for a directory
+        "404":
+          description: Not found
+  /api/v3/repos/{owner}/{repo}/commits:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    get:
+      summary: Commit list, newest first. `?sha=` selects the starting ref.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Commits
+  /api/v3/repos/{owner}/{repo}/commits/{sha}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/sha"
+    get:
+      summary: A single commit.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Commit
+        "404":
+          description: Not found
+  /api/v3/repos/{owner}/{repo}/commits/{sha}/gates:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/sha"
+    get:
+      summary: >
+        Gate results reported against a commit. This is the ADP equivalent an
+        agent is pointed at when it asks a non-mirrored repo for Actions runs.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Gate results, most recent per gate name
+  /api/v3/repos/{owner}/{repo}/compare/{path}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/path"
+    get:
+      summary: Compare two refs (`{base}...{head}`), GitHub-shaped.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Comparison
+        "404":
+          description: Either ref could not be resolved
+  /api/v3/repos/{owner}/{repo}/pulls/{number}/files:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/number"
+    get:
+      summary: Files changed by a proposal.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Changed files
+        "404":
+          description: Not found
+  /api/v3/repos/{owner}/{repo}/git/refs:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    get:
+      summary: All refs. Paginated with `per_page`/`page`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Refs
+    post:
+      summary: Create a ref.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ref, sha]
+              properties:
+                ref:
+                  type: string
+                sha:
+                  type: string
+      responses:
+        "201":
+          description: Created
+  /api/v3/repos/{owner}/{repo}/git/refs/{path}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/path"
+    get:
+      summary: >
+        Refs matching a prefix — GitHub's own shape, so this returns an **array**
+        even when the prefix names exactly one ref.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Matching refs
+        "404":
+          description: No ref matches the prefix
+  /api/v3/repos/{owner}/{repo}/git/refs/heads/{branch}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - name: branch
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      summary: Delete a branch ref.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+  /api/v3/repos/{owner}/{repo}/git/blobs:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    post:
+      summary: Create a blob.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                encoding:
+                  type: string
+                  enum: [utf-8, base64]
+      responses:
+        "201":
+          description: Created
+  /api/v3/repos/{owner}/{repo}/git/blobs/{sha}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/sha"
+    get:
+      summary: Read a blob.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Blob
+        "404":
+          description: Not found
+  /api/v3/repos/{owner}/{repo}/git/trees:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    post:
+      summary: >
+        Create a tree. `base_tree` accepts any commit-ish, not only a tree sha —
+        the server resolves it with `git ls-tree`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tree]
+              properties:
+                base_tree:
+                  type: string
+                tree:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        "201":
+          description: Created
+  /api/v3/repos/{owner}/{repo}/git/trees/{sha}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/sha"
+    get:
+      summary: Read a tree.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Tree
+        "404":
+          description: Not found
+  /api/v3/repos/{owner}/{repo}/git/commits:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    post:
+      summary: Create a commit object.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message, tree, parents]
+              properties:
+                message:
+                  type: string
+                tree:
+                  type: string
+                parents:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "201":
+          description: Created
+  /api/v3/repos/{owner}/{repo}/git/commits/{sha}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/sha"
+    get:
+      summary: Read a commit object.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Commit
+        "404":
+          description: Not found
+  /api/v3/repos/{owner}/{repo}/gates:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    post:
+      summary: >
+        Report a gate result against a commit. The server is the receiving and
+        attestation end — it runs nothing. The response's `envelope` is a signed
+        DSSE-wrapped in-toto Statement, and *is* the evidence; the other fields
+        are a queryable projection of it.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReportGateRequest"
+      responses:
+        "201":
+          description: Recorded
+        "422":
+          description: Validation failed
+  /api/v3/repos/{owner}/{repo}/dependency-admission:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    post:
+      summary: >
+        Admission verdict for a lockfile diff — three-way `admit`/`quarantine`/
+        `block` per package, recorded as an ordinary gate result. `quarantine`
+        reports gate status `pending`, which `gates_green` already treats as
+        not-green, so a repo opts in by naming the gate in adp.yaml.
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Verdict recorded
+        "422":
+          description: Validation failed
+  /api/v3/repos/{owner}/{repo}/hooks:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    get:
+      summary: List outbound webhook subscriptions. The secret is never returned.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Hooks
+    post:
+      summary: >
+        Subscribe to outbound events (`push`, `pull_request`, `gate_result`).
+        Deliveries are HMAC-SHA256 signed with GitHub's `X-Hub-Signature-256`
+        header shape. The secret is write-only, and encrypted at rest.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [config]
+              properties:
+                active:
+                  type: boolean
+                events:
+                  type: array
+                  items:
+                    type: string
+                    enum: [push, pull_request, gate_result]
+                config:
+                  type: object
+                  required: [url, secret]
+                  properties:
+                    url:
+                      type: string
+                      format: uri
+                    secret:
+                      type: string
+      responses:
+        "201":
+          description: Created
+        "422":
+          description: Validation failed
+  /api/v3/repos/{owner}/{repo}/hooks/{hookId}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - name: hookId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: A single webhook subscription.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Hook
+        "404":
+          description: Not found
+    delete:
+      summary: Delete a webhook subscription.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+  /api/v3/repos/{owner}/{repo}/mirror:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    get:
+      summary: The repository's mirror configuration and recent sync log.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Mirror
+        "404":
+          description: Not mirrored
+    post:
+      summary: >
+        Configure mirroring against a GitHub remote. The credential and the
+        inbound webhook secret are encrypted at rest; `webhook_secret` is
+        returned exactly once, at creation.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [remote_url, direction, credential]
+              properties:
+                remote_url:
+                  type: string
+                direction:
+                  type: string
+                  enum: [outbound, inbound, both]
+                credential:
+                  type: string
+      responses:
+        "201":
+          description: Created
+        "422":
+          description: Validation failed, or the repository is already mirrored
+    delete:
+      summary: Stop mirroring.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not mirrored
+  /api/v3/repos/{owner}/{repo}/actions/runs:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    get:
+      summary: >
+        Relayed upstream for a mirrored repo — a passthrough, not an
+        implementation. ADP never executes workflow YAML (§2.5). Non-mirrored
+        repos and mirrors that are disabled get a self-describing 404 naming
+        the ADP equivalent; every write path (dispatch, re-run, cancel) stays
+        404 permanently.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Upstream response, relayed verbatim and never recorded
+        "404":
+          description: Not mirrored — body names the ADP equivalent
+        "502":
+          description: >
+            Upstream unreachable or rate-limited. Never a synthesized empty run
+            list: an agent that believes CI passed because the proxy fabricated
+            silence is the worst outcome available here.
+  /api/v3/repos/{owner}/{repo}/actions/runs/{runId}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: A single upstream workflow run, relayed. See /actions/runs.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Upstream response
+        "404":
+          description: Not mirrored
+        "502":
+          description: Upstream failed
+  /api/v3/repos/{owner}/{repo}/actions/runs/{runId}/jobs:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Jobs for an upstream workflow run, relayed. See /actions/runs.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Upstream response
+        "404":
+          description: Not mirrored
+        "502":
+          description: Upstream failed
+  /api/v3/repos/{owner}/{repo}/actions/workflows:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    get:
+      summary: Upstream workflow definitions, relayed. See /actions/runs.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Upstream response
+        "404":
+          description: Not mirrored
+        "502":
+          description: Upstream failed
+  /api/adp/repos/{owner}/{repo}/workspaces:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    get:
+      summary: List workspaces.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Workspaces
+    post:
+      summary: >
+        Fork a workspace from a base ref. A workspace is deliberately just a
+        branch `adp/ws/<id>` with lifecycle metadata — no new storage mechanism,
+        no VFS.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [base_ref]
+              properties:
+                base_ref:
+                  type: string
+                ttl_hours:
+                  type: number
+      responses:
+        "201":
+          description: Created
+        "422":
+          description: Base ref not found
+  /api/adp/repos/{owner}/{repo}/workspaces/{id}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/id"
+    delete:
+      summary: >
+        Destroy a workspace: deletes its branch and stamps `destroyedAt`. The
+        row is kept so the operation log stays a complete history.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Destroyed
+        "422":
+          description: Not found, or already destroyed
+  /api/adp/repos/{owner}/{repo}/operations:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    get:
+      summary: >
+        The append-only operation log — every mutation, written in the same
+        transaction as the state change it describes. Filterable by `verb`,
+        `actor`, `path`, `since`, `until`, `limit`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Operations, newest first
+  /api/adp/repos/{owner}/{repo}/operations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/id"
+    get:
+      summary: A single operation.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Operation
+        "404":
+          description: Not found
+  /api/adp/repos/{owner}/{repo}/operations/{id}/undo:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/id"
+    post:
+      summary: >
+        Undo an operation — operation-log undo with the causal record preserved,
+        not revert-as-new-commit. The undo is itself an operation.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The recorded undo operation
+        "422":
+          description: This operation is not undoable, or was already undone
+  /api/adp/repos/{owner}/{repo}/evidence/{sha}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/sha"
+    get:
+      summary: >
+        The consolidated evidence bundle for a commit: its signed change plus
+        every gate result's DSSE envelope. One read answers "what landed, who
+        produced it, and how was it verified".
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Evidence bundle
+  /api/adp/repos/{owner}/{repo}/candidate-sets:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    get:
+      summary: List candidate sets, newest first.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Candidate sets
+    post:
+      summary: >
+        Open a candidate set against one intent — N proposals fanned out, one
+        selected. The MVP feature GitHub structurally cannot express (§2.2).
+        Proposals join by passing `candidate_set_id` at creation.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [intent_id]
+              properties:
+                intent_id:
+                  type: string
+                  format: uuid
+                selection_policy:
+                  type: string
+                  enum: [manual, first_green, best_score]
+                  default: manual
+      responses:
+        "201":
+          description: Created
+        "422":
+          description: Intent not found in this repository
+  /api/adp/repos/{owner}/{repo}/candidate-sets/{id}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/id"
+    get:
+      summary: >
+        A candidate set with every candidate's head sha, score, and gate
+        verdicts — the comparison view's read model.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Candidate set
+        "404":
+          description: Not found
+  /api/adp/repos/{owner}/{repo}/candidate-sets/{id}/select:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/id"
+    post:
+      summary: >
+        Record which candidate won. This only records the choice — /resolve is
+        what acts on it.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proposal_id]
+              properties:
+                proposal_id:
+                  type: string
+                  format: uuid
+      responses:
+        "200":
+          description: Updated
+        "422":
+          description: Not a candidate in this set
+  /api/adp/repos/{owner}/{repo}/candidate-sets/{id}/resolve:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/id"
+    post:
+      summary: >
+        Finish a fan-out: pick the winner by the set's selection policy, land it
+        (squash — one landed change per set) through the ordinary land path, and
+        reclaim the losers' workspaces. Losing proposals are closed and their
+        branches deleted, but their rows and evidence are never removed: the
+        discarded attempts stay queryable without polluting history.
+        Land is serial — speculative batching is not implemented.
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                proposal_id:
+                  type: string
+                  format: uuid
+                  description: Resolve this candidate regardless of policy. Required for an unselected `manual` set.
+      responses:
+        "200":
+          description: Resolved — the landed proposal and what was reclaimed
+        "409":
+          description: The base moved during the land; retry
+        "422":
+          description: >
+            No winner under the policy, the set is already resolved, or the
+            winner failed land policy (the set stays open).
+  /api/adp/repos/{owner}/{repo}/sessions:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    post:
+      summary: >
+        Start a session — a unit of agent work that outlives any one harness.
+        `harness` is an opaque identifier ADP never branches on; that is what
+        makes the protocol harness-neutral rather than harness-aware.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [harness]
+              properties:
+                harness:
+                  type: string
+                intent_id:
+                  type: string
+                  format: uuid
+                workspace_id:
+                  type: string
+                  format: uuid
+      responses:
+        "201":
+          description: Created
+        "422":
+          description: Intent or workspace not found in this repository
+  /api/adp/repos/{owner}/{repo}/sessions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/id"
+    get:
+      summary: >
+        A session with its checkpoints and its full resume lineage — the chain
+        back to the session that started the work, however many harnesses it
+        passed through.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Session, lineage, and checkpoints
+        "404":
+          description: Not found
+  /api/adp/repos/{owner}/{repo}/sessions/{id}/checkpoints:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/id"
+    get:
+      summary: A session's checkpoints, in sequence order.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Checkpoints
+        "404":
+          description: Not found
+    post:
+      summary: >
+        Checkpoint a session at a commit, with opaque harness state. The
+        response's `envelope` is a signed DSSE statement binding the commit and
+        a SHA-256 digest of `state` — see spec/schemas/checkpoint.json. `state`
+        is never parsed by ADP, so a harness storing its own format needs no
+        protocol change.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [git_sha]
+              properties:
+                git_sha:
+                  type: string
+                  pattern: "^[0-9a-f]{40}$"
+                harness:
+                  type: string
+                state: {}
+      responses:
+        "201":
+          description: Created
+        "409":
+          description: The session is closed
+        "422":
+          description: The commit could not be resolved in this repository
+  /api/adp/repos/{owner}/{repo}/sessions/{id}/resume:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/id"
+    post:
+      summary: >
+        Resume a session under a (possibly different) harness. Verifies the
+        checkpoint's DSSE signature **and** re-derives its state digest before
+        forking a workspace at the checkpointed commit — an unverified resume
+        would make "one continuous signed history" false while looking true.
+        Creates a new session linked by `resumed_from_session_id`, and records
+        `session.resume` with `parentOp` pointing at the checkpoint's own
+        operation. The old session is never mutated beyond its status.
+        Defaults to the latest checkpoint.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [harness]
+              properties:
+                harness:
+                  type: string
+                checkpoint_id:
+                  type: string
+                  format: uuid
+      responses:
+        "201":
+          description: The new session, what it resumed from, and its workspace
+        "404":
+          description: Session not found
+        "422":
+          description: >
+            No checkpoint to resume from, or the checkpoint failed signature or
+            state-digest verification.
+  /api/adp/repos/{owner}/{repo}/sessions/{id}/close:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/id"
+    post:
+      summary: Close a session. Idempotent.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Closed
+        "404":
+          description: Not found
 components:
   parameters:
     owner:
@@ -387,6 +1357,26 @@ components:
       required: true
       schema:
         type: integer
+    id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    sha:
+      name: sha
+      in: path
+      required: true
+      schema:
+        type: string
+    path:
+      name: path
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Matches the rest of the URL, including slashes.
   securitySchemes:
     bearerAuth:
       type: http
@@ -465,6 +1455,29 @@ components:
         state:
           type: string
           enum: [open, closed]
+    ReportGateRequest:
+      type: object
+      required: [git_sha, name, status]
+      properties:
+        git_sha:
+          type: string
+          pattern: "^[0-9a-f]{40}$"
+        name:
+          type: string
+        status:
+          type: string
+          enum: [success, failure, pending]
+        summary:
+          type: string
+        score:
+          type: number
+          description: >
+            Optional numeric score, carried into the signed predicate so a
+            candidate set's `best_score` policy ranks on attested evidence.
+            Deliberately one typed field rather than a general predicate
+            passthrough — the predicate is what gets signed, and arbitrary
+            caller-supplied content would make the attestation a claim ADP
+            merely relayed.
     CreateReviewRequest:
       type: object
       required: [state]
