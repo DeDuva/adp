@@ -193,6 +193,18 @@ export const gateResults = pgTable(
   // a specific gate's latest verdict — same reasoning as `changes`' index.
   (table) => [
     index("gate_results_repo_id_git_sha_name_idx").on(table.repoId, table.gitSha, table.name),
+    // M3's statistical land criteria (core/flake-stats.ts) ask a different
+    // question of this table: the trailing N results for one *gate*, across
+    // commits, newest first. The index above leads with repo_id and then
+    // git_sha, so that query could only bitmap-scan on (repo_id, name) and then
+    // **sort** every result the gate has ever produced — O(all history for that
+    // gate) per evaluation, and land policy is evaluated twice per merge plus
+    // once per candidate during a 50-way fan-out.
+    //
+    // Ascending rather than DESC on created_at deliberately: Postgres walks a
+    // btree backwards just as happily, so this serves `order by created_at desc
+    // limit n` as an ordered index scan without a sort node.
+    index("gate_results_repo_id_name_created_at_idx").on(table.repoId, table.name, table.createdAt),
     uniqueIndex("gate_results_repo_id_external_id_idx")
       .on(table.repoId, table.externalId)
       .where(sql`${table.externalId} is not null`),
