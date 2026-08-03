@@ -128,6 +128,17 @@ export GH_ENTERPRISE_TOKEN="$TOKEN"
 export SSL_CERT_FILE="$WORKDIR/cert.pem"
 GH_REPO="${GH_HOST}/${OWNER}/${REPO}"
 
+# The first thing a human runs after pointing gh at a new host, and — until
+# 2026-08-03 — the one gh command nothing here or in conformance/ ever
+# exercised. It probes `GET /api/v3/` *with* a trailing slash, which Fastify
+# treated as a distinct route from the registered `/api/v3` and 404'd, so gh
+# declared a perfectly valid token invalid. Fixed by ignoreTrailingSlash in
+# src/main.ts; this asserts it, because that option lives in main.ts and no
+# unit test that builds its own Fastify instance can guard it.
+GH_HOST="$GH_HOST" gh auth status 2>&1 | grep -q "Logged in to ${GH_HOST}" \
+  || fail "A5: gh auth status did not report a working login"
+pass "A5 gh auth status"
+
 step "B — the agent's loop"
 
 # B2 — clone

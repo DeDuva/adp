@@ -49,7 +49,15 @@ async function main() {
   // need to depend on core/repo-policy.ts's enum.
   const instanceFloor = LandRequirement.array().parse(config.LAND_POLICY_FLOOR);
 
-  const app = Fastify({ logger: true });
+  // ignoreTrailingSlash: `gh auth status` probes `GET /api/v3/` *with* a
+  // trailing slash, while http-rest/identity.ts registers `/api/v3` without
+  // one — Fastify treats those as different routes, so the probe 404s and gh
+  // reports a perfectly valid token as invalid. Real GitHub and GHES tolerate
+  // both spellings, and "unmodified agent, zero config" (§ Decisions taken)
+  // means matching that tolerance rather than the stricter default. Applied
+  // instance-wide rather than by registering one extra path, because the same
+  // trap is waiting on every other route a client might probe with a slash.
+  const app = Fastify({ logger: true, ignoreTrailingSlash: true });
 
   // git smart-HTTP payloads (pack data) must reach the CGI subprocess
   // untouched and unbuffered — no `parseAs`, so `payload` is the raw request
