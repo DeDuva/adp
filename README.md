@@ -137,7 +137,7 @@ data here. The `issue create/view` and `pr create/view/merge` paths are driven b
 | `gh pr merge` | Functional | subject to the land policy; refuses with a typed 422 listing unmet requirements |
 | `gh pr close` / `reopen` | Functional | |
 | `gh pr comment` | Partial | stored as an issue comment; PR conversation comments are not a separate subject |
-| `gh pr checks` | Partial | the aggregate rollup state is real; per-context detail is an empty connection |
+| `gh pr checks` | Functional | each gate result is a `StatusContext` — name, verdict, and a link to its evidence bundle. Not a `CheckRun`: that shape implies a workflow run, which ADP deliberately does not have |
 | `gh pr ready` | Partial | recorded as a no-op — there is no draft state; PRs are ready from creation |
 | `gh api <endpoint>` | Functional over the implemented surface | see below |
 | `gh run` / `release` / `project` / `search` | Not supported | returns a clear error |

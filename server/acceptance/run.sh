@@ -225,22 +225,22 @@ grep -q '"state":"SUCCESS"' <<<"$ROLLUP" \
   || fail "B6: expected a commit with statusCheckRollup.state SUCCESS, got: $ROLLUP"
 pass "B6 statusCheckRollup is SUCCESS"
 
-# ...and record what `gh pr checks` actually does with it. This is the one part
-# of §2.1 not met: the rollup *state* is real, but `gh pr checks` enumerates
-# `contexts`, which resolvers.ts returns as a deliberately empty connection —
-# so gh reports "no checks reported" and exits non-zero even on a green rollup.
-# Asserted as a known gap rather than skipped, so that implementing contexts
-# makes this test fail loudly and demand updating, instead of passing silently.
-GH_CHECKS_OUT=$("$GH_BIN" pr checks 1 --repo "$GH_REPO" 2>&1) && GH_CHECKS_RC=0 || GH_CHECKS_RC=$?
-if [ "$GH_CHECKS_RC" = "0" ]; then
-  fail "B6: 'gh pr checks' now succeeds — per-context detail appears to be implemented.
-       That closes a documented §2.1 gap. Update this assertion, docs/manual-test-plan.md
-       step B6, and the gh table in README.md. Output was:
-$GH_CHECKS_OUT"
-fi
-grep -qi "no checks reported" <<<"$GH_CHECKS_OUT" \
-  || fail "B6: 'gh pr checks' failed for an unexpected reason: $GH_CHECKS_OUT"
-note "B6 known gap: 'gh pr checks' reports \"no checks reported\" — contexts is an empty connection"
+# ...and what `gh pr checks` does with it. This was the last §2.1 gap: the
+# rollup *state* was real, but gh enumerates `contexts`, which used to be a
+# deliberately empty connection — so gh reported "no checks reported" and
+# exited non-zero on a green rollup. Each gate result now projects to a
+# StatusContext, so this asserts the real thing an agent sees.
+GH_CHECKS_OUT=$("$GH_BIN" pr checks 1 --repo "$GH_REPO" 2>&1) \
+  || fail "B6: 'gh pr checks' failed: $GH_CHECKS_OUT"
+grep -q "test" <<<"$GH_CHECKS_OUT" \
+  || fail "B6: 'gh pr checks' did not name the 'test' gate: $GH_CHECKS_OUT"
+grep -q "pass" <<<"$GH_CHECKS_OUT" \
+  || fail "B6: 'gh pr checks' did not report the gate as passing: $GH_CHECKS_OUT"
+# The link column points at the evidence bundle — the DSSE envelope behind the
+# verdict, which is the one follow-up an agent looking at a gate actually wants.
+grep -q "/api/adp/repos/${OWNER}/${REPO}/evidence/" <<<"$GH_CHECKS_OUT" \
+  || fail "B6: 'gh pr checks' did not link to the evidence bundle: $GH_CHECKS_OUT"
+pass "B6 'gh pr checks' enumerates the gate, its verdict, and its evidence link"
 
 # B7 — typed review
 api POST "/api/v3/repos/${OWNER}/${REPO}/pulls/1/reviews" \

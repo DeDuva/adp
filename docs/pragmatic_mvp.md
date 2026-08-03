@@ -566,8 +566,11 @@ unmodified `gh` — `gh issue view` / `pr create` / `pr view` / `pr merge` again
   multiple rows per commit+name are kept, e.g. reruns — the most recent one wins for policy/rollup
   purposes, `core/gate-results-lookup.ts`); `GET .../commits/{sha}/gates` lists them. Projected onto
   the compat plane as `Commit.statusCheckRollup` in GraphQL (`http-gql/resolvers.ts`) — real
-  aggregate `state`, `contexts` left as an empty connection (per-context detail not implemented,
-  honestly, not as an error).
+  aggregate `state`, and (M3) real `contexts`: each gate result becomes a `StatusContext` carrying
+  its name, verdict, summary, and a `targetUrl` pointing at the evidence bundle, which is what makes
+  real `gh pr checks` work. Deliberately `StatusContext` rather than `CheckRun` — a `CheckRun`
+  belongs to a `CheckSuite` belongs to a `WorkflowRun`, an execution model §2.5 cuts, so that shape
+  would misrepresent what produced the result.
 - ~~**Land policy, resolved two-level**~~ **done**: instance floor (`LAND_POLICY_FLOOR` env var,
   `config.ts`, default `gates_green,one_approval`) ∧ repo `adp.yaml`'s `land.require`
   (`server/src/core/repo-policy.ts` parses `adp.yaml` off the *base* ref, same as GitHub reads
