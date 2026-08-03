@@ -333,6 +333,73 @@ describe.skipIf(skipWithoutDb)("M3: candidate-set fan-out, resolution, and recla
     expect((resolved.body.landed as { proposal_id: string }).proposal_id).toBe(candidates[1]!.proposalId);
   }, 120_000);
 
+  // Resolving is three steps that cannot be one transaction — land the winner
+  // (git *and* Postgres), reclaim the losers, mark the set resolved. An
+  // interruption between the first and the last leaves a set that is still
+  // `open` while already having a merged candidate, which is what this
+  // simulates by rolling the set's status back after a successful resolve.
+  //
+  // Re-entering must complete that resolution, not go land a second candidate.
+  // The fast-forward precondition would in fact refuse a second land — no loser
+  // is a descendant of the moved base — so the "one landed change" invariant
+  // held even before this. But it held by accident of another check, the caller
+  // got an opaque 409, and the set stayed open with its losers unreclaimed.
+  it("completes an interrupted resolution instead of landing a second candidate", async () => {
+    const issue = await api(`/api/v3/repos/${owner}/${repoName}/issues`, {
+      method: "POST",
+      body: JSON.stringify({ title: "interrupted" }),
+    });
+    const set = await api(`/api/adp/repos/${owner}/${repoName}/candidate-sets`, {
+      method: "POST",
+      body: JSON.stringify({ intent_id: issue.body.intent_id, selection_policy: "first_green" }),
+    });
+    const candidateSetId = set.body.id as string;
+
+    const baseSha = (await gitBackend.resolveRef(owner, repoName, "main"))!;
+    const candidates = await fanOut(3, candidateSetId, baseSha);
+
+    const first = await api(`/api/adp/repos/${owner}/${repoName}/candidate-sets/${candidateSetId}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    expect(first.status).toBe(200);
+    const landedId = (first.body.landed as { proposal_id: string }).proposal_id;
+    const mainAfterFirst = await gitBackend.resolveRef(owner, repoName, "main");
+
+    // Rewind only the set's own bookkeeping, leaving the merged candidate and
+    // the closed losers as they are — exactly the state a crash after the land
+    // would leave behind.
+    await db
+      .update(candidateSets)
+      .set({ status: "open", resolvedAt: null, selectedProposalId: null })
+      .where(eq(candidateSets.id, candidateSetId));
+    const repo = await findRepo(db, owner, repoName);
+    await db
+      .update(proposals)
+      .set({ state: "open", closedAt: null })
+      .where(and(eq(proposals.repoId, repo!.id), eq(proposals.candidateSetId, candidateSetId), eq(proposals.state, "closed")));
+
+    const second = await api(`/api/adp/repos/${owner}/${repoName}/candidate-sets/${candidateSetId}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    expect(second.status).toBe(200);
+
+    // The same candidate is still the winner, and nothing new landed: main is
+    // exactly where the first resolve left it.
+    expect((second.body.landed as { proposal_id: string }).proposal_id).toBe(landedId);
+    expect(await gitBackend.resolveRef(owner, repoName, "main")).toBe(mainAfterFirst);
+    // `sha` is null because the land belonged to the interrupted call.
+    expect((second.body.landed as { sha: string | null }).sha).toBeNull();
+
+    const rows = await db
+      .select()
+      .from(proposals)
+      .where(and(eq(proposals.repoId, repo!.id), eq(proposals.candidateSetId, candidateSetId)));
+    expect(rows.filter((r) => r.state === "merged")).toHaveLength(1);
+    expect(rows.filter((r) => r.state === "closed")).toHaveLength(candidates.length - 1);
+  }, 120_000);
+
   it("a resolved set cannot resolve twice", async () => {
     const issue = await api(`/api/v3/repos/${owner}/${repoName}/issues`, {
       method: "POST",

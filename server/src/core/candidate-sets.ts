@@ -140,7 +140,13 @@ export interface ResolveCandidateSetResult {
   ok: true;
   candidateSet: typeof candidateSets.$inferSelect;
   landed: typeof proposals.$inferSelect;
-  sha: string;
+  /**
+   * The squash commit this call produced, or null when the land had already
+   * happened before this call — a resolution that was interrupted after landing
+   * and is being completed. Null is the honest answer there: the sha belongs to
+   * the interrupted call, not this one.
+   */
+  sha: string | null;
   reclaimed: { proposalId: string; workspaceId: string | null }[];
 }
 export interface ResolveCandidateSetError {
@@ -182,30 +188,59 @@ export async function resolveCandidateSet(
     return { ok: false, status: 422, message: `candidate set is already ${candidateSet.status}` };
   }
 
-  const candidates = (await listCandidates(db, candidateSetId)).filter((c) => c.state === "open");
-  if (candidates.length === 0) {
-    return { ok: false, status: 422, message: "candidate set has no open candidates" };
+  const allCandidates = await listCandidates(db, candidateSetId);
+  const candidates = allCandidates.filter((c) => c.state === "open");
+
+  // Resolving is three steps that cannot be one transaction: land the winner
+  // (git *and* Postgres), reclaim the losers, mark the set resolved. An
+  // interruption between the first and the last leaves a set that is still
+  // `open` but already has a merged candidate.
+  //
+  // Re-entering must not treat that as "no winner yet and several candidates
+  // still open" and go land a second one. In practice the fast-forward
+  // precondition would refuse the second land — the base has moved and no loser
+  // is a descendant of it — so the "one landed change" invariant survives even
+  // without this. But it survives by accident of another check, the caller gets
+  // an opaque 409, and the set stays open with its losers half-reclaimed.
+  // Completing idempotently is the behaviour that actually matches what the
+  // caller asked for.
+  const alreadyLanded = allCandidates.find((c) => c.state === "merged");
+
+  let winnerProposal: typeof proposals.$inferSelect;
+  let landedSha: string | null;
+
+  if (alreadyLanded) {
+    winnerProposal = alreadyLanded;
+    // The squash commit's sha belongs to the interrupted call, not this one.
+    // Null says "the land had already happened" rather than inventing a value.
+    landedSha = null;
+  } else {
+    if (candidates.length === 0) {
+      return { ok: false, status: 422, message: "candidate set has no open candidates" };
+    }
+
+    const winner = await pickWinner(deps, repo, candidateSet, candidates, explicitProposalId);
+    if (!winner.ok) return winner;
+
+    // Squash rather than a merge commit, and the choice is D1's own: "the money
+    // shot is the history view — *one landed change*, intent attached, 49
+    // discarded attempts queryable but not polluting history". A merge commit
+    // would drag the winning candidate's whole exploratory history onto the base
+    // ref, which is the opposite of that. Callers wanting other semantics merge
+    // the proposal directly through the ordinary merge path instead.
+    const landed = await landProposal(deps, repo, winner.proposal, "squash", actor);
+    if (!landed.ok) {
+      // The set stays open. A selected candidate that cannot satisfy land policy
+      // is a gate doing its job, not a resolution — leaving the set open lets the
+      // caller fix the gate result and resolve again, rather than forcing them to
+      // reopen a set that never actually resolved.
+      return { ok: false, status: landed.status, message: landed.message, unmet: landed.unmet };
+    }
+    winnerProposal = landed.proposal;
+    landedSha = landed.sha;
   }
 
-  const winner = await pickWinner(deps, repo, candidateSet, candidates, explicitProposalId);
-  if (!winner.ok) return winner;
-
-  // Squash rather than a merge commit, and the choice is D1's own: "the money
-  // shot is the history view — *one landed change*, intent attached, 49
-  // discarded attempts queryable but not polluting history". A merge commit
-  // would drag the winning candidate's whole exploratory history onto the base
-  // ref, which is the opposite of that. Callers wanting other semantics merge
-  // the proposal directly through the ordinary merge path instead.
-  const landed = await landProposal(deps, repo, winner.proposal, "squash", actor);
-  if (!landed.ok) {
-    // The set stays open. A selected candidate that cannot satisfy land policy
-    // is a gate doing its job, not a resolution — leaving the set open lets the
-    // caller fix the gate result and resolve again, rather than forcing them to
-    // reopen a set that never actually resolved.
-    return { ok: false, status: landed.status, message: landed.message, unmet: landed.unmet };
-  }
-
-  const losers = candidates.filter((c) => c.id !== winner.proposal.id);
+  const losers = candidates.filter((c) => c.id !== winnerProposal.id);
   const reclaimed: { proposalId: string; workspaceId: string | null }[] = [];
 
   for (const loser of losers) {
@@ -246,7 +281,7 @@ export async function resolveCandidateSet(
   const resolved = await db.transaction(async (tx) => {
     const [row] = await tx
       .update(candidateSets)
-      .set({ status: "resolved", resolvedAt: new Date(), selectedProposalId: winner.proposal.id })
+      .set({ status: "resolved", resolvedAt: new Date(), selectedProposalId: winnerProposal.id })
       .where(eq(candidateSets.id, candidateSetId))
       .returning();
 
@@ -258,9 +293,9 @@ export async function resolveCandidateSet(
       before: { status: candidateSet.status, selectedProposalId: candidateSet.selectedProposalId },
       after: {
         status: "resolved",
-        selectedProposalId: winner.proposal.id,
+        selectedProposalId: winnerProposal.id,
         selectionPolicy: candidateSet.selectionPolicy,
-        landedSha: landed.sha,
+        landedSha,
         reclaimedCount: reclaimed.length,
       },
     });
@@ -268,7 +303,7 @@ export async function resolveCandidateSet(
     return row!;
   });
 
-  return { ok: true, candidateSet: resolved, landed: landed.proposal, sha: landed.sha, reclaimed };
+  return { ok: true, candidateSet: resolved, landed: winnerProposal, sha: landedSha, reclaimed };
 }
 
 type WinnerResult = { ok: true; proposal: typeof proposals.$inferSelect } | ResolveCandidateSetError;
