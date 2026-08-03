@@ -224,21 +224,28 @@ describe.skipIf(!process.env.DATABASE_URL)("M2: mirror mode", () => {
       const { webhook_secret } = (await res.json()) as { webhook_secret: string };
 
       // One more than RECORD_BATCH_SIZE (500, core/change-recorder.ts) so the
-      // walk has to page rather than fit in a single `git log` call. Built in
-      // one shell loop instead of 511 execFile round-trips — same history,
-      // meaningfully faster to construct.
+      // walk has to page rather than fit in a single `git log` call.
+      //
+      // Built directly in the stand-in bare repo with plumbing rather than by
+      // cloning, committing 511 times and pushing. The clone-and-push version
+      // worked locally and corrupted its own object graph in CI ("Could not
+      // read <sha>" while traversing parents, then a truncated pack on the
+      // wire) — and a test that flakes on the *setup* for a bug it is meant to
+      // guard is worse than no test, because the next person reads the red as
+      // noise. Plumbing writes the same objects with none of that surface.
       const HISTORY_LENGTH = 511;
-      const cloneDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-mirror-import-"));
-      await execFileAsync("git", ["clone", githubStandIn.repoPath(owner, importRepo), cloneDir]);
-      await execFileAsync("git", ["checkout", "-B", "main"], { cwd: cloneDir });
-      await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
-      await execFileAsync("git", ["config", "user.name", "Test"], { cwd: cloneDir });
-      await execFileAsync("sh", ["-c", `for i in $(seq 1 ${HISTORY_LENGTH}); do git commit -q --allow-empty -m "history $i"; done`], {
-        cwd: cloneDir,
-      });
-      await execFileAsync("git", ["push", "origin", "main"], { cwd: cloneDir });
-      const sha = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: cloneDir })).stdout.trim();
-      await rm(cloneDir, { recursive: true, force: true });
+      const blob = await githubStandIn.createBlob(owner, importRepo, Buffer.from("history\n", "utf8"));
+      const tree = await githubStandIn.createTree(owner, importRepo, [
+        { mode: "100644", type: "blob", sha: blob, path: "README.md" },
+      ]);
+      let sha = "";
+      for (let i = 0; i < HISTORY_LENGTH; i++) {
+        sha = await githubStandIn.createCommit(owner, importRepo, tree, sha ? [sha] : [], `history ${i}`, {
+          name: "Test",
+          email: "test@example.com",
+        });
+      }
+      await githubStandIn.createRef(owner, importRepo, "refs/heads/main", sha);
 
       // ADP has no refs/heads/main for this repo at all — this is what makes
       // the webhook take the brand-new-ref path rather than a fast-forward.
