@@ -1,7 +1,9 @@
 # Environments plan
 
-**Status:** proposal. Nothing here is built. Decisions marked **OPEN** need an answer before the
-work starts; everything else is a recommendation with its reasoning attached.
+**Status:** the **dev** rung is built and its two open decisions are answered (§5) — Terraform in
+[`infra/dev/`](../infra/dev/), runbook in [`infra/README.md`](../infra/README.md). **Staging** and
+**production** remain proposals, sequenced against M4 (§3). Everything not marked as built is a
+recommendation with its reasoning attached.
 
 [`test-environment-automation.md`](test-environment-automation.md) solved *local*: a developer can
 create a full environment, run everything, and destroy it, reproducibly. This document is about
@@ -51,7 +53,7 @@ cost without information.
 |---|---|---|---|
 | **Ephemeral** (`make up`) | seconds | Does the code work? | yes |
 | **Clean room** (`Run-CleanTest.ps1`, `clean-room.yml`) | minutes | Does it work from nothing? | yes |
-| **Dev** | weeks, redeployed freely | Does it work *deployed* — real TLS, real DNS, real `gh` against a real hostname? | no |
+| **Dev** | weeks, redeployed freely | Does it work *deployed* — real TLS, real DNS, real `gh` against a real hostname? | **yes** (`infra/dev/`) |
 | **Staging** | long-lived, production-shaped | Does it survive real data, upgrades, restores, and other people? | no |
 | **Production** | long-lived | — | no (§4.5) |
 
@@ -145,8 +147,8 @@ self-host equivalent is.
 
 **Secrets.** `SIGNING_KEY` is the root of the provenance claim. Local runs mint a random one per
 run (`scripts/dev/env.sh`); a long-lived environment needs a real answer — Secret Manager,
-rotation, and a decision about what happens to signatures made with a retired key. **OPEN**, and it
-should be answered before the first long-lived instance exists rather than retrofitted.
+rotation, and a decision about what happens to signatures made with a retired key. **Answered
+2026-08-02 — see §5.1.**
 
 *Added 2026-08-02:* custody has a **host-placement** half that is easy to miss while framing this as
 a secret-storage question. `pragmatic_mvp.md` §4.5 now states the trigger for splitting the runner
@@ -173,19 +175,69 @@ construction.
 
 ## 5. Immediate next step
 
-Nothing needs building until M2 begins. When it does, the first task is a public HTTPS endpoint —
-which means the dev rung.
+M2 has begun, so the dev rung is now the live task. It is built:
+[`infra/dev/`](../infra/dev/) is the Terraform, [`infra/README.md`](../infra/README.md) is the
+runbook.
 
 **Settled:** the provider is GCP, for every rung (§1).
 
-**Still OPEN, and worth answering before the first long-lived instance rather than after:**
+Both questions this section previously left **OPEN** were answered 2026-08-02, before the first
+long-lived instance existed rather than after.
 
-1. **`SIGNING_KEY` management.** It is the root of the provenance claim. Local runs mint a random
-   one per run, which is right there and wrong for anything long-lived. Secret Manager is the
-   obvious home; the harder half is what happens to signatures made with a retired key, and that
-   question belongs to the trust model, not to operations.
-2. **Who owns the dev instance, and what condition retires it.** An idle VM bills the same as a
-   busy one.
+### 5.1 `SIGNING_KEY` management — answered
+
+**Custody:** Secret Manager, one secret per environment (`adp-dev-signing-key`), created outside
+Terraform so no secret material ever enters Terraform state, and readable only by the instance's
+own service account — not the project-default one. See `infra/dev/secrets.tf`.
+
+**The trust-model half — what happens to signatures made with a retired key:**
+
+> A retired key's signatures stay valid for evidence produced while that key was current. A
+> **compromised** key's signatures do not. Retirement and compromise are different claims and must
+> not share a mechanism.
+
+The reasoning is that evidence is a statement about the past. "These gates were green at this
+commit" does not stop being true because the key that attested it was rotated out six months later;
+treating rotation as invalidation would make routine key hygiene destroy the audit trail, which
+inverts the point of having one. Compromise is the opposite case: once an attacker could have
+produced signatures indistinguishable from genuine ones, nothing that key signed can be
+distinguished either, so the whole set has to fall.
+
+**This is already largely implemented, which is why the decision is cheap.** DSSE envelopes record
+the signing key in `keyid` today (`server/src/core/dsse.ts` sets `keyid: signer.publicKeyHex`), so
+every piece of stored evidence already says which key made it. Two pieces are missing and are
+deliberately *not* built yet, because a trust model with exactly one key in it cannot be tested:
+
+1. **A key registry** — every public key the instance has used, each with a validity window and a
+   status of `current` | `retired` | `compromised`. Verification resolves `keyid` against it.
+2. **`verifyEnvelope` resolving through that registry** rather than against a single passed-in
+   `Signer`, which is what it does today — so a retired key's evidence would currently fail
+   verification even though its `keyid` is right there in the envelope.
+
+Both land when a second key first exists. The obligation this section discharges is that the
+envelope format needs no migration to support it, and the operational half (custody, least
+privilege, host placement) is settled now.
+
+**Host placement**, per the note in §4: `SIGNING_KEY` must never be resident on a host that executes
+gates. Today no executor exists, so the single dev box is fine. The per-secret IAM grant in
+`infra/dev/secrets.tf` is written narrowly so that when the runner splits off, granting the runner
+host its own credentials does not accidentally hand it this one.
+
+### 5.2 Dev-instance ownership and retirement — answered
+
+**Owner:** recorded as a GCP label on the instance (`owner`), set from `var.owner_email`, so the
+billing console can answer "whose box is this?" without asking anyone.
+
+**Retirement condition:** a `retire-after` label carrying an explicit date. Dev is disposable by
+design — when that date passes and the box is not in active use, it gets deleted. `terraform
+destroy` and a later `terraform apply` reconstitute it with the same signing identity, because the
+secrets and the state bucket are not Terraform-managed and survive.
+
+**Cost control:** auto-shutdown at 19:00 on weekdays, off all weekend — ~$25/month against ~$58
+always-on. The trade is explicit and worth stating because it has a functional cost, not just a
+convenience one: **inbound GitHub webhooks are not delivered while the instance is stopped**, and
+GitHub does not retry indefinitely. Mirror-mode testing therefore starts the box first. If that
+friction outgrows $33/month, `auto_shutdown = false` is a one-line change.
 
 **And one to do first, before provisioning anything:** ~~price the shape in §4.5~~ — **done
 2026-08-02**, in [`hosting-cost-estimate.md`](hosting-cost-estimate.md). The finding: §4.5's stated

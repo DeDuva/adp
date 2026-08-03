@@ -26,8 +26,14 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       GIT_ROOT: ${GIT_ROOT}
       SIGNING_KEY: ${SIGNING_KEY}
+      # Required by server/src/config.ts with no default — the AES-256-GCM key
+      # for mirror credentials and both webhook-signing secrets
+      # (core/mirror-crypto.ts). Without it the server exits 1 at boot.
+      MIRROR_CREDENTIAL_KEY: ${MIRROR_CREDENTIAL_KEY}
       PUBLIC_URL: ${PUBLIC_URL}
       PORT: ${PORT}
+      GIT_MAX_PACK_BYTES: ${GIT_MAX_PACK_BYTES}
+      LAND_POLICY_FLOOR: ${LAND_POLICY_FLOOR}
     volumes:
       - git_data:/data/git
     command: sh -c "node dist/db/migrate.js && node dist/main.js"
@@ -39,6 +45,12 @@ services:
     restart: unless-stopped
     depends_on:
       - server
+    # Caddy expands {$PUBLIC_URL} in the Caddyfile from its OWN process
+    # environment. Compose's .env file only interpolates into this YAML, it
+    # does not inject anything into containers — so without this block the
+    # site address is empty and Caddy serves nothing.
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL}
     ports:
       - "80:80"
       - "443:443"
