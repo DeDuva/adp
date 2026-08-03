@@ -124,10 +124,14 @@ export async function createCheckpoint(
   }
 
   const checkpoint = await db.transaction(async (tx) => {
-    // Sequence per session, allocated under the transaction. The unique index
-    // on (session_id, seq) is the real guard: two harnesses checkpointing the
-    // same session at once means one of them retries rather than silently
-    // overwriting the other's ordering.
+    // Lock the session row first, so concurrent checkpoints against one session
+    // serialize here rather than racing on max(seq) — the same pattern issue
+    // and proposal numbering use (http-gql/resolvers.ts). Without it, two
+    // harnesses checkpointing at once both compute the same `seq` and the
+    // unique index turns the loser into an unhandled 23505, which is a 500
+    // where the caller deserves either a checkpoint or a typed error.
+    await tx.execute(sql`select id from sessions where id = ${sessionId} for update`);
+
     const [seqRow] = await tx
       .select({ nextSeq: sql<number>`coalesce(max(${checkpoints.seq}), 0) + 1` })
       .from(checkpoints)
