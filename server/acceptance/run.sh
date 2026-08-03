@@ -109,6 +109,20 @@ done
 curl -sf "http://localhost:${PORT}/healthz" >/dev/null || { cat "$WORKDIR/server.log"; fail "server never became healthy"; }
 pass "server healthy on :$PORT"
 
+# Serving /ui/ is a route-registration property, not a browser one — a plain
+# 200 check catches an entire class of breakage (a global Fastify routing
+# option shadowing @fastify/static's directory index) without needing
+# Playwright, and therefore runs on every acceptance pass rather than only
+# under ADP_ACCEPTANCE_UI=1. That gap is exactly how such a regression once
+# reached main: the fast CI job never loaded /ui/ at all.
+if [ -d web/dist ]; then
+  ui_code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${PORT}/ui/")
+  [ "$ui_code" = "200" ] || fail "A6: GET /ui/ returned ${ui_code}, expected 200 (web/dist is built)"
+  pass "A6 /ui/ is served"
+else
+  note "A6 skipped: server/web/dist not built"
+fi
+
 # `gh` refuses plain HTTP for any non-github.com host (B1 in the manual plan).
 openssl req -x509 -newkey rsa:2048 -keyout "$WORKDIR/key.pem" -out "$WORKDIR/cert.pem" \
   -days 1 -nodes -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost" >/dev/null 2>&1
