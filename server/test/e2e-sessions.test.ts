@@ -1,0 +1,309 @@
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { skipWithoutDb } from "./require-db.js";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import Fastify, { type FastifyInstance } from "fastify";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { and, eq } from "drizzle-orm";
+import { createDb, type Db } from "../src/db/client.js";
+import { identities, operations, checkpoints as checkpointsTable } from "../src/db/schema.js";
+import { mintToken } from "../src/auth/tokens.js";
+import { authPlugin } from "../src/auth/plugin.js";
+import { GitBackend } from "../src/core/git-backend.js";
+import { Signer } from "../src/core/signing.js";
+import { findRepo } from "../src/core/repos-lookup.js";
+import { verifyEnvelope, decodeStatement, type DsseEnvelope } from "../src/core/dsse.js";
+import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { registerRepoRoutes } from "../src/http-rest/repos.js";
+import { registerIssueRoutes } from "../src/http-rest/issues.js";
+import { registerWorkspaceRoutes } from "../src/http-rest/workspaces.js";
+import { registerOperationRoutes } from "../src/http-rest/operations.js";
+import { registerSessionRoutes } from "../src/http-rest/sessions.js";
+
+const execFileAsync = promisify(execFile);
+const SIGNING_KEY = "e2e-sessions-signing-key";
+const PUBLIC_URL = "https://adp.example.com";
+
+// M3 / D2 (docs/adp-prototype-implementation-plan.md §5, docs/m3-readiness-review.md M3-3):
+// "Start a refactoring task in Claude Code; checkpoint via ADP mid-task; resume
+// in OpenHands … One continuous signed history across both harnesses."
+//
+// What this proves is that the *protocol* is harness-neutral: `harness` is an
+// opaque identifier ADP never branches on, so two different values exercise
+// exactly the path two real harnesses would. Vendoring two real harnesses is
+// not M3 scope and this test does not pretend otherwise.
+describe.skipIf(skipWithoutDb)("M3: cross-harness checkpoint and resume (D2)", () => {
+  let app: FastifyInstance;
+  let db: Db;
+  let pool: import("pg").Pool;
+  let gitRoot: string;
+  let gitBackend: GitBackend;
+  let signer: Signer;
+  let port: number;
+  let token: string;
+  let mainSha: string;
+  const owner = `sessions-owner-${Date.now()}`;
+  const repoName = "widget";
+
+  async function api(pathAndQuery: string, init: RequestInit = {}) {
+    const res = await fetch(`http://127.0.0.1:${port}${pathAndQuery}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...init.headers,
+      },
+    });
+    const text = await res.text();
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+    return { status: res.status, body: body as Record<string, unknown> };
+  }
+
+  beforeAll(async () => {
+    ({ db, pool } = createDb(process.env.DATABASE_URL!));
+    await migrate(db, { migrationsFolder: new URL("../drizzle", import.meta.url).pathname });
+
+    gitRoot = await mkdtemp(path.join(tmpdir(), "adp-e2e-sessions-git-"));
+    gitBackend = new GitBackend(gitRoot);
+    signer = new Signer(SIGNING_KEY);
+
+    app = Fastify({ logger: false });
+    app.addContentTypeParser(
+      ["application/x-git-upload-pack-request", "application/x-git-receive-pack-request"],
+      (_req, payload, done) => done(null, payload),
+    );
+    await app.register(authPlugin(db));
+    registerRepoRoutes(app, db, gitBackend, PUBLIC_URL);
+    registerIssueRoutes(app, db);
+    registerWorkspaceRoutes(app, db, gitBackend);
+    registerOperationRoutes(app, db, gitBackend);
+    registerSessionRoutes(app, db, gitBackend, signer, PUBLIC_URL);
+    registerGitHttpRoutes(app, gitBackend);
+
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const address = app.server.address();
+    port = typeof address === "object" && address ? address.port : 0;
+    gitBackend.setInternalUrl(`http://127.0.0.1:${port}`);
+
+    const [identity] = await db
+      .insert(identities)
+      .values({ kind: "agent", principal: `sessions-e2e-${Date.now()}` })
+      .returning();
+    token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+
+    await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: repoName }) });
+
+    const seed = await mkdtemp(path.join(tmpdir(), "adp-e2e-sessions-seed-"));
+    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/${repoName}.git`;
+    await execFileAsync("git", ["clone", cloneUrl, seed]);
+    await execFileAsync("git", ["checkout", "-B", "main"], { cwd: seed });
+    await execFileAsync("git", ["config", "user.email", "seed@example.com"], { cwd: seed });
+    await execFileAsync("git", ["config", "user.name", "Seed"], { cwd: seed });
+    await writeFile(path.join(seed, "README.md"), "seed\n");
+    await execFileAsync("git", ["add", "."], { cwd: seed });
+    await execFileAsync("git", ["commit", "-m", "seed"], { cwd: seed });
+    await execFileAsync("git", ["push", "origin", "main"], { cwd: seed });
+    mainSha = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: seed })).stdout.trim();
+    await rm(seed, { recursive: true, force: true });
+  }, 120_000);
+
+  afterAll(async () => {
+    await app.close();
+    await pool.end();
+    await rm(gitRoot, { recursive: true, force: true });
+  });
+
+  // A commit on a workspace branch, standing in for whatever an agent did.
+  async function commitOn(branch: string, parentSha: string, message: string) {
+    const tree = await gitBackend.statPath(owner, repoName, parentSha, "");
+    const sha = await gitBackend.createCommit(owner, repoName, tree!.sha, [parentSha], message, {
+      name: "agent",
+      email: "agent@adp.local",
+    });
+    await gitBackend.fastForwardRef(owner, repoName, branch, parentSha, sha);
+    return sha;
+  }
+
+  it("a session checkpointed in one harness resumes in another as one signed, linked history", async () => {
+    const issue = await api(`/api/v3/repos/${owner}/${repoName}/issues`, {
+      method: "POST",
+      body: JSON.stringify({ title: "refactor the widget" }),
+    });
+    const intentId = issue.body.intent_id as string;
+
+    const ws = await api(`/api/adp/repos/${owner}/${repoName}/workspaces`, {
+      method: "POST",
+      body: JSON.stringify({ base_ref: "main" }),
+    });
+    const branchA = ws.body.branch as string;
+
+    // --- harness A ---
+    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code", intent_id: intentId, workspace_id: ws.body.id }),
+    });
+    expect(started.status).toBe(201);
+    expect(started.body.harness).toBe("claude-code");
+    const sessionA = started.body.id as string;
+
+    const workSha = await commitOn(branchA, mainSha, "half the refactor");
+
+    const harnessState = { plan: ["extract helper", "update callers"], step: 1, scratch: "midway" };
+    const checkpoint = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionA}/checkpoints`, {
+      method: "POST",
+      body: JSON.stringify({ git_sha: workSha, state: harnessState }),
+    });
+    expect(checkpoint.status).toBe(201);
+    expect(checkpoint.body.seq).toBe(1);
+    const checkpointId = checkpoint.body.id as string;
+
+    // The checkpoint is real signed evidence, not a scratch row: the envelope
+    // verifies, and it binds the commit *and* a digest of the opaque state.
+    const envelope = checkpoint.body.envelope as DsseEnvelope;
+    expect(verifyEnvelope(signer, envelope)).toBe(true);
+    const statement = decodeStatement(envelope);
+    expect(statement.subject[0]!.digest.sha1).toBe(workSha);
+    expect((statement.predicate as { sessionId: string }).sessionId).toBe(sessionA);
+
+    // --- harness B ---
+    const resumed = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionA}/resume`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "openhands" }),
+    });
+    expect(resumed.status).toBe(201);
+    expect(resumed.body.harness).toBe("openhands");
+    expect(resumed.body.resumed_from_session_id).toBe(sessionA);
+    const sessionB = resumed.body.id as string;
+    const branchB = (resumed.body.workspace as { branch: string }).branch;
+
+    // The resumed workspace starts at exactly the checkpointed commit — that is
+    // what "resume" has to mean for the history to be continuous.
+    expect(await gitBackend.resolveRef(owner, repoName, branchB)).toBe(workSha);
+
+    // Harness B finishes the work.
+    const finalSha = await commitOn(branchB, workSha, "the other half");
+    const checkpointB = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionB}/checkpoints`, {
+      method: "POST",
+      body: JSON.stringify({ git_sha: finalSha, state: { step: 2, done: true } }),
+    });
+    expect(checkpointB.status).toBe(201);
+    // Sequence is per session, so harness B's first checkpoint is seq 1 again.
+    expect(checkpointB.body.seq).toBe(1);
+
+    // --- one continuous history, in one call ---
+    const view = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionB}`);
+    expect(view.status).toBe(200);
+    const lineage = view.body.lineage as { id: string; harness: string; status: string }[];
+    expect(lineage.map((s) => s.harness)).toEqual(["claude-code", "openhands"]);
+    expect(lineage[0]!.id).toBe(sessionA);
+    expect(lineage[0]!.status).toBe("resumed");
+    expect(lineage[1]!.id).toBe(sessionB);
+
+    // ...and in the op log, with the resume linked to the checkpoint it
+    // resumed from. If reconstructing D2's chain took more than this, the
+    // object model would be wrong.
+    const repo = await findRepo(db, owner, repoName);
+    const ops = await db.select().from(operations).where(eq(operations.repoId, repo!.id));
+    const resumeOp = ops.find((o) => o.verb === "session.resume");
+    expect(resumeOp).toBeTruthy();
+    const checkpointOp = ops.find(
+      (o) => o.verb === "session.checkpoint" && (o.after as { checkpointId?: string }).checkpointId === checkpointId,
+    );
+    expect(checkpointOp).toBeTruthy();
+    expect(resumeOp!.parentOp).toBe(checkpointOp!.id);
+    expect((resumeOp!.after as { resumedFromSessionId: string }).resumedFromSessionId).toBe(sessionA);
+  }, 120_000);
+
+  it("refuses to resume from a checkpoint whose state was tampered with", async () => {
+    const ws = await api(`/api/adp/repos/${owner}/${repoName}/workspaces`, {
+      method: "POST",
+      body: JSON.stringify({ base_ref: "main" }),
+    });
+    const branch = ws.body.branch as string;
+
+    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code", workspace_id: ws.body.id }),
+    });
+    const sessionId = started.body.id as string;
+    const sha = await commitOn(branch, mainSha, "work");
+
+    const checkpoint = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/checkpoints`, {
+      method: "POST",
+      body: JSON.stringify({ git_sha: sha, state: { secret: "original" } }),
+    });
+    expect(checkpoint.status).toBe(201);
+
+    // Rewrite the state behind the envelope's back. The signature still
+    // verifies — it covers the statement, not the row — which is precisely why
+    // resume has to compare the state against its signed digest rather than
+    // stopping at "the envelope checks out".
+    await db
+      .update(checkpointsTable)
+      .set({ state: { secret: "tampered" } })
+      .where(eq(checkpointsTable.id, checkpoint.body.id as string));
+
+    const resumed = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/resume`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "openhands" }),
+    });
+    expect(resumed.status).toBe(422);
+    expect(resumed.body.message).toContain("does not match its signed digest");
+  }, 60_000);
+
+  it("refuses to checkpoint a commit the repository does not have", async () => {
+    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code" }),
+    });
+    const sessionId = started.body.id as string;
+
+    const res = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/checkpoints`, {
+      method: "POST",
+      body: JSON.stringify({ git_sha: "b".repeat(40), state: {} }),
+    });
+    expect(res.status).toBe(422);
+    expect(res.body.message).toContain("could not be resolved");
+
+    // Nothing was written — a rejected checkpoint must not leave a row behind.
+    const rows = await db.select().from(checkpointsTable).where(eq(checkpointsTable.sessionId, sessionId));
+    expect(rows).toHaveLength(0);
+  }, 60_000);
+
+  it("refuses to resume a session that has never checkpointed", async () => {
+    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code" }),
+    });
+    const res = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${started.body.id as string}/resume`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "openhands" }),
+    });
+    expect(res.status).toBe(422);
+    expect(res.body.message).toContain("no checkpoint");
+  }, 60_000);
+
+  it("keeps sessions scoped to their repository", async () => {
+    await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: "other" }) });
+    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code" }),
+    });
+    const res = await api(`/api/adp/repos/${owner}/other/sessions/${started.body.id as string}`);
+    expect(res.status).toBe(404);
+
+    const [row] = await db
+      .select()
+      .from(checkpointsTable)
+      .where(and(eq(checkpointsTable.sessionId, started.body.id as string)));
+    expect(row).toBeUndefined();
+  }, 60_000);
+});

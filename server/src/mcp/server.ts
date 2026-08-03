@@ -193,6 +193,98 @@ export function buildMcpServer(client: AdpClient): McpServer {
     },
   );
 
+  // Sessions and checkpoints (M3 / D2). The point of these being MCP tools is
+  // that any harness can drive them — a session started through one harness is
+  // resumed through another with no coordination between the two beyond ADP.
+  server.registerTool(
+    "adp_session_start",
+    {
+      description:
+        "Start a session — a unit of agent work that outlives any one harness. `harness` is a free-form " +
+        "identifier for whatever is driving (ADP never branches on its value).",
+      inputSchema: {
+        owner: z.string(),
+        repo: z.string(),
+        harness: z.string().describe("e.g. 'claude-code', 'openhands'"),
+        intent_id: z.string().uuid().optional(),
+        workspace_id: z.string().uuid().optional(),
+      },
+    },
+    async ({ owner, repo, harness, intent_id, workspace_id }) => {
+      const res = await client.post(`/api/adp/repos/${owner}/${repo}/sessions`, {
+        harness,
+        intent_id,
+        workspace_id,
+      });
+      return res.ok ? ok(res.body) : err(res.message);
+    },
+  );
+
+  server.registerTool(
+    "adp_checkpoint_create",
+    {
+      description:
+        "Checkpoint a session at a commit, with opaque harness state. The checkpoint is signed (DSSE), and " +
+        "its signature is verified before any resume — so state written by one harness can be trusted by another.",
+      inputSchema: {
+        owner: z.string(),
+        repo: z.string(),
+        session_id: z.string().uuid(),
+        git_sha: z.string().describe("The workspace tip at checkpoint time"),
+        state: z.unknown().optional().describe("Opaque resume state; ADP never parses it"),
+      },
+    },
+    async ({ owner, repo, session_id, git_sha, state }) => {
+      const res = await client.post(`/api/adp/repos/${owner}/${repo}/sessions/${session_id}/checkpoints`, {
+        git_sha,
+        state: state ?? null,
+      });
+      return res.ok ? ok(res.body) : err(res.message);
+    },
+  );
+
+  server.registerTool(
+    "adp_session_resume",
+    {
+      description:
+        "Resume a session under a (possibly different) harness. Verifies the checkpoint's signature, forks a " +
+        "workspace at its commit, and creates a new session linked to the old one — one continuous signed " +
+        "history across both harnesses. Defaults to the session's latest checkpoint.",
+      inputSchema: {
+        owner: z.string(),
+        repo: z.string(),
+        session_id: z.string().uuid(),
+        harness: z.string().describe("The harness resuming the work"),
+        checkpoint_id: z.string().uuid().optional(),
+      },
+    },
+    async ({ owner, repo, session_id, harness, checkpoint_id }) => {
+      const res = await client.post(`/api/adp/repos/${owner}/${repo}/sessions/${session_id}/resume`, {
+        harness,
+        checkpoint_id,
+      });
+      return res.ok ? ok(res.body) : err(res.message);
+    },
+  );
+
+  server.registerTool(
+    "adp_session_get",
+    {
+      description:
+        "A session with its checkpoints and its full resume lineage — the chain back to the session that " +
+        "started the work, however many harnesses it passed through.",
+      inputSchema: {
+        owner: z.string(),
+        repo: z.string(),
+        session_id: z.string().uuid(),
+      },
+    },
+    async ({ owner, repo, session_id }) => {
+      const res = await client.get(`/api/adp/repos/${owner}/${repo}/sessions/${session_id}`);
+      return res.ok ? ok(res.body) : err(res.message);
+    },
+  );
+
   return server;
 }
 

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adp.dev/schemas/checkpoint.json",
+  "title": "Checkpoint",
+  "description": "A signed, ordered point a session can be resumed from. The evidence IS the `envelope` (a DSSE-wrapped in-toto Statement, same shape a gate result uses); the other fields are a queryable projection of it. Resume verifies the envelope AND re-derives `state`'s digest before forking a workspace — an unverified resume would make 'one continuous signed history' false while looking true.",
+  "type": "object",
+  "required": ["id", "session_id", "seq", "git_sha", "harness", "state", "envelope", "created_at"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "session_id": { "type": "string", "format": "uuid" },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonic within a session. Unique per (session_id, seq), so two harnesses checkpointing at once cannot silently reorder each other."
+    },
+    "git_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "harness": { "type": "string", "description": "The harness that wrote this checkpoint." },
+    "state": {
+      "description": "Opaque harness-supplied resume state. ADP never parses it or branches on it, so a harness storing its own format needs no ADP change. Covered by the signature via the SHA-256 digest in the statement's predicate."
+    },
+    "envelope": {
+      "type": "object",
+      "description": "DSSE envelope over an in-toto Statement with predicateType https://adp.dev/attestations/checkpoint/v1. The subject digest is `git_sha`; the predicate carries sessionId, seq, harness, and stateSha256.",
+      "required": ["payloadType", "payload", "signatures"],
+      "properties": {
+        "payloadType": { "type": "string" },
+        "payload": { "type": "string", "description": "Base64-encoded in-toto Statement" },
+        "signatures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["keyid", "sig"],
+            "properties": {
+              "keyid": { "type": "string" },
+              "sig": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}
