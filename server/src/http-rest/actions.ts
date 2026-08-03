@@ -93,7 +93,10 @@ export function registerActionsRoutes(
             adp_equivalent:
               "ADP does not run workflows. Gates are `image + commands` in adp.yaml and report to " +
               "POST /api/v3/repos/{owner}/{repo}/gates; read them back from " +
-              "GET /api/v3/repos/{owner}/{repo}/commits/{ref}/check-runs. For a repo mirrored from " +
+              // Was `/check-runs`, which this server has never served. A
+              // self-describing 404 exists to save an agent a turn; naming an
+              // endpoint that 404s in turn costs it two.
+              "GET /api/v3/repos/{owner}/{repo}/commits/{sha}/gates. For a repo mirrored from " +
               "GitHub, these Actions endpoints relay upstream instead.",
           });
           return;

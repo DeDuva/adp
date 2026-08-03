@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { skipWithoutDb } from "./require-db.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -226,11 +226,33 @@ describe.skipIf(skipWithoutDb)("M1c: receive-path hooks", () => {
 
       // One more than RECORD_BATCH_SIZE (500, http-git/hooks.ts) — a single
       // `git log --max-count=500` used to silently drop everything past the
-      // newest 500 of these; empty commits keep the fixture cheap to build.
+      // newest 500 of these.
       const BULK_COMMIT_COUNT = 511;
+
+      // Built with one `git fast-import` instead of 511 `git commit` spawns.
+      // The loop version flaked in CI — "unable to read <sha>" while packing
+      // for the push, i.e. an object that never finished being written — which
+      // is what 511 rapid process spawns under container memory pressure looks
+      // like. fast-import is one process writing one packfile, so the fixture
+      // stops being a source of failures for a test that is about something
+      // else entirely. The push it produces is identical.
+      const rootSha = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: cloneDir })).stdout.trim();
+      let stream = "";
       for (let i = 0; i < BULK_COMMIT_COUNT; i++) {
-        await execFileAsync("git", ["commit", "--allow-empty", "-m", `bulk ${i}`], { cwd: cloneDir });
+        const message = `bulk ${i}\n`;
+        stream +=
+          "commit refs/heads/main\n" +
+          `mark :${i + 1}\n` +
+          "committer Test <test@example.com> 1700000000 +0000\n" +
+          `data ${Buffer.byteLength(message)}\n${message}` +
+          `from ${i === 0 ? rootSha : `:${i}`}\n\n`;
       }
+      stream += "done\n";
+      const streamPath = path.join(cloneDir, "..", `fast-import-${Date.now()}.stream`);
+      await writeFile(streamPath, stream);
+      await execFileAsync("sh", ["-c", `git fast-import --done < ${JSON.stringify(streamPath)}`], { cwd: cloneDir });
+      await rm(streamPath, { force: true });
+
       await execFileAsync("git", ["push", "origin", "main"], { cwd: cloneDir });
       await rm(cloneDir, { recursive: true, force: true });
 
