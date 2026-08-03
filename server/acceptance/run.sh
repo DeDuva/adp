@@ -549,4 +549,34 @@ MIRROR_EVIDENCE=$(api GET "/api/adp/repos/${OWNER}/${MIRROR_REPO}/evidence/${MIR
 grep -q '"via":"mirror-inbound"' <<<"$MIRROR_EVIDENCE" || fail "D19: inbound change's provenance does not name mirror-inbound"
 pass "D19 mirror inbound: a signed GitHub-shaped webhook auto-recorded a change ADP never saw pushed to it"
 
+# D20 — Actions in mirror mode. The upstream *relay* half needs a stand-in for
+# api.github.com and is covered by test/e2e-actions.test.ts with an injected
+# fetch; what is checked here is the half that carries the milestone's claim:
+# upstream CI results become ordinary signed evidence, exactly once per run,
+# and a non-mirrored repo still explains itself rather than proxying.
+ACTIONS_404=$(api GET "/api/v3/repos/${OWNER}/${REPO}/actions/runs")
+grep -q '"adp_equivalent"' <<<"$ACTIONS_404" \
+  || fail "D20: non-mirrored repo did not return a self-describing Actions 404: $ACTIONS_404"
+
+RUN_SHA=$(git -C "$MIRROR_INBOUND_CLONE" rev-parse main)
+RUN_PAYLOAD="{\"action\":\"completed\",\"workflow_run\":{\"id\":424242,\"name\":\"CI\",\"head_sha\":\"${RUN_SHA}\",\"status\":\"completed\",\"conclusion\":\"success\",\"run_number\":3,\"event\":\"push\"}}"
+RUN_SIG=$(printf '%s' "$RUN_PAYLOAD" | openssl dgst -sha256 -hmac "$MIRROR_SECRET" | awk '{print $2}')
+deliver_run() {
+  curl -sS -X POST "http://localhost:${PORT}/webhooks/github/${OWNER}/${MIRROR_REPO}" \
+    -H "Content-Type: application/json" -H "X-GitHub-Event: workflow_run" \
+    -H "X-Hub-Signature-256: sha256=${RUN_SIG}" -d "$RUN_PAYLOAD"
+}
+grep -q '"recorded":"actions/CI"' <<<"$(deliver_run)" || fail "D20: workflow_run was not ingested as evidence"
+
+# GitHub redelivers webhooks; the exit criterion is *exactly one* evidence row
+# per completed run, so the second delivery must be a no-op rather than a
+# second attestation of the same CI result.
+grep -q '"skipped":"duplicate delivery' <<<"$(deliver_run)" || fail "D20: redelivered run was not deduplicated"
+
+RUN_EVIDENCE=$(api GET "/api/v3/repos/${OWNER}/${MIRROR_REPO}/commits/${RUN_SHA}/gates")
+[ "$(grep -o '"name":"actions/CI"' <<<"$RUN_EVIDENCE" | wc -l)" = "1" ] \
+  || fail "D20: expected exactly one actions/CI evidence row, got: $RUN_EVIDENCE"
+grep -q '"envelope"' <<<"$RUN_EVIDENCE" || fail "D20: ingested run evidence is not DSSE-signed"
+pass "D20 upstream Actions run ingested once as signed evidence; non-mirrored repos self-describe"
+
 printf '\n\033[32m== acceptance: the §2.1 walkthrough passed end to end ==\033[0m\n'

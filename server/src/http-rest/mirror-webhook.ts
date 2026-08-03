@@ -9,6 +9,7 @@ import { findRepo } from "../core/repos-lookup.js";
 import { findMirror } from "../core/mirrors-lookup.js";
 import { recordPushedCommits } from "../core/change-recorder.js";
 import { decryptCredential, redactUrl } from "../core/mirror-crypto.js";
+import { ingestWorkflowRun, resolveMirrorReporter, type WorkflowRunPayload } from "../core/actions-ingest.js";
 
 // GitHub calls this route directly — it can't carry an ADP bearer token, so
 // trust here is entirely the HMAC signature over the raw body (verified
@@ -43,7 +44,16 @@ export function registerMirrorWebhookRawBodyParser(app: FastifyInstance) {
   });
 }
 
-export function registerMirrorWebhookRoutes(app: FastifyInstance, db: Db, gitBackend: GitBackend, signer: Signer, credentialKey: string) {
+export function registerMirrorWebhookRoutes(
+  app: FastifyInstance,
+  db: Db,
+  gitBackend: GitBackend,
+  signer: Signer,
+  credentialKey: string,
+  // Subject of the DSSE statement written for an ingested upstream run, same
+  // role PUBLIC_URL plays for every other gate (http-rest/gates.ts).
+  publicUrl: string,
+) {
   app.post("/webhooks/github/:owner/:name", async (req, reply) => {
     const { owner, name } = req.params as { owner: string; name: string };
     const rawBody = req.body as Buffer;
@@ -72,13 +82,39 @@ export function registerMirrorWebhookRoutes(app: FastifyInstance, db: Db, gitBac
       return;
     }
 
-    let payload: { ref?: string; after?: string };
+    let payload: { ref?: string; after?: string } & WorkflowRunPayload;
     try {
       payload = JSON.parse(rawBody.toString("utf8"));
     } catch {
       reply.code(400).send({ message: "malformed payload" });
       return;
     }
+
+    // Dispatch on the event type GitHub declares, rather than inferring it from
+    // the payload's shape. Before this, every delivery was assumed to be a push
+    // and anything else was silently discarded as "not a branch push event" —
+    // which is why upstream CI results never reached the evidence plane despite
+    // the milestone depending on them.
+    const event = (req.headers["x-github-event"] as string | undefined) ?? "push";
+
+    if (event === "workflow_run") {
+      const reporterId = await resolveMirrorReporter(db, mirror.identityId);
+      if (!reporterId) {
+        // Outbound-only mirrors have no system identity, and gate_results
+        // .reporterId is a hard FK — nothing safe to attribute this to.
+        reply.send({ ok: true, skipped: "mirror has no ingest identity" });
+        return;
+      }
+      const result = await ingestWorkflowRun(db, signer, publicUrl, repo, reporterId, payload);
+      reply.send({ ok: true, ...(result.recorded ? { recorded: result.gateName } : { skipped: result.reason }) });
+      return;
+    }
+
+    if (event !== "push") {
+      reply.send({ ok: true, skipped: `unhandled event '${event}'` });
+      return;
+    }
+
     if (!payload.ref || !payload.after) {
       reply.send({ ok: true, skipped: "not a branch push event" });
       return;

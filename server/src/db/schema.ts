@@ -1,4 +1,5 @@
-import { pgTable, text, timestamp, uuid, jsonb, boolean, integer, unique, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, jsonb, boolean, integer, unique, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const repos = pgTable("repos", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -161,12 +162,26 @@ export const gateResults = pgTable(
     summary: text("summary").notNull().default(""),
     reporterId: uuid("reporter_id").notNull().references(() => identities.id),
     envelope: jsonb("envelope").notNull(),
+    // Stable identifier for evidence that originates upstream rather than from
+    // a POST to .../gates — currently a mirrored repo's GitHub Actions run
+    // ("workflow_run:<id>", core/actions-ingest.ts). GitHub redelivers
+    // webhooks, and the M2 exit criterion is *exactly one* evidence row per
+    // completed run, so this carries a partial unique index and the insert
+    // uses onConflictDoNothing: a redelivery is a no-op at the database level
+    // rather than something application code has to remember to check.
+    // Null for gates reported through the ordinary REST path.
+    externalId: text("external_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   // Every land-policy check (core/gate-results-lookup.ts) and evidence-bundle
   // read filters on (repo_id, git_sha), then narrows to `name` when resolving
   // a specific gate's latest verdict — same reasoning as `changes`' index.
-  (table) => [index("gate_results_repo_id_git_sha_name_idx").on(table.repoId, table.gitSha, table.name)],
+  (table) => [
+    index("gate_results_repo_id_git_sha_name_idx").on(table.repoId, table.gitSha, table.name),
+    uniqueIndex("gate_results_repo_id_external_id_idx")
+      .on(table.repoId, table.externalId)
+      .where(sql`${table.externalId} is not null`),
+  ],
 );
 
 // Native-plane-only concept (docs/pragmatic_mvp.md §2.2: "Workspace | A

@@ -23,6 +23,7 @@ import { registerOperationRoutes } from "./http-rest/operations.js";
 import { registerWorkspaceRoutes } from "./http-rest/workspaces.js";
 import { registerEvidenceRoutes } from "./http-rest/evidence.js";
 import { registerMirrorRoutes } from "./http-rest/mirrors.js";
+import { registerActionsRoutes } from "./http-rest/actions.js";
 import { registerMirrorWebhookRoutes, registerMirrorWebhookRawBodyParser } from "./http-rest/mirror-webhook.js";
 import { startMirrorPoller } from "./core/mirror-poller.js";
 import { registerCandidateSetRoutes } from "./http-rest/candidate-sets.js";
@@ -112,7 +113,8 @@ async function main() {
   registerWorkspaceRoutes(app, db, gitBackend);
   registerEvidenceRoutes(app, db);
   registerMirrorRoutes(app, db, config.MIRROR_CREDENTIAL_KEY);
-  registerMirrorWebhookRoutes(app, db, gitBackend, signer, config.MIRROR_CREDENTIAL_KEY);
+  registerMirrorWebhookRoutes(app, db, gitBackend, signer, config.MIRROR_CREDENTIAL_KEY, config.PUBLIC_URL);
+  registerActionsRoutes(app, db, config.MIRROR_CREDENTIAL_KEY);
   registerCandidateSetRoutes(app, db);
   registerWebhookRoutes(app, db, config.MIRROR_CREDENTIAL_KEY);
 
