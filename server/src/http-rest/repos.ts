@@ -45,18 +45,31 @@ async function createRepo(
   return { conflict: false as const, repo };
 }
 
-function serializeRepo(repo: typeof repos.$inferSelect, owner: string, name: string, req: { protocol: string; hostname: string }) {
+function serializeRepo(repo: typeof repos.$inferSelect, owner: string, name: string, publicUrl: string) {
   return {
     id: repo.id,
     full_name: `${owner}/${name}`,
     name,
     owner: { login: owner },
     default_branch: repo.defaultBranch,
-    clone_url: `${req.protocol}://${req.hostname}/${owner}/${name}.git`,
+    clone_url: cloneUrl(publicUrl, owner, name),
   };
 }
 
-export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: GitBackend) {
+// Built from PUBLIC_URL, never from req.protocol/req.hostname. Behind a
+// TLS-terminating proxy (deploy/ runs Caddy) the request reaching Fastify is
+// plain HTTP, so req.protocol is "http" — and a client that trusts the
+// advertised URL then fails outright, because git drops credentials when a
+// redirect changes protocol:
+//   fatal: Authentication failed for 'http://<host>/<owner>/<repo>.git/'
+// PUBLIC_URL is already defined as "the public hostname gh and git clients
+// will hit" (deploy/.env.example), which makes it the authoritative answer
+// and avoids having to decide who may spoof X-Forwarded-Proto.
+export function cloneUrl(publicUrl: string, owner: string, name: string): string {
+  return `${publicUrl.replace(/\/+$/, "")}/${owner}/${name}.git`;
+}
+
+export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: GitBackend, publicUrl: string) {
   app.post("/api/v3/repos/:owner", { preHandler: requireScope("repo:write") }, async (req, reply) => {
     const { owner } = req.params as { owner: string };
     const parsed = CreateRepoBody.safeParse(req.body);
@@ -71,7 +84,7 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
       reply.code(422).send({ message: `Repository ${owner}/${name} already exists` });
       return;
     }
-    reply.code(201).send(serializeRepo(result.repo, owner, name, req));
+    reply.code(201).send(serializeRepo(result.repo, owner, name, publicUrl));
   });
 
   // GitHub-standard repo-create paths — the owner is implicit (the caller's
@@ -91,7 +104,7 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
       reply.code(422).send({ message: `Repository ${owner}/${name} already exists` });
       return;
     }
-    reply.code(201).send(serializeRepo(result.repo, owner, name, req));
+    reply.code(201).send(serializeRepo(result.repo, owner, name, publicUrl));
   });
 
   app.post("/api/v3/orgs/:org/repos", { preHandler: requireScope("repo:write") }, async (req, reply) => {
@@ -108,7 +121,7 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
       reply.code(422).send({ message: `Repository ${org}/${name} already exists` });
       return;
     }
-    reply.code(201).send(serializeRepo(result.repo, org, name, req));
+    reply.code(201).send(serializeRepo(result.repo, org, name, publicUrl));
   });
 
   app.get("/api/v3/repos/:owner/:repo", { preHandler: requireScope("repo:read") }, async (req, reply) => {
@@ -124,7 +137,7 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
       name,
       owner: { login: owner },
       default_branch: repo.defaultBranch,
-      clone_url: `${req.protocol}://${req.hostname}/${owner}/${name}.git`,
+      clone_url: cloneUrl(publicUrl, owner, name),
     });
   });
 }

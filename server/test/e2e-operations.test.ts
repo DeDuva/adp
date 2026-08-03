@@ -62,7 +62,7 @@ describe.skipIf(skipWithoutDb)("M1c: operations log + undo", () => {
       (_req, payload, done) => done(null, payload),
     );
     await app.register(authPlugin(db));
-    registerRepoRoutes(app, db, gitBackend);
+    registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key", []); // no land-policy floor in this suite
     registerOperationRoutes(app, db, gitBackend);
     registerGitHttpRoutes(app, gitBackend);

@@ -58,8 +58,8 @@ describe.skipIf(skipWithoutDb)("M0 end-to-end: token -> repo create -> clone -> 
       (_req, payload, done) => done(null, payload),
     );
     await app.register(authPlugin(db));
-    registerIdentityRoutes(app);
-    registerRepoRoutes(app, db, gitBackend);
+    registerIdentityRoutes(app, "https://adp.example.com");
+    registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerIssueRoutes(app, db);
     registerChangeRoutes(app, db, gitBackend, new Signer("e2e-test-signing-key"));
     registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key");
@@ -102,6 +102,39 @@ describe.skipIf(skipWithoutDb)("M0 end-to-end: token -> repo create -> clone -> 
     expect(res.status).toBe(201);
     const body = (await res.json()) as { full_name: string };
     expect(body.full_name).toBe(`${owner}/hello`);
+  });
+
+  // The test app is reached over plain HTTP on 127.0.0.1, exactly like the
+  // real server behind deploy/'s Caddy — so req.protocol/req.hostname here say
+  // "http" and "127.0.0.1", while PUBLIC_URL says https. Asserting the
+  // advertised URL follows PUBLIC_URL rather than the request is what catches
+  // the regression: a client that trusted the old http:// clone_url failed
+  // outright, because git drops credentials across a protocol-changing
+  // redirect.
+  it("advertises clone_url and current_user_url from PUBLIC_URL, not the request", async () => {
+    const created = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "url-shape" }),
+    });
+    expect(created.status).toBe(201);
+    expect(((await created.json()) as { clone_url: string }).clone_url).toBe(
+      `https://adp.example.com/${owner}/url-shape.git`,
+    );
+
+    const read = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/url-shape`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(((await read.json()) as { clone_url: string }).clone_url).toBe(
+      `https://adp.example.com/${owner}/url-shape.git`,
+    );
+
+    const root = await fetch(`http://127.0.0.1:${port}/api/v3`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(((await root.json()) as { current_user_url: string }).current_user_url).toBe(
+      "https://adp.example.com/api/v3/user",
+    );
   });
 
   it("rejects an unauthenticated read (default-private reads)", async () => {

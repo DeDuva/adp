@@ -88,8 +88,8 @@ async function main() {
     reply.type("text/plain; version=0.0.4").send(renderMetrics());
   });
 
-  registerIdentityRoutes(app);
-  registerRepoRoutes(app, db, gitBackend);
+  registerIdentityRoutes(app, config.PUBLIC_URL);
+  registerRepoRoutes(app, db, gitBackend, config.PUBLIC_URL);
   registerIssueRoutes(app, db);
   registerChangeRoutes(app, db, gitBackend, signer);
   registerProposalRoutes(app, db, gitBackend, config.MIRROR_CREDENTIAL_KEY, instanceFloor, {

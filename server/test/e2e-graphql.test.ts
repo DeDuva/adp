@@ -73,7 +73,7 @@ describe.skipIf(skipWithoutDb)("M1b GraphQL: read path", () => {
       (_req, payload, done) => done(null, payload),
     );
     await app.register(authPlugin(db));
-    registerRepoRoutes(app, db, gitBackend);
+    registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerIssueRoutes(app, db);
     registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key");
 
@@ -288,7 +288,7 @@ describe.skipIf(skipWithoutDb)("M1b′ GraphQL: mutations", () => {
       (_req, payload, done) => done(null, payload),
     );
     await app.register(authPlugin(db));
-    registerRepoRoutes(app, db, gitBackend);
+    registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerGitHttpRoutes(app, gitBackend);
 
     const schema = loadGitHubSchema();

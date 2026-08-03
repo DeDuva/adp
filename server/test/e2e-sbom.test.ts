@@ -109,7 +109,7 @@ describe.skipIf(skipWithoutDb)("M2: SBOM per land", () => {
       (_req, payload, done) => done(null, payload),
     );
     await app.register(authPlugin(db));
-    registerRepoRoutes(app, db, gitBackend);
+    registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key", [], { signer, publicUrl: "https://adp.example.com" });
     registerEvidenceRoutes(app, db);
 

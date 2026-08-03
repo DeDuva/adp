@@ -64,7 +64,7 @@ describe.skipIf(skipWithoutDb)("M1c: gate runner + land policy", () => {
       (_req, payload, done) => done(null, payload),
     );
     await app.register(authPlugin(db));
-    registerRepoRoutes(app, db, gitBackend);
+    registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     // Instance floor requires both — same default as config.ts's
     // LAND_POLICY_FLOOR, made explicit here rather than relying on it.
     registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key", ["gates_green", "one_approval"]);

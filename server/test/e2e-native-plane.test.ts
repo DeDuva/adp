@@ -70,7 +70,7 @@ describe.skipIf(skipWithoutDb)("M1c: workspaces + evidence bundle", () => {
       (_req, payload, done) => done(null, payload),
     );
     await app.register(authPlugin(db));
-    registerRepoRoutes(app, db, gitBackend);
+    registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerChangeRoutes(app, db, gitBackend, signer);
     registerGateRoutes(app, db, signer, "https://adp.example.com", "e2e-test-credential-key");
     registerWorkspaceRoutes(app, db, gitBackend);

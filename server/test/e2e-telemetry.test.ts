@@ -53,7 +53,7 @@ describe.skipIf(skipWithoutDb)("M2: API-traffic telemetry", () => {
       reply.type("text/plain; version=0.0.4").send(renderMetrics());
     });
 
-    registerRepoRoutes(app, db, gitBackend);
+    registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     const schema = loadGitHubSchema();
     attachResolvers(schema, createResolvers(gitBackend, "e2e-test-credential-key"));
     registerGraphQLRoute(app, schema, db);
