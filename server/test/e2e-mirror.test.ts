@@ -67,7 +67,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M2: mirror mode", () => {
     registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerHookRoutes(app, db, gitBackend, signer, CREDENTIAL_KEY);
     registerMirrorRoutes(app, db, CREDENTIAL_KEY);
-    registerMirrorWebhookRoutes(app, db, gitBackend, signer, CREDENTIAL_KEY);
+    registerMirrorWebhookRoutes(app, db, gitBackend, signer, CREDENTIAL_KEY, "https://adp.example.com");
     registerGitHttpRoutes(app, gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });

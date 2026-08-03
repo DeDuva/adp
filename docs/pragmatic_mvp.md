@@ -393,7 +393,7 @@ silent pass; see [`test-environment-automation.md`](test-environment-automation.
 | M1b — GraphQL + `gh` | **✓ gate met** | PR #4 (read) + the M1b′ mutation slice. GitHub's real SDL loaded unmodified; `conformance/run.sh` drives a real, unmodified, pinned `gh` v2.63.0 through `issue create/view`, `pr create/view/merge` against the live server — the definition-of-done §2.1 gate, enforced in CI on every PR |
 | M1b′ — compat completion + hardening | **✓ done** | GraphQL mutations, the Tier-2 REST tail, all five hardening items, and the `gh` conformance gate all landed — see below |
 | M1c | **✓ done** | Real git `pre-receive`/`post-receive` hooks; `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy on both REST and GraphQL merge; native-plane (`/api/adp`) op log + `adp_undo` + history-query by path; workspaces, candidate sets, and an evidence-bundle read; a real MCP server (`server/src/mcp/`) wrapping all of it as 8 tools; a read-only supervision web UI (`server/web/`, served at `/ui/*`) — see below |
-| M2 — adoption + trust ramp | **✓ code landed 2026-08-02** | Mirror mode, outbound webhook emitter, `adp` CLI, API-traffic telemetry, scanner-as-gate adapters (`wizcli`, `osv-scanner`), dependency admission v0, SBOM per land, and all five scale-hygiene items — see below. Scope revised 2026-07-26, amended 2026-08-01 per the pre-M2 readiness review ([`m2-readiness-review.md`](m2-readiness-review.md)). Dev environment built 2026-08-02 ([`infra/dev/`](../infra/dev/)), unblocking mirror mode's inbound webhook path; both [`environments-plan.md`](environments-plan.md) §5 questions answered |
+| M2 — adoption + trust ramp | **✓ complete 2026-08-03** | Mirror mode, outbound webhook emitter, `adp` CLI, API-traffic telemetry, scanner-as-gate adapters (`wizcli`, `osv-scanner`), dependency admission v0, SBOM per land, all five scale-hygiene items, and the read-only Actions passthrough with its `workflow_run` ingest — see below. Scope revised 2026-07-26, amended 2026-08-01 per the pre-M2 readiness review ([`m2-readiness-review.md`](m2-readiness-review.md)). Dev environment built 2026-08-02 ([`infra/dev/`](../infra/dev/)); mirror-mode inbound proven against real github.com 2026-08-03, and both [`environments-plan.md`](environments-plan.md) §5 questions answered |
 | M3–M5 | not started | |
 
 ### M0 — Spec + walking skeleton (weeks 1–2) — ✓ done
@@ -768,7 +768,11 @@ different job — `adp.yaml` `image + commands`, explicitly *"not a workflow eng
 that are **not** on GitHub, plus the scanner adapters above. At M2 its entire load is scanners over
 changed files: bursty and small, nothing resembling a CI matrix.
 
-**Read-only Actions passthrough — M2 scope** *(promoted from candidate to committed 2026-08-02)*.
+**Read-only Actions passthrough — ✓ landed 2026-08-03** *(promoted from candidate to committed
+2026-08-02)*. Both halves shipped: ingest (`core/actions-ingest.ts`, wired into the mirror webhook
+by `X-GitHub-Event` dispatch) and the relay (`http-rest/actions.ts`). Exactly-once is enforced by a
+partial unique index on `gate_results (repo_id, external_id)` rather than by application code, so a
+redelivery cannot write a second attestation even if a caller forgets to check.
 In mirror mode the upstream repo is on GitHub by definition, so ADP proxies read-only Actions
 endpoints upstream instead of returning `404`, making `gh run list` and `gh run view` work against
 `GH_HOST=adp` for mirrored repos. This is a passthrough, not an implementation: it adds no workflow

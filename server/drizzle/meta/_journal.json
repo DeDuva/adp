@@ -78,6 +78,13 @@
       "when": 1785715200000,
       "tag": "0010_secret_columns_encrypted_at_rest",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785764000000,
+      "tag": "0011_gate_results_external_id",
+      "breakpoints": true
     }
   ]
 }
