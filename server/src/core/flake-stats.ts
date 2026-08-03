@@ -80,10 +80,11 @@ export async function gateFlakeStats(db: Db, repoId: string, gateName: string, w
 // Wilson rather than the normal ("Wald") approximation, and the difference is
 // not academic here: at the small n a gate history actually has — five runs,
 // ten — Wald is wrong in the permissive direction. Five successes out of five
-// gives a Wald interval of exactly [1, 1], so a gate that has never been
-// observed to fail would clear any threshold with total confidence on the
-// strength of five observations. Wilson gives ≈0.566 at 95%, which is the
-// honest answer, and honest is the entire point of a statistical gate.
+// gives a Wald interval of exactly [1, 1] — p̂ = 1 means zero estimated
+// variance — so a gate that has never been observed to fail would clear any
+// threshold with total confidence on the strength of five observations. Wilson
+// gives ≈0.649 at 95%, which is the honest answer, and honest is the entire
+// point of a statistical gate.
 export function wilsonLowerBound(successes: number, n: number, confidence: number): number {
   if (n <= 0) return 0;
   const z = zForOneSidedConfidence(confidence);

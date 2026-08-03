@@ -113,6 +113,29 @@ export async function landProposal(
       .where(eq(proposals.id, proposal.id))
       .returning();
 
+    // Quarantine is recorded here — at the one point where it actually took
+    // effect, in the same transaction as the land it permitted — rather than
+    // inside evaluateLandPolicy, which runs several times per merge and once
+    // per candidate during a 50-way fan-out. A gate that quietly stopped
+    // mattering is the failure this whole feature must not have, so the log
+    // gets exactly one durable record per land that a quarantine allowed.
+    for (const gate of policyAtCas.quarantined) {
+      await recordOperation(tx, {
+        repoId: repo.id,
+        actorId: actor.identityId,
+        verb: "gate.quarantine",
+        target: `${repo.owner}/${repo.name}@${proposal.headSha}#${gate.name}`,
+        after: {
+          gate: gate.name,
+          flakeRate: gate.flakeRate,
+          flips: gate.flips,
+          distinctShas: gate.distinctShas,
+          latestStatus: gate.latestStatus,
+          landedProposal: proposal.number,
+        },
+      });
+    }
+
     await recordOperation(tx, {
       repoId: repo.id,
       actorId: actor.identityId,
