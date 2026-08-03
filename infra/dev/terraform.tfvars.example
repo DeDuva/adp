@@ -1,0 +1,37 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored —
+# it names a specific project and a specific person, neither of which belongs
+# in a public repo.
+
+# Globally unique GCP project ID, the same one passed to infra/bootstrap.sh.
+project_id = "adp-dev-CHANGEME"
+
+# The FQDN Caddy requests a certificate for. Create the subdomain at
+# https://www.duckdns.org (sign in with GitHub), then point its A record at the
+# static IP this config allocates — `terraform output duckdns_update_command`
+# prints the exact curl once the address exists.
+#
+# duckdns.org is on the Public Suffix List, so it gets its own Let's Encrypt
+# rate limit. nip.io and sslip.io are not, and share one global quota that is
+# regularly exhausted — they are not usable here.
+hostname = "adp-dev-CHANGEME.duckdns.org"
+
+# Recorded as a label so the billing console can answer "whose box is this?"
+owner_email = "you@example.com"
+
+# Stated retirement condition (docs/environments-plan.md §4). Dev is disposable
+# by design: when this date passes and the box is not in active use, delete it.
+retire_after = "2026-11-01"
+
+# Optional overrides — the defaults match docs/hosting-cost-estimate.md §3.
+# region            = "us-central1"
+# zone              = "us-central1-a"
+# machine_type      = "e2-standard-2"
+# boot_disk_gb      = 50
+# adp_git_ref       = "main"
+
+# Auto-shutdown: ~$25/mo instead of ~$58/mo. Set false for always-on if you
+# want GitHub to be able to deliver inbound webhooks at any hour.
+# auto_shutdown     = true
+# start_schedule    = "0 8 * * 1-5"
+# stop_schedule     = "0 19 * * 1-5"
+# schedule_timezone = "America/Los_Angeles"

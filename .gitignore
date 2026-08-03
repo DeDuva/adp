@@ -17,4 +17,17 @@ deploy/.env
 .env.test
 .adp-test/
 
+# Terraform. State is kept in GCS (infra/dev/versions.tf), never on disk here;
+# tfvars names a specific project and person and stays local.
+#
+# .terraform.lock.hcl is deliberately NOT ignored: it pins provider versions
+# and their checksums, which is the same supply-chain property this project
+# argues for everywhere else.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
 .claude/scratch/

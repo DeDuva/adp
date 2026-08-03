@@ -393,7 +393,7 @@ silent pass; see [`test-environment-automation.md`](test-environment-automation.
 | M1b — GraphQL + `gh` | **✓ gate met** | PR #4 (read) + the M1b′ mutation slice. GitHub's real SDL loaded unmodified; `conformance/run.sh` drives a real, unmodified, pinned `gh` v2.63.0 through `issue create/view`, `pr create/view/merge` against the live server — the definition-of-done §2.1 gate, enforced in CI on every PR |
 | M1b′ — compat completion + hardening | **✓ done** | GraphQL mutations, the Tier-2 REST tail, all five hardening items, and the `gh` conformance gate all landed — see below |
 | M1c | **✓ done** | Real git `pre-receive`/`post-receive` hooks; `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy on both REST and GraphQL merge; native-plane (`/api/adp`) op log + `adp_undo` + history-query by path; workspaces, candidate sets, and an evidence-bundle read; a real MCP server (`server/src/mcp/`) wrapping all of it as 8 tools; a read-only supervision web UI (`server/web/`, served at `/ui/*`) — see below |
-| M2 — adoption + trust ramp | **✓ code landed 2026-08-02** | Mirror mode, outbound webhook emitter, `adp` CLI, API-traffic telemetry, scanner-as-gate adapters (`wizcli`, `osv-scanner`), dependency admission v0, SBOM per land, and all five scale-hygiene items — see below. Scope revised 2026-07-26, amended 2026-08-01 per the pre-M2 readiness review ([`m2-readiness-review.md`](m2-readiness-review.md)). **Not yet operationally live:** mirror mode's inbound webhook path needs a publicly reachable dev instance, which is still blocked on the two open questions in [`environments-plan.md`](environments-plan.md) §5 |
+| M2 — adoption + trust ramp | **✓ code landed 2026-08-02** | Mirror mode, outbound webhook emitter, `adp` CLI, API-traffic telemetry, scanner-as-gate adapters (`wizcli`, `osv-scanner`), dependency admission v0, SBOM per land, and all five scale-hygiene items — see below. Scope revised 2026-07-26, amended 2026-08-01 per the pre-M2 readiness review ([`m2-readiness-review.md`](m2-readiness-review.md)). Dev environment built 2026-08-02 ([`infra/dev/`](../infra/dev/)), unblocking mirror mode's inbound webhook path; both [`environments-plan.md`](environments-plan.md) §5 questions answered |
 | M3–M5 | not started | |
 
 ### M0 — Spec + walking skeleton (weeks 1–2) — ✓ done
@@ -791,10 +791,13 @@ evidence plane.
   never a synthesized empty run list — an agent that believes CI passed because the proxy fabricated
   silence is the worst outcome available here.
 
-**At kickoff:** resolve the two open questions in [`environments-plan.md`](environments-plan.md) §5
-(SIGNING_KEY custody including the retired-key trust model; dev-instance ownership and retirement
-condition) — the dev environment is forced by M2's inbound webhooks, so these block the milestone's
-first week, not its last.
+**At kickoff — done 2026-08-02.** Both open questions in
+[`environments-plan.md`](environments-plan.md) §5 are answered there (SIGNING_KEY custody plus the
+retired-key trust model in §5.1; dev-instance ownership and retirement in §5.2), and the dev
+environment they blocked is built: Terraform in [`infra/dev/`](../infra/dev/), runbook in
+[`infra/README.md`](../infra/README.md). The short version of the trust-model half: a *retired*
+key's evidence stays valid, a *compromised* key's does not, and DSSE's existing `keyid` field
+(`server/src/core/dsse.ts`) means the envelope format needs no migration to support that.
 
 **Exit:** an existing GitHub repo gets ADP workspaces + evidence without migrating; a `wizcli`
 gate posts findings as signed evidence on a proposal; a lockfile diff adding a known-malicious
