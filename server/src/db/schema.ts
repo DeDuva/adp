@@ -6,6 +6,7 @@ import {
   jsonb,
   boolean,
   integer,
+  bigint,
   doublePrecision,
   unique,
   index,
@@ -387,6 +388,18 @@ export const sessionEvents = pgTable(
     // session already has *before* chaining, so retry is idempotent rather than
     // merely usually-harmless.
     clientEventId: text("client_event_id"),
+    // The emitter's own contiguous counter for this session, and who was
+    // counting. `client_event_id` makes a retry harmless but cannot prove
+    // nothing was *dropped*: an event that never arrived has no id to
+    // deduplicate. A counter the emitter assigns at enqueue does prove it —
+    // ADP rejects a batch that skips a number, so "the recorder recorded
+    // everything" becomes checkable rather than asserted.
+    //
+    // Nullable because emitters that do not count are still allowed to append;
+    // a session with no producer seqs is untracked, which is a different thing
+    // from incomplete.
+    producerSeq: bigint("producer_seq", { mode: "number" }),
+    producerId: text("producer_id"),
     // When it happened, per the orchestrator, versus when ADP received it. Both,
     // because clock skew is real and neither answers the other's question.
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
@@ -399,6 +412,12 @@ export const sessionEvents = pgTable(
     uniqueIndex("session_events_session_id_client_event_id_idx")
       .on(table.sessionId, table.clientEventId)
       .where(sql`${table.clientEventId} is not null`),
+    // One writer per session is what keeps the chain serializable, so a
+    // producer_seq is unique within the session — a second emitter counting
+    // from 1 into the same chain is a bug, not a merge.
+    uniqueIndex("session_events_session_id_producer_seq_idx")
+      .on(table.sessionId, table.producerSeq)
+      .where(sql`${table.producerSeq} is not null`),
     // Merging N sessions into one run-ordered trajectory reads each session's
     // events in time order.
     index("session_events_session_id_occurred_at_idx").on(table.sessionId, table.occurredAt),

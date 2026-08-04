@@ -293,7 +293,8 @@ export function buildMcpServer(client: AdpClient): McpServer {
     {
       description:
         "Append to a session's trajectory — messages, model calls, tool executions, handoffs, commits, and test " +
-        "results. Batched; supply client_event_id to make a retry idempotent.",
+        "results. Batched; supply client_event_id to make a retry idempotent, and a contiguous producer_seq " +
+        "(on every event of the batch, or none) to make a dropped event detectable.",
       inputSchema: {
         owner: z.string(),
         repo: z.string(),
@@ -313,14 +314,19 @@ export function buildMcpServer(client: AdpClient): McpServer {
               git_sha: z.string().optional(),
               related_session_id: z.string().optional(),
               client_event_id: z.string().optional(),
+              producer_seq: z.number().int().positive().optional(),
               occurred_at: z.string().optional(),
             }),
           )
           .min(1),
+        producer_id: z.string().optional(),
       },
     },
-    async ({ owner, repo, session_id, events }) => {
-      const res = await client.post(`/api/adp/repos/${owner}/${repo}/sessions/${session_id}/events`, { events });
+    async ({ owner, repo, session_id, events, producer_id }) => {
+      const res = await client.post(`/api/adp/repos/${owner}/${repo}/sessions/${session_id}/events`, {
+        events,
+        ...(producer_id ? { producer_id } : {}),
+      });
       return res.ok ? ok(res.body) : err(res.message);
     },
   );

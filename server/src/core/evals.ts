@@ -2,13 +2,25 @@ import { createHash } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { Signer } from "./signing.js";
-import { evals, gateResults, runs } from "../db/schema.js";
+import { evals, gateResults, identities, runs } from "../db/schema.js";
 import { canonicalJson } from "./canonical.js";
 import { recordOperation } from "./operations.js";
 import { signStatement, type InTotoStatement } from "./dsse.js";
 import { runChains, trajectoryDigest } from "./runs.js";
 
 export type EvalRow = typeof evals.$inferSelect;
+
+// An eval plus who reported it. `separatelyAuthorized` is the whole reason the
+// reporter is surfaced at all: a run that scores its own work is a self-report,
+// and a score is only independent evidence if the identity that wrote it is not
+// the identity that did the work. `gate_results.reporterId` already recorded
+// this; without projecting it here, "separately authorized" stays an assertion
+// nobody downstream can check.
+export interface EvalWithReporter extends EvalRow {
+  reporterId: string;
+  reporterPrincipal: string;
+  separatelyAuthorized: boolean;
+}
 
 export const EVAL_PREDICATE_TYPE = "https://adp.dev/attestations/eval/v1";
 
@@ -49,7 +61,7 @@ export interface RecordEvalInput {
 
 export interface RecordEvalResult {
   ok: true;
-  eval: EvalRow;
+  eval: EvalWithReporter;
   gateResult: typeof gateResults.$inferSelect;
 }
 
@@ -173,14 +185,37 @@ export async function recordEval(
     return { evalRow: evalRow!, gateRow: gateRow! };
   });
 
-  return { ok: true, eval: recorded.evalRow, gateResult: recorded.gateRow };
+  return {
+    ok: true,
+    eval: {
+      ...recorded.evalRow,
+      reporterId: actor.identityId,
+      reporterPrincipal: actor.principal,
+      separatelyAuthorized: actor.identityId !== run.actorId,
+    },
+    gateResult: recorded.gateRow,
+  };
 }
 
-export async function listEvals(db: Db, runId: string): Promise<EvalRow[]> {
-  return db.select().from(evals).where(eq(evals.runId, runId)).orderBy(desc(evals.createdAt));
+export async function listEvals(db: Db, runId: string): Promise<EvalWithReporter[]> {
+  const rows = await db
+    .select({ evalRow: evals, reporterId: gateResults.reporterId, principal: identities.principal, runActorId: runs.actorId })
+    .from(evals)
+    .innerJoin(gateResults, eq(evals.gateResultId, gateResults.id))
+    .innerJoin(identities, eq(gateResults.reporterId, identities.id))
+    .innerJoin(runs, eq(evals.runId, runs.id))
+    .where(eq(evals.runId, runId))
+    .orderBy(desc(evals.createdAt));
+
+  return rows.map((r) => ({
+    ...r.evalRow,
+    reporterId: r.reporterId,
+    reporterPrincipal: r.principal,
+    separatelyAuthorized: r.reporterId !== r.runActorId,
+  }));
 }
 
-export function serializeEval(row: EvalRow) {
+export function serializeEval(row: EvalWithReporter) {
   return {
     id: row.id,
     run_id: row.runId,
@@ -191,6 +226,10 @@ export function serializeEval(row: EvalRow) {
     passed: row.passed,
     gate_result_id: row.gateResultId,
     trajectory_digest: row.trajectoryDigest,
+    reporter_principal: row.reporterPrincipal,
+    // True when the identity that reported the score is not the identity that
+    // opened the run — i.e. the score is not a self-report.
+    separately_authorized: row.separatelyAuthorized,
     created_at: row.createdAt.toISOString(),
   };
 }
