@@ -17,6 +17,7 @@ import { registerOperationRoutes } from "./http-rest/operations.js";
 import { registerWorkspaceRoutes } from "./http-rest/workspaces.js";
 import { registerEvidenceRoutes } from "./http-rest/evidence.js";
 import { registerSessionRoutes } from "./http-rest/sessions.js";
+import { registerRunRoutes } from "./http-rest/runs.js";
 import { registerMirrorRoutes } from "./http-rest/mirrors.js";
 import { registerActionsRoutes } from "./http-rest/actions.js";
 import { registerMirrorWebhookRoutes } from "./http-rest/mirror-webhook.js";
@@ -67,6 +68,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   registerWorkspaceRoutes(app, db, gitBackend);
   registerEvidenceRoutes(app, db);
   registerSessionRoutes(app, db, gitBackend, signer, publicUrl);
+  registerRunRoutes(app, db, gitBackend, signer, publicUrl);
   registerMirrorRoutes(app, db, credentialKey);
   registerMirrorWebhookRoutes(app, db, gitBackend, signer, credentialKey, publicUrl);
   registerActionsRoutes(app, db, credentialKey);

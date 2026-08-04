@@ -3,8 +3,9 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "./git-backend.js";
 import type { Signer } from "./signing.js";
-import { sessions, checkpoints, workspaces, intents, operations } from "../db/schema.js";
+import { sessions, checkpoints, workspaces, intents, operations, runs, sessionEvents } from "../db/schema.js";
 import { recordOperation } from "./operations.js";
+import { chainGenesis } from "./trajectory.js";
 import { createWorkspace } from "./workspaces.js";
 import { signStatement, verifyEnvelope, decodeStatement, type DsseEnvelope, type InTotoStatement } from "./dsse.js";
 
@@ -33,7 +34,21 @@ export function checkpointStatement(
   publicUrl: string,
   repo: { owner: string; name: string },
   session: { id: string },
-  checkpoint: { seq: number; gitSha: string; harness: string; state: unknown },
+  checkpoint: {
+    seq: number;
+    gitSha: string;
+    harness: string;
+    state: unknown;
+    // The session's trajectory chain head at checkpoint time. Session events are
+    // hash-chained rather than individually signed (core/trajectory.ts) because
+    // signing thousands of them per run would price recording out of the hot
+    // path; this is where that chain becomes signed evidence. A checkpoint now
+    // attests to *what the agent did* up to this point, not only to which commit
+    // it reached — and a resume that verifies the checkpoint has, transitively,
+    // verified the trajectory behind it.
+    trajectoryHead: string;
+    eventCount: number;
+  },
 ): InTotoStatement {
   return {
     _type: "https://in-toto.io/Statement/v1",
@@ -44,6 +59,8 @@ export function checkpointStatement(
       seq: checkpoint.seq,
       harness: checkpoint.harness,
       stateSha256: hashState(checkpoint.state),
+      trajectoryHead: checkpoint.trajectoryHead,
+      eventCount: checkpoint.eventCount,
     },
   };
 }
@@ -51,9 +68,33 @@ export function checkpointStatement(
 export async function startSession(
   db: Db,
   repo: { id: string; owner: string; name: string },
-  input: { harness: string; intentId?: string | null; workspaceId?: string | null },
+  input: { harness: string; intentId?: string | null; workspaceId?: string | null; runId?: string | null },
   actorId: string,
 ): Promise<{ ok: true; session: SessionRow } | SessionError> {
+  let runIntentId: string | null = null;
+  if (input.runId) {
+    const [run] = await db
+      .select()
+      .from(runs)
+      .where(and(eq(runs.id, input.runId), eq(runs.repoId, repo.id)));
+    if (!run) return { ok: false, status: 422, message: `run ${input.runId} not found in this repository` };
+    // A session joining a closed run would append trajectory the run's signed
+    // attestation does not cover, which is exactly the state that makes an
+    // attestation misleading rather than absent.
+    if (run.status !== "open") {
+      return { ok: false, status: 409, message: `run ${input.runId} is ${run.status}` };
+    }
+    runIntentId = run.intentId;
+    // The run already states the intent; inheriting it means the common case
+    // needs one field, and disagreement is caught instead of silently kept.
+    if (input.intentId && input.intentId !== run.intentId) {
+      return {
+        ok: false,
+        status: 422,
+        message: `intent ${input.intentId} does not match run ${input.runId}'s intent ${run.intentId}`,
+      };
+    }
+  }
   if (input.intentId) {
     const [intent] = await db
       .select()
@@ -76,7 +117,8 @@ export async function startSession(
       .insert(sessions)
       .values({
         repoId: repo.id,
-        intentId: input.intentId ?? null,
+        intentId: input.intentId ?? runIntentId,
+        runId: input.runId ?? null,
         harness: input.harness,
         actorId,
         workspaceId: input.workspaceId ?? null,
@@ -88,7 +130,12 @@ export async function startSession(
       actorId,
       verb: "session.start",
       target: `${repo.owner}/${repo.name}@session:${row!.id}`,
-      after: { id: row!.id, harness: input.harness, intentId: input.intentId ?? null },
+      after: {
+        id: row!.id,
+        harness: input.harness,
+        intentId: input.intentId ?? runIntentId,
+        runId: input.runId ?? null,
+      },
     });
 
     return row!;
@@ -138,6 +185,16 @@ export async function createCheckpoint(
       .where(eq(checkpoints.sessionId, sessionId));
     const nextSeq = seqRow!.nextSeq;
 
+    // Read the chain head inside the same lock that serializes `seq`, so the
+    // head the checkpoint signs is the head as of this checkpoint and not one a
+    // concurrent append moved underneath it.
+    const [tail] = await tx
+      .select({ seq: sessionEvents.seq, hash: sessionEvents.hash })
+      .from(sessionEvents)
+      .where(eq(sessionEvents.sessionId, sessionId))
+      .orderBy(sql`${sessionEvents.seq} desc`)
+      .limit(1);
+
     const harness = input.harness ?? session.harness;
     const envelope = signStatement(
       signer,
@@ -146,6 +203,8 @@ export async function createCheckpoint(
         gitSha: input.gitSha,
         harness,
         state: input.state,
+        trajectoryHead: tail?.hash ?? chainGenesis(sessionId),
+        eventCount: tail?.seq ?? 0,
       }),
     );
 
@@ -253,12 +312,23 @@ export async function resumeSession(
   await gitBackend.deleteRef(repo.owner, repo.name, `refs/heads/${forkRef}`);
   if (!created.ok) return { ok: false, status: 422, message: created.message };
 
+  // A resume stays in its run only while that run is still open. Attaching a
+  // fresh session to a closed run would grow a trajectory the run's signed
+  // attestation already fixed the shape of; the resume is still allowed, it just
+  // becomes work that outlived the assignment, which is what it is.
+  let inheritedRunId: string | null = null;
+  if (session.runId) {
+    const [run] = await db.select({ status: runs.status }).from(runs).where(eq(runs.id, session.runId));
+    if (run?.status === "open") inheritedRunId = session.runId;
+  }
+
   const resumed = await db.transaction(async (tx) => {
     const [row] = await tx
       .insert(sessions)
       .values({
         repoId: repo.id,
         intentId: session.intentId,
+        runId: inheritedRunId,
         harness: input.harness,
         actorId,
         workspaceId: created.workspace.id,

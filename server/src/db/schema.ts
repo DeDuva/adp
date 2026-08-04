@@ -1,4 +1,16 @@
-import { pgTable, text, timestamp, uuid, jsonb, boolean, integer, unique, index, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  jsonb,
+  boolean,
+  integer,
+  doublePrecision,
+  unique,
+  index,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const repos = pgTable("repos", {
@@ -229,6 +241,52 @@ export const workspaces = pgTable("workspaces", {
   destroyedAt: timestamp("destroyed_at", { withTimezone: true }),
 });
 
+// An orchestrator's unit of assigned work — one Squad assignment, one fleet
+// dispatch — spanning the N sessions the orchestrator spawns to do it. Sessions
+// already carry "one agent's work across harnesses" (D2); a run is the level
+// above, and it is the level an *eval* is meaningfully attached to: you do not
+// evaluate one agent's turn, you evaluate whether the assignment was completed.
+//
+// `orchestrator` is opaque in exactly the way `sessions.harness` is — ADP never
+// branches on its value. `externalRef` is the orchestrator's own id for the
+// assignment, carrying a partial unique index so that re-opening a run after a
+// crash resolves to the same row rather than forking the trajectory in two.
+//
+// The run closes against `finalGitSha`, and `envelope` is a DSSE-signed
+// attestation binding that sha to every session's trajectory chain head
+// (core/runs.ts). That binding is the point: it is what makes "this code came
+// out of that trajectory" checkable rather than asserted.
+export const runs = pgTable(
+  "runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repoId: uuid("repo_id").notNull().references(() => repos.id),
+    // Required, unlike sessions.intentId. A run is the object an eval scores and
+    // a gate reports on, and scoring work whose goal was never stated is how you
+    // get a number nobody can interpret later.
+    intentId: uuid("intent_id").notNull().references(() => intents.id),
+    orchestrator: text("orchestrator").notNull(),
+    externalRef: text("external_ref"),
+    actorId: uuid("actor_id").notNull().references(() => identities.id),
+    status: text("status", { enum: ["open", "closed", "abandoned"] }).notNull().default("open"),
+    finalGitSha: text("final_git_sha"),
+    // sha256 over every session's (id, harness, event count, chain head), sorted
+    // by session id — one value naming the whole run's trajectory, stable to
+    // recompute and cheap to compare across runs.
+    trajectoryDigest: text("trajectory_digest"),
+    envelope: jsonb("envelope"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("runs_repo_id_status_idx").on(table.repoId, table.status),
+    index("runs_repo_id_intent_id_idx").on(table.repoId, table.intentId),
+    uniqueIndex("runs_repo_id_orchestrator_external_ref_idx")
+      .on(table.repoId, table.orchestrator, table.externalRef)
+      .where(sql`${table.externalRef} is not null`),
+  ],
+);
+
 // M3 (docs/m3-readiness-review.md §4, M3-1): a unit of agent work that
 // outlives any one harness — the object D2 ("cross-harness portability") is
 // about. `harness` is just an identifier the caller supplies; ADP never
@@ -244,6 +302,10 @@ export const sessions = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     repoId: uuid("repo_id").notNull().references(() => repos.id),
     intentId: uuid("intent_id").references(() => intents.id),
+    // Null for a session nobody orchestrated — a developer checkpointing their
+    // own work is still a session, and requiring a run for it would make the
+    // orchestrated case the only supported one.
+    runId: uuid("run_id").references(() => runs.id),
     harness: text("harness").notNull(),
     actorId: uuid("actor_id").notNull().references(() => identities.id),
     workspaceId: uuid("workspace_id").references(() => workspaces.id),
@@ -257,7 +319,128 @@ export const sessions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("sessions_repo_id_status_idx").on(table.repoId, table.status)],
+  (table) => [
+    index("sessions_repo_id_status_idx").on(table.repoId, table.status),
+    // Every run-scoped read (trajectory, stats, close, verify) starts by
+    // gathering the run's sessions.
+    index("sessions_run_id_idx").on(table.runId),
+  ],
+);
+
+// The trajectory spine: every message, model call, tool execution, handoff,
+// commit, and test result an agent produced, appended durably and in order.
+//
+// **Why a hash chain rather than a signature per event.** A run emits thousands
+// of these; DSSE-signing each one would price honest recording out of the hot
+// path, and an orchestrator that cannot afford to record is an orchestrator that
+// does not record. Instead each event commits to its predecessor, so the chain
+// head is a single value standing for the entire sequence — and the checkpoint
+// and run attestations, which *are* signed, carry that head. Tampering with any
+// event, in any position, breaks every hash after it and fails verification
+// against a signature that was cheap because it was only taken once.
+//
+// **Why the typed columns.** `payload` stays opaque — ADP never parses it, same
+// rule as `checkpoints.state`. But eval-based optimization means asking "what
+// did the runs that scored well do differently", which is aggregation over
+// tokens, cost, latency, tool identity, and outcome across millions of rows;
+// answering that by unpacking jsonb per row is how this table becomes too slow
+// to be used. The typed columns are a projection, not a second source of truth,
+// and they are covered by `hash` exactly like the payload is — so a projection
+// that disagrees with its own chain is detectable rather than merely unlikely.
+export const sessionEvents = pgTable(
+  "session_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id").notNull().references(() => sessions.id),
+    seq: integer("seq").notNull(),
+    // The vocabulary ADP does fix, because comparing trajectories across
+    // harnesses is the whole point — a Claude Code tool call and an OpenHands
+    // tool call have to land in the same bucket or cross-harness analysis is
+    // string matching on someone's private event names. `custom` is the escape
+    // hatch that keeps the vocabulary from having to be complete.
+    kind: text("kind", {
+      enum: ["message", "model_call", "tool_call", "handoff", "commit", "test_result", "custom"],
+    }).notNull(),
+    // The harness's own name for the event within that kind (a tool name, a
+    // message role, an orchestrator event id). Free-form; never branched on.
+    type: text("type").notNull().default(""),
+    payload: jsonb("payload").notNull(),
+    // Outcome, for the kinds that have one (tool_call, test_result, model_call).
+    // Null where the notion doesn't apply — a `message` neither succeeds nor fails.
+    status: text("status", { enum: ["success", "failure", "error", "rejected", "skipped"] }),
+    model: text("model"),
+    tokensIn: integer("tokens_in"),
+    tokensOut: integer("tokens_out"),
+    // Micro-USD as an integer: money in floating point accumulates error over a
+    // million-event corpus, and the sums here are meant to be compared.
+    costMicroUsd: integer("cost_micro_usd"),
+    durationMs: integer("duration_ms"),
+    // Set on `commit` events. Joins a trajectory to the changes it produced
+    // without anyone parsing the payload to find out.
+    gitSha: text("git_sha"),
+    // Set on `handoff` events: this event on session A naming session B *is* the
+    // edge A→B. A typed column rather than a payload convention, so the handoff
+    // graph is a query instead of a scan.
+    relatedSessionId: uuid("related_session_id"),
+    // The orchestrator's own id for this event. A batching emitter retries, and
+    // a retry must not append the trajectory twice — appendEvents drops ids this
+    // session already has *before* chaining, so retry is idempotent rather than
+    // merely usually-harmless.
+    clientEventId: text("client_event_id"),
+    // When it happened, per the orchestrator, versus when ADP received it. Both,
+    // because clock skew is real and neither answers the other's question.
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    hash: text("hash").notNull(),
+    prevHash: text("prev_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("session_events_session_id_seq_idx").on(table.sessionId, table.seq),
+    uniqueIndex("session_events_session_id_client_event_id_idx")
+      .on(table.sessionId, table.clientEventId)
+      .where(sql`${table.clientEventId} is not null`),
+    // Merging N sessions into one run-ordered trajectory reads each session's
+    // events in time order.
+    index("session_events_session_id_occurred_at_idx").on(table.sessionId, table.occurredAt),
+    index("session_events_session_id_kind_idx").on(table.sessionId, table.kind),
+  ],
+);
+
+// A deterministic evaluation of a run, attached to the commit the run produced.
+//
+// The evidence *is* `gate_results.envelope` — recording an eval writes an
+// ordinary gate result (core/evals.ts), so land policy, `gh pr checks`, the
+// evidence bundle, and candidate-set `best_score` all consume it through paths
+// that already exist. This table is the run-scoped projection of that, plus the
+// two fields that make "deterministic" a checkable claim rather than an
+// adjective: `specDigest` names exactly which eval definition ran, and
+// `trajectoryDigest` names the trajectory it was scored against.
+export const evals = pgTable(
+  "evals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repoId: uuid("repo_id").notNull().references(() => repos.id),
+    runId: uuid("run_id").notNull().references(() => runs.id),
+    name: text("name").notNull(),
+    gitSha: text("git_sha").notNull(),
+    specDigest: text("spec_digest").notNull(),
+    // Nullable because a pass/fail eval is a legitimate eval. `best_score`
+    // simply cannot rank one, which is the honest outcome (core/candidate-sets.ts
+    // deliberately treats an unscored candidate as unmeasured, not as zero).
+    // A projection for ordering; the exact value as scored lives in the signed
+    // predicate, which is what anyone re-verifying the eval reads.
+    score: doublePrecision("score"),
+    passed: boolean("passed").notNull(),
+    // The gate result this eval was reported as. The FK is the statement that
+    // there is one evidence path, not two.
+    gateResultId: uuid("gate_result_id").notNull().references(() => gateResults.id),
+    trajectoryDigest: text("trajectory_digest"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("evals_run_id_idx").on(table.runId),
+    index("evals_repo_id_name_idx").on(table.repoId, table.name),
+  ],
 );
 
 // A signed, ordered point a session can be resumed from. `envelope` is the
