@@ -1218,11 +1218,19 @@ paths:
                 workspace_id:
                   type: string
                   format: uuid
+                run_id:
+                  type: string
+                  format: uuid
+                  description: >
+                    The orchestrator run this session belongs to. The session
+                    inherits the run's intent.
       responses:
         "201":
           description: Created
+        "409":
+          description: The run is closed or abandoned
         "422":
-          description: Intent or workspace not found in this repository
+          description: Intent, workspace, or run not found in this repository
   /api/adp/repos/{owner}/{repo}/sessions/{id}:
     parameters:
       - $ref: "#/components/parameters/owner"
@@ -1337,6 +1345,396 @@ paths:
           description: Closed
         "404":
           description: Not found
+  /api/adp/repos/{owner}/{repo}/sessions/{id}/events:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/id"
+    post:
+      summary: >
+        Append to a session's trajectory — every message, model call, tool
+        execution, handoff, commit, and test result. Events are hash-chained
+        rather than individually signed: the chain head is what checkpoint and
+        run attestations commit to, so recording stays cheap enough to always
+        happen while tampering anywhere in the sequence stays detectable.
+        Batched, and idempotent under retry when `client_event_id` is supplied.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  minItems: 1
+                  maxItems: 1000
+                  items:
+                    type: object
+                    required: [kind]
+                    properties:
+                      kind:
+                        type: string
+                        enum:
+                          [message, model_call, tool_call, handoff, commit, test_result, custom]
+                      type:
+                        type: string
+                        description: The harness's own name within that kind. Never branched on.
+                      payload:
+                        description: Opaque to ADP — never parsed, never validated beyond "it is JSON".
+                      status:
+                        type: string
+                        enum: [success, failure, error, rejected, skipped]
+                      model:
+                        type: string
+                      tokens_in:
+                        type: integer
+                      tokens_out:
+                        type: integer
+                      cost_micro_usd:
+                        type: integer
+                      duration_ms:
+                        type: integer
+                      git_sha:
+                        type: string
+                        description: Set on commit events; joins the trajectory to the change record.
+                      related_session_id:
+                        type: string
+                        format: uuid
+                        description: >
+                          Set on handoff events. This event on session A naming
+                          session B is the edge A→B.
+                      client_event_id:
+                        type: string
+                        description: The emitter's own id; a repeat is dropped rather than appended twice.
+                      occurred_at:
+                        type: string
+                        format: date-time
+      responses:
+        "201":
+          description: Appended, with the new chain head and any duplicates that were skipped
+        "409":
+          description: The session is closed
+        "422":
+          description: Validation failed, or related_session_id is not in this repository
+    get:
+      summary: A session's trajectory in sequence order, with each event's chain hashes.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: kinds
+          in: query
+          schema:
+            type: string
+          description: Comma-separated event kinds.
+        - name: since
+          in: query
+          schema:
+            type: integer
+          description: Return events after this seq.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Events
+        "404":
+          description: Not found
+  /api/adp/repos/{owner}/{repo}/runs:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    post:
+      summary: >
+        Open a run — an orchestrator's unit of assigned work, spanning the
+        sessions it spawns to do it. `orchestrator` is opaque in the way
+        `harness` is. When `external_ref` names a run that already exists, the
+        existing run is returned with 200 instead of a second run being created,
+        so an orchestrator restarting after a crash rejoins rather than forking
+        the trajectory in two.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [intent_id, orchestrator]
+              properties:
+                intent_id:
+                  type: string
+                  format: uuid
+                orchestrator:
+                  type: string
+                external_ref:
+                  type: string
+                  description: The orchestrator's own id for the assignment.
+      responses:
+        "200":
+          description: Rejoined an open run with this external_ref
+        "201":
+          description: Created
+        "409":
+          description: A run with this external_ref is already closed or abandoned
+        "422":
+          description: Intent not found in this repository
+    get:
+      summary: Runs in this repository, newest first.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: intent_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, closed, abandoned]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Runs
+  /api/adp/repos/{owner}/{repo}/runs/compare:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    get:
+      summary: >
+        N runs against one intent, each pairing its attested eval outcome with
+        what the trajectory cost to produce it — the table eval-based
+        optimization is read off. Ranked by score descending; unscored runs sort
+        last, because unmeasured is not the same as scoring zero.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: intent_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: eval
+          in: query
+          schema:
+            type: string
+          description: Restrict the paired eval to this name.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: One row per run
+  /api/adp/repos/{owner}/{repo}/runs/{runId}:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/runId"
+    get:
+      summary: A run with its sessions, their chain heads, and its evals.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Run
+        "404":
+          description: Not found
+  /api/adp/repos/{owner}/{repo}/runs/{runId}/close:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/runId"
+    post:
+      summary: >
+        Close a run against the commit it produced, signing a DSSE attestation
+        that binds that sha to every session's trajectory chain head. Any
+        still-open session is closed here: the attestation names each chain
+        head, so a session that could still append afterwards would leave an
+        attestation that no longer describes the trajectory. Idempotent on the
+        same sha; 409 on a different one.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [final_git_sha]
+              properties:
+                final_git_sha:
+                  type: string
+      responses:
+        "200":
+          description: Closed, with the signed attestation
+        "404":
+          description: Not found
+        "409":
+          description: Already closed against a different sha, or abandoned
+        "422":
+          description: The commit could not be resolved in this repository
+  /api/adp/repos/{owner}/{repo}/runs/{runId}/abandon:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/runId"
+    post:
+      summary: >
+        Abandon a run that produced no commit. The trajectory is kept — the
+        discarded attempts staying queryable is the point — and the run's
+        sessions are closed.
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Abandoned
+        "404":
+          description: Not found
+        "409":
+          description: Cannot abandon a closed run
+  /api/adp/repos/{owner}/{repo}/runs/{runId}/trajectory:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/runId"
+    get:
+      summary: >
+        The run's whole trajectory, merged across its sessions in the order
+        things actually happened.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: kinds
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Events
+        "404":
+          description: Not found
+  /api/adp/repos/{owner}/{repo}/runs/{runId}/stats:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/runId"
+    get:
+      summary: >
+        What the run cost and what it spent it on: counts and tokens by event
+        kind, per-tool call and failure counts, per-model spend, the handoff
+        graph, and the commits the run produced.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Stats
+        "404":
+          description: Not found
+  /api/adp/repos/{owner}/{repo}/runs/{runId}/verify:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/runId"
+    get:
+      summary: >
+        Recompute every session's hash chain from the stored rows and check the
+        run attestation against them. Tamper-evidence nobody can check is
+        decoration; this is what makes the guarantee falsifiable by any holder
+        of a read token. Reports where a chain first broke, by seq.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Verification result
+        "404":
+          description: Not found
+  /api/adp/repos/{owner}/{repo}/runs/{runId}/evals:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/runId"
+    post:
+      summary: >
+        Attach a deterministic eval result to a run, as gate evidence. The eval
+        *is* a gate result — same signing, same table, same land policy and `gh
+        pr checks` projection — and the signed predicate binds the score to the
+        run, the commit, the trajectory digest, and the digest of the eval
+        definition that produced it. Report under `gate_name: score` to feed a
+        candidate set's `best_score` selection.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, passed]
+              properties:
+                name:
+                  type: string
+                passed:
+                  type: boolean
+                score:
+                  type: number
+                summary:
+                  type: string
+                spec:
+                  description: The eval definition; digested to make the result identifiable.
+                spec_digest:
+                  type: string
+                  description: Supply directly if the eval harness already content-addresses its suites.
+                gate_name:
+                  type: string
+                  description: Defaults to `eval:<name>`.
+                git_sha:
+                  type: string
+                  description: Defaults to the run's final_git_sha.
+                metrics:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "201":
+          description: Recorded, with the gate result it was reported as
+        "404":
+          description: Run not found
+        "422":
+          description: The run has no final_git_sha and no git_sha was supplied
+    get:
+      summary: The evals recorded against this run, newest first.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Evals
+        "404":
+          description: Not found
 components:
   parameters:
     owner:
@@ -1357,6 +1755,13 @@ components:
       required: true
       schema:
         type: integer
+    runId:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     id:
       name: id
       in: path

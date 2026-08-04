@@ -6,6 +6,14 @@ import type { Signer } from "../core/signing.js";
 import { requireScope } from "../auth/plugin.js";
 import { findRepo } from "../core/repos-lookup.js";
 import {
+  appendEvents,
+  listEvents,
+  serializeEvent,
+  EVENT_KINDS,
+  EVENT_STATUSES,
+  type EventKind,
+} from "../core/trajectory.js";
+import {
   startSession,
   createCheckpoint,
   resumeSession,
@@ -23,6 +31,37 @@ const StartSessionBody = z.object({
   harness: z.string().min(1),
   intent_id: z.string().uuid().optional(),
   workspace_id: z.string().uuid().optional(),
+  // The orchestrator's run this session belongs to. Optional: a developer
+  // checkpointing their own work is still a session, and requiring a run would
+  // make the orchestrated case the only supported one.
+  run_id: z.string().uuid().optional(),
+});
+
+// Batched on purpose. A busy agent emits events far faster than one HTTP round
+// trip each, and an emitter that has to choose between recording and going fast
+// stops recording — which is the failure this whole table exists to prevent.
+const AppendEventsBody = z.object({
+  events: z
+    .array(
+      z.object({
+        kind: z.enum(EVENT_KINDS),
+        type: z.string().default(""),
+        // Opaque to ADP, exactly like `checkpoints.state`.
+        payload: z.unknown().default(null),
+        status: z.enum(EVENT_STATUSES).optional(),
+        model: z.string().optional(),
+        tokens_in: z.number().int().nonnegative().optional(),
+        tokens_out: z.number().int().nonnegative().optional(),
+        cost_micro_usd: z.number().int().nonnegative().optional(),
+        duration_ms: z.number().int().nonnegative().optional(),
+        git_sha: z.string().regex(/^[0-9a-f]{40}$/).optional(),
+        related_session_id: z.string().uuid().optional(),
+        client_event_id: z.string().min(1).max(200).optional(),
+        occurred_at: z.string().datetime().optional(),
+      }),
+    )
+    .min(1)
+    .max(1000),
 });
 
 const CheckpointBody = z.object({
@@ -43,6 +82,7 @@ function serializeSession(row: SessionRow) {
     id: row.id,
     harness: row.harness,
     intent_id: row.intentId,
+    run_id: row.runId,
     workspace_id: row.workspaceId,
     status: row.status,
     resumed_from_session_id: row.resumedFromSessionId,
@@ -100,7 +140,12 @@ export function registerSessionRoutes(
       const result = await startSession(
         db,
         { id: repo.id, owner, name: repoName },
-        { harness: parsed.data.harness, intentId: parsed.data.intent_id, workspaceId: parsed.data.workspace_id },
+        {
+          harness: parsed.data.harness,
+          intentId: parsed.data.intent_id,
+          workspaceId: parsed.data.workspace_id,
+          runId: parsed.data.run_id,
+        },
         req.identity!.identityId,
       );
       if (!result.ok) {
@@ -252,6 +297,91 @@ export function registerSessionRoutes(
         return;
       }
       reply.send(serializeSession(result.session));
+    },
+  );
+
+  // The trajectory append path: every message, model call, tool execution,
+  // handoff, commit, and test result, hash-chained in order (core/trajectory.ts).
+  app.post(
+    "/api/adp/repos/:owner/:repo/sessions/:id/events",
+    { preHandler: requireScope("repo:write") },
+    async (req, reply) => {
+      const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
+      const parsed = AppendEventsBody.safeParse(req.body);
+      if (!parsed.success) {
+        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        return;
+      }
+      const repo = await findRepo(db, owner, repoName);
+      if (!repo) {
+        reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
+        return;
+      }
+
+      const result = await appendEvents(
+        db,
+        repo.id,
+        id,
+        parsed.data.events.map((e) => ({
+          kind: e.kind,
+          type: e.type,
+          payload: e.payload,
+          status: e.status ?? null,
+          model: e.model ?? null,
+          tokensIn: e.tokens_in ?? null,
+          tokensOut: e.tokens_out ?? null,
+          costMicroUsd: e.cost_micro_usd ?? null,
+          durationMs: e.duration_ms ?? null,
+          gitSha: e.git_sha ?? null,
+          relatedSessionId: e.related_session_id ?? null,
+          clientEventId: e.client_event_id ?? null,
+          occurredAt: e.occurred_at ? new Date(e.occurred_at) : undefined,
+        })),
+      );
+      if (!result.ok) {
+        reply.code(result.status).send({ message: result.message });
+        return;
+      }
+
+      reply.code(201).send({
+        session_id: id,
+        appended: result.appended.length,
+        // Reported, not swallowed: an emitter re-sending a batch it already
+        // landed has a bug, and silence would let it stay one.
+        duplicates: result.duplicates,
+        count: result.count,
+        head: result.head,
+        events: result.appended.map(serializeEvent),
+      });
+    },
+  );
+
+  app.get(
+    "/api/adp/repos/:owner/:repo/sessions/:id/events",
+    { preHandler: requireScope("repo:read") },
+    async (req, reply) => {
+      const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
+      const query = req.query as { kinds?: string; since?: string; limit?: string };
+      const repo = await findRepo(db, owner, repoName);
+      if (!repo) {
+        reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
+        return;
+      }
+      const lineage = await sessionLineage(db, repo.id, id);
+      if (lineage.length === 0) {
+        reply.code(404).send({ message: "Not Found" });
+        return;
+      }
+
+      const kinds = query.kinds
+        ?.split(",")
+        .filter((k): k is EventKind => (EVENT_KINDS as readonly string[]).includes(k));
+      const events = await listEvents(db, id, {
+        kinds: kinds && kinds.length > 0 ? kinds : undefined,
+        since: query.since !== undefined ? Number(query.since) : undefined,
+        limit: Number(query.limit ?? 500) || 500,
+      });
+      reply.send({ session_id: id, events: events.map(serializeEvent) });
     },
   );
 }

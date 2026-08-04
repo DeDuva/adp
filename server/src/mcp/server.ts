@@ -285,6 +285,101 @@ export function buildMcpServer(client: AdpClient): McpServer {
     },
   );
 
+  // The trajectory tools. An agent reading its own run back is the point: the
+  // recorded trajectory is only worth the write cost if something can consume
+  // it, and the first consumer is the agent deciding what to do next.
+  server.registerTool(
+    "adp_trajectory_append",
+    {
+      description:
+        "Append to a session's trajectory — messages, model calls, tool executions, handoffs, commits, and test " +
+        "results. Batched; supply client_event_id to make a retry idempotent.",
+      inputSchema: {
+        owner: z.string(),
+        repo: z.string(),
+        session_id: z.string(),
+        events: z
+          .array(
+            z.object({
+              kind: z.enum(["message", "model_call", "tool_call", "handoff", "commit", "test_result", "custom"]),
+              type: z.string().optional(),
+              payload: z.unknown().optional(),
+              status: z.enum(["success", "failure", "error", "rejected", "skipped"]).optional(),
+              model: z.string().optional(),
+              tokens_in: z.number().int().nonnegative().optional(),
+              tokens_out: z.number().int().nonnegative().optional(),
+              cost_micro_usd: z.number().int().nonnegative().optional(),
+              duration_ms: z.number().int().nonnegative().optional(),
+              git_sha: z.string().optional(),
+              related_session_id: z.string().optional(),
+              client_event_id: z.string().optional(),
+              occurred_at: z.string().optional(),
+            }),
+          )
+          .min(1),
+      },
+    },
+    async ({ owner, repo, session_id, events }) => {
+      const res = await client.post(`/api/adp/repos/${owner}/${repo}/sessions/${session_id}/events`, { events });
+      return res.ok ? ok(res.body) : err(res.message);
+    },
+  );
+
+  server.registerTool(
+    "adp_run_trajectory",
+    {
+      description:
+        "A run's whole trajectory, merged across its agents' sessions in the order things actually happened. " +
+        "Filter by kind to read just the tool calls, just the handoffs, or just the test results.",
+      inputSchema: {
+        owner: z.string(),
+        repo: z.string(),
+        run_id: z.string(),
+        kinds: z.string().optional().describe("Comma-separated: message,model_call,tool_call,handoff,commit,test_result"),
+        limit: z.number().int().positive().max(2000).optional(),
+        offset: z.number().int().nonnegative().optional(),
+      },
+    },
+    async ({ owner, repo, run_id, ...query }) => {
+      const res = await client.get(`/api/adp/repos/${owner}/${repo}/runs/${run_id}/trajectory`, query);
+      return res.ok ? ok(res.body) : err(res.message);
+    },
+  );
+
+  server.registerTool(
+    "adp_run_stats",
+    {
+      description:
+        "What a run cost and what it spent it on: events and tokens by kind, per-tool call and failure counts, " +
+        "per-model spend, the handoff graph, and the commits it produced.",
+      inputSchema: { owner: z.string(), repo: z.string(), run_id: z.string() },
+    },
+    async ({ owner, repo, run_id }) => {
+      const res = await client.get(`/api/adp/repos/${owner}/${repo}/runs/${run_id}/stats`);
+      return res.ok ? ok(res.body) : err(res.message);
+    },
+  );
+
+  server.registerTool(
+    "adp_runs_compare",
+    {
+      description:
+        "N runs against one intent, each pairing its attested eval score with what the trajectory cost to produce " +
+        "it. Ranked by score; unscored runs sort last, because unmeasured is not the same as scoring zero.",
+      inputSchema: {
+        owner: z.string(),
+        repo: z.string(),
+        intent_id: z.string().optional(),
+        eval: z.string().optional(),
+        limit: z.number().int().positive().max(200).optional(),
+      },
+    },
+    async ({ owner, repo, ...query }) => {
+      const res = await client.get(`/api/adp/repos/${owner}/${repo}/runs/compare`, query);
+      return res.ok ? ok(res.body) : err(res.message);
+    },
+  );
+
   return server;
 }
 

@@ -151,6 +151,11 @@ describe.skipIf(skipWithoutDb)("M1c: MCP native plane", () => {
         "adp_session_get",
         "adp_session_resume",
         "adp_session_start",
+        // Runs and trajectories
+        "adp_run_stats",
+        "adp_run_trajectory",
+        "adp_runs_compare",
+        "adp_trajectory_append",
       ].sort(),
     );
   });

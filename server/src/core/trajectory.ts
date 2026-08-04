@@ -1,0 +1,351 @@
+import { createHash } from "node:crypto";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import type { Db } from "../db/client.js";
+import { sessionEvents, sessions } from "../db/schema.js";
+import { canonicalJson } from "./canonical.js";
+
+export type SessionEventRow = typeof sessionEvents.$inferSelect;
+
+export const EVENT_KINDS = [
+  "message",
+  "model_call",
+  "tool_call",
+  "handoff",
+  "commit",
+  "test_result",
+  "custom",
+] as const;
+export type EventKind = (typeof EVENT_KINDS)[number];
+
+export const EVENT_STATUSES = ["success", "failure", "error", "rejected", "skipped"] as const;
+export type EventStatus = (typeof EVENT_STATUSES)[number];
+
+export interface EventInput {
+  kind: EventKind;
+  type?: string;
+  payload: unknown;
+  status?: EventStatus | null;
+  model?: string | null;
+  tokensIn?: number | null;
+  tokensOut?: number | null;
+  costMicroUsd?: number | null;
+  durationMs?: number | null;
+  gitSha?: string | null;
+  relatedSessionId?: string | null;
+  clientEventId?: string | null;
+  occurredAt?: Date;
+}
+
+export interface TrajectoryError {
+  ok: false;
+  status: 404 | 409 | 422;
+  message: string;
+}
+
+// The chain's genesis. Binding it to the session id means an event sequence
+// cannot be lifted wholesale out of one session and replayed into another: the
+// first hash would not match, and every hash after it inherits that.
+export function chainGenesis(sessionId: string): string {
+  return createHash("sha256").update(`adp/trajectory/v1/${sessionId}`, "utf8").digest("hex");
+}
+
+// What each event commits to. Every column that a reader might act on is in
+// here — not just `payload` — so the typed projection columns cannot be edited
+// out from under the chain that vouches for them.
+export function eventHash(
+  sessionId: string,
+  prevHash: string,
+  event: {
+    seq: number;
+    kind: string;
+    type: string;
+    payload: unknown;
+    status: string | null;
+    model: string | null;
+    tokensIn: number | null;
+    tokensOut: number | null;
+    costMicroUsd: number | null;
+    durationMs: number | null;
+    gitSha: string | null;
+    relatedSessionId: string | null;
+    occurredAt: Date;
+  },
+): string {
+  return createHash("sha256")
+    .update(
+      canonicalJson({
+        v: 1,
+        sessionId,
+        prev: prevHash,
+        seq: event.seq,
+        kind: event.kind,
+        type: event.type,
+        payload: event.payload ?? null,
+        status: event.status ?? null,
+        model: event.model ?? null,
+        tokensIn: event.tokensIn ?? null,
+        tokensOut: event.tokensOut ?? null,
+        costMicroUsd: event.costMicroUsd ?? null,
+        durationMs: event.durationMs ?? null,
+        gitSha: event.gitSha ?? null,
+        relatedSessionId: event.relatedSessionId ?? null,
+        occurredAt: event.occurredAt.toISOString(),
+      }),
+      "utf8",
+    )
+    .digest("hex");
+}
+
+export interface AppendResult {
+  ok: true;
+  appended: SessionEventRow[];
+  // Ids that were already present and therefore skipped. Reported rather than
+  // silently absorbed: an emitter that keeps re-sending the same batch has a
+  // bug, and hiding the retry hides the bug.
+  duplicates: string[];
+  head: string;
+  count: number;
+}
+
+// Appends a batch to one session's trajectory.
+//
+// Serialized on the session row for the same reason checkpoint sequencing is
+// (core/sessions.ts): `seq` and the chain head are both read-modify-write, and
+// two concurrent batches without the lock would either collide on the unique
+// index — surfacing as an unhandled 23505, i.e. a 500 — or interleave into a
+// chain that no longer verifies.
+export async function appendEvents(
+  db: Db,
+  repoId: string,
+  sessionId: string,
+  events: EventInput[],
+  now: () => Date = () => new Date(),
+): Promise<AppendResult | TrajectoryError> {
+  const [session] = await db
+    .select()
+    .from(sessions)
+    .where(and(eq(sessions.id, sessionId), eq(sessions.repoId, repoId)));
+  if (!session) return { ok: false, status: 404, message: "session not found" };
+  if (session.status === "closed") {
+    return { ok: false, status: 409, message: "cannot append to a closed session" };
+  }
+
+  // A handoff naming a session in another repo — or no session at all — would
+  // produce an edge that can never be walked. Reject it here rather than
+  // discovering it when someone draws the graph.
+  const related = events.map((e) => e.relatedSessionId).filter((id): id is string => !!id);
+  if (related.length > 0) {
+    const found = await db
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(and(eq(sessions.repoId, repoId), inArray(sessions.id, [...new Set(related)])));
+    const known = new Set(found.map((r) => r.id));
+    const missing = [...new Set(related)].filter((id) => !known.has(id));
+    if (missing.length > 0) {
+      return {
+        ok: false,
+        status: 422,
+        message: `related_session_id not found in this repository: ${missing.join(", ")}`,
+      };
+    }
+  }
+
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select id from sessions where id = ${sessionId} for update`);
+
+    const [tail] = await tx
+      .select({ seq: sessionEvents.seq, hash: sessionEvents.hash })
+      .from(sessionEvents)
+      .where(eq(sessionEvents.sessionId, sessionId))
+      .orderBy(sql`${sessionEvents.seq} desc`)
+      .limit(1);
+
+    // Deduplicate *before* chaining. Dropping a duplicate afterwards would leave
+    // a gap in `seq`; dropping it first means a retried batch produces exactly
+    // the chain the first attempt did.
+    const candidateIds = events.map((e) => e.clientEventId).filter((id): id is string => !!id);
+    const seen = new Set<string>();
+    if (candidateIds.length > 0) {
+      const existing = await tx
+        .select({ clientEventId: sessionEvents.clientEventId })
+        .from(sessionEvents)
+        .where(
+          and(eq(sessionEvents.sessionId, sessionId), inArray(sessionEvents.clientEventId, [...new Set(candidateIds)])),
+        );
+      for (const row of existing) if (row.clientEventId) seen.add(row.clientEventId);
+    }
+
+    const duplicates: string[] = [];
+    let prevHash = tail?.hash ?? chainGenesis(sessionId);
+    let seq = tail?.seq ?? 0;
+    const values: (typeof sessionEvents.$inferInsert)[] = [];
+
+    for (const input of events) {
+      if (input.clientEventId) {
+        // Also catches a batch that repeats an id within itself, which is the
+        // shape a retry-with-append bug actually takes.
+        if (seen.has(input.clientEventId)) {
+          duplicates.push(input.clientEventId);
+          continue;
+        }
+        seen.add(input.clientEventId);
+      }
+      seq += 1;
+      const row = {
+        sessionId,
+        seq,
+        kind: input.kind,
+        type: input.type ?? "",
+        payload: (input.payload ?? null) as object,
+        status: input.status ?? null,
+        model: input.model ?? null,
+        tokensIn: input.tokensIn ?? null,
+        tokensOut: input.tokensOut ?? null,
+        costMicroUsd: input.costMicroUsd ?? null,
+        durationMs: input.durationMs ?? null,
+        gitSha: input.gitSha ?? null,
+        relatedSessionId: input.relatedSessionId ?? null,
+        clientEventId: input.clientEventId ?? null,
+        occurredAt: input.occurredAt ?? now(),
+      };
+      const hash = eventHash(sessionId, prevHash, row);
+      values.push({ ...row, prevHash, hash });
+      prevHash = hash;
+    }
+
+    const appended = values.length > 0 ? await tx.insert(sessionEvents).values(values).returning() : [];
+
+    if (appended.length > 0) {
+      await tx.update(sessions).set({ updatedAt: new Date() }).where(eq(sessions.id, sessionId));
+    }
+
+    return { ok: true as const, appended, duplicates, head: prevHash, count: seq };
+  });
+}
+
+export interface ChainSummary {
+  sessionId: string;
+  count: number;
+  head: string;
+}
+
+// The head of a session's chain, without reading the events themselves — the
+// value checkpoints and run attestations commit to.
+export async function chainHead(db: Db, sessionId: string): Promise<ChainSummary> {
+  const [tail] = await db
+    .select({ seq: sessionEvents.seq, hash: sessionEvents.hash })
+    .from(sessionEvents)
+    .where(eq(sessionEvents.sessionId, sessionId))
+    .orderBy(sql`${sessionEvents.seq} desc`)
+    .limit(1);
+  return { sessionId, count: tail?.seq ?? 0, head: tail?.hash ?? chainGenesis(sessionId) };
+}
+
+export interface VerifyResult {
+  sessionId: string;
+  ok: boolean;
+  count: number;
+  head: string;
+  // Where it first went wrong, or null. The seq matters: "the chain is broken"
+  // is not actionable, "event 4108 does not match its recorded hash" is.
+  brokeAtSeq: number | null;
+  reason: string | null;
+}
+
+// Recomputes a session's chain from the stored rows.
+//
+// This exists because tamper-evidence that nobody can check is decoration. It
+// re-derives every hash from the row's own contents rather than trusting the
+// stored `hash`, so an edit to any covered column — payload or projection —
+// shows up here.
+export async function verifyChain(db: Db, sessionId: string): Promise<VerifyResult> {
+  const rows = await db
+    .select()
+    .from(sessionEvents)
+    .where(eq(sessionEvents.sessionId, sessionId))
+    .orderBy(asc(sessionEvents.seq));
+
+  let prevHash = chainGenesis(sessionId);
+  for (const [i, row] of rows.entries()) {
+    if (row.seq !== i + 1) {
+      return {
+        sessionId,
+        ok: false,
+        count: rows.length,
+        head: prevHash,
+        brokeAtSeq: row.seq,
+        reason: `sequence gap: expected seq ${i + 1}, found ${row.seq}`,
+      };
+    }
+    if (row.prevHash !== prevHash) {
+      return {
+        sessionId,
+        ok: false,
+        count: rows.length,
+        head: prevHash,
+        brokeAtSeq: row.seq,
+        reason: `event ${row.seq} links to ${row.prevHash.slice(0, 12)}…, expected ${prevHash.slice(0, 12)}…`,
+      };
+    }
+    const recomputed = eventHash(sessionId, prevHash, row);
+    if (recomputed !== row.hash) {
+      return {
+        sessionId,
+        ok: false,
+        count: rows.length,
+        head: prevHash,
+        brokeAtSeq: row.seq,
+        reason: `event ${row.seq} does not match its recorded hash — contents changed after it was appended`,
+      };
+    }
+    prevHash = recomputed;
+  }
+
+  return { sessionId, ok: true, count: rows.length, head: prevHash, brokeAtSeq: null, reason: null };
+}
+
+export interface ListEventsOptions {
+  kinds?: EventKind[];
+  since?: number;
+  limit?: number;
+}
+
+export async function listEvents(
+  db: Db,
+  sessionId: string,
+  options: ListEventsOptions = {},
+): Promise<SessionEventRow[]> {
+  const filters = [eq(sessionEvents.sessionId, sessionId)];
+  if (options.kinds && options.kinds.length > 0) filters.push(inArray(sessionEvents.kind, options.kinds));
+  if (options.since !== undefined) filters.push(sql`${sessionEvents.seq} > ${options.since}`);
+  return db
+    .select()
+    .from(sessionEvents)
+    .where(and(...filters))
+    .orderBy(asc(sessionEvents.seq))
+    .limit(Math.min(options.limit ?? 500, 2000));
+}
+
+export function serializeEvent(row: SessionEventRow) {
+  return {
+    id: row.id,
+    session_id: row.sessionId,
+    seq: row.seq,
+    kind: row.kind,
+    type: row.type,
+    payload: row.payload,
+    status: row.status,
+    model: row.model,
+    tokens_in: row.tokensIn,
+    tokens_out: row.tokensOut,
+    cost_micro_usd: row.costMicroUsd,
+    duration_ms: row.durationMs,
+    git_sha: row.gitSha,
+    related_session_id: row.relatedSessionId,
+    client_event_id: row.clientEventId,
+    occurred_at: row.occurredAt.toISOString(),
+    hash: row.hash,
+    prev_hash: row.prevHash,
+    created_at: row.createdAt.toISOString(),
+  };
+}
