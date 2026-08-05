@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ADP API
-  version: 0.0.0-mvp
+  version: 0.1.0
   description: >
     Native and compat-plane HTTP surface for ADP — see docs/pragmatic_mvp.md
     §2.4 for what is in scope and §2.5 for what is deliberately cut.
@@ -17,6 +17,12 @@ info:
     omissions are the git smart-HTTP wire protocol (specified by git itself and
     proxied verbatim), the loopback-only receive-path hook endpoints, and the
     inbound GitHub webhook receiver, whose payload contract is GitHub's.
+
+    `info.version` above is the contract version, and every response carries it
+    in an `ADP-API-Version` header — including 401s and 404s, so a generated
+    client can pin before it authenticates. The git smart-HTTP routes are the
+    exception: they are proxied verbatim and are not part of this contract.
+    See docs/api-compatibility.md for what a version bump promises.
 servers:
   - url: /
 paths:
