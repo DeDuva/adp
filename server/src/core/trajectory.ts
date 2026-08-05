@@ -33,6 +33,9 @@ export interface EventInput {
   gitSha?: string | null;
   relatedSessionId?: string | null;
   clientEventId?: string | null;
+  // The emitter's own contiguous counter (see schema.ts). Optional, but
+  // all-or-nothing within a batch.
+  producerSeq?: number | null;
   occurredAt?: Date;
 }
 
@@ -40,6 +43,10 @@ export interface TrajectoryError {
   ok: false;
   status: 404 | 409 | 422;
   message: string;
+  // Set on a contiguity rejection: the producer_seq this session is waiting
+  // for. An emitter replaying from its spool needs to know where to resume,
+  // and making it guess is how a gap becomes a duplicate.
+  expectedNextSeq?: number;
 }
 
 // The chain's genesis. Binding it to the session id means an event sequence
@@ -52,6 +59,14 @@ export function chainGenesis(sessionId: string): string {
 // What each event commits to. Every column that a reader might act on is in
 // here — not just `payload` — so the typed projection columns cannot be edited
 // out from under the chain that vouches for them.
+//
+// `producerSeq`/`producerId` are included **only when set**, keys omitted
+// entirely otherwise. That is not a style choice: every row written before
+// those columns existed has them null, and adding them as explicit nulls would
+// change what those rows hash to, so `verifyChain` would report the whole
+// corpus as tampered. Omission keeps old rows hashing exactly as they did while
+// new rows still commit to the counter that proves nothing was dropped — which
+// is also why `v` stays 1. It is one hash function, not two.
 export function eventHash(
   sessionId: string,
   prevHash: string,
@@ -68,6 +83,8 @@ export function eventHash(
     durationMs: number | null;
     gitSha: string | null;
     relatedSessionId: string | null;
+    producerSeq?: number | null;
+    producerId?: string | null;
     occurredAt: Date;
   },
 ): string {
@@ -89,6 +106,10 @@ export function eventHash(
         durationMs: event.durationMs ?? null,
         gitSha: event.gitSha ?? null,
         relatedSessionId: event.relatedSessionId ?? null,
+        ...(event.producerSeq !== null && event.producerSeq !== undefined
+          ? { producerSeq: event.producerSeq }
+          : {}),
+        ...(event.producerId !== null && event.producerId !== undefined ? { producerId: event.producerId } : {}),
         occurredAt: event.occurredAt.toISOString(),
       }),
       "utf8",
@@ -105,6 +126,16 @@ export interface AppendResult {
   duplicates: string[];
   head: string;
   count: number;
+  // The highest producer_seq this session has durably stored, or null if the
+  // session is untracked. An emitter trims its spool up to this mark, so it is
+  // the acknowledgement half of the completeness guarantee.
+  acceptedThrough: number | null;
+}
+
+export interface AppendOptions {
+  // Who is counting. Batch-level rather than per-event because a chain has one
+  // writer — see the unique index in schema.ts.
+  producerId?: string | null;
 }
 
 // Appends a batch to one session's trajectory.
@@ -119,8 +150,21 @@ export async function appendEvents(
   repoId: string,
   sessionId: string,
   events: EventInput[],
+  options: AppendOptions = {},
   now: () => Date = () => new Date(),
 ): Promise<AppendResult | TrajectoryError> {
+  // All-or-nothing within a batch. A half-counted batch would leave the
+  // emitter's own numbering with a hole it could never explain, which defeats
+  // the point of counting.
+  const counted = events.filter((e) => e.producerSeq !== null && e.producerSeq !== undefined).length;
+  if (counted > 0 && counted !== events.length) {
+    return {
+      ok: false,
+      status: 422,
+      message: "producer_seq must be set on every event in a batch or on none of them",
+    };
+  }
+
   const [session] = await db
     .select()
     .from(sessions)
@@ -160,6 +204,19 @@ export async function appendEvents(
       .orderBy(sql`${sessionEvents.seq} desc`)
       .limit(1);
 
+    // Read the column rather than `max(...)`: pg hands a bigint back as a
+    // string, and a raw aggregate would arrive as one — `"2" + 1` is `"21"`,
+    // which is the kind of bug that only shows up as a nonsense error message
+    // to whoever is trying to replay. Selecting the column lets drizzle's
+    // bigint mapping do it, and the unique index serves the ordering.
+    const [producerTail] = await tx
+      .select({ producerSeq: sessionEvents.producerSeq })
+      .from(sessionEvents)
+      .where(and(eq(sessionEvents.sessionId, sessionId), sql`${sessionEvents.producerSeq} is not null`))
+      .orderBy(sql`${sessionEvents.producerSeq} desc`)
+      .limit(1);
+    const maxProducerSeq = producerTail?.producerSeq ?? null;
+
     // Deduplicate *before* chaining. Dropping a duplicate afterwards would leave
     // a gap in `seq`; dropping it first means a retried batch produces exactly
     // the chain the first attempt did.
@@ -176,10 +233,7 @@ export async function appendEvents(
     }
 
     const duplicates: string[] = [];
-    let prevHash = tail?.hash ?? chainGenesis(sessionId);
-    let seq = tail?.seq ?? 0;
-    const values: (typeof sessionEvents.$inferInsert)[] = [];
-
+    const fresh: EventInput[] = [];
     for (const input of events) {
       if (input.clientEventId) {
         // Also catches a batch that repeats an id within itself, which is the
@@ -190,7 +244,38 @@ export async function appendEvents(
         }
         seen.add(input.clientEventId);
       }
+      fresh.push(input);
+    }
+
+    // Contiguity, checked on what survived dedup — a replayed batch whose
+    // events already landed is not a gap. `client_event_id` proves a retry did
+    // no harm; this proves nothing went missing in between, which is the claim
+    // "the recorder recorded everything" actually rests on.
+    const tracked = fresh.filter((e) => e.producerSeq !== null && e.producerSeq !== undefined);
+    if (tracked.length > 0) {
+      const expected = (maxProducerSeq ?? 0) + 1;
+      for (const [i, input] of tracked.entries()) {
+        if (input.producerSeq !== expected + i) {
+          return {
+            ok: false as const,
+            status: 409 as const,
+            message:
+              `producer_seq ${input.producerSeq} is not contiguous: this session expects ${expected + i}. ` +
+              `Replay from ${expected}.`,
+            expectedNextSeq: expected,
+          };
+        }
+      }
+    }
+
+    let prevHash = tail?.hash ?? chainGenesis(sessionId);
+    let seq = tail?.seq ?? 0;
+    let acceptedThrough = maxProducerSeq;
+    const values: (typeof sessionEvents.$inferInsert)[] = [];
+
+    for (const input of fresh) {
       seq += 1;
+      const producerSeq = input.producerSeq ?? null;
       const row = {
         sessionId,
         seq,
@@ -206,11 +291,14 @@ export async function appendEvents(
         gitSha: input.gitSha ?? null,
         relatedSessionId: input.relatedSessionId ?? null,
         clientEventId: input.clientEventId ?? null,
+        producerSeq,
+        producerId: producerSeq === null ? null : (options.producerId ?? null),
         occurredAt: input.occurredAt ?? now(),
       };
       const hash = eventHash(sessionId, prevHash, row);
       values.push({ ...row, prevHash, hash });
       prevHash = hash;
+      if (producerSeq !== null) acceptedThrough = Math.max(acceptedThrough ?? 0, producerSeq);
     }
 
     const appended = values.length > 0 ? await tx.insert(sessionEvents).values(values).returning() : [];
@@ -219,8 +307,45 @@ export async function appendEvents(
       await tx.update(sessions).set({ updatedAt: new Date() }).where(eq(sessions.id, sessionId));
     }
 
-    return { ok: true as const, appended, duplicates, head: prevHash, count: seq };
+    return { ok: true as const, appended, duplicates, head: prevHash, count: seq, acceptedThrough };
   });
+}
+
+export interface EmitterContiguity {
+  // Whether this session's emitter counts at all. A session with no producer
+  // seqs is untracked, which is a different statement from incomplete — an
+  // emitter that never claimed completeness has not failed to deliver it.
+  tracked: boolean;
+  complete: boolean;
+  maxSeq: number | null;
+  // The first number the emitter never delivered, so the answer is actionable
+  // rather than "something is missing".
+  firstGap: number | null;
+}
+
+// The math, over an ascending list of the producer seqs a session holds.
+// Complete means 1..max with nothing skipped: a run that starts at 2 lost its
+// first event just as surely as one missing its fifth, so the count is checked
+// against the numbering rather than against itself.
+export function contiguityOf(seqs: number[]): EmitterContiguity {
+  if (seqs.length === 0) return { tracked: false, complete: true, maxSeq: null, firstGap: null };
+  const maxSeq = seqs[seqs.length - 1]!;
+  for (const [i, seq] of seqs.entries()) {
+    if (seq !== i + 1) return { tracked: true, complete: false, maxSeq, firstGap: i + 1 };
+  }
+  return { tracked: true, complete: true, maxSeq, firstGap: null };
+}
+
+// Whether the emitter's own numbering arrived whole. The hash chain proves the
+// events ADP holds have not been edited; this proves ADP was given all of them.
+export async function emitterContiguity(db: Db, sessionId: string): Promise<EmitterContiguity> {
+  const rows = await db
+    .select({ producerSeq: sessionEvents.producerSeq })
+    .from(sessionEvents)
+    .where(and(eq(sessionEvents.sessionId, sessionId), sql`${sessionEvents.producerSeq} is not null`))
+    .orderBy(asc(sessionEvents.producerSeq));
+
+  return contiguityOf(rows.map((r) => r.producerSeq!));
 }
 
 export interface ChainSummary {
@@ -343,6 +468,8 @@ export function serializeEvent(row: SessionEventRow) {
     git_sha: row.gitSha,
     related_session_id: row.relatedSessionId,
     client_event_id: row.clientEventId,
+    producer_seq: row.producerSeq,
+    producer_id: row.producerId,
     occurred_at: row.occurredAt.toISOString(),
     hash: row.hash,
     prev_hash: row.prevHash,

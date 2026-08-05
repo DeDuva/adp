@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { createHash } from "node:crypto";
 import { canonicalJson } from "./canonical.js";
-import { chainGenesis, eventHash } from "./trajectory.js";
+import { chainGenesis, contiguityOf, eventHash } from "./trajectory.js";
 import { trajectoryDigest, type SessionChain } from "./runs.js";
 import { specDigest } from "./evals.js";
 
@@ -76,9 +77,40 @@ describe("eventHash", () => {
     ["gitSha", { gitSha: "a".repeat(40) }],
     ["relatedSessionId", { relatedSessionId: other }],
     ["seq", { seq: 2 }],
+    ["producerSeq", { producerSeq: 7 }],
+    ["producerId", { producerId: "squad-sdk@0.11.0" }],
     ["occurredAt", { occurredAt: new Date("2026-08-04T10:00:01.000Z") }],
   ])("covers %s", (_name, override) => {
     expect(eventHash(session, "prev", event(override))).not.toBe(eventHash(session, "prev", event()));
+  });
+
+  // The producer columns were added after rows existed. Hashing them as
+  // explicit nulls would have changed what every one of those rows hashes to,
+  // and `verifyChain` would then report an untouched corpus as tampered. This
+  // pins the shape that keeps that from happening: absent means absent.
+  it("hashes a pre-producer_seq event exactly as it did before those columns existed", () => {
+    const legacyShape = {
+      v: 1,
+      sessionId: session,
+      prev: "prev",
+      seq: 1,
+      kind: "tool_call",
+      type: "Bash",
+      payload: { command: "npm test" },
+      status: "success",
+      model: null,
+      tokensIn: null,
+      tokensOut: null,
+      costMicroUsd: null,
+      durationMs: 120,
+      gitSha: null,
+      relatedSessionId: null,
+      occurredAt: "2026-08-04T10:00:00.000Z",
+    };
+    const before = createHash("sha256").update(canonicalJson(legacyShape), "utf8").digest("hex");
+
+    expect(eventHash(session, "prev", event())).toBe(before);
+    expect(eventHash(session, "prev", event({ producerSeq: null, producerId: null }))).toBe(before);
   });
 
   it("distinguishes an absent field from a null one only where JSON does", () => {
@@ -87,6 +119,29 @@ describe("eventHash", () => {
     expect(eventHash(session, "p", event({ status: undefined as unknown as null }))).toBe(
       eventHash(session, "p", event({ status: null })),
     );
+  });
+});
+
+describe("contiguityOf", () => {
+  // A session nobody counted for is untracked, not incomplete. Reporting it as
+  // a gap would mean every pre-existing session and every emitter that does not
+  // count fails verification, which trains readers to ignore the field.
+  it("calls a session with no producer seqs untracked rather than incomplete", () => {
+    expect(contiguityOf([])).toEqual({ tracked: false, complete: true, maxSeq: null, firstGap: null });
+  });
+
+  it("accepts a run of 1..n", () => {
+    expect(contiguityOf([1, 2, 3])).toEqual({ tracked: true, complete: true, maxSeq: 3, firstGap: null });
+  });
+
+  it("names the first number the emitter never delivered", () => {
+    expect(contiguityOf([1, 2, 4, 5])).toEqual({ tracked: true, complete: false, maxSeq: 5, firstGap: 3 });
+  });
+
+  // Starting at 2 is a lost first event, not an emitter that began counting
+  // late — a count that only compared length against max would miss it.
+  it("catches a missing first event", () => {
+    expect(contiguityOf([2, 3])).toEqual({ tracked: true, complete: false, maxSeq: 3, firstGap: 1 });
   });
 });
 

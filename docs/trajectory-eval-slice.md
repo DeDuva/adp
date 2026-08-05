@@ -141,6 +141,14 @@ the wrong winner. It is a canonical-JSON digest (`core/canonical.ts` — key ord
 must not change a hash anyone re-derives), or a digest the caller supplies if its
 harness already content-addresses its suites.
 
+`gate_results.reporterId` already recorded who reported a result, so the run,
+eval-list, and verify responses project it as `reporter_principal` alongside
+`separately_authorized` — true when the reporting identity is not the identity
+that opened the run. A run that scores its own work is a self-report, and the
+difference between that and an independently reported score is the difference
+between evidence and a claim. ADP does not refuse self-reports; it refuses to
+let them look like something else.
+
 `gate_name` defaults to `eval:<name>` and is overridable. Reporting under the
 literal name `score` feeds a candidate set's `best_score` policy unchanged — a
 50-way fan-out where the winner is chosen by attested eval score needs no new
@@ -177,6 +185,48 @@ already landed has a bug, and silence would let it stay one.
 Appends serialize on the session row (`select ... for update`), the same pattern
 checkpoint sequencing uses, because `seq` and the chain head are both
 read-modify-write.
+
+### 7.1 Completeness, because emitters also drop
+
+Idempotency and completeness are different guarantees, and `client_event_id`
+only buys the first. A retried event is deduplicated because it carries an id
+ADP has already seen — but **an event that never arrived has no id to
+deduplicate**. Nothing in the chain distinguishes "the agent made four tool
+calls" from "the agent made five and the fourth was lost in a dropped batch".
+Every hash still verifies, because the chain vouches for what ADP was given, not
+for what it should have been given.
+
+So an emitter may number its own events: `producer_seq`, contiguous from 1 per
+session, assigned at enqueue rather than at send, with `producer_id` recording
+who was counting. Appending a batch that skips a number is rejected whole with
+409 and `expected_next_seq` — the emitter's spool replays from there instead of
+guessing, and a partially absorbed batch (which would leave the emitter unable
+to say what ADP holds) never happens. The response carries `accepted_through`,
+the high-water mark a spool trims against.
+
+Three consequences worth stating, because each was a decision:
+
+- **Untracked is not incomplete.** A session with no `producer_seq` is
+  `emitter_tracked: false`. Emitters that do not count are still first-class;
+  reporting them as gaps would make the field noise, and a field readers learn
+  to ignore is worse than no field.
+- **All-or-nothing per batch.** Half a counted batch would leave a hole in the
+  emitter's own numbering that it could never explain.
+- **One writer per chain.** `producer_seq` is unique within a session, matching
+  the single-writer rule the hash chain already depends on. Multi-writer chains
+  keyed by `(session, producer, seq)` were considered and rejected: serializing
+  one appender is what makes the chain a chain.
+
+`verify` reports both guarantees separately (`chains_ok`, `emitters_ok`) and
+fails `ok` if either does — the e2e test forces a gap with a *correctly chained*
+row precisely to prove the second check is load-bearing rather than riding on
+the first.
+
+The hash covers `producer_seq` and `producer_id`, so the counter cannot be
+rewritten to hide a gap. It covers them **by omitting the keys when they are
+null**, which is why `v` stays `1`: rows written before these columns existed
+hash exactly as they did, so adding completeness to the protocol did not
+retroactively convert an untouched corpus into a tampered one.
 
 ## 8. What this does not do
 

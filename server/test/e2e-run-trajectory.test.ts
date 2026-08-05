@@ -15,6 +15,7 @@ import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
 import { verifyEnvelope, decodeStatement, type DsseEnvelope } from "../src/core/dsse.js";
+import { eventHash } from "../src/core/trajectory.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerIssueRoutes } from "../src/http-rest/issues.js";
@@ -59,6 +60,9 @@ describe.skipIf(skipWithoutDb)("run trajectory and eval-gated close", () => {
   let coordinatorSession: string;
   let backendSession: string;
   let testerSession: string;
+  let actorPrincipal: string;
+  let emitterSession: string;
+  let emitterRun: string;
   const owner = `runs-owner-${Date.now()}`;
   const repoName = "widget";
 
@@ -126,9 +130,10 @@ describe.skipIf(skipWithoutDb)("run trajectory and eval-gated close", () => {
     port = typeof address === "object" && address ? address.port : 0;
     gitBackend.setInternalUrl(`http://127.0.0.1:${port}`);
 
+    actorPrincipal = `runs-e2e-${Date.now()}`;
     const [identity] = await db
       .insert(identities)
-      .values({ kind: "agent", principal: `runs-e2e-${Date.now()}` })
+      .values({ kind: "agent", principal: actorPrincipal })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
 
@@ -655,6 +660,192 @@ describe.skipIf(skipWithoutDb)("run trajectory and eval-gated close", () => {
     const lastScoredIndex = compare.body.runs.findIndex((r: { runId: string }) => r.runId === secondRun);
     const firstUnscoredIndex = compare.body.runs.findIndex((r: { eval: unknown }) => r.eval === null);
     expect(firstUnscoredIndex).toBeGreaterThan(lastScoredIndex);
+  });
+
+  // Recorder completeness. `client_event_id` makes a retry harmless, but an
+  // event that never arrived has no id to deduplicate — so it cannot prove
+  // nothing was dropped. The emitter's own contiguous counter can, and these
+  // tests take the criterion literally: the emitter skips a batch.
+  it("rejects a batch that skips the emitter's own numbering, and says where to replay from", async () => {
+    const opened = await api(`/api/adp/repos/${owner}/${repoName}/runs`, {
+      method: "POST",
+      body: JSON.stringify({ intent_id: intentId, orchestrator: "squad", external_ref: "issue:emitter" }),
+    });
+    emitterRun = opened.body.id;
+    const session = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code", run_id: emitterRun }),
+    });
+    emitterSession = session.body.id;
+
+    async function emit(events: unknown[]) {
+      return api(`/api/adp/repos/${owner}/${repoName}/sessions/${emitterSession}/events`, {
+        method: "POST",
+        body: JSON.stringify({ producer_id: "squad-sdk@0.11.0", events }),
+      });
+    }
+    const message = (n: number) => ({
+      kind: "message",
+      type: "assistant",
+      payload: { text: `step ${n}` },
+      producer_seq: n,
+      client_event_id: `emit-${n}`,
+    });
+
+    const first = await emit([message(1), message(2)]);
+    expect(first.status).toBe(201);
+    // The mark the emitter trims its spool against.
+    expect(first.body.accepted_through).toBe(2);
+
+    // The batch carrying 3 and 4 is lost in flight; the emitter carries on with
+    // 5 and 6. This is the exact failure `client_event_id` cannot see.
+    const skipped = await emit([message(5), message(6)]);
+    expect(skipped.status).toBe(409);
+    expect(skipped.body.expected_next_seq).toBe(3);
+
+    // Rejected whole, not partially absorbed — a half-landed batch would leave
+    // the emitter unable to say what ADP holds.
+    const afterReject = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${emitterSession}/events`);
+    expect(afterReject.body.events).toHaveLength(2);
+
+    const replayed = await emit([message(3), message(4)]);
+    expect(replayed.status).toBe(201);
+    expect(replayed.body.accepted_through).toBe(4);
+    expect(replayed.body.events.map((e: { producer_seq: number }) => e.producer_seq)).toEqual([3, 4]);
+
+    // A spool replaying more than it needed to is the ordinary shape of crash
+    // recovery: the already-landed events dedup away and the rest chain on.
+    const overlapping = await emit([message(4), message(5)]);
+    expect(overlapping.status).toBe(201);
+    expect(overlapping.body.duplicates).toEqual(["emit-4"]);
+    expect(overlapping.body.accepted_through).toBe(5);
+  });
+
+  it("refuses a half-counted batch, which would leave the emitter a hole it cannot explain", async () => {
+    const res = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${emitterSession}/events`, {
+      method: "POST",
+      body: JSON.stringify({
+        events: [
+          { kind: "message", type: "assistant", payload: {}, producer_seq: 6 },
+          { kind: "message", type: "assistant", payload: {} },
+        ],
+      }),
+    });
+    expect(res.status).toBe(422);
+    expect(res.body.message).toMatch(/every event in a batch or on none/);
+  });
+
+  // The sharp version of the claim: a chain can verify perfectly and still be
+  // missing events, because the chain only vouches for what ADP was given. So
+  // the gap is forced with a correctly-chained row — chains_ok stays true, and
+  // `ok` must go false anyway or "recorder completeness" means nothing.
+  it("names a gap in the emitter's numbering even when the chain itself verifies", async () => {
+    const [tail] = await db
+      .select()
+      .from(sessionEvents)
+      .where(eq(sessionEvents.sessionId, emitterSession))
+      .orderBy(sql`${sessionEvents.seq} desc`)
+      .limit(1);
+
+    const row = {
+      sessionId: emitterSession,
+      seq: tail!.seq + 1,
+      kind: "message" as const,
+      type: "assistant",
+      payload: { text: "step 7" } as object,
+      status: null,
+      model: null,
+      tokensIn: null,
+      tokensOut: null,
+      costMicroUsd: null,
+      durationMs: null,
+      gitSha: null,
+      relatedSessionId: null,
+      // 6 never arrived.
+      producerSeq: 7,
+      producerId: "squad-sdk@0.11.0",
+      occurredAt: new Date("2026-08-04T11:00:00.000Z"),
+    };
+    await db.insert(sessionEvents).values({
+      ...row,
+      clientEventId: "emit-7",
+      prevHash: tail!.hash,
+      hash: eventHash(emitterSession, tail!.hash, row),
+    });
+
+    const verify = await api(`/api/adp/repos/${owner}/${repoName}/runs/${emitterRun}/verify`);
+    expect(verify.status).toBe(200);
+    // The chain is intact: nothing was edited, something was never delivered.
+    expect(verify.body.chains_ok).toBe(true);
+    expect(verify.body.emitters_ok).toBe(false);
+    expect(verify.body.ok).toBe(false);
+
+    const entry = verify.body.sessions.find((s: { session_id: string }) => s.session_id === emitterSession);
+    expect(entry.emitter_tracked).toBe(true);
+    expect(entry.emitter_complete).toBe(false);
+    expect(entry.emitter_first_gap).toBe(6);
+  });
+
+  // An emitter that never claimed to be counting has not failed to deliver.
+  // Untracked and incomplete have to read differently or the field is noise.
+  it("reports a session whose emitter does not count as untracked, not incomplete", async () => {
+    const verify = await api(`/api/adp/repos/${owner}/${repoName}/runs/${runId}/verify`);
+    const entry = verify.body.sessions.find((s: { session_id: string }) => s.session_id === backendSession);
+    expect(entry.emitter_tracked).toBe(false);
+    expect(entry.emitter_complete).toBe(true);
+    expect(entry.emitter_first_gap).toBe(null);
+    expect(verify.body.emitters_ok).toBe(true);
+    expect(verify.body.ok).toBe(true);
+  });
+
+  // "A separately authorized deterministic eval." A score is only independent
+  // evidence if the identity that reported it is not the identity that did the
+  // work — so ADP has to say which of the two it was.
+  it("distinguishes a self-reported eval from one a separate identity reported", async () => {
+    const own = await api(`/api/adp/repos/${owner}/${repoName}/runs/${runId}/evals`);
+    const self = own.body.evals.find((e: { name: string }) => e.name === "behavior");
+    expect(self.reporter_principal).toBe(actorPrincipal);
+    // Reported by the same identity that opened the run: a self-report.
+    expect(self.separately_authorized).toBe(false);
+
+    const reporterPrincipal = `eval-reporter-${Date.now()}`;
+    const [reporter] = await db
+      .insert(identities)
+      .values({ kind: "agent", principal: reporterPrincipal })
+      .returning();
+    const reporterToken = await mintToken(db, reporter!.id, ["repo:read", "repo:write"]);
+
+    const recorded = await api(`/api/adp/repos/${owner}/${repoName}/runs/${runId}/evals`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${reporterToken}` },
+      body: JSON.stringify({
+        name: "independent-behavior",
+        passed: true,
+        score: 0.88,
+        spec: { suite: "greeting-behavior", cases: 12, seed: 7 },
+      }),
+    });
+    expect(recorded.status).toBe(201);
+    expect(recorded.body.reporter_principal).toBe(reporterPrincipal);
+    expect(recorded.body.separately_authorized).toBe(true);
+
+    // The same answer wherever a consumer reads it from — the run, the eval
+    // list, and verify — rather than only on the response that created it.
+    const run = await api(`/api/adp/repos/${owner}/${repoName}/runs/${runId}`);
+    const onRun = run.body.evals.find((e: { name: string }) => e.name === "independent-behavior");
+    expect(onRun.separately_authorized).toBe(true);
+    expect(onRun.reporter_principal).toBe(reporterPrincipal);
+
+    const verify = await api(`/api/adp/repos/${owner}/${repoName}/runs/${runId}/verify`);
+    const attested = verify.body.evals.find((e: { name: string }) => e.name === "independent-behavior");
+    expect(attested.separately_authorized).toBe(true);
+    expect(verify.body.evals.find((e: { name: string }) => e.name === "behavior").separately_authorized).toBe(false);
+
+    // Still one evidence path: the independent score arrives as an ordinary
+    // gate result, signed, exactly like the self-reported one.
+    const envelope = recorded.body.gate.envelope as DsseEnvelope;
+    expect(verifyEnvelope(signer, envelope)).toBe(true);
+    expect((decodeStatement(envelope).predicate as { reporter: string }).reporter).toBe(reporterPrincipal);
   });
 
   it("records every step in the op log, so the run is walkable from history alone", async () => {

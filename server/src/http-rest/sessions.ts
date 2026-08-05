@@ -57,11 +57,15 @@ const AppendEventsBody = z.object({
         git_sha: z.string().regex(/^[0-9a-f]{40}$/).optional(),
         related_session_id: z.string().uuid().optional(),
         client_event_id: z.string().min(1).max(200).optional(),
+        // The emitter's own contiguous counter. Set it on every event in the
+        // batch or on none — core/trajectory.ts rejects a half-counted batch.
+        producer_seq: z.number().int().positive().optional(),
         occurred_at: z.string().datetime().optional(),
       }),
     )
     .min(1)
     .max(1000),
+  producer_id: z.string().min(1).max(200).optional(),
 });
 
 const CheckpointBody = z.object({
@@ -335,11 +339,18 @@ export function registerSessionRoutes(
           gitSha: e.git_sha ?? null,
           relatedSessionId: e.related_session_id ?? null,
           clientEventId: e.client_event_id ?? null,
+          producerSeq: e.producer_seq ?? null,
           occurredAt: e.occurred_at ? new Date(e.occurred_at) : undefined,
         })),
+        { producerId: parsed.data.producer_id ?? null },
       );
       if (!result.ok) {
-        reply.code(result.status).send({ message: result.message });
+        reply.code(result.status).send({
+          message: result.message,
+          // Present only on a contiguity rejection: where the emitter's spool
+          // should replay from.
+          ...(result.expectedNextSeq !== undefined ? { expected_next_seq: result.expectedNextSeq } : {}),
+        });
         return;
       }
 
@@ -351,6 +362,8 @@ export function registerSessionRoutes(
         duplicates: result.duplicates,
         count: result.count,
         head: result.head,
+        // The mark an emitter trims its spool against; null when untracked.
+        accepted_through: result.acceptedThrough,
         events: result.appended.map(serializeEvent),
       });
     },

@@ -19,7 +19,7 @@ import {
   trajectoryDigest,
   serializeRun,
 } from "../core/runs.js";
-import { serializeEvent, verifyChain, EVENT_KINDS } from "../core/trajectory.js";
+import { serializeEvent, verifyChain, emitterContiguity, EVENT_KINDS } from "../core/trajectory.js";
 import { recordEval, listEvals, serializeEval } from "../core/evals.js";
 
 const OpenRunBody = z.object({
@@ -299,6 +299,16 @@ export function registerRunRoutes(
       const chainResults = await Promise.all(sessionRows.map((s) => verifyChain(db, s.id)));
       const chainsOk = chainResults.every((c) => c.ok);
 
+      // Two different guarantees, deliberately reported separately: the chain
+      // says the events ADP holds were not edited, the emitter counter says ADP
+      // was given all of them. A run can pass the first and fail the second.
+      const contiguity = new Map(
+        await Promise.all(
+          sessionRows.map(async (s) => [s.id, await emitterContiguity(db, s.id)] as const),
+        ),
+      );
+      const emittersOk = [...contiguity.values()].every((c) => !c.tracked || c.complete);
+
       const chains = sessionRows.map((s) => {
         const verified = chainResults.find((c) => c.sessionId === s.id)!;
         return { sessionId: s.id, harness: s.harness, count: verified.count, head: verified.head };
@@ -320,22 +330,39 @@ export function registerRunRoutes(
       reply.send({
         run_id: runId,
         // The single answer. False whenever any part below is false, so a caller
-        // that reads one field is not reading an optimistic one.
-        ok: chainsOk && envelopeVerified !== false && digestMatches !== false,
+        // that reads one field is not reading an optimistic one — including a
+        // chain that verifies perfectly but is missing events the emitter
+        // numbered and never delivered.
+        ok: chainsOk && emittersOk && envelopeVerified !== false && digestMatches !== false,
         chains_ok: chainsOk,
+        emitters_ok: emittersOk,
         envelope_verified: envelopeVerified,
         trajectory_digest_matches: digestMatches,
         recomputed_trajectory_digest: recomputedDigest,
         attested_trajectory_digest: run.trajectoryDigest,
         final_git_sha: run.finalGitSha,
         attested_subject_sha: subjectSha,
-        sessions: chainResults.map((c) => ({
-          session_id: c.sessionId,
-          ok: c.ok,
-          event_count: c.count,
-          head: c.head,
-          broke_at_seq: c.brokeAtSeq,
-          reason: c.reason,
+        sessions: chainResults.map((c) => {
+          const emitter = contiguity.get(c.sessionId)!;
+          return {
+            session_id: c.sessionId,
+            ok: c.ok,
+            event_count: c.count,
+            head: c.head,
+            broke_at_seq: c.brokeAtSeq,
+            reason: c.reason,
+            emitter_tracked: emitter.tracked,
+            emitter_complete: emitter.complete,
+            emitter_first_gap: emitter.firstGap,
+          };
+        }),
+        // Who scored this run, and whether that was somebody other than whoever
+        // ran it.
+        evals: (await listEvals(db, runId)).map((e) => ({
+          id: e.id,
+          name: e.name,
+          reporter_principal: e.reporterPrincipal,
+          separately_authorized: e.separatelyAuthorized,
         })),
       });
     },

@@ -1410,16 +1410,44 @@ paths:
                       client_event_id:
                         type: string
                         description: The emitter's own id; a repeat is dropped rather than appended twice.
+                      producer_seq:
+                        type: integer
+                        minimum: 1
+                        description: >
+                          The emitter's own contiguous counter for this session,
+                          starting at 1. `client_event_id` makes a retry
+                          harmless but cannot prove nothing was dropped — an
+                          event that never arrived has no id to deduplicate.
+                          This can: a batch that skips a number is rejected
+                          whole with 409 and `expected_next_seq`. Set it on
+                          every event of a batch or on none; an emitter that
+                          does not count is untracked, not incomplete.
                       occurred_at:
                         type: string
                         format: date-time
+                producer_id:
+                  type: string
+                  description: >
+                    Who is counting — recorded on the events of this batch that
+                    carry a producer_seq. Batch-level rather than per-event
+                    because a chain has exactly one writer.
       responses:
         "201":
-          description: Appended, with the new chain head and any duplicates that were skipped
+          description: >
+            Appended, with the new chain head, any duplicates that were skipped,
+            and `accepted_through` — the highest producer_seq durably stored for
+            this session, which is the mark an emitter trims its spool against
+            (null when the session is untracked).
         "409":
-          description: The session is closed
+          description: >
+            The session is closed, or the batch skips the emitter's numbering.
+            In the latter case the body carries `expected_next_seq`, the
+            producer_seq the session is waiting for, so a spool knows where to
+            replay from rather than guessing.
         "422":
-          description: Validation failed, or related_session_id is not in this repository
+          description: >
+            Validation failed, related_session_id is not in this repository, or
+            producer_seq was set on some events of the batch but not all.
     get:
       summary: A session's trajectory in sequence order, with each event's chain hashes.
       security:
@@ -1671,7 +1699,15 @@ paths:
         - bearerAuth: []
       responses:
         "200":
-          description: Verification result
+          description: >
+            Verification result. `chains_ok` says the events ADP holds were not
+            edited; `emitters_ok` says ADP was given all of them, per session as
+            `emitter_tracked`/`emitter_complete`/`emitter_first_gap` — two
+            different guarantees, since a chain can verify perfectly and still be
+            missing an event that never arrived. Top-level `ok` is false if
+            either fails, or if the attestation does not check out. `evals`
+            carries each score's `reporter_principal` and
+            `separately_authorized`.
         "404":
           description: Not found
   /api/adp/repos/{owner}/{repo}/runs/{runId}/evals:
@@ -1721,13 +1757,19 @@ paths:
                   additionalProperties: true
       responses:
         "201":
-          description: Recorded, with the gate result it was reported as
+          description: >
+            Recorded, with the gate result it was reported as, plus
+            `reporter_principal` and `separately_authorized` — the latter true
+            when the identity reporting the score is not the one that opened the
+            run, i.e. the score is not a self-report.
         "404":
           description: Run not found
         "422":
           description: The run has no final_git_sha and no git_sha was supplied
     get:
-      summary: The evals recorded against this run, newest first.
+      summary: >
+        The evals recorded against this run, newest first, each carrying
+        `reporter_principal` and `separately_authorized`.
       security:
         - bearerAuth: []
       responses:
