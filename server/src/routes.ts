@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { API_VERSION, API_VERSION_HEADER } from "./api-version.js";
 import type { Db } from "./db/client.js";
 import type { GitBackend } from "./core/git-backend.js";
 import type { Signer } from "./core/signing.js";
@@ -53,6 +54,20 @@ export interface RouteDeps {
 // the mirror poller.
 export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { db, gitBackend, signer, publicUrl, credentialKey, instanceFloor } = deps;
+
+  // Served on every response, including 401s and 404s. A client pins the
+  // contract before it can authenticate, so gating this behind a successful
+  // request would leave the one case that matters — pointing a generated client
+  // at the wrong instance — undetectable until a real call failed.
+  //
+  // onRequest rather than onSend: the header is metadata about the server, not
+  // about the payload, and this way it never participates in payload
+  // transformation. The git smart-HTTP routes hijack the reply
+  // (http-git/proxy.ts) and so are not covered — the wire protocol there is
+  // git's, proxied verbatim, and is not part of this contract.
+  app.addHook("onRequest", async (_req, reply) => {
+    reply.header(API_VERSION_HEADER, API_VERSION);
+  });
 
   registerIdentityRoutes(app, publicUrl);
   registerRepoRoutes(app, db, gitBackend, publicUrl);
