@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ADP API
-  version: 0.1.0
+  version: 0.2.0
   description: >
     Native and compat-plane HTTP surface for ADP — see docs/pragmatic_mvp.md
     §2.4 for what is in scope and §2.5 for what is deliberately cut.
@@ -1508,6 +1508,17 @@ paths:
                 external_ref:
                   type: string
                   description: The orchestrator's own id for the assignment.
+                labels:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: >
+                    What this run was — vendor, model, tier. Set at open and
+                    immutable: they are covered by the run attestation, so a
+                    label that could be edited afterwards would leave the
+                    envelope and the row disagreeing. There is no update route.
+                    Ranking consumers read these rather than parsing
+                    `external_ref`, whose format nothing enforces.
       responses:
         "200":
           description: Rejoined an open run with this external_ref
@@ -1568,7 +1579,12 @@ paths:
             type: integer
       responses:
         "200":
-          description: One row per run
+          description: >
+            One row per run, carrying its `labels`, the single latest `eval`,
+            and `evals` — the latest result per eval *name*. A run scored on
+            several axes has several results, and a consumer ranking per axis
+            reads `evals`; `eval` alone would show whichever score was recorded
+            last.
   /api/adp/repos/{owner}/{repo}/runs/{runId}:
     parameters:
       - $ref: "#/components/parameters/owner"

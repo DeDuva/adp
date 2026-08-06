@@ -28,6 +28,10 @@ const OpenRunBody = z.object({
   // exist yet. ADP never branches on the value.
   orchestrator: z.string().min(1),
   external_ref: z.string().min(1).optional(),
+  // Open-time only, and there is deliberately no route that updates them: they
+  // ride in the run attestation, so a label that could change afterwards would
+  // put the envelope and the row into disagreement.
+  labels: z.record(z.string()).optional(),
 });
 
 const CloseRunBody = z.object({
@@ -96,6 +100,7 @@ export function registerRunRoutes(
         intentId: parsed.data.intent_id,
         orchestrator: parsed.data.orchestrator,
         externalRef: parsed.data.external_ref ?? null,
+        ...(parsed.data.labels ? { labels: parsed.data.labels } : {}),
       },
       req.identity!.identityId,
     );

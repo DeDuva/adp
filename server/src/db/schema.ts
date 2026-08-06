@@ -270,6 +270,13 @@ export const runs = pgTable(
     externalRef: text("external_ref"),
     actorId: uuid("actor_id").notNull().references(() => identities.id),
     status: text("status", { enum: ["open", "closed", "abandoned"] }).notNull().default("open"),
+    // What this run *was* — the vendor, the model, the tier an orchestrator
+    // chose. Set at open and never afterwards, which is the whole point: the
+    // run attestation covers them, so "this result came from gemini-flash" is
+    // signed alongside the trajectory rather than annotated next to it. A
+    // mutable label would be a claim about the past that the past cannot check,
+    // so there is no route that writes one.
+    labels: jsonb("labels").$type<Record<string, string>>().notNull().default({}),
     finalGitSha: text("final_git_sha"),
     // sha256 over every session's (id, harness, event count, chain head), sorted
     // by session id — one value naming the whole run's trajectory, stable to

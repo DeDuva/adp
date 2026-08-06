@@ -82,6 +82,10 @@ export function runStatement(
       intentId: run.intentId,
       orchestrator: run.orchestrator,
       externalRef: run.externalRef,
+      // Signed, not annotated. An A/B test whose "this was gemini" lives only
+      // in a mutable column is a comparison anyone can rewrite after the fact;
+      // inside the predicate it is a claim the envelope covers.
+      labels: run.labels,
       trajectoryDigest: digest,
       sessions: [...chains]
         .sort((a, b) => (a.sessionId < b.sessionId ? -1 : 1))
@@ -94,7 +98,16 @@ export function runStatement(
 export async function openRun(
   db: Db,
   repo: { id: string; owner: string; name: string },
-  input: { intentId: string; orchestrator: string; externalRef?: string | null },
+  input: {
+    intentId: string;
+    orchestrator: string;
+    externalRef?: string | null;
+    // Open-time only. Rejoining an existing run does not re-label it: the run
+    // that already exists is the one the attestation will describe, and letting
+    // a retry change what it says about itself is how a comparison stops being
+    // evidence.
+    labels?: Record<string, string>;
+  },
   actorId: string,
 ): Promise<{ ok: true; run: RunRow; created: boolean } | RunError> {
   const [intent] = await db
@@ -138,6 +151,7 @@ export async function openRun(
         intentId: input.intentId,
         orchestrator: input.orchestrator,
         externalRef: input.externalRef ?? null,
+        labels: input.labels ?? {},
         actorId,
       })
       .returning();
@@ -152,6 +166,7 @@ export async function openRun(
         intentId: input.intentId,
         orchestrator: input.orchestrator,
         externalRef: input.externalRef ?? null,
+        labels: input.labels ?? {},
       },
     });
 
@@ -471,14 +486,32 @@ export async function runTrajectory(
   return { events, total: Number(totalRow?.total ?? 0) };
 }
 
+export interface ComparisonEval {
+  name: string;
+  score: number | null;
+  passed: boolean;
+  specDigest: string;
+  gateStatus: string;
+}
+
 export interface RunComparison {
   runId: string;
   externalRef: string | null;
   orchestrator: string;
   status: string;
+  // What the run was, as it was signed. A consumer ranking vendors reads this
+  // rather than parsing `externalRef`, whose format nothing enforces.
+  labels: Record<string, string>;
   finalGitSha: string | null;
   trajectoryDigest: string | null;
-  eval: { name: string; score: number | null; passed: boolean; specDigest: string; gateStatus: string } | null;
+  // The latest eval overall, unchanged. Kept exactly as it was because
+  // redefining it would break every consumer reading it today — see
+  // docs/api-compatibility.md.
+  eval: ComparisonEval | null;
+  // The latest eval *per name*. A run scored on several axes has several
+  // results, and collapsing them to one made the surviving score depend on
+  // which POST landed second — which is not a property of the work.
+  evals: (ComparisonEval & { createdAt: string })[];
   events: number;
   tokensIn: number;
   tokensOut: number;
@@ -558,9 +591,26 @@ export async function compareRuns(
   // Latest eval per run wins, matching how gate results resolve elsewhere
   // (core/gate-results-lookup.ts): a rerun supersedes, history is kept.
   const latestEval = new Map<string, (typeof evalRows)[number]>();
-  for (const row of evalRows) latestEval.set(row.runId, row);
+  // And latest per *axis*, keyed on name as well, in the same ordered pass. A
+  // multi-axis grader reports `acceptance` and `self-tests` against one run;
+  // keyed on the run alone they overwrite each other and the table shows
+  // whichever arrived last, silently, as though it were the only score.
+  const latestByName = new Map<string, (typeof evalRows)[number]>();
+  for (const row of evalRows) {
+    latestEval.set(row.runId, row);
+    // NUL-separated, because an eval name is user-supplied text and any
+    // printable separator is one a name could legitimately contain.
+    latestByName.set(`${row.runId}\u0000${row.name}`, row);
+  }
 
-  const totals = new Map<string, Omit<RunComparison, "runId" | "externalRef" | "orchestrator" | "status" | "finalGitSha" | "trajectoryDigest" | "eval" | "createdAt" | "closedAt">>();
+  const evalsByRun = new Map<string, (typeof evalRows)[number][]>();
+  for (const row of latestByName.values()) {
+    const list = evalsByRun.get(row.runId) ?? [];
+    list.push(row);
+    evalsByRun.set(row.runId, list);
+  }
+
+  const totals = new Map<string, Omit<RunComparison, "runId" | "externalRef" | "orchestrator" | "status" | "labels" | "finalGitSha" | "trajectoryDigest" | "eval" | "evals" | "createdAt" | "closedAt">>();
   for (const id of runIds) {
     totals.set(id, { events: 0, tokensIn: 0, tokensOut: 0, costMicroUsd: 0, durationMs: 0, toolCalls: 0, toolFailures: 0 });
   }
@@ -584,11 +634,26 @@ export async function compareRuns(
       externalRef: run.externalRef,
       orchestrator: run.orchestrator,
       status: run.status,
+      // Already fetched — no extra query, and no string-parsing of external_ref
+      // by anyone downstream.
+      labels: run.labels,
       finalGitSha: run.finalGitSha,
       trajectoryDigest: run.trajectoryDigest,
       eval: e
         ? { name: e.name, score: e.score, passed: e.passed, specDigest: e.specDigest, gateStatus: e.gateStatus }
         : null,
+      evals: (evalsByRun.get(run.id) ?? [])
+        .map((row) => ({
+          name: row.name,
+          score: row.score,
+          passed: row.passed,
+          specDigest: row.specDigest,
+          gateStatus: row.gateStatus,
+          createdAt: row.createdAt.toISOString(),
+        }))
+        // By name, so a client rendering one column per axis gets a stable
+        // column order across rows without sorting it again.
+        .sort((a, b) => a.name.localeCompare(b.name)),
       ...totals.get(run.id)!,
       createdAt: run.createdAt.toISOString(),
       closedAt: run.closedAt?.toISOString() ?? null,
@@ -611,6 +676,7 @@ export function serializeRun(row: RunRow) {
     intent_id: row.intentId,
     orchestrator: row.orchestrator,
     external_ref: row.externalRef,
+    labels: row.labels,
     status: row.status,
     final_git_sha: row.finalGitSha,
     trajectory_digest: row.trajectoryDigest,
