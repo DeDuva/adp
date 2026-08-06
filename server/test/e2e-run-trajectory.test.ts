@@ -57,6 +57,7 @@ describe.skipIf(skipWithoutDb)("run trajectory and eval-gated close", () => {
   let intentId: string;
   let runId: string;
   let finalSha: string;
+  let comparedRuns: { first: string; second: string };
   let coordinatorSession: string;
   let backendSession: string;
   let testerSession: string;
@@ -176,11 +177,16 @@ describe.skipIf(skipWithoutDb)("run trajectory and eval-gated close", () => {
         intent_id: intentId,
         orchestrator: "squad",
         external_ref: `issue:${issue.body.number}`,
+        labels: { provider: "anthropic", model: "claude-sonnet-5" },
       }),
     });
     expect(opened.status).toBe(201);
     runId = opened.body.id;
     expect(opened.body.status).toBe("open");
+    // What the run was, recorded at open. A comparison across vendors needs
+    // this to be a field rather than something parsed out of `external_ref`,
+    // whose format nothing enforces.
+    expect(opened.body.labels).toEqual({ provider: "anthropic", model: "claude-sonnet-5" });
 
     // An orchestrator that crashes and restarts must find the run it already
     // opened. A second run for one assignment would split the trajectory into
@@ -191,10 +197,15 @@ describe.skipIf(skipWithoutDb)("run trajectory and eval-gated close", () => {
         intent_id: intentId,
         orchestrator: "squad",
         external_ref: `issue:${issue.body.number}`,
+        labels: { provider: "gemini", model: "gemini-flash-latest" },
       }),
     });
     expect(rejoined.status).toBe(200);
     expect(rejoined.body.id).toBe(runId);
+    // Rejoining does not re-label. The attestation will describe the run that
+    // already exists, so a retry that could rewrite what the run says it was
+    // would turn a signed fact into an editable one.
+    expect(rejoined.body.labels).toEqual({ provider: "anthropic", model: "claude-sonnet-5" });
   });
 
   // "Each agent becomes an ADP session."
@@ -448,8 +459,13 @@ describe.skipIf(skipWithoutDb)("run trajectory and eval-gated close", () => {
     expect(statement.subject[0]!.digest.sha1).toBe(finalSha);
     const predicate = statement.predicate as {
       trajectoryDigest: string;
+      labels: Record<string, string>;
       sessions: { id: string; eventCount: number; chainHead: string }[];
     };
+    // The labels ride inside the signed predicate, which is what makes "this
+    // result came from claude-sonnet-5" attested rather than annotated — the
+    // difference between an A/B test and a table someone can edit afterwards.
+    expect(predicate.labels).toEqual({ provider: "anthropic", model: "claude-sonnet-5" });
     expect(predicate.trajectoryDigest).toBe(closed.body.trajectory_digest);
     expect(predicate.sessions).toHaveLength(3);
     expect(predicate.sessions.reduce((n, s) => n + s.eventCount, 0)).toBe(11);
@@ -606,9 +622,15 @@ describe.skipIf(skipWithoutDb)("run trajectory and eval-gated close", () => {
   it("compares runs against one intent, ranked by attested score", async () => {
     const second = await api(`/api/adp/repos/${owner}/${repoName}/runs`, {
       method: "POST",
-      body: JSON.stringify({ intent_id: intentId, orchestrator: "squad", external_ref: "issue:1-attempt-2" }),
+      body: JSON.stringify({
+        intent_id: intentId,
+        orchestrator: "squad",
+        external_ref: "issue:1-attempt-2",
+        labels: { provider: "gemini", model: "gemini-flash-latest" },
+      }),
     });
     const secondRun = second.body.id as string;
+    comparedRuns = { first: runId, second: secondRun };
     const session = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
       method: "POST",
       body: JSON.stringify({ harness: "claude-code", run_id: secondRun }),
@@ -660,6 +682,72 @@ describe.skipIf(skipWithoutDb)("run trajectory and eval-gated close", () => {
     const lastScoredIndex = compare.body.runs.findIndex((r: { runId: string }) => r.runId === secondRun);
     const firstUnscoredIndex = compare.body.runs.findIndex((r: { eval: unknown }) => r.eval === null);
     expect(firstUnscoredIndex).toBeGreaterThan(lastScoredIndex);
+  });
+
+  // A run scored on several axes has several results. Collapsing them to one
+  // made the surviving score depend on which POST landed second, which is not a
+  // property of the work — and a blended average would have hidden the case
+  // this whole comparison exists to surface: two runs tied on one axis and
+  // opposite on another.
+  it("carries every named eval, and the labels the run was opened with", async () => {
+    const { first, second } = comparedRuns;
+
+    // A second axis on each run, and one of them scored twice — a regrade after
+    // a fixed rubric, which must supersede rather than accumulate.
+    await api(`/api/adp/repos/${owner}/${repoName}/runs/${first}/evals`, {
+      method: "POST",
+      body: JSON.stringify({ name: "self-tests", passed: false, score: 0, spec: { suite: "repo-self-tests" } }),
+    });
+    await api(`/api/adp/repos/${owner}/${repoName}/runs/${second}/evals`, {
+      method: "POST",
+      body: JSON.stringify({ name: "self-tests", passed: false, score: 0.5, spec: { suite: "repo-self-tests" } }),
+    });
+    await api(`/api/adp/repos/${owner}/${repoName}/runs/${second}/evals`, {
+      method: "POST",
+      body: JSON.stringify({ name: "self-tests", passed: true, score: 1, spec: { suite: "repo-self-tests" } }),
+    });
+
+    const compare = await api(`/api/adp/repos/${owner}/${repoName}/runs/compare?intent_id=${intentId}`);
+    expect(compare.status).toBe(200);
+    const rowFor = (id: string) =>
+      compare.body.runs.find((r: { runId: string }) => r.runId === id) as {
+        labels: Record<string, string>;
+        eval: { name: string; score: number } | null;
+        evals: { name: string; score: number | null; specDigest: string }[];
+      };
+
+    // One entry per name, not per POST.
+    const firstRow = rowFor(first);
+    expect(firstRow.evals.map((e) => e.name)).toEqual(["behavior", "self-tests"]);
+    expect(firstRow.evals.find((e) => e.name === "behavior")?.score).toBe(0.92);
+    expect(firstRow.evals.find((e) => e.name === "self-tests")?.score).toBe(0);
+
+    // The duplicate resolves to the later one, matching how gate results
+    // resolve everywhere else: a rerun supersedes, history is kept.
+    const secondRow = rowFor(second);
+    expect(secondRow.evals.filter((e) => e.name === "self-tests")).toHaveLength(1);
+    expect(secondRow.evals.find((e) => e.name === "self-tests")?.score).toBe(1);
+
+    // The pre-existing field keeps its old meaning exactly — latest overall,
+    // whatever its name. Redefining it would have been a major bump for every
+    // consumer already reading it.
+    expect(firstRow.eval?.name).toBe("self-tests");
+    expect(secondRow.eval?.name).toBe("self-tests");
+    expect(secondRow.eval?.score).toBe(1);
+
+    // And the labels each run was opened with, so ranking by vendor never has
+    // to parse `external_ref`.
+    expect(firstRow.labels).toEqual({ provider: "anthropic", model: "claude-sonnet-5" });
+    expect(secondRow.labels).toEqual({ provider: "gemini", model: "gemini-flash-latest" });
+
+    // The load-bearing one: a new field in the signed predicate must not have
+    // broken the binding it sits next to.
+    for (const id of [first, second]) {
+      const verified = await api(`/api/adp/repos/${owner}/${repoName}/runs/${id}/verify`);
+      expect(verified.body.ok).toBe(true);
+      expect(verified.body.envelope_verified).toBe(true);
+      expect(verified.body.trajectory_digest_matches).toBe(true);
+    }
   });
 
   // Recorder completeness. `client_event_id` makes a retry harmless, but an

@@ -13,6 +13,9 @@
 //
 // Bump the minor for additive changes, the major for anything a generated
 // client would have to be regenerated to survive.
-export const API_VERSION = "0.1.0";
+// 0.2.0 — additive: runs carry `labels`, and a compare row carries every named
+// eval alongside the single latest one it already had. Nothing a generated
+// client holds today stops parsing.
+export const API_VERSION = "0.2.0";
 
 export const API_VERSION_HEADER = "ADP-API-Version";
