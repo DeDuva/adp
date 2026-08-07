@@ -19,6 +19,19 @@ export default defineConfig({
     screenshot: "only-on-failure",
     // Deterministic, so screenshots are comparable between runs.
     viewport: { width: 1280, height: 900 },
+    // Escape hatch for environments that already have a Chromium and cannot
+    // fetch Playwright's pinned build: a locked-down build agent, or an agent
+    // sandbox whose egress policy does not include cdn.playwright.dev. There
+    // `make browser` cannot succeed and the UI tier is simply unreachable,
+    // which is a worse outcome than driving a Chromium that is a few builds
+    // off the pin — this suite asserts on a React app's own DOM, not on
+    // browser-version-sensitive rendering.
+    //
+    // Unset on a normal machine, which is every developer machine and CI, so
+    // the pinned download stays the default and nothing about it changes.
+    ...(process.env.ADP_CHROMIUM_PATH
+      ? { launchOptions: { executablePath: process.env.ADP_CHROMIUM_PATH } }
+      : {}),
   },
   reporter: [["list"]],
   // Inside the run's artifact directory rather than server/test-results, so

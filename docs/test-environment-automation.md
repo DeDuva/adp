@@ -48,6 +48,26 @@ The pattern is worth naming: each of these was invisible precisely because the e
 was dirty in a way that happened to be *benign*. Making the environment reproducibly clean is
 what turned them into failures — which is the argument for the whole exercise.
 
+### Found by a third environment: a container with no Docker (2026-08-07)
+
+Phases 0–4 were built and verified against two environments, WSL-with-Docker and a GitHub
+runner, which resemble each other more than either resembles a locked-down container. Running
+the suite in an agent sandbox — no Docker daemon, a distro Postgres, egress restricted to an
+allowlist, no `gh` on `PATH`, an ambient `GH_TOKEN` — added a third, and it found five things.
+Four are environment-independent bugs that the first two environments happened to mask.
+
+| # | Finding | Consequence |
+|---|---|---|
+| 13 | `acceptance/run.sh`'s A5 check ran a bare `gh`, not the pinned `"$GH_BIN"` every other step uses | The one step that silently tested whatever `gh` the machine had — defeating the pinning the script is built around, and reporting "gh auth status did not report a working login" on a machine that simply has no `gh`. **Fixed.** |
+| 14 | The same line piped `gh` straight into `grep -q` under `set -o pipefail`, so it asserted gh's *exit code*, not the match | `gh auth status` reports on every host it knows and exits non-zero if any fails. An unrelated `GH_TOKEN` in the environment — which CI runners and agent sandboxes both set — failed A5 while this host was logged in perfectly. **Fixed** by the capture-then-grep idiom the rest of the file already used. |
+| 15 | The live-network tier (unmocked OSV.dev) had no gate, unlike the e2e tier's `require-db.ts` | Finding 1's shape, one dependency over: on a machine that cannot reach `api.osv.dev`, a network policy was reported as five dependency-admission failures. **Fixed** by `server/test/require-network.ts` — skips loudly, hard-fails under `ADP_REQUIRE_NETWORK=1`, which CI now sets. |
+| 16 | `server/web` declares no favicon, so every browser probes `/favicon.ico` and the server 404s it | `acceptance/ui.spec.ts` asserts the console is error-free; whether that assertion passed depended on the Chromium build, since newer ones stopped logging favicon 404s. A real gap held below the waterline by a browser-version accident. **Fixed** by an inline data-URI icon. |
+| 17 | `make doctor` failed when Docker was unreachable, even with a working `DATABASE_URL` | Docker's only job here is provisioning Postgres. Calling its absence fatal made the preflight unusable exactly where it helps most — a container, or a developer running Postgres natively. **Fixed:** Docker is a FAIL only when there is no reachable database to fall back on, and the database section now probes the DSN rather than checking that it is merely *set*. |
+
+Findings 13, 14 and 16 share a mechanism with 10–12 above: each was masked by an environment
+that was accidentally *convenient* — a `gh` on `PATH`, no ambient token, a browser build that
+had stopped complaining. The one genuinely environmental constraint is egress (§7).
+
 ---
 
 ## 2. How much can be automated
@@ -421,12 +441,36 @@ bash scripts/dev/verify-clean.sh --fix # remove leaked resources and generated f
 make nuke                              # the above, plus deps, build output and the gh cache
 ```
 
-`make up` requires Docker. Without it, point the suite at any Postgres you like and skip the
-container layer entirely:
+### Without Docker — a container, a CI image, or a native Postgres
+
+`make up` is the only thing that needs a Docker daemon: it exists to *provision* Postgres, and
+nothing in the suite talks to a container. Anywhere you already have a database — a distro
+Postgres, a managed instance, an agent sandbox with no daemon at all — skip that layer:
 
 ```bash
-bash scripts/dev/env.sh postgres://user:pass@host:5432/db && make test
+# Debian/Ubuntu with the postgresql package installed but not running:
+pg_ctlcluster 16 main start
+su postgres -c "psql -c \"CREATE ROLE adp LOGIN PASSWORD 'adp' SUPERUSER\""
+su postgres -c "psql -c 'CREATE DATABASE adp OWNER adp'"
+
+make deps                                                    # the four npm workspaces
+bash scripts/dev/env.sh postgres://adp:adp@localhost:5432/db # writes .env.test, same as make up
+make doctor                                                  # reports docker as not-needed
+make test-all                                                # everything CI runs
 ```
+
+`make doctor` recognizes this case and says so rather than failing. `make down` still removes
+`.env.test` and `.adp-test` and still runs `verify-clean.sh`; it just has no containers to
+remove, and `verify-clean.sh` warns that it cannot inspect Docker state instead of asserting it.
+
+Two things need network access beyond the npm registry, and both degrade explicitly rather than
+failing obscurely if an egress policy blocks them:
+
+| Needs | Used by | Without it |
+|---|---|---|
+| `github.com` | the pinned `gh` download in `conformance/run.sh` and `acceptance/run.sh` | both gates cannot run at all — there is no substitute for the real binary |
+| `api.osv.dev` | the live-network test tier, and acceptance step D17 | they skip, loudly (see below) |
+| `cdn.playwright.dev` | `make browser` | set `ADP_CHROMIUM_PATH=/path/to/chromium` to drive a Chromium that is already installed; `make browser` then skips the download and `acceptance-ui` uses that binary |
 
 ### On the e2e skip
 
@@ -436,6 +480,22 @@ legitimate reason for the skip. The change is that any context which *intends* f
 says so explicitly and gets a hard failure instead of a green partial run. `make up` writes
 `ADP_REQUIRE_DB=1` into `.env.test`, so everything downstream of a real stack is enforced by
 default.
+
+### On the live-network skip
+
+`src/core/dependency-admission.ts` is a client for two third-party APIs, so part of its coverage
+is deliberately unmocked — real OSV.dev, real npm registry, real packages. Mocks cannot tell you
+the upstream response shape still matches, which is the only thing that tier is for.
+
+`server/test/require-network.ts` gates it the way `require-db.ts` gates the e2e tier, with one
+difference: a database is either configured or not, so that gate reads an env var, while egress
+is not declared anywhere, so this one probes for it once. Reachable and the tier runs; unreachable
+and it skips behind a banner that says what did not run; unreachable with `ADP_REQUIRE_NETWORK=1`
+and it throws at import time. `ci.yml` and `clean-room.yml` both set it, because both claim to be
+full runs. Acceptance step D17 is gated identically, in shell.
+
+The skip is deliberately not silent, and deliberately not a pass: a green run with the banner in
+it is a *narrower* run, and the output says so.
 
 ---
 
@@ -462,6 +522,15 @@ implementing per-context detail forces the docs to be corrected.
 
 **Screenshots are reviewed by a human or not at all.** Nothing asserts that the UI looks right,
 by design. The screenshots make that review cheap; they do not make it automatic.
+
+**Egress-restricted environments cannot run the full suite, and that is not fixable here.** An
+agent sandbox or a locked-down build agent reaches `github.com` and the npm registry but not
+`api.osv.dev` or `cdn.playwright.dev`. Everything else passes there — the full vitest suite, the
+`gh` conformance gate, the whole §2.1 acceptance walkthrough including the browser-driven UI —
+and the two exceptions announce themselves (§6). Closing the gap properly means recording the
+OSV.dev exchanges as fixtures and running *both*: replayed by default, live in CI. That is the
+right shape and a real piece of work; until then `ADP_REQUIRE_NETWORK=1` in CI is what keeps the
+live tier from decaying into a permanent skip.
 
 **Phase 4 is a local tool, not a gate — decided.** `Run-CleanTest.ps1` exists so a human can
 answer "does this work from nothing?" on demand. It is deliberately **not** wired into CI and

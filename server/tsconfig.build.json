@@ -5,5 +5,11 @@
     "rootDir": "src",
     "noEmit": false
   },
-  "include": ["src"]
+  "include": ["src"],
+  // The unit tests colocated under src/ are not part of the deployable
+  // artifact: shipping them put vitest imports into dist/ (and into the
+  // deploy/ image), and rootDir="src" meant a colocated test could never
+  // import a shared helper from test/. Both are fixed by not building them.
+  // Typechecking still covers them — tsconfig.json includes src *and* test.
+  "exclude": ["src/**/*.test.ts"]
 }

@@ -78,7 +78,11 @@ acceptance-ui: ## ...including the web UI, driven by a real browser
 	@$(LOAD_ENV) ADP_ACCEPTANCE_UI=1 bash server/acceptance/run.sh
 
 browser: ## Download the pinned Chromium build Playwright drives
-	@npx --prefix server playwright install chromium
+	@if [ -x "$${ADP_CHROMIUM_PATH:-}" ]; then \
+		echo "using ADP_CHROMIUM_PATH=$$ADP_CHROMIUM_PATH — skipping the pinned download"; \
+	else \
+		npx --prefix server playwright install chromium; \
+	fi
 
 browser-deps: ## Install Chromium's system libraries (needs root)
 	npx --prefix server playwright install-deps chromium

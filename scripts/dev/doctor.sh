@@ -60,29 +60,58 @@ have npm && ok "npm $(npm -v)" || fail "npm not found"
 have curl && ok "curl present" || fail "curl not found (needed by conformance/run.sh)"
 have openssl && ok "openssl present" || fail "openssl not found (needed by conformance/run.sh)"
 
+# Docker's only job in this repo's test loop is provisioning Postgres for
+# `make up`. Nothing in the suite talks to a container — the tests talk to a
+# DSN. So a machine that already has a reachable Postgres does not need Docker
+# at all, and calling that a FAIL made `make doctor` unusable exactly where it
+# is most useful: a container or cloud sandbox with a distro Postgres and no
+# daemon, and equally a developer who runs Postgres natively on Windows.
+#
+# A TCP connect rather than a real handshake — this only has to distinguish
+# "you have a database endpoint, Docker is not your blocker" from "you have
+# neither". The database section below reports on the DSN itself. Uses node,
+# which is already a hard requirement above, so this adds no new dependency.
+db_reachable() {
+  [ -n "${DATABASE_URL:-}" ] || return 1
+  node -e '
+    const net = require("node:net");
+    let u; try { u = new URL(process.env.DATABASE_URL); } catch { process.exit(1); }
+    const sock = net.connect({ host: u.hostname, port: Number(u.port) || 5432 });
+    sock.setTimeout(3000);
+    const bad = () => { sock.destroy(); process.exit(1); };
+    sock.on("connect", () => { sock.end(); process.exit(0); });
+    sock.on("error", bad);
+    sock.on("timeout", bad);
+  ' >/dev/null 2>&1
+}
+
 section "docker"
 docker_state
-case $? in
-  0)
-    ok "docker daemon reachable ($(docker version --format '{{.Server.Version}}' 2>/dev/null))"
-    if docker compose version >/dev/null 2>&1; then
-      ok "docker compose $(docker compose version --short 2>/dev/null)"
-    else
-      fail "'docker compose' (v2) not available"
-      hint "the legacy 'docker-compose' v1 binary is not supported by deploy/docker-compose.yml"
-    fi
-    ;;
-  1)
-    fail "docker binary found, but the daemon is unreachable"
-    hint "if using Docker Desktop: start it, and enable WSL integration for this distro"
-    hint "Settings -> Resources -> WSL integration (a GUI toggle; there is no CLI for it)"
-    ;;
-  2)
-    fail "docker not found in this distro"
-    hint "either enable Docker Desktop's WSL integration for this distro, or"
-    hint "install a distro-local engine: sudo apt-get install -y docker.io && sudo service docker start"
-    ;;
-esac
+docker_status=$?
+if [ "$docker_status" = "0" ]; then
+  ok "docker daemon reachable ($(docker version --format '{{.Server.Version}}' 2>/dev/null))"
+  if docker compose version >/dev/null 2>&1; then
+    ok "docker compose $(docker compose version --short 2>/dev/null)"
+  else
+    fail "'docker compose' (v2) not available"
+    hint "the legacy 'docker-compose' v1 binary is not supported by deploy/docker-compose.yml"
+  fi
+elif db_reachable; then
+  info "docker unavailable — and not needed: DATABASE_URL already points at a reachable Postgres"
+  hint "'make up' provisions Postgres via docker; you have one, so skip it"
+  hint "bash scripts/dev/env.sh \"\$DATABASE_URL\"   # writes .env.test against it"
+  hint "then 'make test' / 'make conformance' / 'make acceptance' as usual"
+elif [ "$docker_status" = "1" ]; then
+  fail "docker binary found, but the daemon is unreachable — and no reachable DATABASE_URL to fall back on"
+  hint "if using Docker Desktop: start it, and enable WSL integration for this distro"
+  hint "Settings -> Resources -> WSL integration (a GUI toggle; there is no CLI for it)"
+  hint "or bring your own Postgres and point scripts/dev/env.sh at its DSN"
+else
+  fail "docker not found in this distro — and no reachable DATABASE_URL to fall back on"
+  hint "either enable Docker Desktop's WSL integration for this distro, or"
+  hint "install a distro-local engine: sudo apt-get install -y docker.io && sudo service docker start"
+  hint "or bring your own Postgres and point scripts/dev/env.sh at its DSN"
+fi
 
 section "dependencies"
 if [ -d "$ADP_REPO_ROOT/server/node_modules" ]; then
@@ -115,7 +144,17 @@ fi
 section "database"
 if [ -n "${DATABASE_URL:-}" ]; then
   ok "DATABASE_URL is set"
-  info "e2e tier will run"
+  # "Set" was the whole check, which is the same partial-run trap one level
+  # down: a DSN pointing at a Postgres that is not there produces a wall of
+  # connection errors attributed to whichever suite happened to run first.
+  if db_reachable; then
+    ok "the DSN's host:port accepts connections"
+    info "e2e tier will run"
+  else
+    fail "nothing is listening at the DSN's host:port"
+    hint "DATABASE_URL=$DATABASE_URL"
+    hint "'make up' to provision one, or start your own Postgres"
+  fi
 else
   warn "DATABASE_URL is not set — the entire e2e tier will be SKIPPED"
   hint "a skipped e2e tier still exits 0; that is the partial-run trap"

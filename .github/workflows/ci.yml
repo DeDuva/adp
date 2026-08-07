@@ -33,6 +33,13 @@ jobs:
       # indistinguishable at the exit code — CI must never accept that, so here
       # a missing DATABASE_URL is a hard failure instead (server/test/require-db.ts).
       ADP_REQUIRE_DB: "1"
+      # Same argument one layer out: the dependency-admission suites include a
+      # deliberately unmocked tier against the live OSV.dev API, which skips
+      # itself where egress is unavailable (an offline laptop, a locked-down
+      # build agent, an agent sandbox that 403s un-allowlisted hosts). A GitHub
+      # runner has egress, so here an unreachable api.osv.dev is a hard failure
+      # rather than a quiet loss of coverage (server/test/require-network.ts).
+      ADP_REQUIRE_NETWORK: "1"
     defaults:
       run:
         working-directory: server

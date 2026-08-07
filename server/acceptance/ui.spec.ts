@@ -57,6 +57,17 @@ test("C9-C12: the supervision UI shows intent, evidence, provenance, op log — 
   page.on("console", (msg) => {
     if (msg.type() === "error") pageErrors.push(msg.text());
   });
+  // Chromium's console text for a failed subresource is "Failed to load
+  // resource: the server responded with a status of 404 (Not Found)" — no URL,
+  // which makes the assertion below name a problem without naming its subject.
+  // Recording responses separately restores that, and costs nothing when the
+  // test passes. Not a complete substitute: requests the browser process makes
+  // on its own (the favicon probe, notably) never reach this event, so an
+  // empty list here alongside a console error means "look outside the page".
+  const httpErrors: string[] = [];
+  page.on("response", (res) => {
+    if (res.status() >= 400) httpErrors.push(`${res.status()} ${res.url()}`);
+  });
 
   await test.step("C9 connect and list issues", async () => {
     await connect(page);
@@ -114,5 +125,9 @@ test("C9-C12: the supervision UI shows intent, evidence, provenance, op log — 
     await shot(page, "05-undone");
   });
 
-  expect(pageErrors, `the page reported errors:\n${pageErrors.join("\n")}`).toEqual([]);
+  expect(
+    pageErrors,
+    `the page reported errors:\n${pageErrors.join("\n")}` +
+      (httpErrors.length ? `\nfailed requests:\n${httpErrors.join("\n")}` : ""),
+  ).toEqual([]);
 });
