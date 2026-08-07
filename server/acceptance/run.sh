@@ -149,8 +149,25 @@ GH_REPO="${GH_HOST}/${OWNER}/${REPO}"
 # declared a perfectly valid token invalid. Fixed by ignoreTrailingSlash in
 # src/main.ts; this asserts it, because that option lives in main.ts and no
 # unit test that builds its own Fastify instance can guard it.
-GH_HOST="$GH_HOST" gh auth status 2>&1 | grep -q "Logged in to ${GH_HOST}" \
-  || fail "A5: gh auth status did not report a working login"
+#
+# Must be "$GH_BIN", not a bare `gh`: this was the one call in the file that
+# reached for whatever gh happened to be on PATH, which defeats the pinning
+# every other step relies on — and on a machine with no gh installed at all
+# (a container, the cloud sandbox) it failed as "did not report a working
+# login", pointing at the server rather than at the missing binary.
+#
+# Captured into a variable before grepping, rather than piped straight in,
+# for the same reason every other gh assertion below does it: `set -o
+# pipefail` makes a direct pipe assert gh's *exit code* instead of the match.
+# `gh auth status` reports on every host it knows about and exits non-zero if
+# any of them fails — so an unrelated github.com credential in the ambient
+# environment (GH_TOKEN, which CI runners and agent sandboxes both set) failed
+# A5 while this host was in fact logged in perfectly. The env-clearing prefix
+# keeps that ambient state out of the probe entirely; GH_ENTERPRISE_TOKEN is
+# what gh reads for a non-github.com host, and it stays.
+AUTH_OUT=$(GH_HOST="$GH_HOST" GH_TOKEN= GITHUB_TOKEN= "$GH_BIN" auth status 2>&1 || true)
+echo "$AUTH_OUT" | grep -q "Logged in to ${GH_HOST}" \
+  || fail "A5: gh auth status did not report a working login:"$'\n'"$AUTH_OUT"
 pass "A5 gh auth status"
 
 step "B — the agent's loop"
@@ -405,11 +422,31 @@ pass "D16 osv-scanner adapter reported a real scan result, now in evidence"
 # real OSV.dev API (docs/pragmatic_mvp.md). sdxcode1@9.9.9 is a real
 # OpenSSF-reported malicious npm package (MAL-2025-2155); is-odd@3.0.1 is
 # real, old, and clean.
-DEP_RES=$(api POST "/api/v3/repos/${OWNER}/${REPO}/dependency-admission" \
-  -d "{\"git_sha\":\"${HEAD_SHA}\",\"packages\":[{\"ecosystem\":\"npm\",\"name\":\"is-odd\",\"version\":\"3.0.1\"},{\"ecosystem\":\"npm\",\"name\":\"sdxcode1\",\"version\":\"9.9.9\"}]}")
-grep -q '"status":"failure"' <<<"$DEP_RES" || fail "D17: expected an overall 'failure' status (a blocked package outranks a clean one)"
-grep -q 'MAL-' <<<"$DEP_RES" || fail "D17: expected the malicious package's reasons to cite an OpenSSF MAL- advisory"
-pass "D17 dependency admission blocked a real OpenSSF-reported malicious package"
+#
+# The only step in this walkthrough that needs egress beyond the gh download,
+# so it is the only one that can fail for a reason that has nothing to do with
+# ADP. Probed first, with the same request the server will make: a machine
+# without a route to api.osv.dev was reporting a network policy as "a blocked
+# package did not outrank a clean one". Skipped there, enforced under
+# ADP_REQUIRE_NETWORK=1 — the vitest tier is gated identically, and for the
+# same reason (server/test/require-network.ts).
+osv_reachable() {
+  curl -sS -o /dev/null --max-time 10 -X POST "https://api.osv.dev/v1/query" \
+    -H "Content-Type: application/json" \
+    -d '{"package":{"name":"is-odd","ecosystem":"npm"},"version":"3.0.1"}' 2>/dev/null
+}
+if osv_reachable; then
+  DEP_RES=$(api POST "/api/v3/repos/${OWNER}/${REPO}/dependency-admission" \
+    -d "{\"git_sha\":\"${HEAD_SHA}\",\"packages\":[{\"ecosystem\":\"npm\",\"name\":\"is-odd\",\"version\":\"3.0.1\"},{\"ecosystem\":\"npm\",\"name\":\"sdxcode1\",\"version\":\"9.9.9\"}]}")
+  grep -q '"status":"failure"' <<<"$DEP_RES" || fail "D17: expected an overall 'failure' status (a blocked package outranks a clean one)"
+  grep -q 'MAL-' <<<"$DEP_RES" || fail "D17: expected the malicious package's reasons to cite an OpenSSF MAL- advisory"
+  pass "D17 dependency admission blocked a real OpenSSF-reported malicious package"
+elif [ "${ADP_REQUIRE_NETWORK:-0}" = "1" ]; then
+  fail "D17: ADP_REQUIRE_NETWORK=1 but api.osv.dev is unreachable — allow egress to it, or unset ADP_REQUIRE_NETWORK to let D17 skip"
+else
+  note "D17 SKIPPED: api.osv.dev unreachable — dependency admission was not exercised"
+  note "   (set ADP_REQUIRE_NETWORK=1 to make this a failure instead)"
+fi
 
 # D18 — SBOM per land: generated automatically on every merge (no separate
 # "generate SBOM" step), same real-fixture pattern as D16/D17 rather than a

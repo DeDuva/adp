@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { skipWithoutNetwork } from "../../test/require-network.js";
 import { evaluateDependency, evaluateDependencies } from "./dependency-admission.js";
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -167,7 +168,12 @@ describe("evaluateDependencies (mocked network)", () => {
 // fixtures) because the entire point of this module is two real external
 // APIs; GitHub Actions runners have outbound internet access same as the
 // existing conformance job's gh-binary download.
-describe("evaluateDependency (live network)", () => {
+//
+// Gated on egress actually being there (test/require-network.ts): a machine
+// that cannot reach api.osv.dev was reporting a network-policy denial as three
+// dependency-admission failures. It skips loudly there, and CI sets
+// ADP_REQUIRE_NETWORK=1 so the skip can never pass for coverage.
+describe.skipIf(skipWithoutNetwork)("evaluateDependency (live network)", () => {
   it("blocks a real OpenSSF-reported malicious npm package", async () => {
     const verdict = await evaluateDependency({ ecosystem: "npm", name: "sdxcode1", version: "9.9.9" });
     expect(verdict.verdict).toBe("block");

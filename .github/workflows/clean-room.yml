@@ -69,6 +69,14 @@ jobs:
   # dependencies up, run everything, tear it down, and assert nothing survived.
   clean-room:
     runs-on: ubuntu-latest
+    env:
+      # This job's whole claim is "a bare machine reached a *full* passing run",
+      # so the tiers that can skip themselves must not be allowed to. `make up`
+      # writes ADP_REQUIRE_DB=1 into .env.test; the live-network tier has no
+      # equivalent hook, so it is declared here — an unreachable api.osv.dev
+      # fails the run rather than quietly narrowing what "full" meant
+      # (server/test/require-network.ts, and D17 in server/acceptance/run.sh).
+      ADP_REQUIRE_NETWORK: "1"
     steps:
       - uses: actions/checkout@v4
 

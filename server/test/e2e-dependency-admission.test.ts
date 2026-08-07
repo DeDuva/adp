@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { skipWithoutDb } from "./require-db.js";
+import { skipWithoutNetwork } from "./require-network.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -29,7 +30,11 @@ const execFileAsync = promisify(execFile);
 // against real packages: `sdxcode1@9.9.9` is a real OpenSSF-reported
 // malicious npm package (MAL-2025-2155), `is-odd@3.0.1` is real, old, and
 // clean.
-describe.skipIf(skipWithoutDb)("M2: dependency admission", () => {
+//
+// Needs egress as well as a database, so it carries both gates — see
+// test/require-network.ts for why an unreachable api.osv.dev is a skip here
+// rather than two failures that name the wrong subsystem.
+describe.skipIf(skipWithoutDb || skipWithoutNetwork)("M2: dependency admission", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;

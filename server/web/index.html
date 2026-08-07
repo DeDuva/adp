@@ -4,6 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ADP — supervision</title>
+    <!--
+      Declared, and inline, for two reasons. Without any icon a browser probes
+      /favicon.ico on every visit, which the server has no route for — so every
+      page load logged a 404, and some Chromium builds report that on the
+      console, which acceptance/ui.spec.ts asserts is empty. And as a data URI
+      it needs no new static route: @fastify/static serves /ui/* only, so a
+      real file here would 404 at the root just the same.
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b7285'/%3E%3Cpath d='M8.5 24 16 8l7.5 16h-3.6l-1.4-3.1h-5L12.1 24Zm5.3-6h4.4L16 13.2Z' fill='%23fff'/%3E%3C/svg%3E"
+    />
   </head>
   <body>
     <div id="root"></div>
