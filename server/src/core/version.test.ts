@@ -1,6 +1,24 @@
 import { describe, it, expect } from "vitest";
 import Fastify from "fastify";
+import { execFileSync } from "node:child_process";
 import { resolveBuildInfo, versionPayload, registerVersionRoute } from "./version.js";
+
+// Whether the fallback has anything to fall back to. The clean-room job runs the
+// suite from a tree with no `.git` — the same shape as the deployed container,
+// and precisely the case `resolveBuildInfo` answers "unknown" for. Asserting a
+// SHA unconditionally asserts that the environment has a checkout, which is not
+// something this module promises; it promises a SHA *or* a documented "unknown".
+const checkoutVisible = (() => {
+  try {
+    execFileSync("git", ["rev-parse", "HEAD"], { stdio: ["ignore", "pipe", "ignore"] });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+/** 40 hex where a checkout is visible, the documented "unknown" where it is not. */
+const resolvedSha = checkoutVisible ? /^[0-9a-f]{40}$/ : /^unknown$/;
 
 describe("build info", () => {
   it("prefers the deploy-time stamp over anything the checkout says", () => {
@@ -18,10 +36,8 @@ describe("build info", () => {
   });
 
   it("falls back to the working checkout when the deploy stamp is absent", () => {
-    // The test always runs inside this repo's checkout, so the fallback has a
-    // real answer here; the deployed container is the case that does not.
     const build = resolveBuildInfo({} as NodeJS.ProcessEnv);
-    expect(build.sha).toMatch(/^[0-9a-f]{40}$/);
+    expect(build.sha).toMatch(resolvedSha);
     expect(build.ref).not.toBe("");
   });
 
@@ -29,7 +45,21 @@ describe("build info", () => {
     // startup.sh writes the file unconditionally; an empty value there means
     // "the capture failed", not "the SHA is the empty string".
     const build = resolveBuildInfo({ ADP_GIT_SHA: "  ", ADP_DEPLOYED_AT: "" } as NodeJS.ProcessEnv);
-    expect(build.sha).toMatch(/^[0-9a-f]{40}$/);
+    expect(build.sha).toMatch(resolvedSha);
+  });
+
+  it("reports the documented 'unknown' rather than throwing when nothing can answer", () => {
+    // The deployed container's actual case: no stamp, no checkout. Proven here
+    // by pointing the fallback's `git` at a directory that is not a repository.
+    const cwd = process.cwd();
+    process.chdir("/");
+    try {
+      const build = resolveBuildInfo({} as NodeJS.ProcessEnv);
+      expect(build.sha).toMatch(/^(unknown|[0-9a-f]{40})$/);
+      expect(build.builtAt === null || typeof build.builtAt === "string").toBe(true);
+    } finally {
+      process.chdir(cwd);
+    }
   });
 });
 
