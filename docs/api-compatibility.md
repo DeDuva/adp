@@ -46,6 +46,23 @@ If no, it is a major bump, regardless of how small the diff looks.
 - **The GitHub-compat plane's fidelity to GitHub.** `/api/v3` tracks what `gh` needs; where GitHub
   changes its own API, ADP follows without that counting as a major bump here.
 
+## Plane dependencies
+
+ADP serves two planes, and **the native plane is not self-sufficient**. This is deliberate —
+issues-as-intent is the design — but it is not something a consumer can infer, so it is stated
+here rather than discovered as a 422.
+
+| To do this | You must call | On which plane |
+|---|---|---|
+| Create a repository | `POST /api/v3/user/repos` | compat |
+| Obtain an `intent_id` | `POST /api/v3/repos/{owner}/{repo}/issues` — it returns the `intent_id` it minted | compat |
+| Open a run, record a trajectory, close and verify | `/api/adp/...` | native |
+
+So a client generated from `/api/adp` alone cannot reach a run: `POST /api/adp/.../runs` requires
+an `intent_id`, and nothing under `/api/adp` creates one. **The native plane is the recording hot
+path, not a complete API.** Reported by the first external consumer, which generated against the
+native plane and could not get as far as opening a run.
+
 ## For consumers
 
 Generate your client from `spec/openapi.yaml` rather than hand-writing it, and assert

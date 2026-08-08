@@ -281,7 +281,17 @@ export async function appendEvents(
         seq,
         kind: input.kind,
         type: input.type ?? "",
-        payload: (input.payload ?? null) as object,
+        // `{}` rather than null. The endpoint declares `required: [kind]`, so an
+        // event with only a kind is a legal request; sending an explicit null
+        // here made it a 500 on the not-null constraint, and a column default
+        // cannot save it because Postgres only defaults a column that is
+        // *omitted*, not one given null. See issue #63.
+        //
+        // Safe for the chain: this value is what `eventHash` commits to below,
+        // so a payload-less event hashes over `{}` and verifies over the `{}`
+        // that was stored. No existing row is affected — the not-null
+        // constraint means none of them has a null payload to re-hash.
+        payload: (input.payload ?? {}) as object,
         status: input.status ?? null,
         model: input.model ?? null,
         tokensIn: input.tokensIn ?? null,
