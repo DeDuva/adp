@@ -1503,6 +1503,15 @@ paths:
                 intent_id:
                   type: string
                   format: uuid
+                  description: >
+                    The intent this run works towards. **Nothing under `/api/adp`
+                    mints one**: intents are created as a side effect of filing an
+                    issue on the compatibility plane, and
+                    `POST /api/v3/repos/{owner}/{repo}/issues` returns the
+                    `intent_id` it created. Repositories are likewise created via
+                    `POST /api/v3/user/repos`. A client generated from the native
+                    plane alone therefore cannot open a run — see "Plane
+                    dependencies" in docs/api-compatibility.md.
                 orchestrator:
                   type: string
                 external_ref:
