@@ -128,3 +128,92 @@ describe("spec/openapi.yaml describes the API this server actually serves", () =
     expect(phantom, `documented but not served — stale spec entries:\n  ${phantom.join("\n  ")}`).toEqual([]);
   });
 });
+
+// ── Response schemas on the native plane ──────────────────────────────────
+//
+// Requests were typed by the spec and responses were not, so a generated client
+// could only ever type half the contract — and the untyped half is where a
+// consumer's bugs live. adp-replay, the first external client, was written from
+// the prose and got two of five fields of the append result wrong. See issue #64.
+//
+// This list is the debt that existed when the guard went in. It may shrink and
+// must never grow: an entry here is an operation whose response a client has to
+// guess at. Delete a line when you attach a schema; adding one needs a reason
+// better than "the test failed".
+const RESPONSE_SCHEMA_DEBT = new Set<string>([
+  "DELETE /api/adp/repos/{owner}/{repo}/workspaces/{id}",
+  "GET /api/adp/repos/{owner}/{repo}/candidate-sets",
+  "GET /api/adp/repos/{owner}/{repo}/candidate-sets/{id}",
+  "GET /api/adp/repos/{owner}/{repo}/evidence/{sha}",
+  "GET /api/adp/repos/{owner}/{repo}/operations",
+  "GET /api/adp/repos/{owner}/{repo}/operations/{id}",
+  "GET /api/adp/repos/{owner}/{repo}/runs",
+  "GET /api/adp/repos/{owner}/{repo}/runs/compare",
+  "GET /api/adp/repos/{owner}/{repo}/runs/{runId}",
+  "GET /api/adp/repos/{owner}/{repo}/runs/{runId}/evals",
+  "GET /api/adp/repos/{owner}/{repo}/runs/{runId}/stats",
+  "GET /api/adp/repos/{owner}/{repo}/runs/{runId}/trajectory",
+  "GET /api/adp/repos/{owner}/{repo}/runs/{runId}/verify",
+  "GET /api/adp/repos/{owner}/{repo}/sessions/{id}",
+  "GET /api/adp/repos/{owner}/{repo}/sessions/{id}/checkpoints",
+  "GET /api/adp/repos/{owner}/{repo}/workspaces",
+  "POST /api/adp/repos/{owner}/{repo}/candidate-sets",
+  "POST /api/adp/repos/{owner}/{repo}/candidate-sets/{id}/resolve",
+  "POST /api/adp/repos/{owner}/{repo}/candidate-sets/{id}/select",
+  "POST /api/adp/repos/{owner}/{repo}/operations/{id}/undo",
+  "POST /api/adp/repos/{owner}/{repo}/runs",
+  "POST /api/adp/repos/{owner}/{repo}/runs/{runId}/abandon",
+  "POST /api/adp/repos/{owner}/{repo}/runs/{runId}/close",
+  "POST /api/adp/repos/{owner}/{repo}/runs/{runId}/evals",
+  "POST /api/adp/repos/{owner}/{repo}/sessions",
+  "POST /api/adp/repos/{owner}/{repo}/sessions/{id}/checkpoints",
+  "POST /api/adp/repos/{owner}/{repo}/sessions/{id}/close",
+  "POST /api/adp/repos/{owner}/{repo}/sessions/{id}/resume",
+  "POST /api/adp/repos/{owner}/{repo}/workspaces",
+]);
+
+describe("native-plane responses are typed, not merely described", () => {
+  const operations: { id: string; hasSchema: boolean }[] = [];
+  for (const [path, entry] of Object.entries(spec.paths)) {
+    if (!path.startsWith("/api/adp")) continue;
+    for (const [method, op] of Object.entries(entry)) {
+      if (typeof op !== "object" || op === null) continue;
+      const responses = (op as { responses?: Record<string, { content?: unknown }> }).responses;
+      if (!responses) continue;
+      operations.push({
+        id: `${method.toUpperCase()} ${path}`,
+        hasSchema: Object.values(responses).some((r) => r && typeof r === "object" && "content" in r),
+      });
+    }
+  }
+
+  it("enumerates native-plane operations (guards against passing vacuously)", () => {
+    expect(operations.length).toBeGreaterThan(25);
+  });
+
+  it("every operation either carries a response schema or is a known, listed gap", () => {
+    const undeclared = operations
+      .filter((o) => !o.hasSchema && !RESPONSE_SCHEMA_DEBT.has(o.id))
+      .map((o) => o.id)
+      .sort();
+
+    expect(
+      undeclared,
+      "native-plane operations with no response schema and no entry in RESPONSE_SCHEMA_DEBT.\n" +
+        "Attach a schema under components/schemas — do not add these to the debt list:\n  " +
+        undeclared.join("\n  "),
+    ).toEqual([]);
+  });
+
+  it("the debt list has no stale entries", () => {
+    // A schema was attached but the line was left behind. Harmless to the
+    // contract and corrosive to the list: a debt register nobody trusts stops
+    // being read, and this one is the only thing keeping the gap from growing.
+    const ids = new Set(operations.map((o) => o.id));
+    const stale = [...RESPONSE_SCHEMA_DEBT]
+      .filter((entry) => !ids.has(entry) || operations.find((o) => o.id === entry)?.hasSchema)
+      .sort();
+
+    expect(stale, `remove from RESPONSE_SCHEMA_DEBT — these now have schemas:\n  ${stale.join("\n  ")}`).toEqual([]);
+  });
+});
