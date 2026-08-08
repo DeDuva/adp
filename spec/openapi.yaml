@@ -1474,12 +1474,29 @@ paths:
             and `accepted_through` — the highest producer_seq durably stored for
             this session, which is the mark an emitter trims its spool against
             (null when the session is untracked).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventAppendResult"
         "409":
           description: >
             The session is closed, or the batch skips the emitter's numbering.
             In the latter case the body carries `expected_next_seq`, the
             producer_seq the session is waiting for, so a spool knows where to
             replay from rather than guessing.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  expected_next_seq:
+                    type: integer
+                    description: >
+                      The producer_seq this session is waiting for. Present only
+                      on a contiguity rejection, which is the case a spool needs
+                      it for; absent when the session is simply closed.
         "422":
           description: >
             Validation failed, related_session_id is not in this repository, or
@@ -1506,6 +1523,10 @@ paths:
       responses:
         "200":
           description: Events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionTrajectory"
         "404":
           description: Not found
   /api/adp/repos/{owner}/{repo}/runs:
@@ -1890,6 +1911,106 @@ components:
       type: http
       scheme: bearer
   schemas:
+    # ── Native-plane response shapes ────────────────────────────────────────
+    #
+    # Responses were prose-only until 2026-08-08. The first external consumer
+    # generated a client from this document and got two of five fields of the
+    # append result wrong — `head` was described as "the chain head" and read as
+    # `chain_head`, and `duplicates` reads as a count in prose while it is a list
+    # of client_event_ids. Requests were typed and responses were not, so a
+    # generated client could only ever type half the contract, and the untyped
+    # half is where a consumer's bugs live. See issue #64.
+    TrajectoryEvent:
+      type: object
+      description: One event in a session's hash-chained trajectory.
+      required: [id, session_id, seq, kind, type, payload, occurred_at, hash, prev_hash, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        seq:
+          type: integer
+          description: ADP's own position in this session's chain, assigned server-side.
+        kind:
+          type: string
+          enum: [message, model_call, tool_call, handoff, commit, test_result, custom]
+        type:
+          type: string
+          description: The harness's own name within that kind. Free-form; never branched on.
+        payload:
+          type: object
+          description: >
+            Opaque to ADP, and never parsed by it. Defaults to `{}` when the
+            event carried none — the endpoint declares only `kind` as required.
+          additionalProperties: true
+        status:
+          type: string
+          nullable: true
+          enum: [success, failure, error, rejected, skipped]
+        model: { type: string, nullable: true }
+        tokens_in: { type: integer, nullable: true }
+        tokens_out: { type: integer, nullable: true }
+        cost_micro_usd: { type: integer, nullable: true }
+        duration_ms: { type: integer, nullable: true }
+        git_sha: { type: string, nullable: true }
+        related_session_id: { type: string, format: uuid, nullable: true }
+        client_event_id:
+          type: string
+          nullable: true
+          description: The emitter's own id, which makes a retried batch idempotent.
+        producer_seq: { type: integer, nullable: true }
+        producer_id: { type: string, nullable: true }
+        occurred_at: { type: string, format: date-time }
+        hash:
+          type: string
+          description: This event's chain hash, covering every field above and the previous hash.
+        prev_hash: { type: string }
+        created_at: { type: string, format: date-time }
+    EventAppendResult:
+      type: object
+      required: [session_id, appended, duplicates, count, head, accepted_through, events]
+      properties:
+        session_id: { type: string, format: uuid }
+        appended:
+          type: integer
+          description: How many events this call actually stored. A **count**.
+        duplicates:
+          type: array
+          description: >
+            **A list of `client_event_id`s, not a count** — the ids that were
+            already present and therefore skipped. Reported rather than silently
+            absorbed: an emitter re-sending a landed batch has a bug, and silence
+            would let it stay one. Note that `if duplicates:` behaves the same
+            whether this is a list or a count, so a client that assumed a count
+            breaks only when a duplicate actually occurs — during a retry, which
+            is exactly when the recorder is already in trouble.
+          items: { type: string }
+        count:
+          type: integer
+          description: The session's total event count after this append.
+        head:
+          type: string
+          description: >
+            The new chain head. **Named `head`, not `chain_head`** — this is the
+            value a checkpoint or run attestation commits to.
+        accepted_through:
+          type: integer
+          nullable: true
+          description: >
+            The highest producer_seq durably stored for this session, and the
+            mark an emitter trims its spool against. Null when the session is
+            untracked — an emitter that does not count is untracked, not
+            incomplete.
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/TrajectoryEvent" }
+    SessionTrajectory:
+      type: object
+      required: [session_id, events]
+      properties:
+        session_id: { type: string, format: uuid }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/TrajectoryEvent" }
     CreateRepoRequest:
       type: object
       required: [name]
