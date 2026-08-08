@@ -271,6 +271,7 @@ the same loop, so the "brand new machine" path stays verified rather than assume
 |---|---|
 | [`docs/agent-native-vcs-brief-v5.md`](docs/agent-native-vcs-brief-v5.md) | The thesis: the case for a neutral agent-native substrate — the GitHub interface question, the competitive landscape, architectural tradeoffs, the agent-harness boundary, and enterprise/supply-chain controls. Its appendix states the open decisions and names the evidence that would change each position. |
 | [`docs/pragmatic_mvp.md`](docs/pragmatic_mvp.md) | The plan of record: scope, the exact GitHub surface that ships, the cut list and why each cut is defensible, and the status ledger. |
+| [`docs/ecosystem.md`](docs/ecosystem.md) | Who depends on ADP and how — the four repositories, the dependency graph, and what a change here requires elsewhere. Read this before changing the wire contract. |
 | [`docs/server-stack-tutorial.md`](docs/server-stack-tutorial.md) | The server stack explained piece by piece, no prior familiarity assumed. |
 | [`docs/test-environment-automation.md`](docs/test-environment-automation.md) | How the test environment is brought up, run, and torn down reproducibly — the preflight and leak-detection tooling, the ephemeral dependency stack, and the bare-metal bootstrap. |
 

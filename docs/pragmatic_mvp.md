@@ -394,8 +394,29 @@ silent pass; see [`test-environment-automation.md`](test-environment-automation.
 | M1b′ — compat completion + hardening | **✓ done** | GraphQL mutations, the Tier-2 REST tail, all five hardening items, and the `gh` conformance gate all landed — see below |
 | M1c | **✓ done** | Real git `pre-receive`/`post-receive` hooks; `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy on both REST and GraphQL merge; native-plane (`/api/adp`) op log + `adp_undo` + history-query by path; workspaces, candidate sets, and an evidence-bundle read; a real MCP server (`server/src/mcp/`) wrapping all of it as 8 tools; a read-only supervision web UI (`server/web/`, served at `/ui/*`) — see below |
 | M2 — adoption + trust ramp | **✓ complete 2026-08-03** | Mirror mode, outbound webhook emitter, `adp` CLI, API-traffic telemetry, scanner-as-gate adapters (`wizcli`, `osv-scanner`), dependency admission v0, SBOM per land, all five scale-hygiene items, and the read-only Actions passthrough with its `workflow_run` ingest — see below. Scope revised 2026-07-26, amended 2026-08-01 per the pre-M2 readiness review ([`m2-readiness-review.md`](m2-readiness-review.md)). Dev environment built 2026-08-02 ([`infra/dev/`](../infra/dev/)); mirror-mode inbound proven against real github.com 2026-08-03, and both [`environments-plan.md`](environments-plan.md) §5 questions answered |
-| M3 — fleet + differentiation | **in progress** | Scope clarified and sequenced 2026-08-03 by the pre-M3 readiness review ([`m3-readiness-review.md`](m3-readiness-review.md)), which also found M2's first-mirror-import provenance gap and carries the executable work plan (M3-0 … M3-6) |
+| M3 — fleet + differentiation | **in progress** | Scope clarified and sequenced 2026-08-03 by the pre-M3 readiness review ([`m3-readiness-review.md`](m3-readiness-review.md)), which also found M2's first-mirror-import provenance gap and carries the executable work plan (M3-0 … M3-6). **M3-0 … M3-6 have all landed. What remains is M3-5 arms 2 and 3 — and nothing else** |
+| Runs, trajectories, eval-gated close *(capability slice, not a milestone)* | **✓ landed 2026-08-05** | PRs #58–#61. Runs above sessions; hash-chained trajectory events with an emitter-side completeness counter; named evals with latest-per-name; run `labels` set at open, immutable, and **inside the signed run predicate**; a pinnable, served API version. **This is what took the wire contract to 0.2.0.** Detail: [`trajectory-eval-slice.md`](trajectory-eval-slice.md). Driven by a downstream consumer rather than by M3's own scope — see [`ecosystem.md`](ecosystem.md) |
 | M4–M5 | not started | |
+
+**API contract version: `0.2.0`** (`server/src/api-version.ts`, served as `ADP-API-Version`
+on every response including 401s and 404s). What a bump promises is in
+[`api-compatibility.md`](api-compatibility.md).
+
+> **Addendum, 2026-08-08 — ADP has consumers now, and they move the plan.**
+>
+> Three projects build on this server: **adp-replay** (pins the wire contract and generates
+> its client from `spec/openapi.yaml`), **squad-lab** (an A/B test is one intent and N runs),
+> and **duva-bench** (both of its tracks). The runs/trajectory/eval slice above exists
+> because squad-lab needed it, not because M3 called for it.
+>
+> That is a reasonable way to build — a substrate should be shaped by its first real users.
+> But it means **the milestone ledger alone no longer describes what ADP does**, which is why
+> the slice now has a row here rather than living only in its own document. Anything that
+> ships to serve a consumer gets a row, milestone or not.
+>
+> The dependency graph, and what a change here requires elsewhere, is
+> [`ecosystem.md`](ecosystem.md). Three contract defects those consumers reported are open as
+> issues #63, #64 and #65.
 
 ### M0 — Spec + walking skeleton (weeks 1–2) — ✓ done
 `spec/openapi.yaml` + JSON Schemas (change, evidence, provenance, operation). Server boots, Postgres

@@ -1,7 +1,15 @@
 # Runs, trajectories, and eval-gated close
 
 **Written:** 2026-08-04. Amends `docs/pragmatic_mvp.md` — this is a capability
-slice, not a milestone; it does not move the M-ledger on its own.
+slice, not a milestone, and it does not advance M3 or open M4.
+
+**Updated 2026-08-08:** it *is* now recorded in the status ledger, as its own row
+marked "capability slice, not a milestone". The original wording — that it does
+not move the ledger — was read as "it does not appear in the ledger", and the
+result was that the change which took the wire contract from **0.1.0 to 0.2.0**
+was invisible to the plan of record. A reader of `pragmatic_mvp.md` could not
+tell what ADP does. Not being a milestone is a reason to label a row honestly,
+not a reason to omit one.
 
 ## 1. The capability, stated once
 

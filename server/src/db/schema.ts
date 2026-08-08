@@ -372,7 +372,11 @@ export const sessionEvents = pgTable(
     // The harness's own name for the event within that kind (a tool name, a
     // message role, an orchestrator event id). Free-form; never branched on.
     type: text("type").notNull().default(""),
-    payload: jsonb("payload").notNull(),
+    // Defaulted, not merely non-null: the events endpoint declares
+    // `required: [kind]`, so an event with only a kind is a legal request and
+    // must not become a 500 the recorder cannot classify or retry. `{}` is what
+    // a payload-less event means. See issue #63.
+    payload: jsonb("payload").notNull().default({}),
     // Outcome, for the kinds that have one (tool_call, test_result, model_call).
     // Null where the notion doesn't apply — a `message` neither succeeds nor fails.
     status: text("status", { enum: ["success", "failure", "error", "rejected", "skipped"] }),

@@ -9,12 +9,13 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { and, eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
-import { identities, operations, checkpoints as checkpointsTable } from "../src/db/schema.js";
+import { identities, operations, checkpoints as checkpointsTable, sessionEvents } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
 import { findRepo } from "../src/core/repos-lookup.js";
+import { verifyChain } from "../src/core/trajectory.js";
 import { verifyEnvelope, decodeStatement, type DsseEnvelope } from "../src/core/dsse.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
@@ -350,5 +351,40 @@ describe.skipIf(skipWithoutDb)("M3: cross-harness checkpoint and resume (D2)", (
       .from(checkpointsTable)
       .where(and(eq(checkpointsTable.sessionId, started.body.id as string)));
     expect(row).toBeUndefined();
+  }, 60_000);
+
+  it("accepts an event carrying only a kind, which is the minimum the contract declares legal", async () => {
+    // The events endpoint declares `required: [kind]`, so this is a legal
+    // request. `payload` was NOT NULL with no default and the insert sent an
+    // explicit null, so it returned 500 — a recorder could take its own run
+    // down by emitting something the spec permits. Reported by adp-replay
+    // against contract 0.1.0; issue #63.
+    //
+    // Note a column default alone cannot fix this: Postgres defaults a column
+    // that is *omitted*, not one handed an explicit null. The insert had to
+    // stop sending null.
+    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code" }),
+    });
+    const sessionId = started.body.id as string;
+
+    const res = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/events`, {
+      method: "POST",
+      body: JSON.stringify({ events: [{ kind: "message", client_event_id: "evt-no-payload" }] }),
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.appended).toBe(1);
+
+    // Stored as `{}` rather than null, and the chain still verifies: the hash
+    // commits to the same `{}` that was written.
+    const rows = await db
+      .select()
+      .from(sessionEvents)
+      .where(and(eq(sessionEvents.sessionId, sessionId), eq(sessionEvents.clientEventId, "evt-no-payload")));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.payload).toEqual({});
+
+    expect((await verifyChain(db, sessionId)).ok).toBe(true);
   }, 60_000);
 });
