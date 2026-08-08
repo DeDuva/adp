@@ -416,6 +416,36 @@ paths:
       responses:
         "200":
           description: Prometheus exposition format
+  /version:
+    get:
+      summary: >
+        What commit this process is running, captured at deploy time rather
+        than read per request. Unauthenticated for the same reason as the
+        probes and /metrics. `builtAt` is null when the deploy left no stamp.
+      responses:
+        "200":
+          description: Build and process identity
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sha, ref, startedAt, uptimeSeconds]
+                properties:
+                  sha:
+                    type: string
+                    example: 60be968f0a4a2a4f5f7c0f9e1d2c3b4a5968ab01
+                  ref:
+                    type: string
+                    example: main
+                  builtAt:
+                    type: string
+                    nullable: true
+                    format: date-time
+                  startedAt:
+                    type: string
+                    format: date-time
+                  uptimeSeconds:
+                    type: integer
   /api/v3/:
     get:
       summary: >

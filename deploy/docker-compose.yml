@@ -34,6 +34,12 @@ services:
       PORT: ${PORT}
       GIT_MAX_PACK_BYTES: ${GIT_MAX_PACK_BYTES}
       LAND_POLICY_FLOOR: ${LAND_POLICY_FLOOR}
+      # Deploy-time build stamp, served by GET /version. Optional by design —
+      # `:-` so a hand-written .env without them does not make compose warn,
+      # and the server falls back to the checkout it was built from.
+      ADP_GIT_SHA: ${ADP_GIT_SHA:-}
+      ADP_GIT_REF: ${ADP_GIT_REF:-}
+      ADP_DEPLOYED_AT: ${ADP_DEPLOYED_AT:-}
     volumes:
       - git_data:/data/git
     command: sh -c "node dist/db/migrate.js && node dist/main.js"

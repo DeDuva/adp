@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor clean-check up down down-all nuke deps test test-unit test-all conformance acceptance acceptance-ui browser browser-deps web cli adapters bench
+.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all conformance acceptance acceptance-ui browser browser-deps web cli adapters bench
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -36,6 +36,9 @@ bootstrap: ## Provision a bare Debian/Ubuntu machine to run the suite (needs roo
 
 doctor: ## Preflight: is this machine able to run the suite?
 	@bash scripts/dev/doctor.sh
+
+env-status: ## Report the health of the adp-dev environment
+	@bash scripts/dev/env-status.sh $(ARGS)
 
 clean-check: ## Assert no state leaked from a previous run
 	@bash scripts/dev/verify-clean.sh

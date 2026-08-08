@@ -92,7 +92,15 @@ done
 #
 # The Postgres password is hex (bootstrap.sh uses `openssl rand -hex`), so it
 # needs no percent-encoding inside DATABASE_URL.
+#
+# ADP_GIT_SHA is captured here, at the one moment this script knows what it
+# just deployed, and served back by GET /version. Reading it per request would
+# be answering from a checkout the container cannot see and the host may have
+# moved past on the next boot.
 echo "--- writing deploy/.env ---"
+DEPLOYED_SHA="$(git -C "$${REPO_DIR}" rev-parse HEAD)"
+DEPLOYED_AT="$(date -Is)"
+echo "deploying $${GIT_REF} at $${DEPLOYED_SHA}"
 umask 077
 cat > "$${REPO_DIR}/deploy/.env" <<EOF
 POSTGRES_USER=adp
@@ -106,6 +114,9 @@ PUBLIC_URL=https://$${HOSTNAME_FQDN}
 PORT=3000
 GIT_MAX_PACK_BYTES=524288000
 LAND_POLICY_FLOOR=gates_green,one_approval
+ADP_GIT_SHA=$${DEPLOYED_SHA}
+ADP_GIT_REF=$${GIT_REF}
+ADP_DEPLOYED_AT=$${DEPLOYED_AT}
 EOF
 chmod 600 "$${REPO_DIR}/deploy/.env"
 

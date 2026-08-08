@@ -27,6 +27,19 @@ ADP_NODE_MAJOR="22"
 # production-shaped `deploy` compose project.
 ADP_TEST_PROJECT_PREFIX="adp-test"
 
+# The GCP dev environment (infra/dev/). These are the resource names Terraform
+# creates, not defaults anyone is free to change locally — env-status.sh has to
+# agree with infra/dev/*.tf or it reports on the wrong box. Everything that is
+# genuinely per-deployment (project, zone, hostname, retirement date) is read
+# from infra/dev/terraform.tfvars instead, which is gitignored.
+ADP_DEV_INSTANCE="adp-dev"
+ADP_DEV_ADDRESS="adp-dev-ip"
+ADP_DEV_START_JOB="adp-dev-start"
+ADP_DEV_STOP_JOB="adp-dev-stop"
+# Matches variables.tf's defaults; terraform.tfvars may override the zone.
+ADP_DEV_DEFAULT_ZONE="us-central1-a"
+ADP_DEV_DEFAULT_REGION="us-central1"
+
 # Host ports the stack wants. Used for conflict *reporting* only — Phase 1 moves
 # the test stack onto discovered ephemeral ports so conflicts stop mattering.
 ADP_SERVER_PORT="${PORT:-3000}"

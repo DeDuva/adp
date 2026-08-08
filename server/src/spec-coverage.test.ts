@@ -122,7 +122,7 @@ describe("spec/openapi.yaml describes the API this server actually serves", () =
     );
     // Process-level endpoints main.ts registers directly rather than through
     // the route table: liveness, readiness, and the metrics scrape.
-    for (const p of ["/healthz", "/readyz", "/metrics"]) servedPaths.add(p);
+    for (const p of ["/healthz", "/readyz", "/metrics", "/version"]) servedPaths.add(p);
 
     const phantom = [...documented].filter((p) => !servedPaths.has(p)).sort();
     expect(phantom, `documented but not served — stale spec entries:\n  ${phantom.join("\n  ")}`).toEqual([]);
