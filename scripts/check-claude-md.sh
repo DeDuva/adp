@@ -39,6 +39,13 @@ for ref in $refs; do
 	# path in a sibling project, not a claim about this one.
 	printf '%s\n' "$toplevel" | grep -qxF "${ref%%/*}" || continue
 
+	# A deliberately ignored path — .claude/settings.local.json, .env.test — is a real
+	# reference that is simply never tracked. Requiring it to exist would make the file
+	# unable to describe its own ignore rules.
+	if git check-ignore -q "$ref"; then
+		continue
+	fi
+
 	clean=${ref%/}
 	if printf '%s\n' "$tracked" |
 		awk -v p="$clean" '$0 == p || index($0, p "/") == 1 { found = 1; exit } END { exit !found }'; then
