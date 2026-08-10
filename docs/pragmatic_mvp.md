@@ -906,7 +906,7 @@ session checkpointed under one harness identifier and resumed under another yiel
 lineage-linked history in a single op-log query; a gate that fails intermittently is quarantined
 visibly rather than blocking or silently passing.
 
-### M4 — Multi-tenant hosted preview (weeks 21–26)
+### M4 — Multi-tenant hosted preview (weeks 21–26) *(sequenced 2026-08-10 per [`m4-readiness-review.md`](m4-readiness-review.md), which carries the executable work plan and names three decisions this plan does not make)*
 Org/user model, OIDC login, scoped tokens, quotas and GC. Managed Postgres + object store.
 The instance policy floor generalizes to the org policy plane (org ∧ repo resolution, policy
 changes as signed reviewable changes, fleet kill switch) and the named procurement checklist
