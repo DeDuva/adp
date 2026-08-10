@@ -16,15 +16,23 @@ orientation; the readiness reviews (`docs/m2-readiness-review.md`,
 All work lands on `main` through a pull request — including one-line and docs-only
 changes. Commit messages and PR bodies carry no AI attribution.
 
+**Do not regenerate this file with `/init`.** Most of what follows was learned by getting
+it wrong, and a codebase scan cannot see any of it. Edit it by hand; `make check` fails if
+a path named here stops existing.
+
 ## Layout
 
 | Path | What lives there |
 |---|---|
-| `server/` | the Fastify server; `src/` code + colocated unit tests, `test/` integration + e2e, `acceptance/` Playwright, `conformance/` the real-`gh` gate, `drizzle/` migrations, `web/` the supervision UI |
+| `server/src/` | the Fastify server, with unit tests colocated beside the code |
+| `server/test/` | integration and e2e tiers (vitest) |
+| `server/acceptance/` | the §2.1 walkthrough, driven by Playwright |
+| `server/conformance/` | the real-`gh` gate |
+| `server/drizzle/`, `server/web/` | migrations; the supervision UI |
 | `cli/` | the `adp` CLI (no database needed to test) |
 | `adapters/` | scanner-as-gate adapters (osv-scanner, wizcli) |
 | `bench/` | benchmark arms, runs, and the generated report |
-| `spec/` | the published contract: `openapi.yaml`, `schemas/*.json`, `graphql/github.graphql` |
+| `spec/` | the published contract: `spec/openapi.yaml`, `spec/schemas/`, `spec/graphql/github.graphql` |
 | `scripts/dev/` | what the Makefile actually runs — `up`, `down`, `doctor`, `verify-clean` |
 | `deploy/`, `infra/` | production compose stack; Terraform for the GCP dev box |
 
@@ -37,13 +45,21 @@ The Makefile is the entry point — `make help` lists everything. The loop is:
 ```bash
 make doctor     # preflight: toolchain, docker, ports, stale containers
 make up         # throwaway Postgres on a random port, writes .env.test
-make test-all   # what CI runs: build, full suite, web, cli, adapters, conformance, acceptance
+make check      # the gate: everything CI runs, plus this file's paths
 make down       # tear down AND assert nothing leaked
 ```
+
+**`make check` is the gate in every repo in this line of work** — reach for it first and
+don't go hunting for the per-repo incantation. Here it is `make test-all` (build, full
+suite, web, cli, adapters, conformance, acceptance) preceded by the CLAUDE.md path check.
 
 `make test-unit` runs the unit + integration tiers with no database. `make test` is the
 full suite with e2e enforced. `make down-all` and `bash scripts/dev/verify-clean.sh --fix`
 are the recovery paths when a previous run left something behind.
+
+`.claude/settings.json` is checked in and holds the shared permission allowlist — the
+Makefile targets above, plus read-only `gh`. Everything else still prompts. Personal
+overrides belong in `.claude/settings.local.json`, which is ignored.
 
 ## Invariants — don't "fix" these without reading why
 
@@ -80,7 +96,9 @@ are the recovery paths when a previous run left something behind.
 - **`tools/win/Run-CleanTest.ps1` is a local validation tool, not a gate.** It answers
   "does this work from nothing?" on demand, needs a Windows host, and takes ~16 minutes.
   Do not wire it into CI; `clean-room.yml` already catches most of that class per push.
-- `.claude/` is gitignored — agent worktrees and scratch stay out of the tree.
+- `.claude/` is ignored by contents (`.claude/*`) with `.claude/settings.json` re-included,
+  so agent worktrees and scratch stay out of the tree while the shared allowlist is
+  versioned. Ignoring the directory itself would make that negation silently do nothing.
 - Building the test environment found 19 bugs, 12 pre-existing, and the most valuable
   ones were invisible in containers: a dangling Docker Desktop symlink, a missing compose
   plugin, `sudo` rewriting `$USER`. A container is a clean machine; a laptop is a dirty

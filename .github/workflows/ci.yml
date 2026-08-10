@@ -144,3 +144,13 @@ jobs:
       # drives bench/lib/merge-contention.mjs directly rather than a copy.
       - run: npm run report
       - run: git diff --exit-code report/
+
+  # CLAUDE.md names the file that carries each invariant. A rename turns that from
+  # guidance into a wrong map without anything failing, so this asserts the paths still
+  # resolve. Deliberately its own job: it costs seconds and should report independently
+  # of whether the suite is red.
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make check-docs
