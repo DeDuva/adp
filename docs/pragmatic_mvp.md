@@ -379,44 +379,21 @@ that is the honest price of zero-config.
 
 ## Status ledger
 
-*Updated 2026-08-01. CI runs typecheck, build, migrations, the full three-tier test suite (114
-tests, including all e2e suites), the `gh` conformance gate (`conformance/run.sh`), and the §2.1
-acceptance walkthrough (`acceptance/run.sh`, plus the web UI in a real browser) on every PR — the
-last two in a separate clean-room workflow that provisions a bare container from scratch and
-asserts the machine is clean afterwards. A skipped e2e tier is now a hard failure rather than a
-silent pass; see [`test-environment-automation.md`](test-environment-automation.md).*
-
-| Milestone | Status | Evidence |
-|---|---|---|
-| M0 — walking skeleton | **✓ complete** | PR #1. CI e2e: mint token → create repo → `git clone` → `git push` → commit lands |
-| M1a — domain + REST core loop | **✓ core complete** | PRs #2–#3. e2e: issue→intent → comment → signed change → proposal → typed review → ff-merge → 409 on non-ff. Tier-2 tail now done (see M1b′) |
-| M1b — GraphQL + `gh` | **✓ gate met** | PR #4 (read) + the M1b′ mutation slice. GitHub's real SDL loaded unmodified; `conformance/run.sh` drives a real, unmodified, pinned `gh` v2.63.0 through `issue create/view`, `pr create/view/merge` against the live server — the definition-of-done §2.1 gate, enforced in CI on every PR |
-| M1b′ — compat completion + hardening | **✓ done** | GraphQL mutations, the Tier-2 REST tail, all five hardening items, and the `gh` conformance gate all landed — see below |
-| M1c | **✓ done** | Real git `pre-receive`/`post-receive` hooks; `adp.yaml` gate runner with DSSE-signed evidence bundles; two-level land policy on both REST and GraphQL merge; native-plane (`/api/adp`) op log + `adp_undo` + history-query by path; workspaces, candidate sets, and an evidence-bundle read; a real MCP server (`server/src/mcp/`) wrapping all of it as 8 tools; a read-only supervision web UI (`server/web/`, served at `/ui/*`) — see below |
-| M2 — adoption + trust ramp | **✓ complete 2026-08-03** | Mirror mode, outbound webhook emitter, `adp` CLI, API-traffic telemetry, scanner-as-gate adapters (`wizcli`, `osv-scanner`), dependency admission v0, SBOM per land, all five scale-hygiene items, and the read-only Actions passthrough with its `workflow_run` ingest — see below. Scope revised 2026-07-26, amended 2026-08-01 per the pre-M2 readiness review ([`m2-readiness-review.md`](m2-readiness-review.md)). Dev environment built 2026-08-02 ([`infra/dev/`](../infra/dev/)); mirror-mode inbound proven against real github.com 2026-08-03, and both [`environments-plan.md`](environments-plan.md) §5 questions answered |
-| M3 — fleet + differentiation | **in progress** | Scope clarified and sequenced 2026-08-03 by the pre-M3 readiness review ([`m3-readiness-review.md`](m3-readiness-review.md)), which also found M2's first-mirror-import provenance gap and carries the executable work plan (M3-0 … M3-6). **M3-0 … M3-6 have all landed. What remains is M3-5 arms 2 and 3 — and nothing else** |
-| Runs, trajectories, eval-gated close *(capability slice, not a milestone)* | **✓ landed 2026-08-05** | PRs #58–#61. Runs above sessions; hash-chained trajectory events with an emitter-side completeness counter; named evals with latest-per-name; run `labels` set at open, immutable, and **inside the signed run predicate**; a pinnable, served API version. **This is what took the wire contract to 0.2.0.** Detail: [`trajectory-eval-slice.md`](trajectory-eval-slice.md). Driven by a downstream consumer rather than by M3's own scope — see [`ecosystem.md`](ecosystem.md) |
-| M4–M5 | not started | |
-
-**API contract version: `0.2.0`** (`server/src/api-version.ts`, served as `ADP-API-Version`
-on every response including 401s and 404s). What a bump promises is in
-[`api-compatibility.md`](api-compatibility.md).
-
-> **Addendum, 2026-08-08 — ADP has consumers now, and they move the plan.**
+> **Moved 2026-08-09.** The authoritative milestone ledger — current status, API
+> contract version, blockers, and open decisions — is [`/ROADMAP.md`](../ROADMAP.md),
+> updated in the same PR as any status change, per the planning convention shared by
+> every repo in this line of work. The milestone sections below remain the detailed
+> narrative record of what each milestone shipped and why; ROADMAP.md says where the
+> project *is*, this document says what each milestone *was* and decides scope.
 >
-> Three projects build on this server: **adp-replay** (pins the wire contract and generates
-> its client from `spec/openapi.yaml`), **squad-lab** (an A/B test is one intent and N runs),
-> and **duva-bench** (both of its tracks). The runs/trajectory/eval slice above exists
-> because squad-lab needed it, not because M3 called for it.
->
-> That is a reasonable way to build — a substrate should be shaped by its first real users.
-> But it means **the milestone ledger alone no longer describes what ADP does**, which is why
-> the slice now has a row here rather than living only in its own document. Anything that
-> ships to serve a consumer gets a row, milestone or not.
->
-> The dependency graph, and what a change here requires elsewhere, is
-> [`ecosystem.md`](ecosystem.md). Three contract defects those consumers reported are open as
-> issues #63, #64 and #65.
+> Context that used to live here and still holds: CI runs typecheck, build, migrations,
+> the full three-tier suite, the `gh` conformance gate (`conformance/run.sh`), and the
+> §2.1 acceptance walkthrough (`acceptance/run.sh`) on every PR, with skipped e2e tiers
+> a hard failure ([`test-environment-automation.md`](test-environment-automation.md)).
+> ADP has downstream consumers now — adp-replay, squad-lab, duva-bench — whose
+> requirements have driven work outside the milestone plan (the 0.2.0 capability slice
+> exists because squad-lab needed it); anything that ships to serve a consumer gets a
+> ledger row, milestone or not. The dependency graph is [`ecosystem.md`](ecosystem.md).
 
 ### M0 — Spec + walking skeleton (weeks 1–2) — ✓ done
 `spec/openapi.yaml` + JSON Schemas (change, evidence, provenance, operation). Server boots, Postgres

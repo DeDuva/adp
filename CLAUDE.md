@@ -7,9 +7,15 @@ transaction binding **intent → diff → evidence → provenance**. The native 
 undo, evidence bundles, workspaces. TypeScript · Fastify · PostgreSQL · the real `git`
 binary for all plumbing.
 
-`docs/adp-prototype-implementation-plan.md` is the plan of record. `README.md` is
-orientation; the readiness reviews (`docs/m2-readiness-review.md`,
-`docs/m3-readiness-review.md`) record what was actually verified at each milestone.
+## Where the plans live
+
+- **`ROADMAP.md`** — the single status ledger: milestone states, API contract version,
+  blockers, open decisions. A PR that changes milestone status updates it in the same PR.
+- **`docs/pragmatic_mvp.md`** — the plan of record; it decides scope. (It superseded
+  `docs/adp-prototype-implementation-plan.md`, the original 24-week prototype proposal,
+  which is kept as history.)
+- The readiness reviews (`docs/m2-readiness-review.md`, `docs/m3-readiness-review.md`)
+  record what was actually verified at each milestone; `README.md` is orientation.
 
 ## Process
 
