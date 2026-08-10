@@ -14,11 +14,44 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
+// M4-0 (docs/m4-readiness-review.md §4): the tenancy boundary every other M4
+// item hangs off — scoped tokens, the org policy plane, quotas, audit export.
+// `name` is unique because the backfill migration (drizzle/0018) synthesizes
+// one org per distinct pre-M4 `repos.owner` string, and that mapping has to
+// stay one-to-one for the backfill to be idempotent.
+export const orgs = pgTable("orgs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Membership is the only source of "is this identity in this org" — no role
+// duplicated onto identities or tokens. `role` is deliberately two values
+// rather than a permissions bitmask: nothing in M4's own scope (org-scoped
+// tokens, the org policy plane) needs finer granularity yet, and an enum can
+// grow later without a shape change.
+export const orgMemberships = pgTable(
+  "org_memberships",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull().references(() => orgs.id),
+    identityId: uuid("identity_id").notNull().references(() => identities.id),
+    role: text("role", { enum: ["member", "admin"] }).notNull().default("member"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique().on(table.orgId, table.identityId)],
+);
+
 export const repos = pgTable("repos", {
   id: uuid("id").primaryKey().defaultRandom(),
   owner: text("owner").notNull(),
   name: text("name").notNull(),
   defaultBranch: text("default_branch").notNull().default("main"),
+  // Nullable on purpose (M4-0): a pre-M4 repo keeps working with no org until
+  // the backfill migration assigns one per its `owner` string — `owner` stays
+  // the compat-plane URL identifier either way (`/api/v3/repos/{owner}/...`),
+  // this is the new relational backing underneath it, not a replacement for it.
+  orgId: uuid("org_id").references(() => orgs.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
