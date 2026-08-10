@@ -889,10 +889,12 @@ relayed for mirrors marked disabled.
   winner with the evidence that decided against them — a view showing only the winner would make a
   50-way fan-out indistinguishable from a single proposal, which is the thing GitHub cannot express.
 
-Outstanding: **M3-5 arms 2 and 3** — the agent-backed three-way cost comparison and the
-fan-out-vs-serial arm. Both need a real agent burning real tokens, and arm 2 additionally needs a
-real GitHub repo and PAT, so they run out of band rather than in CI. The benchmark is published with
-arm 1 complete and these two reported as not run.
+**M3-5 arms 2 and 3 — landed 2026-08-10.** The agent-backed three-way cost comparison and the
+fan-out-vs-serial arm. Both needed a real agent burning real tokens, and arm 2 additionally needed a
+real GitHub repo and PAT, so they ran out of band rather than in CI. The benchmark is now published
+with all three arms: arm 1 (deterministic, CI-enforced), arm 2 (pilot scale, 12 trials —
+[`bench/report/three-way-cost.md`](../bench/report/three-way-cost.md)), and arm 3 (squad's
+duva-bench track — [squad PR #119](https://github.com/DeDuva/squad/pull/119)).
 
 **Exit:** D1 and D2 from the prototype doc are demonstrable; benchmark published with methodology.
 Added 2026-08-03: a repo mirrored in from GitHub with a >500-commit history has a signed change per

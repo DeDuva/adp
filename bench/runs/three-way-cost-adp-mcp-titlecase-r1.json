@@ -1,0 +1,62 @@
+{
+  "recordedAt": "2026-08-10T16:07:17.584Z",
+  "arm": "three-way-cost",
+  "deterministic": false,
+  "method": "adp-mcp",
+  "taskId": "titlecase",
+  "rep": 1,
+  "runId": "4ac1e6",
+  "environment": {
+    "node": "v24.18.0",
+    "platform": "linux/x64",
+    "model": "claude-haiku-4-5",
+    "adpUrl": "http://127.0.0.1:8793",
+    "target": {
+      "owner": "duvabench",
+      "repo": "arm2-mcp-titlecase-r1-4ac1e6",
+      "issueRef": "http://127.0.0.1:8793/repos/duvabench/arm2-mcp-titlecase-r1-4ac1e6#1"
+    }
+  },
+  "measurement": {
+    "wallClockMs": 215136,
+    "totalCostUsd": 0.17537070000000002,
+    "usage": {
+      "input_tokens": 134,
+      "cache_creation_input_tokens": 50347,
+      "cache_read_input_tokens": 483937,
+      "output_tokens": 4927,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 50347,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 10,
+          "output_tokens": 405,
+          "cache_read_input_tokens": 30254,
+          "cache_creation_input_tokens": 560,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 560
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "numTurns": 20,
+    "toolCalls": 19,
+    "toolErrors": 2,
+    "permissionDenials": 0,
+    "isError": false,
+    "terminalReason": "completed",
+    "landed": true,
+    "processExitCode": 0
+  }
+}
