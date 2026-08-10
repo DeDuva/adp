@@ -429,14 +429,16 @@ with the rest of the supervision UI. Covered by the acceptance run's UI tier.
 
 ---
 
-## 4a. Status (updated 2026-08-03)
+## 4a. Status (updated 2026-08-10 — M3 complete)
 
-M3-0 through M3-4, M3-5's arm 1, and M3-6 have landed; see the M3 section of the plan of record for
-the per-item detail. What is outstanding is called out here rather than left to be inferred:
-**M3-5 arms 2 and 3**, the agent-backed cost comparison and fan-out-vs-serial arms, which need a
-real agent and (for arm 2) a real GitHub PAT and therefore run out of band. Until they run, the
-benchmark is published with one arm complete and the other two reported as not run — which is the
-contract in §4's M3-5, not a shortfall against it.
+M3-0 through M3-6 have all landed; see the M3 section of the plan of record for the per-item detail.
+All three M3-5 benchmark arms are published: arm 1 (merge contention — deterministic, CI-enforced),
+arm 2 (three-way cost comparison — pilot scale, 12 trials,
+[`bench/report/three-way-cost.md`](../bench/report/three-way-cost.md)), and arm 3 (fan-out vs
+serial — run in squad's duva-bench track, [squad PR #119](https://github.com/DeDuva/squad/pull/119)).
+Arms 2 and 3 needed a real agent and (for arm 2) a real GitHub PAT and so ran out of band from CI,
+per the contract this section originally set: publish whichever way the numbers point, and report an
+unrun arm as not run rather than omit it. Neither arm was omitted or approximated.
 
 One finding worth recording from running arm 1, because it was not predicted: total attempts track
 **N(N+1)/2 exactly** at every N measured. Writer *k* retries *k* times, so work grows quadratically

@@ -56,12 +56,23 @@ here rather than discovered as a 422.
 |---|---|---|
 | Create a repository | `POST /api/v3/user/repos` | compat |
 | Obtain an `intent_id` | `POST /api/v3/repos/{owner}/{repo}/issues` — it returns the `intent_id` it minted | compat |
+| Open a candidate set | `adp_candidates_open` (MCP) / `POST .../candidate-sets` | native |
+| **Open the proposal a candidate set resolves** | `POST /api/v3/repos/{owner}/{repo}/pulls`, with `candidate_set_id` in the body | compat |
 | Open a run, record a trajectory, close and verify | `/api/adp/...` | native |
 
 So a client generated from `/api/adp` alone cannot reach a run: `POST /api/adp/.../runs` requires
 an `intent_id`, and nothing under `/api/adp` creates one. **The native plane is the recording hot
 path, not a complete API.** Reported by the first external consumer, which generated against the
 native plane and could not get as far as opening a run.
+
+The candidate-set row is the same pattern one level up the fan-out lifecycle: `adp_candidates_open`
+(MCP) mints a `candidate_set_id`, and `adp_candidates_resolve`/`adp_candidates_select` (MCP) land or
+choose among candidates already in it — but nothing under `/api/adp` or its ~8-tool MCP surface
+opens the *proposal* a candidate joins the set as. That is `POST /api/v3/repos/{owner}/{repo}/pulls`
+on the compat plane, same as an ordinary PR, with `candidate_set_id` set in the body. Confirmed
+2026-08-10 running M3-5 arm 2's `adp-mcp` method (`bench/report/three-way-cost.md`): an agent given
+only native-plane MCP tools plus `git` cannot complete a fan-out end to end without one compat-plane
+REST call for exactly this step.
 
 ## For consumers
 

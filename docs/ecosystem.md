@@ -89,11 +89,17 @@ uninterpretable.
 - squad track bridge: `squad/packages/duva-bench/tools/paired_stats.py`, invoked from
   `src/stats-bridge.ts`
 
-> **Watch out.** That bridge currently reaches into a *working copy* —
-> `sys.path.insert(0, ~/dev/adp-replay/src)` and an interpreter at
-> `~/dev/adp-replay/.venv/bin/python`. No CI can run it, no one else can reproduce a
-> published number, and the study digest does not cover the version of the statistics
-> code that produced the result.
+> **Fixed 2026-08-08, verified 2026-08-10.** This bridge used to reach into a *working
+> copy* (`sys.path.insert(0, ~/dev/adp-replay/src)`, an interpreter at
+> `~/dev/adp-replay/.venv/bin/python`) — no CI could run it, no one else could reproduce
+> a published number. It is now installed as a real dependency, pinned by commit in
+> `packages/duva-bench/requirements-stats.txt`, built into its own venv by
+> `scripts/setup-stats.sh` (uv-managed Python where the system interpreter can't build a
+> venv). `study.statsVersion` records the resolved commit. **Trap to watch for
+> instead:** that venv is machine-local and gitignored, so a stale or half-built one
+> (missing `pyvenv.cfg`) silently reads as "just run `setup-stats.sh` again," not as a
+> report-generation failure worth investigating further — confirmed by a real instance
+> of exactly that on 2026-08-10, `--force` rebuild fixed it.
 
 ### duva-bench squad track ↔ Harbor track
 
@@ -104,9 +110,12 @@ in-distribution infrastructure, so they must stay comparable:
 - run labels `platform: squad` / `platform: harbor`
 - the shared statistics library above, so a divergence cannot be a difference in method
 
-> **Status.** The Harbor track is **deliberately paused** — its dependencies could not be
-> configured from a remote session. It is not abandoned. The squad track has run a live
-> pilot. No shared cells exist yet, which is why the cross-track gate cannot be claimed.
+> **Status (updated 2026-08-10).** The Harbor track's pause was **lifted 2026-08-08** — an
+> end-to-end probe ran there, clearing the dependency-configuration blocker. The squad
+> track has run a live pilot (`a-tool-familiarity-pilot`) and, separately, M3-5's arm 3
+> (squad PR #119). No shared cells exist yet — that needs the Harbor track reaching its
+> own M8 with a shared task set — so the cross-track gate (squad's SG3b) is still
+> deferred, not paused and not failed.
 
 ---
 
@@ -128,7 +137,7 @@ in-distribution infrastructure, so they must stay comparable:
 
 | Project | Plan |
 |---|---|
-| adp | [`docs/pragmatic_mvp.md`](pragmatic_mvp.md) — scope, cut list, status ledger |
+| adp | [`/ROADMAP.md`](../ROADMAP.md) — status ledger; [`docs/pragmatic_mvp.md`](pragmatic_mvp.md) — scope, cut list, per-milestone narrative |
 | adp | [`docs/trajectory-eval-slice.md`](trajectory-eval-slice.md) — runs, trajectories, eval-gated close |
 | adp-replay | `adp-replay/docs/execution-plan.md` |
 | squad-lab | the milestone reports `m0`–`m14`, in **duva-lab-tpm** (private) |
@@ -137,6 +146,7 @@ in-distribution infrastructure, so they must stay comparable:
 
 Cross-project findings, and the open backlog they generated, live in **duva-lab-tpm**'s
 `portfolio-audit-2026-08-08.md`. The contract defects that document reports against this
-repo are filed as issues [#63](https://github.com/DeDuva/adp/issues/63),
-[#64](https://github.com/DeDuva/adp/issues/64) and
-[#65](https://github.com/DeDuva/adp/issues/65).
+repo are filed as issues [#63](https://github.com/DeDuva/adp/issues/63) (closed) and
+[#65](https://github.com/DeDuva/adp/issues/65) (closed — became `docs/api-compatibility.md`'s
+"Plane dependencies" section). [#64](https://github.com/DeDuva/adp/issues/64) — native-plane
+response schemas — is still open; see `ROADMAP.md`'s Blockers.

@@ -862,7 +862,7 @@ rather than leftover tidying. Two minor M2 defects ride along: webhook CRUD neve
 operation log (M4's audit-log export is a projection of that table), and the Actions passthrough
 relayed for mirrors marked disabled.
 
-**Progress (2026-08-03).** Landed so far:
+**Landed (M3 complete 2026-08-10):**
 - **M3-0 — M2 debt paid — ✓ landed.** First-import provenance (`core/change-recorder.ts` now walks
   the full history on a new ref and lets dedup decide where to stop); webhook CRUD writes to the
   operation log; the Actions passthrough honours a disabled mirror.
@@ -884,17 +884,20 @@ relayed for mirrors marked disabled.
   First first-party measurement of the merge-bottleneck thesis: total attempts track N(N+1)/2
   exactly at N = 2, 4, 8, 16 — quadratic work for linear lands, with conflict rate converging on
   (N−1)/(N+1). See [`bench/report/merge-contention.md`](../bench/report/merge-contention.md).
+- **M3-5 arm 2 — three-way cost comparison — ✓ landed and run 2026-08-10.** Agent-backed (the
+  `claude` CLI, non-interactively), pilot scale (12 trials, $1.25 total spend): GitHub+`gh` costs
+  about the same as ADP-via-`gh` — the MVP's own success criterion showing up as a number — while
+  ADP-MCP costs ~1.7x more, traced to the native MCP surface having no proposal-open tool rather
+  than to anything inherent in the plane itself. See
+  [`bench/report/three-way-cost.md`](../bench/report/three-way-cost.md).
+- **M3-5 arm 3 — fan-out vs serial — ✓ landed and run 2026-08-10.** Run in squad's duva-bench track
+  on its existing topology axis (single vs swarm): swarm costs ~3.6x the tokens/wall-clock and ~2.8x
+  the tool calls of a single agent on two toy tasks, with no acceptance-score difference
+  distinguishable from noise. See [squad PR #119](https://github.com/DeDuva/squad/pull/119).
 - **M3-6 — candidate-set comparison view — ✓ landed.** `server/web/`, plus the list endpoint and the
   per-candidate score/gate projection the view needs. Losing candidates are shown alongside the
   winner with the evidence that decided against them — a view showing only the winner would make a
   50-way fan-out indistinguishable from a single proposal, which is the thing GitHub cannot express.
-
-**M3-5 arms 2 and 3 — landed 2026-08-10.** The agent-backed three-way cost comparison and the
-fan-out-vs-serial arm. Both needed a real agent burning real tokens, and arm 2 additionally needed a
-real GitHub repo and PAT, so they ran out of band rather than in CI. The benchmark is now published
-with all three arms: arm 1 (deterministic, CI-enforced), arm 2 (pilot scale, 12 trials —
-[`bench/report/three-way-cost.md`](../bench/report/three-way-cost.md)), and arm 3 (squad's
-duva-bench track — [squad PR #119](https://github.com/DeDuva/squad/pull/119)).
 
 **Exit:** D1 and D2 from the prototype doc are demonstrable; benchmark published with methodology.
 Added 2026-08-03: a repo mirrored in from GitHub with a >500-commit history has a signed change per
