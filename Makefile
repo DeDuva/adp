@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all conformance acceptance acceptance-ui browser browser-deps web cli adapters bench
+.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -119,6 +119,13 @@ test-all: ## Everything CI runs: build, full suite, web, cli, adapters, conforma
 	@$(MAKE) bench
 	@$(LOAD_ENV) bash server/conformance/run.sh
 	@$(LOAD_ENV) bash server/acceptance/run.sh
+
+check-docs: ## Assert CLAUDE.md still points at paths that exist
+	@bash scripts/check-claude-md.sh
+
+check: ## The gate. Same target name in every repo in this line of work.
+	@$(MAKE) check-docs
+	@$(MAKE) test-all
 
 nuke: ## Full teardown: every stack, all generated files, deps and caches
 	-@bash scripts/dev/down.sh --all

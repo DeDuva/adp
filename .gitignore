@@ -1,5 +1,11 @@
-# Claude Code local state (agent worktrees, session scratch)
-.claude/
+# Claude Code local state (agent worktrees, session scratch).
+#
+# Ignored by *contents* rather than as a directory, so that the one file meant to
+# be shared can be re-included: git will not un-ignore a file whose parent
+# directory is excluded, so `.claude/` followed by `!.claude/settings.json` would
+# silently do nothing.
+.claude/*
+!.claude/settings.json
 
 # WSL / Windows alternate-data-stream artifacts
 *:Zone.Identifier
@@ -29,5 +35,3 @@ deploy/.env
 *.tfvars
 !*.tfvars.example
 crash.log
-
-.claude/scratch/

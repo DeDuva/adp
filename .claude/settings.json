@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make help)",
+      "Bash(make doctor)",
+      "Bash(make env-status)",
+      "Bash(make clean-check)",
+      "Bash(make up)",
+      "Bash(make down)",
+      "Bash(make check)",
+      "Bash(make test-unit)",
+      "Bash(make test)",
+      "Bash(make test-all)",
+      "Bash(make conformance)",
+      "Bash(make cli)",
+      "Bash(make adapters)",
+      "Bash(make web)",
+      "Bash(make bench)",
+      "Bash(npm test)",
+      "Bash(npm run build)",
+      "Bash(npm run typecheck)",
+      "Bash(bash scripts/check-claude-md.sh)",
+      "Bash(gh api *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh run view *)"
+    ]
+  }
+}
