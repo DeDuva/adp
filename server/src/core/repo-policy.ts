@@ -78,9 +78,16 @@ export async function loadRepoPolicy(
   return result.data;
 }
 
-// Union, not override: the instance floor is a minimum the repo can only
-// add to, never remove from (docs/pragmatic_mvp.md §1.5 item 2 — "instance
-// floor ∧ repo adp.yaml").
-export function resolveLandRequirements(instanceFloor: LandRequirement[], repoPolicy: RepoPolicy): LandRequirement[] {
-  return [...new Set([...instanceFloor, ...repoPolicy.land.require])];
+// Union, not override: each level is a minimum the next can only add to,
+// never remove from (docs/pragmatic_mvp.md §1.5 item 2 — "instance floor ∧
+// repo adp.yaml"; generalized to instance ∧ org ∧ repo by M4-2,
+// docs/m4-readiness-review.md §4). `orgFloor` is `[]` for a repo with no
+// org and for an org with no policy repo designated — same "empty, not an
+// error" default the instance floor and repo policy already use.
+export function resolveLandRequirements(
+  instanceFloor: LandRequirement[],
+  orgFloor: LandRequirement[],
+  repoPolicy: RepoPolicy,
+): LandRequirement[] {
+  return [...new Set([...instanceFloor, ...orgFloor, ...repoPolicy.land.require])];
 }

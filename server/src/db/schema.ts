@@ -11,6 +11,7 @@ import {
   unique,
   index,
   uniqueIndex,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -22,6 +23,24 @@ import { sql } from "drizzle-orm";
 export const orgs = pgTable("orgs", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull().unique(),
+  // M4-2: the org policy plane generalizes the instance floor
+  // (resolveLandRequirements, core/repo-policy.ts) from a two-way union
+  // (instance ∧ repo) to three (instance ∧ org ∧ repo), additive-only same
+  // as the existing two. An org's floor lives in a `policy.yaml` on this
+  // repo's default branch (core/org-policy.ts) — reusing an ordinary repo,
+  // not a new storage mechanism, is what makes "policy changes as signed
+  // reviewable changes" (docs/m4-readiness-review.md) true for free: landing
+  // a policy change already goes through the same intent→diff→evidence→
+  // provenance path as any other change, because it *is* one. Null means
+  // the org has designated no policy repo yet — an empty floor, not an error.
+  policyRepoId: uuid("policy_repo_id").references((): AnyPgColumn => repos.id),
+  // The blast radius decided in docs/m4-readiness-review.md §3: refuses every
+  // land attempt for every repo in this org while set (core/land-policy.ts).
+  // Deliberately does NOT block opening a new proposal — that's a stated,
+  // narrower scope for this slice (see the M4-2 PR description); a proposal
+  // sitting open-but-unlandable while the switch is active is a safe
+  // intermediate state, landing is the consequential action.
+  killSwitch: boolean("kill_switch").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

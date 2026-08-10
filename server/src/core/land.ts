@@ -6,6 +6,7 @@ import { proposals } from "../db/schema.js";
 import { recordOperation } from "./operations.js";
 import { evaluateLandPolicy } from "./land-policy.js";
 import type { LandRequirement } from "./repo-policy.js";
+import { findOrgLandContext } from "./org-lookup.js";
 import { performMerge, type MergeMethod } from "./merge.js";
 import { recordSbomEvidence } from "./sbom.js";
 
@@ -42,7 +43,7 @@ export type LandResult =
 // merge-contention benchmark exists to produce.
 export async function landProposal(
   deps: LandDeps,
-  repo: { id: string; owner: string; name: string },
+  repo: { id: string; owner: string; name: string; orgId: string | null },
   proposal: ProposalRow,
   method: MergeMethod,
   actor: { identityId: string; principal: string },
@@ -56,7 +57,11 @@ export async function landProposal(
     return { ok: false, status: 422, message: "Cannot merge a closed proposal" };
   }
 
-  const policy = await evaluateLandPolicy(db, gitBackend, instanceFloor, repo, proposal);
+  // M4-2: one lookup, reused by both evaluateLandPolicy calls below — the org
+  // context (kill switch, policy repo) doesn't change within one land attempt.
+  const org = await findOrgLandContext(db, repo.orgId);
+
+  const policy = await evaluateLandPolicy(db, gitBackend, instanceFloor, repo, proposal, org);
   if (!policy.allowed) {
     return { ok: false, status: 422, message: "Land policy not satisfied", unmet: policy.unmet };
   }
@@ -80,7 +85,7 @@ export async function landProposal(
   // narrows the window a superseding gate result could land in to the width of
   // one query rather than the whole request — it does not close it
   // (docs/m2-readiness-review.md's TOCTOU item).
-  const policyAtCas = await evaluateLandPolicy(db, gitBackend, instanceFloor, repo, proposal);
+  const policyAtCas = await evaluateLandPolicy(db, gitBackend, instanceFloor, repo, proposal, org);
   if (!policyAtCas.allowed) {
     return { ok: false, status: 422, message: "Land policy not satisfied", unmet: policyAtCas.unmet };
   }

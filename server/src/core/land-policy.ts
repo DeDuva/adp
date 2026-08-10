@@ -3,8 +3,17 @@ import type { Db } from "../db/client.js";
 import type { GitBackend } from "./git-backend.js";
 import { reviews } from "../db/schema.js";
 import { loadRepoPolicy, resolveLandRequirements, type LandRequirement, type StatisticalPolicy } from "./repo-policy.js";
+import { loadOrgPolicy } from "./org-policy.js";
 import { latestGateResults, allGatesGreen } from "./gate-results-lookup.js";
 import { gateFlakeStats, wilsonLowerBound, type FlakeStats } from "./flake-stats.js";
+
+// M4-2: what a repo's org contributes to land policy. `null` when the repo
+// has no org (every pre-M4 repo). `policyRepo` is `null` when the org
+// exists but has designated no policy repo — an empty floor, not an error.
+export interface OrgLandContext {
+  killSwitch: boolean;
+  policyRepo: { owner: string; name: string; defaultBranch: string } | null;
+}
 
 export interface QuarantinedGate {
   name: string;
@@ -48,9 +57,17 @@ export async function evaluateLandPolicy(
   instanceFloor: LandRequirement[],
   repo: { id: string; owner: string; name: string },
   proposal: { id: string; baseRef: string; headSha: string },
+  org: OrgLandContext | null = null,
 ): Promise<LandPolicyResult> {
+  // Checked first and unconditionally: a killed org refuses every land for
+  // every repo in it, before any gate, review, or statistic is even loaded.
+  if (org?.killSwitch) {
+    return { allowed: false, unmet: ["org kill switch is active"], advisories: [], quarantined: [] };
+  }
+
   const repoPolicy = await loadRepoPolicy(gitBackend, repo.owner, repo.name, proposal.baseRef);
-  const required = resolveLandRequirements(instanceFloor, repoPolicy);
+  const orgPolicy = await loadOrgPolicy(gitBackend, org?.policyRepo ?? null);
+  const required = resolveLandRequirements(instanceFloor, orgPolicy.land.require, repoPolicy);
   const statistical = repoPolicy.land.statistical;
   const unmet: string[] = [];
   const advisories: string[] = [];
