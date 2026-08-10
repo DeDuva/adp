@@ -68,6 +68,12 @@ export const identities = pgTable("identities", {
 export const tokens = pgTable("tokens", {
   id: uuid("id").primaryKey().defaultRandom(),
   identityId: uuid("identity_id").notNull().references(() => identities.id),
+  // M4-1: additive to the three repo-level scopes below, not a replacement.
+  // Null for every pre-M4 token and for one minted without an org — a token
+  // with no org can still do everything its repo-level scopes allow, it just
+  // never satisfies an org-scoped check (auth/plugin.ts requireOrgAccess),
+  // which fails closed rather than defaulting to some org.
+  orgId: uuid("org_id").references(() => orgs.id),
   tokenHash: text("token_hash").notNull().unique(),
   // sha256(token) hex, indexed — narrows authenticate() to (at most) one row
   // instead of scrypt-verifying against every unrevoked token in the table.
