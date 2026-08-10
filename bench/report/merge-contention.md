@@ -35,8 +35,9 @@ concurrency; it is *throughput* that degrades, not correctness.
 ## What this does not show, and should not be read as showing
 
 - **This is not a comparison against GitHub.** ForgeMark-comparable numbers need
-  the same workload run against a real forge; that is arm 2, and it is not run
-  here. Nothing above licenses a claim that ADP is faster or slower than anything.
+  the same workload run against a real forge — that is arm 2, published separately
+  at [`report/three-way-cost.md`](three-way-cost.md). Nothing above licenses a claim
+  that ADP is faster or slower than anything.
 - **The retry loop has no backoff and no jitter**, and all writers start in the
   same millisecond. Real orchestrators would stagger. That makes the quadratic
   above an *upper bound* on contention cost, not a prediction of production

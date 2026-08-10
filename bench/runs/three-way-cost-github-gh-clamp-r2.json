@@ -1,0 +1,62 @@
+{
+  "recordedAt": "2026-08-10T16:08:02.321Z",
+  "arm": "three-way-cost",
+  "deterministic": false,
+  "method": "github-gh",
+  "taskId": "clamp",
+  "rep": 2,
+  "runId": "d467c9",
+  "environment": {
+    "node": "v24.18.0",
+    "platform": "linux/x64",
+    "model": "claude-haiku-4-5",
+    "adpUrl": null,
+    "target": {
+      "owner": "DeDuva",
+      "repo": "adp-bench-arm2-scratch",
+      "issueRef": "DeDuva/adp-bench-arm2-scratch#13"
+    }
+  },
+  "measurement": {
+    "wallClockMs": 40485,
+    "totalCostUsd": 0.07578209999999999,
+    "usage": {
+      "input_tokens": 60,
+      "cache_creation_input_tokens": 19904,
+      "cache_read_input_tokens": 243881,
+      "output_tokens": 2098,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 19904,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 5,
+          "output_tokens": 152,
+          "cache_read_input_tokens": 25327,
+          "cache_creation_input_tokens": 422,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 422
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "numTurns": 11,
+    "toolCalls": 10,
+    "toolErrors": 0,
+    "permissionDenials": 0,
+    "isError": false,
+    "terminalReason": "completed",
+    "landed": true,
+    "processExitCode": 0
+  }
+}

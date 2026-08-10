@@ -1,0 +1,62 @@
+{
+  "recordedAt": "2026-08-10T16:08:46.102Z",
+  "arm": "three-way-cost",
+  "deterministic": false,
+  "method": "adp-gh",
+  "taskId": "clamp",
+  "rep": 2,
+  "runId": "b5782f",
+  "environment": {
+    "node": "v24.18.0",
+    "platform": "linux/x64",
+    "model": "claude-haiku-4-5",
+    "adpUrl": "http://127.0.0.1:8793",
+    "target": {
+      "owner": "duvabench",
+      "repo": "arm2-gh-clamp-r2-b5782f",
+      "issueRef": "localhost:8843/duvabench/arm2-gh-clamp-r2-b5782f#1"
+    }
+  },
+  "measurement": {
+    "wallClockMs": 42122,
+    "totalCostUsd": 0.0831479,
+    "usage": {
+      "input_tokens": 74,
+      "cache_creation_input_tokens": 20040,
+      "cache_read_input_tokens": 290609,
+      "output_tokens": 2545,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 20040,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 5,
+          "output_tokens": 233,
+          "cache_read_input_tokens": 25456,
+          "cache_creation_input_tokens": 137,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 137
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "numTurns": 13,
+    "toolCalls": 12,
+    "toolErrors": 2,
+    "permissionDenials": 0,
+    "isError": false,
+    "terminalReason": "completed",
+    "landed": true,
+    "processExitCode": 0
+  }
+}
