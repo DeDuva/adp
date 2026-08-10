@@ -1,7 +1,7 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { identities, tokens } from "../db/schema.js";
+import { identities, orgMemberships, tokens } from "../db/schema.js";
 
 const TOKEN_PREFIX = "adp_pat_";
 
@@ -36,6 +36,11 @@ export interface AuthenticatedIdentity {
   kind: "human" | "agent";
   principal: string;
   scopes: string[];
+  // M4-1: which org this token is scoped to, if any. Null for every pre-M4
+  // token and for one minted without an org — never defaulted to "the
+  // identity's only org" or similar, because a token's org has to be an
+  // explicit grant for requireOrgAccess (auth/plugin.ts) to fail closed.
+  orgId: string | null;
   harness: string | null;
   model: string | null;
   sessionId: string | null;
@@ -46,6 +51,7 @@ export interface MintTokenOptions {
   harness?: string;
   model?: string;
   sessionId?: string;
+  orgId?: string;
 }
 
 export async function mintToken(
@@ -64,6 +70,7 @@ export async function mintToken(
     harness: opts.harness ?? null,
     model: opts.model ?? null,
     sessionId: opts.sessionId ?? null,
+    orgId: opts.orgId ?? null,
   });
   return token;
 }
@@ -83,6 +90,7 @@ export async function authenticate(db: Db, token: string): Promise<Authenticated
       harness: tokens.harness,
       model: tokens.model,
       sessionId: tokens.sessionId,
+      orgId: tokens.orgId,
       identityId: identities.id,
       kind: identities.kind,
       principal: identities.principal,
@@ -100,8 +108,23 @@ export async function authenticate(db: Db, token: string): Promise<Authenticated
     kind: row.kind as "human" | "agent",
     principal: row.principal,
     scopes: row.scopes,
+    orgId: row.orgId,
     harness: row.harness,
     model: row.model,
     sessionId: row.sessionId,
   };
+}
+
+// M4-1: the integrity check requireOrgAccess (auth/plugin.ts) runs on every
+// org-scoped request, not just at mint time — a token's own orgId says which
+// org it was scoped to, but the identity could have been removed from that
+// org since. Checking membership at request time is what makes "revoke this
+// person's org access" actually revoke it, rather than only blocking new
+// token mints.
+export async function isOrgMember(db: Db, orgId: string, identityId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: orgMemberships.id })
+    .from(orgMemberships)
+    .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.identityId, identityId)));
+  return !!row;
 }

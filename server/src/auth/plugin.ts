@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import fp from "fastify-plugin";
 import type { Db } from "../db/client.js";
-import { authenticate, type AuthenticatedIdentity } from "./tokens.js";
+import { authenticate, isOrgMember, type AuthenticatedIdentity } from "./tokens.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -66,5 +66,38 @@ export function requireScope(scope: "repo:read" | "repo:write" | "admin") {
       return;
     }
     done();
+  };
+}
+
+// M4-1: org-scoped routes call this *alongside* requireScope, not instead of
+// it — the repo:read/repo:write/admin scopes stay the authority for what a
+// token can DO; this is the separate question of which org's data it can do
+// it to. `orgIdParam` names the route param carrying the target org id (the
+// route decides its own shape, e.g. `/api/v3/orgs/:orgId/...`).
+//
+// Two checks, both required: the token's own orgId must match the route's
+// target (a token scoped to org A is never valid against org B, even if the
+// same human also belongs to B — the token is what carries the grant), and
+// the identity must still be a member (catches a membership revoked after
+// the token was minted).
+export function requireOrgAccess(db: Db, orgIdParam: string) {
+  return async function (req: FastifyRequest, reply: FastifyReply) {
+    if (!req.identity) {
+      reply.code(401).send({ message: "Requires authentication" });
+      return;
+    }
+    const targetOrgId = (req.params as Record<string, string | undefined>)[orgIdParam];
+    if (!targetOrgId) {
+      reply.code(400).send({ message: `Missing route param '${orgIdParam}'` });
+      return;
+    }
+    if (req.identity.orgId !== targetOrgId) {
+      reply.code(403).send({ message: "Token is not scoped to this org" });
+      return;
+    }
+    if (!(await isOrgMember(db, targetOrgId, req.identity.identityId))) {
+      reply.code(403).send({ message: "Not a member of this org" });
+      return;
+    }
   };
 }
