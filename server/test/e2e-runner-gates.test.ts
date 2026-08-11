@@ -126,27 +126,28 @@ describe.skipIf(skipWithoutDb)("M4-9c: adp.yaml-driven gate jobs", () => {
     const job = jobs.find((j) => j.name === "unit");
     expect(job).toMatchObject({ status: "queued", image: "busybox:1", command: "echo setting-up && cat marker.txt" });
 
-    // Claim is instance-wide (M4-9a): a job left permanently queued by
-    // another test file sharing this database — e2e-gate-jobs.test.ts's
+    // Claim is instance-wide (M4-9a) and shared across every e2e file
+    // vitest runs concurrently against this same database. A job left
+    // permanently queued by another test file — e2e-gate-jobs.test.ts's
     // "double-complete" case does this by design — can be older than this
-    // test's own job and would be claimed first. Loop past (and drain) any
-    // job that isn't the one this test just pushed, rather than assuming
-    // the very next claim is it.
+    // test's own job and get claimed first; a 204 doesn't mean this test's
+    // own job is gone, just that nothing was claimable on this particular
+    // attempt (e.g. another file's job is correctly blocked by an org quota
+    // at that instant — see e2e-gate-job-quotas.test.ts). So this loops past
+    // both cases: retry on 204, and on a foreign job, leave it claimed
+    // rather than completing it — completing a job this test doesn't own
+    // would corrupt whichever test actually does.
     let claimedJob: { id: string } | undefined;
-    for (let i = 0; i < 20 && !claimedJob; i++) {
+    for (let i = 0; i < 40 && !claimedJob; i++) {
       const claimed = await api("/api/adp/gate-jobs/claim", runnerToken, {
         method: "POST",
         body: JSON.stringify({ claimed_by: "stub-runner-1" }),
       });
-      expect(claimed.status).toBe(200);
-      const candidate = claimed.body as { id: string };
-      if (candidate.id === job!.id) {
-        claimedJob = candidate;
+      if (claimed.status === 200) {
+        const candidate = claimed.body as { id: string };
+        if (candidate.id === job!.id) claimedJob = candidate;
       } else {
-        await api(`/api/adp/gate-jobs/${candidate.id}/complete`, runnerToken, {
-          method: "POST",
-          body: JSON.stringify({ status: "succeeded" }),
-        });
+        await new Promise((resolve) => setTimeout(resolve, 25));
       }
     }
     expect(claimedJob).toBeDefined();

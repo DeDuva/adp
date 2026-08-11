@@ -47,6 +47,13 @@ export const orgs = pgTable("orgs", {
   // object store to meter against (docs/m4-readiness-review.md §4).
   maxRepos: integer("max_repos"),
   maxConcurrentWorkspaces: integer("max_concurrent_workspaces"),
+  // M4-9d: same "null is unlimited" convention as the two quotas above,
+  // checked against gate_jobs.status = 'running' across every repo in the
+  // org (http-rest/gate-jobs.ts's claim route) rather than at enqueue time —
+  // an org's queue can grow arbitrarily deep, this bounds how much of it
+  // executes at once, which is what actually costs CPU/memory on the runner
+  // fleet.
+  maxConcurrentGateJobs: integer("max_concurrent_gate_jobs"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

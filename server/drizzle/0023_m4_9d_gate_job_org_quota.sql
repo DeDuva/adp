@@ -1,0 +1,1 @@
+ALTER TABLE "orgs" ADD COLUMN "max_concurrent_gate_jobs" integer;
