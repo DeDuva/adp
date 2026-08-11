@@ -1,0 +1,230 @@
+{
+  "displayName": "ADP — service overview",
+  "mosaicLayout": {
+    "columns": 12,
+    "tiles": [
+      {
+        "xPos": 0,
+        "yPos": 0,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "HTTP requests by status",
+          "xyChart": {
+            "chartOptions": { "mode": "COLOR" },
+            "yAxis": { "label": "requests/s", "scale": "LINEAR" },
+            "dataSets": [
+              {
+                "plotType": "STACKED_AREA",
+                "targetAxis": "Y1",
+                "legendTemplate": "${metric.labels.status}",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"prometheus.googleapis.com/adp_http_requests_total/counter\" resource.type=\"prometheus_target\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": ["metric.label.status"]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "xPos": 6,
+        "yPos": 0,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "5xx responses by route",
+          "xyChart": {
+            "chartOptions": { "mode": "COLOR" },
+            "yAxis": { "label": "errors/s", "scale": "LINEAR" },
+            "dataSets": [
+              {
+                "plotType": "LINE",
+                "targetAxis": "Y1",
+                "legendTemplate": "${metric.labels.route}",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"prometheus.googleapis.com/adp_http_requests_total/counter\" resource.type=\"prometheus_target\" metric.label.status=monitoring.regex.full_match(\"5..\")",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": ["metric.label.route"]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "xPos": 0,
+        "yPos": 4,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "GraphQL root fields (the M2 coverage signal)",
+          "xyChart": {
+            "chartOptions": { "mode": "COLOR" },
+            "yAxis": { "label": "executions/s", "scale": "LINEAR" },
+            "dataSets": [
+              {
+                "plotType": "LINE",
+                "targetAxis": "Y1",
+                "legendTemplate": "${metric.labels.field} (${metric.labels.outcome})",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"prometheus.googleapis.com/adp_graphql_operations_total/counter\" resource.type=\"prometheus_target\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": ["metric.label.field", "metric.label.outcome"]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "xPos": 6,
+        "yPos": 4,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "Gate jobs in flight",
+          "xyChart": {
+            "chartOptions": { "mode": "COLOR" },
+            "yAxis": { "label": "jobs", "scale": "LINEAR" },
+            "dataSets": [
+              {
+                "plotType": "STACKED_BAR",
+                "targetAxis": "Y1",
+                "legendTemplate": "${metric.labels.status}",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"prometheus.googleapis.com/adp_gate_jobs/gauge\" resource.type=\"prometheus_target\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_MEAN",
+                      "crossSeriesReducer": "REDUCE_MAX",
+                      "groupByFields": ["metric.label.status"]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "xPos": 0,
+        "yPos": 8,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "Oldest unclaimed gate job (alert 4 fires above 900s)",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"prometheus.googleapis.com/adp_gate_job_oldest_queued_age_seconds/gauge\" resource.type=\"prometheus_target\"",
+                "aggregation": {
+                  "alignmentPeriod": "60s",
+                  "perSeriesAligner": "ALIGN_MEAN",
+                  "crossSeriesReducer": "REDUCE_MAX"
+                }
+              }
+            },
+            "gaugeView": { "lowerBound": 0, "upperBound": 1800 },
+            "thresholds": [{ "value": 900, "color": "RED", "direction": "ABOVE" }]
+          }
+        }
+      },
+      {
+        "xPos": 6,
+        "yPos": 8,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "Gate job completions by outcome",
+          "xyChart": {
+            "chartOptions": { "mode": "COLOR" },
+            "yAxis": { "label": "completions/s", "scale": "LINEAR" },
+            "dataSets": [
+              {
+                "plotType": "STACKED_BAR",
+                "targetAxis": "Y1",
+                "legendTemplate": "${metric.labels.status}",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"prometheus.googleapis.com/adp_gate_job_completions_total/counter\" resource.type=\"prometheus_target\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": ["metric.label.status"]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "xPos": 0,
+        "yPos": 12,
+        "width": 6,
+        "height": 3,
+        "widget": {
+          "title": "Uptime check (/healthz, external)",
+          "xyChart": {
+            "chartOptions": { "mode": "COLOR" },
+            "yAxis": { "label": "checks passing", "scale": "LINEAR" },
+            "dataSets": [
+              {
+                "plotType": "LINE",
+                "targetAxis": "Y1",
+                "legendTemplate": "${resource.labels.location}",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" resource.type=\"uptime_url\"",
+                    "aggregation": {
+                      "alignmentPeriod": "300s",
+                      "perSeriesAligner": "ALIGN_FRACTION_TRUE",
+                      "crossSeriesReducer": "REDUCE_MEAN",
+                      "groupByFields": ["resource.label.location"]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "xPos": 6,
+        "yPos": 12,
+        "width": 6,
+        "height": 3,
+        "widget": {
+          "title": "Reading this dashboard",
+          "text": {
+            "format": "MARKDOWN",
+            "content": "Every series here is scraped from ADP's own `/metrics` by the Ops Agent on the VM (`infra/dev/startup.sh`) and republished under `prometheus.googleapis.com/`.\n\n**A flat line at zero is ambiguous** — it means either nothing is happening or the scrape stopped. The *metrics scrape stopped* alert exists to tell those apart; the uptime check below keeps traffic flowing every 5 minutes so \"quiet\" never means \"silent\".\n\nWhat each alert means and what to do about it: `docs/observability.md`. Alert definitions: `infra/dev/monitoring.tf`."
+          }
+        }
+      }
+    ]
+  }
+}

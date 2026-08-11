@@ -10,6 +10,7 @@ import { recordOperation } from "../core/operations.js";
 import { findRepo, findRepoById } from "../core/repos-lookup.js";
 import { enqueueGateJob, claimGateJob } from "../core/gate-jobs.js";
 import { recordGateResult } from "../core/gate-results.js";
+import { recordGateJobCompletion } from "../core/telemetry.js";
 
 const EnqueueBody = z.object({
   git_sha: z.string().regex(/^[0-9a-f]{40}$/),
@@ -232,6 +233,12 @@ export function registerGateJobRoutes(
 
       return row!;
     });
+
+    // M4-11. Outside the transaction on purpose: this is a process-local
+    // counter for the dashboards, not part of the durable record — the
+    // durable record is the recordOperation above, and a metric that could
+    // roll back with it would be the tail wagging the dog.
+    recordGateJobCompletion(row.status);
 
     // The queue-lifecycle event above is recorded regardless; the signed
     // evidence below is best-effort against a repo that might (in principle)

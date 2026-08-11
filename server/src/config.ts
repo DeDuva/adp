@@ -30,6 +30,12 @@ const EnvSchema = z.object({
   // Minutes, not milliseconds, unlike the mirror poller — a workspace's own
   // TTL is stated in hours, so a sweep interval this coarse costs nothing.
   WORKSPACE_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(300_000),
+  // M4-11: how often the gate-job queue gauges are re-sampled
+  // (core/gate-job-metrics.ts). Shorter than either job above because this
+  // one is a read the dashboards are looking at, not work — and it bounds
+  // how stale `adp_gate_job_oldest_queued_age_seconds` can be when the alert
+  // on it evaluates.
+  GATE_JOB_METRICS_INTERVAL_MS: z.coerce.number().int().positive().default(15_000),
 });
 
 export type Config = z.infer<typeof EnvSchema>;

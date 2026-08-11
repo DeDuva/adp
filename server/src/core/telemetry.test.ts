@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { recordHttpRequest, recordGraphqlOperation, renderMetrics, resetMetricsForTest } from "./telemetry.js";
+import {
+  METRIC_FAMILIES,
+  recordHttpRequest,
+  recordGraphqlOperation,
+  recordGateJobCompletion,
+  setGateJobGauges,
+  renderMetrics,
+  resetMetricsForTest,
+} from "./telemetry.js";
 
 describe("telemetry", () => {
   beforeEach(() => {
@@ -48,5 +56,63 @@ describe("telemetry", () => {
     resetMetricsForTest();
     const body = renderMetrics();
     expect(body).not.toContain("adp_http_requests_total{");
+  });
+
+  // M4-11 — the queue families. Sampled (gauges) and counted (completions)
+  // rather than both one or the other; see core/gate-job-metrics.ts for why.
+  it("renders the gate-job queue gauges from the latest sample", () => {
+    setGateJobGauges({
+      byStatus: new Map([
+        ["queued", 3],
+        ["running", 1],
+      ]),
+      oldestQueuedAgeSeconds: 42,
+    });
+
+    const body = renderMetrics();
+    expect(body).toContain('adp_gate_jobs{status="queued"} 3');
+    expect(body).toContain('adp_gate_jobs{status="running"} 1');
+    expect(body).toContain("adp_gate_job_oldest_queued_age_seconds 42");
+  });
+
+  it("replaces the previous gauge sample rather than accumulating it", () => {
+    setGateJobGauges({ byStatus: new Map([["queued", 5]]), oldestQueuedAgeSeconds: 99 });
+    setGateJobGauges({ byStatus: new Map([["queued", 0]]), oldestQueuedAgeSeconds: 0 });
+
+    const body = renderMetrics();
+    expect(body).toContain('adp_gate_jobs{status="queued"} 0');
+    expect(body).not.toContain('adp_gate_jobs{status="queued"} 5');
+    expect(body).toContain("adp_gate_job_oldest_queued_age_seconds 0");
+  });
+
+  // A confident zero before the first sample would be a lie the alert on
+  // oldest-queued-age would happily believe.
+  it("emits no gauge sample at all until the sampler has run once", () => {
+    const body = renderMetrics();
+    expect(body).toContain("# TYPE adp_gate_jobs gauge");
+    expect(body).not.toContain("adp_gate_jobs{");
+    expect(body).not.toMatch(/^adp_gate_job_oldest_queued_age_seconds /m);
+  });
+
+  it("counts gate-job completions by terminal status", () => {
+    recordGateJobCompletion("succeeded");
+    recordGateJobCompletion("succeeded");
+    recordGateJobCompletion("error");
+
+    const body = renderMetrics();
+    expect(body).toContain('adp_gate_job_completions_total{status="succeeded"} 2');
+    expect(body).toContain('adp_gate_job_completions_total{status="error"} 1');
+  });
+
+  // The dashboards and alert policies in infra/dev/ are built against these
+  // names (server/src/observability-coverage.test.ts checks that mapping);
+  // a family that is declared but never rendered would leave a tile that can
+  // only ever be empty.
+  it("emits a HELP/TYPE header for every declared family, sampled or not", () => {
+    const body = renderMetrics();
+    for (const family of METRIC_FAMILIES) {
+      expect(body).toContain(`# HELP ${family.name} ${family.help}`);
+      expect(body).toContain(`# TYPE ${family.name} ${family.type}`);
+    }
   });
 });

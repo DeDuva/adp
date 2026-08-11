@@ -43,8 +43,20 @@ services:
     volumes:
       - git_data:/data/git
     command: sh -c "node dist/db/migrate.js && node dist/main.js"
-    expose:
-      - "3000"
+    # Caddy reaches this over the compose network by name, so the published
+    # port exists for one reason: M4-11's Ops Agent scrapes /metrics from the
+    # host (infra/dev/startup.sh) and a container-network-only service is not
+    # reachable from there. Bound to 127.0.0.1 explicitly — an unqualified
+    # "3000:3000" would publish the unauthenticated /metrics endpoint, and
+    # every other route, on the VM's public interface, bypassing Caddy and its
+    # TLS entirely.
+    #
+    # `:-3000` for the same reason the build stamps above use it: a hand-written
+    # .env that omits PORT must not turn a missing variable into an unparseable
+    # port mapping. 3000 is also what server/src/config.ts defaults to, so the
+    # published port and the listening port stay in agreement either way.
+    ports:
+      - "127.0.0.1:${PORT:-3000}:${PORT:-3000}"
 
   caddy:
     image: caddy:2-alpine
