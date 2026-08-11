@@ -244,6 +244,8 @@ else
   ok "cli dependencies installed"
   npm ci --prefix "$ADP_REPO_ROOT/adapters"
   ok "adapters dependencies installed"
+  npm ci --prefix "$ADP_REPO_ROOT/runner"
+  ok "runner dependencies installed"
 
   # These `npm ci` calls have no $SUDO prefix, so they normally run as
   # whoever invoked this script — except when that *is* root (either a
@@ -259,7 +261,8 @@ else
       "$ADP_REPO_ROOT/server/node_modules" \
       "$ADP_REPO_ROOT/server/web/node_modules" \
       "$ADP_REPO_ROOT/cli/node_modules" \
-      "$ADP_REPO_ROOT/adapters/node_modules"
+      "$ADP_REPO_ROOT/adapters/node_modules" \
+      "$ADP_REPO_ROOT/runner/node_modules"
     ok "node_modules ownership handed back to $SUDO_USER"
   fi
 fi

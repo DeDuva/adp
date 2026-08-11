@@ -140,6 +140,12 @@ else
   warn "adapters/node_modules missing — 'make adapters' (part of test-all) will fail"
   hint "npm ci --prefix adapters"
 fi
+if [ -d "$ADP_REPO_ROOT/runner/node_modules" ]; then
+  ok "runner/node_modules present"
+else
+  warn "runner/node_modules missing — 'make runner' (part of test-all) will fail"
+  hint "npm ci --prefix runner"
+fi
 
 section "database"
 if [ -n "${DATABASE_URL:-}" ]; then

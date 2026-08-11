@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench
+.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -52,11 +52,12 @@ down: ## Tear down this checkout's stack and verify it is gone
 down-all: ## Tear down every adp-test-* stack on this machine
 	@bash scripts/dev/down.sh --all
 
-deps: ## Install node dependencies (server, web, cli, and adapters)
+deps: ## Install node dependencies (server, web, cli, adapters, and runner)
 	npm ci --prefix server
 	npm ci --prefix server/web
 	npm ci --prefix cli
 	npm ci --prefix adapters
+	npm ci --prefix runner
 
 test-unit: ## Unit + integration tiers only (no database needed)
 	npm test --prefix server
@@ -102,12 +103,17 @@ cli: ## Typecheck, build, and test the adp CLI (no database needed)
 adapters: ## Test the scanner-as-gate adapters (no database needed)
 	npm test --prefix adapters
 
+runner: ## Typecheck, build, and test the gate runner (no database needed, real docker if reachable)
+	npm run typecheck --prefix runner
+	npm run build --prefix runner
+	npm test --prefix runner
+
 bench: ## Regenerate the benchmark report from bench/runs/ and assert it is unchanged
 	npm run report --prefix bench
 	@git diff --exit-code bench/report/ || { \
 		echo "bench/report/ is stale — commit the regenerated report"; exit 1; }
 
-test-all: ## Everything CI runs: build, full suite, web, cli, adapters, conformance + acceptance
+test-all: ## Everything CI runs: build, full suite, web, cli, adapters, runner, conformance + acceptance
 	$(REQUIRE_ENV)
 	@$(LOAD_ENV) npm run typecheck --prefix server
 	@$(LOAD_ENV) npm run build --prefix server
@@ -116,6 +122,7 @@ test-all: ## Everything CI runs: build, full suite, web, cli, adapters, conforma
 	@$(MAKE) web
 	@$(MAKE) cli
 	@$(MAKE) adapters
+	@$(MAKE) runner
 	@$(MAKE) bench
 	@$(LOAD_ENV) bash server/conformance/run.sh
 	@$(LOAD_ENV) bash server/acceptance/run.sh
@@ -130,7 +137,7 @@ check: ## The gate. Same target name in every repo in this line of work.
 nuke: ## Full teardown: every stack, all generated files, deps and caches
 	-@bash scripts/dev/down.sh --all
 	-@bash scripts/dev/verify-clean.sh --fix
-	rm -rf server/node_modules server/dist server/web/node_modules server/web/dist cli/node_modules cli/dist adapters/node_modules
+	rm -rf server/node_modules server/dist server/web/node_modules server/web/dist cli/node_modules cli/dist adapters/node_modules runner/node_modules runner/dist
 	rm -rf $(ENV_FILE) .adp-test
 	rm -rf $${GH_CACHE_DIR:-$$HOME/.cache/adp-conformance-gh}
 	@echo "nuked — 'make deps && make up' to start over"
