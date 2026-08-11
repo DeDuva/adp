@@ -651,3 +651,52 @@ export const operations = pgTable(
   // this table is repo-scoped in practice, this just makes that queryable.
   (table) => [index("operations_repo_id_idx").on(table.repoId)],
 );
+
+// M4-9a (docs/m4-readiness-review.md §4): the gate runner's job queue —
+// "Postgres job queue" in pragmatic_mvp.md's own layout table, not a new
+// message broker. This table is the *contract* between the API process and
+// a runner process that, per pragmatic_mvp.md §4.5/§4.7, must be able to run
+// on a separate, untrusted-code host with no database credentials of its
+// own: a runner claims and completes jobs over the REST routes in
+// http-rest/gate-jobs.ts, the same way `cli/` talks to this server, never by
+// importing this schema or holding a DATABASE_URL. `image`/`command` are
+// resolved by whatever enqueues a job (M4-9c reads them from adp.yaml); this
+// table doesn't know or care where they came from.
+export const gateJobs = pgTable(
+  "gate_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repoId: uuid("repo_id").notNull().references(() => repos.id),
+    gitSha: text("git_sha").notNull(),
+    // The gate name a completed job reports under — matches gate_results.name
+    // (core/gates.ts) once M4-9c wires completion through to a real gate report.
+    name: text("name").notNull(),
+    image: text("image").notNull(),
+    command: text("command").notNull(),
+    timeoutMs: integer("timeout_ms").notNull(),
+    status: text("status", {
+      enum: ["queued", "running", "succeeded", "failed", "timed_out", "error"],
+    })
+      .notNull()
+      .default("queued"),
+    actorId: uuid("actor_id").notNull().references(() => identities.id),
+    // Opaque, like sessions.harness — a free-form identifier the claiming
+    // runner supplies (hostname, pid, whatever it wants), never branched on.
+    // Null until claimed.
+    claimedBy: text("claimed_by"),
+    exitCode: integer("exit_code"),
+    // Inline, bounded (truncated by http-rest/gate-jobs.ts's complete
+    // handler) rather than a pointer into an object store — there isn't one
+    // yet (M4-8). Revisit the bound once real job output sizes are known.
+    logs: text("logs"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (table) => [
+    // The claim query: oldest queued job first, instance-wide (a runner
+    // serves the whole instance, not one repo — see http-rest/gate-jobs.ts).
+    index("gate_jobs_status_created_at_idx").on(table.status, table.createdAt),
+    index("gate_jobs_repo_id_git_sha_name_idx").on(table.repoId, table.gitSha, table.name),
+  ],
+);

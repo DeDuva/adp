@@ -13,6 +13,7 @@ import { registerReviewRoutes } from "./http-rest/reviews.js";
 import { registerGitDataRoutes } from "./http-rest/git-data.js";
 import { registerHookRoutes } from "./http-git/hooks.js";
 import { registerGateRoutes } from "./http-rest/gates.js";
+import { registerGateJobRoutes } from "./http-rest/gate-jobs.js";
 import { registerDependencyAdmissionRoutes } from "./http-rest/dependency-admission.js";
 import { registerOperationRoutes } from "./http-rest/operations.js";
 import { registerAuditLogRoutes } from "./http-rest/audit-log.js";
@@ -79,6 +80,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   registerGitDataRoutes(app, db, gitBackend);
   registerHookRoutes(app, db, gitBackend, signer, credentialKey);
   registerGateRoutes(app, db, signer, publicUrl, credentialKey);
+  registerGateJobRoutes(app, db);
   registerDependencyAdmissionRoutes(app, db, signer, publicUrl);
   registerOperationRoutes(app, db, gitBackend);
   registerAuditLogRoutes(app, db);
