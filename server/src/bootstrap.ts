@@ -8,11 +8,11 @@
 // org-scoped token, exercising requireOrgAccess (auth/plugin.ts) end to end
 // without inventing an org-management REST route ahead of the item that
 // actually needs one (M4-2, the org policy plane).
-import { eq } from "drizzle-orm";
 import { loadConfig } from "./config.js";
 import { createDb } from "./db/client.js";
-import { identities, orgMemberships, orgs } from "./db/schema.js";
+import { identities, orgMemberships } from "./db/schema.js";
 import { mintToken } from "./auth/tokens.js";
+import { findOrCreateOrg } from "./core/org-lookup.js";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -38,9 +38,7 @@ async function main() {
 
   let orgId: string | undefined;
   if (orgName) {
-    const [existing] = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.name, orgName));
-    const org = existing ?? (await db.insert(orgs).values({ name: orgName }).returning())[0]!;
-    orgId = org.id;
+    orgId = await findOrCreateOrg(db, orgName);
     await db.insert(orgMemberships).values({ orgId, identityId: identity!.id, role: "admin" });
   }
 

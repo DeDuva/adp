@@ -148,6 +148,13 @@
       "when": 1786402807104,
       "tag": "0020_org_policy_plane",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786421664990,
+      "tag": "0021_org_quotas",
+      "breakpoints": true
     }
   ]
 }

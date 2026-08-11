@@ -262,7 +262,7 @@ export function registerSessionRoutes(
         db,
         gitBackend,
         signer,
-        { id: repo.id, owner, name: repoName },
+        { id: repo.id, owner, name: repoName, orgId: repo.orgId },
         id,
         { harness: parsed.data.harness, checkpointId: parsed.data.checkpoint_id },
         req.identity!.identityId,

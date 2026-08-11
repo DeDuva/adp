@@ -26,6 +26,10 @@ const EnvSchema = z.object({
   // at rest" bar.
   MIRROR_CREDENTIAL_KEY: z.string().min(1),
   MIRROR_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
+  // M4-3: how often the expired-workspace sweeper runs (core/workspace-sweeper.ts).
+  // Minutes, not milliseconds, unlike the mirror poller — a workspace's own
+  // TTL is stated in hours, so a sweep interval this coarse costs nothing.
+  WORKSPACE_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(300_000),
 });
 
 export type Config = z.infer<typeof EnvSchema>;

@@ -41,6 +41,12 @@ export const orgs = pgTable("orgs", {
   // sitting open-but-unlandable while the switch is active is a safe
   // intermediate state, landing is the consequential action.
   killSwitch: boolean("kill_switch").notNull().default(false),
+  // M4-3: null means unlimited — the default for every org until an operator
+  // sets one, same "absence is not a limit" convention `workspaces.expiresAt`
+  // already uses. Storage quota is deliberately not here yet: it needs M4-8's
+  // object store to meter against (docs/m4-readiness-review.md §4).
+  maxRepos: integer("max_repos"),
+  maxConcurrentWorkspaces: integer("max_concurrent_workspaces"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "./git-backend.js";
-import { workspaces } from "../db/schema.js";
+import { orgs, repos, workspaces } from "../db/schema.js";
 import { recordOperation } from "./operations.js";
 
 export interface CreateWorkspaceResult {
@@ -20,11 +20,32 @@ export interface CreateWorkspaceError {
 export async function createWorkspace(
   db: Db,
   gitBackend: GitBackend,
-  repo: { id: string; owner: string; name: string },
+  repo: { id: string; owner: string; name: string; orgId: string | null },
   baseRef: string,
   actorId: string,
   ttlHours: number | undefined,
 ): Promise<CreateWorkspaceResult | CreateWorkspaceError> {
+  // M4-3: counted across every repo in the org, not just this one — the
+  // quota is an org-wide ceiling on live workspaces, the resource GC exists
+  // to reclaim, so it has to be checked at org scope for either to mean
+  // anything.
+  if (repo.orgId) {
+    const [org] = await db.select({ maxConcurrentWorkspaces: orgs.maxConcurrentWorkspaces }).from(orgs).where(eq(orgs.id, repo.orgId));
+    if (org?.maxConcurrentWorkspaces != null) {
+      const [row] = await db
+        .select({ live: count() })
+        .from(workspaces)
+        .innerJoin(repos, eq(workspaces.repoId, repos.id))
+        .where(and(eq(repos.orgId, repo.orgId), isNull(workspaces.destroyedAt)));
+      if ((row?.live ?? 0) >= org.maxConcurrentWorkspaces) {
+        return {
+          ok: false,
+          message: `org concurrent-workspace quota exceeded (max ${org.maxConcurrentWorkspaces})`,
+        };
+      }
+    }
+  }
+
   const baseSha = await gitBackend.resolveRef(repo.owner, repo.name, baseRef);
   if (!baseSha) {
     return { ok: false, message: `base ref '${baseRef}' not found` };
