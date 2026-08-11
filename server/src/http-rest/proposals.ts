@@ -341,7 +341,7 @@ export function registerProposalRoutes(
       }
       const result = await landProposal(
         { db, gitBackend, instanceFloor, sbom, logError: (message, err) => req.log.error(`${message}: ${err}`) },
-        { id: repo.id, owner, name: repoName },
+        { id: repo.id, owner, name: repoName, orgId: repo.orgId },
         proposal,
         parsedMerge.data.merge_method,
         { identityId: req.identity!.identityId, principal: req.identity!.principal },

@@ -4,6 +4,7 @@ import type { GitBackend } from "./git-backend.js";
 import { candidateSets, proposals, intents, workspaces } from "../db/schema.js";
 import { recordOperation } from "./operations.js";
 import { evaluateLandPolicy } from "./land-policy.js";
+import { findOrgLandContext } from "./org-lookup.js";
 import { latestGateResults } from "./gate-results-lookup.js";
 import { decodeStatement, type DsseEnvelope } from "./dsse.js";
 import { landProposal, type LandDeps } from "./land.js";
@@ -170,7 +171,7 @@ export interface ResolveCandidateSetError {
 export async function resolveCandidateSet(
   deps: LandDeps,
   gitBackend: GitBackend,
-  repo: { id: string; owner: string; name: string },
+  repo: { id: string; owner: string; name: string; orgId: string | null },
   candidateSetId: string,
   actor: { identityId: string; principal: string },
   explicitProposalId?: string,
@@ -310,7 +311,7 @@ type WinnerResult = { ok: true; proposal: typeof proposals.$inferSelect } | Reso
 
 async function pickWinner(
   deps: LandDeps,
-  repo: { id: string; owner: string; name: string },
+  repo: { id: string; owner: string; name: string; orgId: string | null },
   candidateSet: typeof candidateSets.$inferSelect,
   candidates: (typeof proposals.$inferSelect)[],
   explicitProposalId?: string,
@@ -347,8 +348,9 @@ async function pickWinner(
       // Candidates come back ordered by proposal number, so "first" means the
       // earliest-opened candidate that can actually land — deterministic given
       // the same evidence, which is what a benchmark needs.
+      const org = await findOrgLandContext(deps.db, repo.orgId);
       for (const candidate of candidates) {
-        const policy = await evaluateLandPolicy(deps.db, deps.gitBackend, deps.instanceFloor, repo, candidate);
+        const policy = await evaluateLandPolicy(deps.db, deps.gitBackend, deps.instanceFloor, repo, candidate, org);
         if (policy.allowed) return { ok: true, proposal: candidate };
       }
       return { ok: false, status: 422, message: "selection policy 'first_green': no candidate satisfies land policy" };

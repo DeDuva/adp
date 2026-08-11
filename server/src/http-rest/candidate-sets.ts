@@ -220,7 +220,7 @@ export function registerCandidateSetRoutes(
       const result = await resolveCandidateSet(
         { db, gitBackend, instanceFloor, sbom, logError: (message, err) => req.log.error(`${message}: ${err}`) },
         gitBackend,
-        { id: repo.id, owner, name: repoName },
+        { id: repo.id, owner, name: repoName, orgId: repo.orgId },
         id,
         { identityId: req.identity!.identityId, principal: req.identity!.principal },
         parsed.data.proposal_id,
