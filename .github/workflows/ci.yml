@@ -123,6 +123,29 @@ jobs:
       # for ADP, same pattern as the cli/ job.
       - run: npm test
 
+  runner:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: runner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: runner/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      # ubuntu-latest ships a real Docker daemon — ADP_REQUIRE_DOCKER=1 turns
+      # a silently-skipped real-container tier into a hard failure, same
+      # reason ADP_REQUIRE_DB=1/ADP_REQUIRE_NETWORK=1 are set in the server
+      # job: the isolation flags this package exists to enforce
+      # (network-deny, resource caps, wall-clock kill) are only proven by
+      # actually running a container, not by asserting on an argument list.
+      - run: ADP_REQUIRE_DOCKER=1 npm test
+
   bench:
     runs-on: ubuntu-latest
     defaults:

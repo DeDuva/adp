@@ -37,6 +37,7 @@ a path named here stops existing.
 | `server/drizzle/`, `server/web/` | migrations; the supervision UI |
 | `cli/` | the `adp` CLI (no database needed to test) |
 | `adapters/` | scanner-as-gate adapters (osv-scanner, wizcli) |
+| `runner/` | the gate runner: polls `/api/adp/gate-jobs/claim`, executes in an isolated container (network-deny, no host mounts, no ambient secrets, resource caps), reports via `/complete`. A pure HTTP client like `cli/` — no `server/` import, no DB or signing-key credential |
 | `bench/` | benchmark arms, runs, and the generated report |
 | `spec/` | the published contract: `spec/openapi.yaml`, `spec/schemas/`, `spec/graphql/github.graphql` |
 | `scripts/dev/` | what the Makefile actually runs — `up`, `down`, `doctor`, `verify-clean` |

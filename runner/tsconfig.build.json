@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmit": false
+  },
+  "include": ["src"],
+  // Colocated *.test.ts files import test/require-docker.ts, outside
+  // rootDir="src" — same reason and same fix as server/tsconfig.build.json.
+  // Typechecking still covers them (tsconfig.json includes src and test).
+  "exclude": ["src/**/*.test.ts"]
+}
