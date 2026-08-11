@@ -68,22 +68,13 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
       body: JSON.stringify({ name: repoName }),
     });
 
-    // Claim is deliberately instance-wide (a runner serves the whole
-    // instance, not one repo), so it can see queued jobs left behind by
-    // other test files or a prior run against this same database. Drain
-    // them before asserting anything about "nothing queued" below, rather
-    // than assuming a shared instance starts empty.
-    for (;;) {
-      const res = await api("/api/adp/gate-jobs/claim", runnerToken, {
-        method: "POST",
-        body: JSON.stringify({ claimed_by: "drain" }),
-      });
-      if (res.status === 204) break;
-      await api(`/api/adp/gate-jobs/${res.body!.id}/complete`, runnerToken, {
-        method: "POST",
-        body: JSON.stringify({ status: "succeeded" }),
-      });
-    }
+    // Deliberately no "drain the queue first" step here (an earlier version
+    // had one, looping claim+complete until 204): claim is instance-wide
+    // and shared with every other e2e file vitest runs concurrently against
+    // this same database, so draining that way completes jobs belonging to
+    // those other, still-in-flight tests — corrupting them, not cleaning up
+    // after them. The tests below are written to tolerate a non-empty
+    // shared queue instead (see the "reports 204..." test's own comment).
   });
 
   afterAll(async () => {
@@ -109,15 +100,16 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
   });
 
   it("reports 204 when there is nothing queued, or a well-formed job if something legitimately was", async () => {
-    // "Nothing queued" is this file's own local view after its beforeAll
-    // drain — it is not a claim about the whole instance. Another e2e file
-    // sharing this database can have a real job genuinely queued (or,
-    // starting with M4-9d, deliberately held queued for a measurable window
-    // while it proves an org's concurrency cap) at this exact moment, and
-    // claim() correctly hands it out — that is not this test's job to
-    // prevent or clean up after (completing a job this test doesn't own
-    // would corrupt whichever test does). What this test actually verifies
-    // is that claim() never fabricates a malformed response either way.
+    // "Nothing queued" can't actually be guaranteed here: claim is
+    // instance-wide and this database is shared with every other e2e file
+    // vitest runs concurrently. Another file can have a real job genuinely
+    // queued (or, starting with M4-9d, deliberately held queued-but-blocked
+    // for a measurable window while it proves an org's concurrency cap) at
+    // this exact moment, and claim() correctly hands it out — that is not
+    // this test's job to prevent or clean up after (completing a job this
+    // test doesn't own would corrupt whichever test does). What this test
+    // actually verifies is that claim() never fabricates a malformed
+    // response either way.
     const res = await api("/api/adp/gate-jobs/claim", runnerToken, {
       method: "POST",
       body: JSON.stringify({ claimed_by: "runner-host-1" }),

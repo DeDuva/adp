@@ -68,19 +68,14 @@ describe.skipIf(skipWithoutDb)("M4-9d: gate-job org concurrency quota", () => {
     const [runner] = await db.insert(identities).values({ kind: "agent", principal: `gjq-runner-${Date.now()}` }).returning();
     runnerToken = await mintToken(db, runner!.id, ["runner"]);
 
-    // Claim is instance-wide (M4-9a) and this test asserts exact claim
-    // ordering — drain any job left behind by another test file sharing this
-    // database (the same fix e2e-gate-jobs.test.ts needed), so ordering
-    // assertions below aren't racing leftover state.
-    for (;;) {
-      const res = await api("/api/adp/gate-jobs/claim", { method: "POST", body: JSON.stringify({ claimed_by: "drain" }) }, runnerToken);
-      if (res.status === 204) break;
-      await api(
-        `/api/adp/gate-jobs/${(res.body as { id: string }).id}/complete`,
-        { method: "POST", body: JSON.stringify({ status: "succeeded" }) },
-        runnerToken,
-      );
-    }
+    // Deliberately no "drain the queue first" step here (an earlier version
+    // had one): claim is instance-wide and shared with every other e2e file
+    // vitest runs concurrently against this same database, so draining by
+    // claiming-and-completing everything in sight would complete jobs that
+    // belong to those other, still-in-flight tests — corrupting them, not
+    // cleaning up after them. This file's own tests identify their jobs by
+    // id and poll each one's specific status (driveUntilClaimed below)
+    // rather than assuming the queue starts empty, so no drain is needed.
   });
 
   afterAll(async () => {
