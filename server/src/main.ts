@@ -11,6 +11,8 @@ import { authPlugin } from "./auth/plugin.js";
 import { registerMirrorWebhookRawBodyParser } from "./http-rest/mirror-webhook.js";
 import { registerApiRoutes } from "./routes.js";
 import { startMirrorPoller } from "./core/mirror-poller.js";
+import { startWorkspaceSweeper } from "./core/workspace-sweeper.js";
+import { findOrCreateSystemIdentity } from "./core/system-identity.js";
 import { LandRequirement } from "./core/repo-policy.js";
 import { recordHttpRequest, renderMetrics } from "./core/telemetry.js";
 import { registerVersionRoute, resolveBuildInfo } from "./core/version.js";
@@ -111,6 +113,9 @@ async function main() {
   await app.listen({ host: "0.0.0.0", port: config.PORT });
 
   startMirrorPoller(db, gitBackend, config.MIRROR_CREDENTIAL_KEY, config.MIRROR_POLL_INTERVAL_MS);
+
+  const sweeperActorId = await findOrCreateSystemIdentity(db, "system:workspace-sweeper");
+  startWorkspaceSweeper(db, gitBackend, sweeperActorId, config.WORKSPACE_SWEEP_INTERVAL_MS);
 }
 
 main().catch((err) => {

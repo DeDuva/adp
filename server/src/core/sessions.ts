@@ -256,7 +256,7 @@ export async function resumeSession(
   db: Db,
   gitBackend: GitBackend,
   signer: Signer,
-  repo: { id: string; owner: string; name: string },
+  repo: { id: string; owner: string; name: string; orgId: string | null },
   sessionId: string,
   input: { harness: string; checkpointId?: string },
   actorId: string,

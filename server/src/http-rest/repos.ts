@@ -1,11 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { count, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
-import { repos } from "../db/schema.js";
+import { orgs, repos } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepo } from "../core/repos-lookup.js";
+import { findOrCreateOrg } from "../core/org-lookup.js";
 
 const CreateRepoBody = z.object({
   name: z.string().min(1).regex(/^[a-zA-Z0-9._-]+$/),
@@ -21,7 +23,20 @@ async function createRepo(
   actorId: string,
 ) {
   if (await findRepo(db, owner, name)) {
-    return { conflict: true as const };
+    return { status: "conflict" as const };
+  }
+
+  // M4-3: every repo gets an org going forward, the same org the M4-0
+  // migration would have backfilled this owner string into if the repo had
+  // predated it — one org per distinct owner, found-or-created here rather
+  // than left null, which is what makes maxRepos below able to mean anything.
+  const orgId = await findOrCreateOrg(db, owner);
+  const [org] = await db.select({ maxRepos: orgs.maxRepos }).from(orgs).where(eq(orgs.id, orgId));
+  if (org?.maxRepos != null) {
+    const [row] = await db.select({ existing: count() }).from(repos).where(eq(repos.orgId, orgId));
+    if ((row?.existing ?? 0) >= org.maxRepos) {
+      return { status: "quota-exceeded" as const, maxRepos: org.maxRepos };
+    }
   }
 
   // git init happens outside the DB transaction (it's not transactional
@@ -29,20 +44,20 @@ async function createRepo(
   await gitBackend.initBareRepo(owner, name, defaultBranch);
 
   const repo = await db.transaction(async (tx) => {
-    const [repo] = await tx.insert(repos).values({ owner, name, defaultBranch }).returning();
+    const [repo] = await tx.insert(repos).values({ owner, name, defaultBranch, orgId }).returning();
 
     await recordOperation(tx, {
       repoId: repo!.id,
       actorId,
       verb: "repo.create",
       target: `${owner}/${name}`,
-      after: { id: repo!.id, owner, name, defaultBranch },
+      after: { id: repo!.id, owner, name, defaultBranch, orgId },
     });
 
     return repo!;
   });
 
-  return { conflict: false as const, repo };
+  return { status: "created" as const, repo };
 }
 
 function serializeRepo(repo: typeof repos.$inferSelect, owner: string, name: string, publicUrl: string) {
@@ -80,8 +95,12 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     const { name, default_branch } = parsed.data;
 
     const result = await createRepo(db, gitBackend, owner, name, default_branch, req.identity!.identityId);
-    if (result.conflict) {
+    if (result.status === "conflict") {
       reply.code(422).send({ message: `Repository ${owner}/${name} already exists` });
+      return;
+    }
+    if (result.status === "quota-exceeded") {
+      reply.code(403).send({ message: `Org repo quota exceeded (max ${result.maxRepos})` });
       return;
     }
     reply.code(201).send(serializeRepo(result.repo, owner, name, publicUrl));
@@ -100,8 +119,12 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     const { name, default_branch } = parsed.data;
 
     const result = await createRepo(db, gitBackend, owner, name, default_branch, req.identity!.identityId);
-    if (result.conflict) {
+    if (result.status === "conflict") {
       reply.code(422).send({ message: `Repository ${owner}/${name} already exists` });
+      return;
+    }
+    if (result.status === "quota-exceeded") {
+      reply.code(403).send({ message: `Org repo quota exceeded (max ${result.maxRepos})` });
       return;
     }
     reply.code(201).send(serializeRepo(result.repo, owner, name, publicUrl));
@@ -117,8 +140,12 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     const { name, default_branch } = parsed.data;
 
     const result = await createRepo(db, gitBackend, org, name, default_branch, req.identity!.identityId);
-    if (result.conflict) {
+    if (result.status === "conflict") {
       reply.code(422).send({ message: `Repository ${org}/${name} already exists` });
+      return;
+    }
+    if (result.status === "quota-exceeded") {
+      reply.code(403).send({ message: `Org repo quota exceeded (max ${result.maxRepos})` });
       return;
     }
     reply.code(201).send(serializeRepo(result.repo, org, name, publicUrl));
