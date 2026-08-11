@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { GitBackend } from "./git-backend.js";
@@ -105,6 +105,37 @@ describe("GitBackend", () => {
       const ok = await backend.fastForwardRef("acme", "hello", "main", aheadSha, baseSha);
       expect(ok).toBe(false);
       expect(await backend.resolveRef("acme", "hello", "main")).toBe(baseSha);
+    });
+
+    // M4-9c: the tarball runner/src/docker.ts's `docker cp` puts inside an
+    // isolated gate container — real `git archive`, extracted with the real
+    // `tar` binary, not asserted against by shape alone.
+    it("archiveTar produces a real tarball of the tree at a given sha", async () => {
+      const tar = await backend.archiveTar("acme", "hello", aheadSha);
+      const extractDir = await mkdtemp(path.join(tmpdir(), "adp-git-backend-archive-"));
+      try {
+        const tarPath = path.join(extractDir, "out.tar");
+        await writeFile(tarPath, tar);
+        await execFileAsync("tar", ["-xf", tarPath], { cwd: extractDir });
+        const content = await readFile(path.join(extractDir, "file.txt"), "utf8");
+        expect(content).toBe("one\ntwo\n");
+      } finally {
+        await rm(extractDir, { recursive: true, force: true });
+      }
+    });
+
+    it("archiveTar reflects the tree at the given sha, not the current tip", async () => {
+      const tar = await backend.archiveTar("acme", "hello", baseSha);
+      const extractDir = await mkdtemp(path.join(tmpdir(), "adp-git-backend-archive-base-"));
+      try {
+        const tarPath = path.join(extractDir, "out.tar");
+        await writeFile(tarPath, tar);
+        await execFileAsync("tar", ["-xf", tarPath], { cwd: extractDir });
+        const content = await readFile(path.join(extractDir, "file.txt"), "utf8");
+        expect(content).toBe("one\n");
+      } finally {
+        await rm(extractDir, { recursive: true, force: true });
+      }
     });
 
     // Mirror mode (M2): a second bare repo stands in for "GitHub" — no live

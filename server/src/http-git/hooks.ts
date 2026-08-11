@@ -10,6 +10,8 @@ import { findMirror } from "../core/mirrors-lookup.js";
 import { recordPushedCommits } from "../core/change-recorder.js";
 import { BundledSecretScanProvider, type SecretScanProvider } from "../core/secret-scan.js";
 import { emitWebhookEvent } from "../core/webhooks.js";
+import { loadRepoPolicy } from "../core/repo-policy.js";
+import { enqueueGateJob } from "../core/gate-jobs.js";
 
 const ZERO_SHA = "0".repeat(40);
 
@@ -171,6 +173,30 @@ export function registerHookRoutes(
           req.log,
           credentialKey,
         );
+
+        // M4-9c: adp.yaml's `runner.gates` read off the *pushed* sha, not the
+        // base ref — unlike the land-policy read in core/repo-policy.ts,
+        // this is naming what command runs inside M4-9b's isolated,
+        // network-denied, resource-capped container, which is exactly the
+        // class of untrusted repo-specified code that container exists to
+        // run safely. A branch's own adp.yaml choosing its own build/test
+        // command is the ordinary case, not a policy bypass.
+        const policy = await loadRepoPolicy(gitBackend, owner, name, update.newSha);
+        if (policy.runner) {
+          for (const gate of policy.runner.gates) {
+            await enqueueGateJob(db, {
+              repoId: repo.id,
+              owner,
+              repoName: name,
+              gitSha: update.newSha,
+              name: gate.name,
+              image: policy.runner.image,
+              command: policy.runner.setup ? `${policy.runner.setup} && ${gate.run}` : gate.run,
+              timeoutMs: gate.timeout_ms,
+              actorId: identity.id,
+            });
+          }
+        }
       }
 
       // Queue the outbound push-out as an outbox row rather than pushing to

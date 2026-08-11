@@ -2,10 +2,14 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
+import type { GitBackend } from "../core/git-backend.js";
+import type { Signer } from "../core/signing.js";
 import { gateJobs } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
-import { findRepo } from "../core/repos-lookup.js";
+import { findRepo, findRepoById } from "../core/repos-lookup.js";
+import { enqueueGateJob } from "../core/gate-jobs.js";
+import { recordGateResult } from "../core/gate-results.js";
 
 const EnqueueBody = z.object({
   git_sha: z.string().regex(/^[0-9a-f]{40}$/),
@@ -48,21 +52,39 @@ function serializeGateJob(row: typeof gateJobs.$inferSelect) {
   };
 }
 
-// M4-9a (docs/m4-readiness-review.md §4): the queue mechanism only — no
-// runner exists yet. Proven end-to-end by e2e tests acting as a stub runner
-// over HTTP, the same substrate a real one (M4-9b, the `runner/` package)
-// will use.
+// gate_jobs.status (queue lifecycle) -> gate_results.status (the verdict
+// land policy actually reads). timed_out and error are both "did not
+// produce success" as far as gates_green is concerned — the distinction
+// between them is preserved on the gate_jobs row itself, not lost, just not
+// meaningful to a land-policy check that only knows success/failure/pending.
+function toGateResultStatus(status: "succeeded" | "failed" | "timed_out" | "error"): "success" | "failure" {
+  return status === "succeeded" ? "success" : "failure";
+}
+
+// M4-9a (docs/m4-readiness-review.md §4): the queue mechanism. M4-9c adds
+// the checkout endpoint (a real runner needs the code it's about to test)
+// and wires a completed job into a real, signed `gate_results` row — the
+// thing land policy actually reads — via core/gate-results.ts, the same
+// shape http-rest/gates.ts's self-report route produces.
 //
-// Deliberately three routes rather than one CRUD resource: enqueue is
-// repo-scoped and needs `repo:write` (whoever can push code can request a
-// gate run on it); claim and complete are instance-wide and need the new
-// "runner" scope (auth/plugin.ts) instead — a runner process serves the
-// whole instance, not one repo, and must not be handed `repo:write` just to
-// report results. This is also what keeps a compromised runner host's blast
-// radius to "can claim and complete gate jobs", never touching Postgres
-// directly or holding a repo-scoped credential (the `cli/`-style
-// pure-HTTP-client boundary, chosen for this exact reason).
-export function registerGateJobRoutes(app: FastifyInstance, db: Db) {
+// Deliberately more than one CRUD resource: enqueue and the repo-scoped
+// listing need `repo:write`/`repo:read` (whoever can push code can request
+// or see a gate run on it); claim, complete, and checkout are instance-wide
+// and need the new "runner" scope (auth/plugin.ts) instead — a runner
+// process serves the whole instance, not one repo, and must not be handed
+// repo:write just to pull work. This is also what keeps a compromised
+// runner host's blast radius bounded: it can claim/complete/checkout gate
+// jobs, never touch Postgres directly, and — per the checkout route below —
+// only ever read the one repo/sha of a job it has actually claimed, not
+// browse the instance.
+export function registerGateJobRoutes(
+  app: FastifyInstance,
+  db: Db,
+  gitBackend: GitBackend,
+  signer: Signer,
+  publicUrl: string,
+  credentialKey: string,
+) {
   app.post(
     "/api/adp/repos/:owner/:repo/gate-jobs",
     { preHandler: requireScope("repo:write") },
@@ -80,29 +102,16 @@ export function registerGateJobRoutes(app: FastifyInstance, db: Db) {
         return;
       }
 
-      const row = await db.transaction(async (tx) => {
-        const [row] = await tx
-          .insert(gateJobs)
-          .values({
-            repoId: repo.id,
-            gitSha: parsed.data.git_sha,
-            name: parsed.data.name,
-            image: parsed.data.image,
-            command: parsed.data.command,
-            timeoutMs: parsed.data.timeout_ms,
-            actorId: req.identity!.identityId,
-          })
-          .returning();
-
-        await recordOperation(tx, {
-          repoId: repo.id,
-          actorId: req.identity!.identityId,
-          verb: "gate_job.enqueue",
-          target: `${owner}/${repoName}@${parsed.data.git_sha}#${parsed.data.name}`,
-          after: { status: "queued" },
-        });
-
-        return row!;
+      const row = await enqueueGateJob(db, {
+        repoId: repo.id,
+        owner,
+        repoName,
+        gitSha: parsed.data.git_sha,
+        name: parsed.data.name,
+        image: parsed.data.image,
+        command: parsed.data.command,
+        timeoutMs: parsed.data.timeout_ms,
+        actorId: req.identity!.identityId,
       });
 
       reply.code(201).send(serializeGateJob(row));
@@ -167,6 +176,33 @@ export function registerGateJobRoutes(app: FastifyInstance, db: Db) {
     reply.code(200).send(serializeGateJob(claimed));
   });
 
+  // A tarball of the job's own repo/sha — nothing else. Bounded to jobs
+  // currently `running` (i.e. actively claimed): an unclaimed or already-
+  // completed job's code is not fetchable here, so the window in which the
+  // "runner" scope grants any read access to a repo's contents at all is the
+  // same narrow window a legitimate runner is actively working the job in.
+  app.get("/api/adp/gate-jobs/:id/checkout", { preHandler: requireScope("runner") }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const [job] = await db.select().from(gateJobs).where(eq(gateJobs.id, id));
+    if (!job) {
+      reply.code(404).send({ message: `Gate job ${id} not found` });
+      return;
+    }
+    if (job.status !== "running") {
+      reply.code(409).send({ message: `Gate job ${id} is '${job.status}', not currently claimed` });
+      return;
+    }
+
+    const repo = await findRepoById(db, job.repoId);
+    if (!repo) {
+      reply.code(404).send({ message: `Repository for gate job ${id} not found` });
+      return;
+    }
+
+    const tar = await gitBackend.archiveTar(repo.owner, repo.name, job.gitSha);
+    reply.type("application/x-tar").send(tar);
+  });
+
   app.post("/api/adp/gate-jobs/:id/complete", { preHandler: requireScope("runner") }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const parsed = CompleteBody.safeParse(req.body);
@@ -211,6 +247,33 @@ export function registerGateJobRoutes(app: FastifyInstance, db: Db) {
 
       return row!;
     });
+
+    // The queue-lifecycle event above is recorded regardless; the signed
+    // evidence below is best-effort against a repo that might (in principle)
+    // have been deleted between claim and complete — if so, there is
+    // nothing left for gates_green to check against anyway.
+    const repo = await findRepoById(db, row.repoId);
+    if (repo) {
+      await recordGateResult(
+        db,
+        signer,
+        publicUrl,
+        credentialKey,
+        {
+          repoId: row.repoId,
+          owner: repo.owner,
+          repoName: repo.name,
+          gitSha: row.gitSha,
+          name: row.name,
+          status: toGateResultStatus(row.status as "succeeded" | "failed" | "timed_out" | "error"),
+          summary: `gate runner: ${row.status}${row.exitCode !== null ? ` (exit ${row.exitCode})` : ""}`,
+          reporterId: req.identity!.identityId,
+          reporterPrincipal: req.identity!.principal,
+          externalId: `gate_job:${row.id}`,
+        },
+        req.log,
+      );
+    }
 
     reply.send(serializeGateJob(row));
   });

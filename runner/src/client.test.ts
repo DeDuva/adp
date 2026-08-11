@@ -30,6 +30,11 @@ describe("GateJobClient", () => {
           headers: req.headers,
           body: Buffer.concat(chunks).toString("utf8"),
         });
+        if (Buffer.isBuffer(nextResponse.body)) {
+          res.writeHead(nextResponse.status, { "Content-Type": "application/x-tar" });
+          res.end(nextResponse.body);
+          return;
+        }
         res.writeHead(nextResponse.status, { "Content-Type": "application/json" });
         res.end(nextResponse.status === 204 ? undefined : JSON.stringify(nextResponse.body));
       });
@@ -86,5 +91,20 @@ describe("GateJobClient", () => {
   it("complete throws on a non-2xx response", async () => {
     nextResponse = { status: 409, body: { message: "not running" } };
     await expect(client().complete("job-1", { status: "succeeded", exitCode: 0, logs: "" })).rejects.toThrow(/409/);
+  });
+
+  it("checkout GETs the job's own id and returns the raw response bytes", async () => {
+    nextResponse = { status: 200, body: Buffer.from("not really a tar, just bytes") };
+    const tar = await client().checkout("job-1");
+
+    expect(requests[0]!.method).toBe("GET");
+    expect(requests[0]!.url).toBe("/api/adp/gate-jobs/job-1/checkout");
+    expect(requests[0]!.headers.authorization).toBe("Bearer adp_pat_runner-token");
+    expect(tar.toString("utf8")).toBe("not really a tar, just bytes");
+  });
+
+  it("checkout throws on a non-2xx response", async () => {
+    nextResponse = { status: 409, body: { message: "not currently claimed" } };
+    await expect(client().checkout("job-1")).rejects.toThrow(/409/);
   });
 });
