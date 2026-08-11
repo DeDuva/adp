@@ -68,22 +68,13 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
       body: JSON.stringify({ name: repoName }),
     });
 
-    // Claim is deliberately instance-wide (a runner serves the whole
-    // instance, not one repo), so it can see queued jobs left behind by
-    // other test files or a prior run against this same database. Drain
-    // them before asserting anything about "nothing queued" below, rather
-    // than assuming a shared instance starts empty.
-    for (;;) {
-      const res = await api("/api/adp/gate-jobs/claim", runnerToken, {
-        method: "POST",
-        body: JSON.stringify({ claimed_by: "drain" }),
-      });
-      if (res.status === 204) break;
-      await api(`/api/adp/gate-jobs/${res.body!.id}/complete`, runnerToken, {
-        method: "POST",
-        body: JSON.stringify({ status: "succeeded" }),
-      });
-    }
+    // Deliberately no "drain the queue first" step here (an earlier version
+    // had one, looping claim+complete until 204): claim is instance-wide
+    // and shared with every other e2e file vitest runs concurrently against
+    // this same database, so draining that way completes jobs belonging to
+    // those other, still-in-flight tests — corrupting them, not cleaning up
+    // after them. The tests below are written to tolerate a non-empty
+    // shared queue instead (see the "reports 204..." test's own comment).
   });
 
   afterAll(async () => {
@@ -108,13 +99,47 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
     expect(res.status).toBe(403);
   });
 
-  it("reports 204 when there is nothing queued", async () => {
+  it("reports 204 when there is nothing queued, or a well-formed job if something legitimately was", async () => {
+    // "Nothing queued" can't actually be guaranteed here: claim is
+    // instance-wide and this database is shared with every other e2e file
+    // vitest runs concurrently. Another file can have a real job genuinely
+    // queued (or, starting with M4-9d, deliberately held queued-but-blocked
+    // for a measurable window while it proves an org's concurrency cap) at
+    // this exact moment, and claim() correctly hands it out — that is not
+    // this test's job to prevent or clean up after (completing a job this
+    // test doesn't own would corrupt whichever test does). What this test
+    // actually verifies is that claim() never fabricates a malformed
+    // response either way.
     const res = await api("/api/adp/gate-jobs/claim", runnerToken, {
       method: "POST",
       body: JSON.stringify({ claimed_by: "runner-host-1" }),
     });
-    expect(res.status).toBe(204);
+    if (res.status === 200) {
+      expect(res.body).toMatchObject({ status: "running", claimed_by: "runner-host-1" });
+    } else {
+      expect(res.status).toBe(204);
+    }
   });
+
+  // Claim is instance-wide and this database is shared with every other e2e
+  // file vitest runs concurrently — another file's own claim polling (or,
+  // starting with M4-9d, a test that deliberately holds jobs claimed for a
+  // measurable window while it proves an org's concurrency cap) can
+  // legitimately claim this test's just-enqueued job before this test's own
+  // next claim call runs. Loop past anything that isn't `targetJobId`
+  // instead of assuming the very next claim is it — and never complete a
+  // job that isn't ours; that would corrupt whichever test actually owns it.
+  async function claimJobId(targetJobId: string, claimedBy: string, maxAttempts = 40): Promise<Record<string, unknown>> {
+    for (let i = 0; i < maxAttempts; i++) {
+      const res = await api("/api/adp/gate-jobs/claim", runnerToken, {
+        method: "POST",
+        body: JSON.stringify({ claimed_by: claimedBy }),
+      });
+      if (res.status === 200 && res.body!.id === targetJobId) return res.body!;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`claimJobId: ${targetJobId} was never claimed after ${maxAttempts} attempts`);
+  }
 
   it("runs the full enqueue -> claim -> complete lifecycle", async () => {
     const enqueued = await api(`/api/adp/repos/${owner}/${repoName}/gate-jobs`, writeToken, {
@@ -125,19 +150,25 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
     expect(enqueued.body).toMatchObject({ status: "queued", name: "unit", git_sha: gitSha });
     const jobId = enqueued.body!.id as string;
 
-    const claimed = await api("/api/adp/gate-jobs/claim", runnerToken, {
-      method: "POST",
-      body: JSON.stringify({ claimed_by: "runner-host-1" }),
-    });
-    expect(claimed.status).toBe(200);
-    expect(claimed.body).toMatchObject({ id: jobId, status: "running", claimed_by: "runner-host-1" });
+    const claimedBody = await claimJobId(jobId, "runner-host-1");
+    expect(claimedBody).toMatchObject({ id: jobId, status: "running", claimed_by: "runner-host-1" });
 
-    // A second runner polling concurrently finds nothing left to claim.
+    // A second runner polling concurrently never gets the same row twice
+    // (FOR UPDATE SKIP LOCKED, not a race). This does *not* assert 204: with
+    // more than one e2e file exercising the instance-wide queue against the
+    // same shared database, some other file's own legitimately queued job
+    // may be sitting there at this exact moment and get handed to this
+    // second claim instead — that's a different job's business, not a
+    // double-claim of this one, which is the actual property under test.
     const secondClaim = await api("/api/adp/gate-jobs/claim", runnerToken, {
       method: "POST",
       body: JSON.stringify({ claimed_by: "runner-host-2" }),
     });
-    expect(secondClaim.status).toBe(204);
+    if (secondClaim.status === 200) {
+      expect((secondClaim.body as { id: string }).id).not.toBe(jobId);
+    } else {
+      expect(secondClaim.status).toBe(204);
+    }
 
     const completed = await api(`/api/adp/gate-jobs/${jobId}/complete`, runnerToken, {
       method: "POST",

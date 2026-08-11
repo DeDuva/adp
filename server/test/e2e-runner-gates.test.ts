@@ -7,8 +7,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
-import { identities } from "../src/db/schema.js";
+import { identities, gateJobs } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
@@ -124,33 +125,28 @@ describe.skipIf(skipWithoutDb)("M4-9c: adp.yaml-driven gate jobs", () => {
     const jobs = (list.body as { gate_jobs: { id: string; name: string; status: string; image: string; command: string }[] })
       .gate_jobs;
     const job = jobs.find((j) => j.name === "unit");
-    expect(job).toMatchObject({ status: "queued", image: "busybox:1", command: "echo setting-up && cat marker.txt" });
+    // Not asserting status here: claim is instance-wide (M4-9a) and shared
+    // across every e2e file vitest runs concurrently against this same
+    // database, so by the time this checks, jobId may already be `running`
+    // — claimed by another file's own claim polling, not this test's. What
+    // this assertion actually verifies (adp.yaml's runner block was parsed
+    // and turned into the right image/command) doesn't depend on status.
+    expect(job).toMatchObject({ image: "busybox:1", command: "echo setting-up && cat marker.txt" });
+    const jobId = job!.id;
 
-    // Claim is instance-wide (M4-9a): a job left permanently queued by
-    // another test file sharing this database — e2e-gate-jobs.test.ts's
-    // "double-complete" case does this by design — can be older than this
-    // test's own job and would be claimed first. Loop past (and drain) any
-    // job that isn't the one this test just pushed, rather than assuming
-    // the very next claim is it.
-    let claimedJob: { id: string } | undefined;
-    for (let i = 0; i < 20 && !claimedJob; i++) {
-      const claimed = await api("/api/adp/gate-jobs/claim", runnerToken, {
-        method: "POST",
-        body: JSON.stringify({ claimed_by: "stub-runner-1" }),
-      });
-      expect(claimed.status).toBe(200);
-      const candidate = claimed.body as { id: string };
-      if (candidate.id === job!.id) {
-        claimedJob = candidate;
-      } else {
-        await api(`/api/adp/gate-jobs/${candidate.id}/complete`, runnerToken, {
-          method: "POST",
-          body: JSON.stringify({ status: "succeeded" }),
-        });
-      }
+    // /checkout and /complete don't check *who* claimed a job, only that it
+    // currently is one (http-rest/gate-jobs.ts) — so rather than asserting
+    // this test's own claim() call is what claims jobId (which a
+    // concurrently-running file's own claim polling could just as easily
+    // do first), this drives claim() itself to make progress, racing
+    // against everyone else like a real second runner would, while polling
+    // jobId's own DB status directly until it's no longer `queued`.
+    for (let i = 0; i < 40; i++) {
+      const [row] = await db.select({ status: gateJobs.status }).from(gateJobs).where(eq(gateJobs.id, jobId));
+      if (row!.status !== "queued") break;
+      await api("/api/adp/gate-jobs/claim", runnerToken, { method: "POST", body: JSON.stringify({ claimed_by: "stub-runner-1" }) });
+      await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    expect(claimedJob).toBeDefined();
-    const jobId = claimedJob!.id;
 
     // Real tar bytes, over a real socket, off the real bare repo — not a
     // fixture standing in for what archiveTar produces.

@@ -8,7 +8,7 @@ import { gateJobs } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepo, findRepoById } from "../core/repos-lookup.js";
-import { enqueueGateJob } from "../core/gate-jobs.js";
+import { enqueueGateJob, claimGateJob } from "../core/gate-jobs.js";
 import { recordGateResult } from "../core/gate-results.js";
 
 const EnqueueBody = z.object({
@@ -141,9 +141,10 @@ export function registerGateJobRoutes(
   );
 
   // Instance-wide: a runner doesn't know or care which repo it's about to
-  // work on, only that it wants the oldest queued job. `FOR UPDATE SKIP
-  // LOCKED` (mirror-poller.ts, workspace-sweeper.ts's established idiom)
-  // makes this safe with more than one runner polling concurrently.
+  // work on, only that it wants the oldest queued job whose org (if any)
+  // isn't already at its M4-9d concurrency cap. See core/gate-jobs.ts's
+  // claimGateJob for why that's a selection condition, not a post-hoc
+  // rejection.
   app.post("/api/adp/gate-jobs/claim", { preHandler: requireScope("runner") }, async (req, reply) => {
     const parsed = ClaimBody.safeParse(req.body);
     if (!parsed.success) {
@@ -151,23 +152,7 @@ export function registerGateJobRoutes(
       return;
     }
 
-    const claimed = await db.transaction(async (tx) => {
-      const [candidate] = await tx
-        .select({ id: gateJobs.id })
-        .from(gateJobs)
-        .where(eq(gateJobs.status, "queued"))
-        .orderBy(gateJobs.createdAt)
-        .limit(1)
-        .for("update", { skipLocked: true });
-      if (!candidate) return null;
-
-      const [row] = await tx
-        .update(gateJobs)
-        .set({ status: "running", claimedBy: parsed.data.claimed_by, startedAt: new Date() })
-        .where(eq(gateJobs.id, candidate.id))
-        .returning();
-      return row!;
-    });
+    const claimed = await claimGateJob(db, parsed.data.claimed_by);
 
     if (!claimed) {
       reply.code(204).send();
