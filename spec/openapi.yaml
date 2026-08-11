@@ -1226,6 +1226,33 @@ paths:
                 $ref: "#/components/schemas/GateJob"
         "204":
           description: No queued jobs
+  /api/adp/gate-jobs/{id}/checkout:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    get:
+      summary: >
+        M4-9c: a tarball (`git archive --format=tar`) of the job's own
+        repo/sha — "materializes a checkout" (pragmatic_mvp.md's gate-runner
+        design) for the isolated executor to `docker cp` into a container,
+        never a host mount and never routed through the container's own
+        (network-denied) network. Requires the `runner` scope. Bounded to
+        jobs currently `running`: the window in which this route grants any
+        read access to a repo's contents at all is the same narrow window a
+        legitimate runner is actively working the job in.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: A tar archive of the tree at the job's git_sha
+          content:
+            application/x-tar:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Gate job not found
+        "409":
+          description: Gate job is not `running` — not currently claimed
   /api/adp/gate-jobs/{id}/complete:
     parameters:
       - $ref: "#/components/parameters/id"

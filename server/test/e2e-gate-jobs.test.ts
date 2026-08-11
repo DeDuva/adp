@@ -10,6 +10,7 @@ import { identities } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
+import { Signer } from "../src/core/signing.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerGateJobRoutes } from "../src/http-rest/gate-jobs.js";
 
@@ -44,11 +45,12 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
 
     gitRoot = await mkdtemp(path.join(tmpdir(), "adp-e2e-gate-jobs-git-"));
     const gitBackend = new GitBackend(gitRoot);
+    const signer = new Signer("e2e-gate-jobs-signing-key");
 
     app = Fastify({ logger: false });
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
-    registerGateJobRoutes(app, db);
+    registerGateJobRoutes(app, db, gitBackend, signer, "https://adp.example.com", "e2e-test-credential-key");
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();

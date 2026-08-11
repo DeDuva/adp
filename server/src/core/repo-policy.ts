@@ -27,6 +27,35 @@ const StatisticalPolicySchema = z.object({
 
 export type StatisticalPolicy = z.infer<typeof StatisticalPolicySchema>;
 
+// M4-9c: what ADP's own runner executes, additive to the `gates` list above
+// rather than a second meaning for it. `gates` (string names) is who land
+// policy waits on and stays satisfiable by any reporter — self-reported CI,
+// upstream Actions ingest, or this. `runner.gates` is ADP-run gates
+// specifically: each entry's `run` is the command M4-9b's isolated executor
+// runs for a pushed sha, and a repo names the *same* gate name in both lists
+// when it wants ADP itself to be the one producing that evidence. A repo
+// with no `runner:` block just never has ADP-run gates — nothing here is
+// required.
+const RunnerGateSchema = z.object({
+  name: z.string().min(1),
+  run: z.string().min(1),
+  // Same ceiling http-rest/gate-jobs.ts's EnqueueBody enforces.
+  timeout_ms: z
+    .number()
+    .int()
+    .positive()
+    .max(30 * 60 * 1000)
+    .default(5 * 60 * 1000),
+});
+
+const RunnerPolicySchema = z.object({
+  image: z.string().min(1),
+  setup: z.string().optional(),
+  gates: z.array(RunnerGateSchema).default([]),
+});
+
+export type RunnerPolicy = z.infer<typeof RunnerPolicySchema>;
+
 const RepoPolicySchema = z.object({
   gates: z.array(z.string().min(1)).default([]),
   land: z
@@ -35,11 +64,13 @@ const RepoPolicySchema = z.object({
       statistical: StatisticalPolicySchema.default({}),
     })
     .default({ require: [], statistical: {} }),
+  runner: RunnerPolicySchema.optional(),
 });
 
 export interface RepoPolicy {
   gates: string[];
   land: { require: LandRequirement[]; statistical: StatisticalPolicy };
+  runner?: RunnerPolicy;
 }
 
 export const DEFAULT_STATISTICAL_POLICY: StatisticalPolicy = StatisticalPolicySchema.parse({});

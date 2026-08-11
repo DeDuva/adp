@@ -263,6 +263,17 @@ export class GitBackend {
     return stdoutBuf;
   }
 
+  // M4-9c: "materializes a checkout" (pragmatic_mvp.md's gate-runner design)
+  // for the isolated executor — a tarball of the tree at `sha`, not a host
+  // mount and not a live clone. `docker cp` (runner/src/docker.ts) is what
+  // actually gets these bytes into a container; this is just the source of
+  // truth they come from, produced the same way every other read here is:
+  // real `git`, against the bare repo already on disk.
+  async archiveTar(owner: string, name: string, sha: string): Promise<Buffer> {
+    const { stdoutBuf } = await run(["archive", "--format=tar", sha], this.repoPath(owner, name));
+    return stdoutBuf;
+  }
+
   // Direct children only (GitHub's contents API is non-recursive per directory).
   async listTree(owner: string, name: string, treeSha: string): Promise<TreeEntry[]> {
     const { stdout } = await run(["ls-tree", treeSha], this.repoPath(owner, name));

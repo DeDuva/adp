@@ -9,6 +9,10 @@ const execFileAsync = promisify(execFile);
 // rejected with a 422 over an oversized body.
 const LOG_BYTE_LIMIT = 1_000_000;
 
+// Where a checkout (runner/src/checkout.ts) lands inside the container, and
+// the working directory the job's own command runs from.
+const WORKDIR = "/workspace";
+
 export interface GateJobSpec {
   id: string;
   image: string;
@@ -31,18 +35,32 @@ function containerNameFor(jobId: string): string {
   return `adp-gate-${jobId}`;
 }
 
+interface ExecError {
+  code?: number;
+  stderr?: string | Buffer;
+  message?: string;
+}
+
+function execErrorInfo(err: unknown): { exitCode: number | null; message: string } {
+  const e = (err ?? {}) as ExecError;
+  const exitCode = typeof e.code === "number" ? e.code : null;
+  const stderrText = e.stderr ? e.stderr.toString() : "";
+  return { exitCode, message: (stderrText || e.message || String(err)).slice(0, LOG_BYTE_LIMIT) };
+}
+
 // The isolation bar this executor exists to enforce (pragmatic_mvp.md
 // §4.5/§4.7): network-deny by default, no host mounts, no ambient secrets,
-// CPU/memory caps. Each of those is an *absence* from this argument list —
-// there is no `-v` anywhere (no host mounts), no `-e`/`--env-file` (no
-// ambient secrets; `docker run` never forwards the host's own environment
-// into a container unless told to). Per-job network allowlisting from
-// `adp.yaml` is not built yet — that parsing is M4-9c's job, and this
-// executor is deliberately adp.yaml-agnostic: it only ever sees the
+// CPU/memory caps. Each is an *absence* from this argument list — there is
+// no `-v` (no host mounts: the checkout arrives via `docker cp`, a
+// daemon-mediated file copy, not a live window into the host filesystem) and
+// no `-e`/`--env-file` (no ambient secrets — `docker create` never forwards
+// the host's own environment into a container unless told to). Per-job
+// network allowlisting from `adp.yaml` is not built yet; this executor is
+// deliberately adp.yaml-agnostic regardless — it only ever sees the
 // image/command a gate_jobs row already carries.
-export function buildDockerArgs(job: GateJobSpec, limits: RunnerLimits): string[] {
+export function buildCreateArgs(job: GateJobSpec, limits: RunnerLimits): string[] {
   return [
-    "run",
+    "create",
     "--rm",
     "--name",
     containerNameFor(job.id),
@@ -52,6 +70,8 @@ export function buildDockerArgs(job: GateJobSpec, limits: RunnerLimits): string[
     limits.memory,
     "--cpus",
     limits.cpus,
+    "-w",
+    WORKDIR,
     job.image,
     "sh",
     "-c",
@@ -59,8 +79,8 @@ export function buildDockerArgs(job: GateJobSpec, limits: RunnerLimits): string[
   ];
 }
 
-// Killing the spawned `docker run` client process is not enough on its own —
-// the container it started keeps running detached from that client — so a
+// Killing the spawned `docker start` client process is not enough on its
+// own — the container keeps running detached from that client — so a
 // timeout has to reach the daemon directly by the name we gave it.
 async function killContainer(name: string): Promise<void> {
   try {
@@ -71,20 +91,50 @@ async function killContainer(name: string): Promise<void> {
   }
 }
 
-// The wall-clock half of the isolation bar. `docker run` blocks in the
-// foreground for the container's lifetime and exits with its exit code, so a
-// plain child-process timeout would just abandon our own wait — the container
-// keeps running unsupervised. `docker kill` by name is what actually stops it.
-export function runGateJob(job: GateJobSpec, limits: RunnerLimits): Promise<ExecutionResult> {
-  const args = buildDockerArgs(job, limits);
+// `docker create`'s `--rm` only removes the container once it actually runs
+// and exits (via `start`) — a container that was created but never started
+// (a `docker cp` failure in between) would otherwise leak.
+async function removeContainer(name: string): Promise<void> {
+  try {
+    await execFileAsync("docker", ["rm", "-f", name]);
+  } catch {
+    // Never existed, or already gone — fine either way.
+  }
+}
+
+// "Materializes a checkout, runs commands" (pragmatic_mvp.md's gate-runner
+// design) as two literal, separate steps: `docker create` (the isolated
+// container, not yet running) + `docker cp` (checkoutDir's contents in,
+// daemon-mediated, no bind mount) + `docker start -a` (run it, wall-clock
+// bounded). checkoutDir is produced by runner/src/checkout.ts from the
+// server's `/gate-jobs/{id}/checkout` tarball — this function never talks to
+// git or HTTP itself, only the local directory it's handed.
+export async function runGateJob(job: GateJobSpec, limits: RunnerLimits, checkoutDir: string): Promise<ExecutionResult> {
+  const name = containerNameFor(job.id);
+
+  try {
+    await execFileAsync("docker", buildCreateArgs(job, limits));
+  } catch (err) {
+    const { exitCode, message } = execErrorInfo(err);
+    return { status: "failed", exitCode, logs: message };
+  }
+
+  try {
+    await execFileAsync("docker", ["cp", `${checkoutDir}/.`, `${name}:${WORKDIR}`]);
+  } catch (err) {
+    await removeContainer(name);
+    const { message } = execErrorInfo(err);
+    return { status: "error", exitCode: null, logs: `docker cp failed: ${message}` };
+  }
+
   return new Promise((resolve) => {
-    const child = spawn("docker", args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("docker", ["start", "-a", name], { stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
     let timedOut = false;
 
     const timer = setTimeout(() => {
       timedOut = true;
-      void killContainer(containerNameFor(job.id));
+      void killContainer(name);
     }, job.timeoutMs);
 
     const append = (chunk: Buffer) => {

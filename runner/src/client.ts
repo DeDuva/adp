@@ -52,4 +52,16 @@ export class GateJobClient {
     });
     if (!res.ok) throw new Error(`complete failed: HTTP ${res.status} ${await res.text()}`);
   }
+
+  // M4-9c: a tar archive of the claimed job's own repo/sha — "materializes a
+  // checkout" for docker.ts's `docker cp` step. Only Authorization, same as
+  // every other call this client makes; no separate credential for git
+  // content, and nothing here ever touches the ADP git remote directly.
+  async checkout(jobId: string): Promise<Buffer> {
+    const res = await fetch(new URL(`/api/adp/gate-jobs/${jobId}/checkout`, this.baseUrl), {
+      headers: { Authorization: `Bearer ${this.token}` },
+    });
+    if (!res.ok) throw new Error(`checkout failed: HTTP ${res.status} ${await res.text()}`);
+    return Buffer.from(await res.arrayBuffer());
+  }
 }

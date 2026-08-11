@@ -80,7 +80,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   registerGitDataRoutes(app, db, gitBackend);
   registerHookRoutes(app, db, gitBackend, signer, credentialKey);
   registerGateRoutes(app, db, signer, publicUrl, credentialKey);
-  registerGateJobRoutes(app, db);
+  registerGateJobRoutes(app, db, gitBackend, signer, publicUrl, credentialKey);
   registerDependencyAdmissionRoutes(app, db, signer, publicUrl);
   registerOperationRoutes(app, db, gitBackend);
   registerAuditLogRoutes(app, db);

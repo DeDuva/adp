@@ -1,30 +1,39 @@
+import { rm } from "node:fs/promises";
 import { loadConfig, type Config } from "./config.js";
 import { GateJobClient } from "./client.js";
 import { runGateJob } from "./docker.js";
+import { materializeCheckout } from "./checkout.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// One claim -> run -> complete cycle. Returns whether a job was claimed, so
-// the caller can poll again immediately rather than waiting out the interval
-// while work is queued.
+// One claim -> checkout -> run -> complete cycle. Returns whether a job was
+// claimed, so the caller can poll again immediately rather than waiting out
+// the interval while work is queued.
 //
 // `run` defaults to the real Docker executor but is injectable so this
-// function's own wiring (does a claimed job get run with the right
-// image/command/limits, does the result get reported back under the same
-// job id) is unit-testable without needing a real Docker daemon in every
-// environment that runs `npm test` here — docker.test.ts is what proves the
-// executor itself against the real thing.
+// function's own wiring (does a claimed job's checkout land, does it run
+// with the right image/command/limits, does the result get reported back
+// under the same job id) is unit-testable without needing a real Docker
+// daemon in every environment that runs `npm test` here — docker.test.ts is
+// what proves the executor itself against the real thing.
 export async function pollOnce(client: GateJobClient, config: Config, run: typeof runGateJob = runGateJob): Promise<boolean> {
   const job = await client.claim(config.RUNNER_ID);
   if (!job) return false;
 
-  const result = await run(
-    { id: job.id, image: job.image, command: job.command, timeoutMs: job.timeout_ms },
-    { memory: config.RUNNER_MEMORY, cpus: config.RUNNER_CPUS },
-  );
-  await client.complete(job.id, result);
+  const tar = await client.checkout(job.id);
+  const checkoutDir = await materializeCheckout(tar);
+  try {
+    const result = await run(
+      { id: job.id, image: job.image, command: job.command, timeoutMs: job.timeout_ms },
+      { memory: config.RUNNER_MEMORY, cpus: config.RUNNER_CPUS },
+      checkoutDir,
+    );
+    await client.complete(job.id, result);
+  } finally {
+    await rm(checkoutDir, { recursive: true, force: true });
+  }
   return true;
 }
 
