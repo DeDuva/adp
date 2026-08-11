@@ -34,14 +34,16 @@ The dependency map and what-breaks-what live in [`docs/ecosystem.md`](docs/ecosy
 | M2 — adoption + trust ramp | complete 2026-08-03 | Mirror mode, outbound webhooks, `adp` CLI, telemetry, scanner-as-gate adapters, dependency admission v0, SBOM per land, Actions read-only passthrough. Verified scope: [`docs/m2-readiness-review.md`](docs/m2-readiness-review.md) |
 | Runs / trajectories / eval-gated close *(capability slice)* | complete 2026-08-05 | PRs #58–#61 — took the wire contract 0.1.0 → 0.2.0. Driven by downstream consumers, not M3 scope. Detail: [`docs/trajectory-eval-slice.md`](docs/trajectory-eval-slice.md) |
 | M3 — fleet + differentiation | complete 2026-08-10 | M3-0 … M3-6 landed (sequenced by [`docs/m3-readiness-review.md`](docs/m3-readiness-review.md)). All three benchmark arms published: [`bench/report/merge-contention.md`](bench/report/merge-contention.md) (arm 1, deterministic), [`bench/report/three-way-cost.md`](bench/report/three-way-cost.md) (arm 2, pilot scale), squad's duva-bench track (arm 3 — [squad PR #119](https://github.com/DeDuva/squad/pull/119)) |
-| M4 — multi-tenant hosted preview | sequenced, not started | Work plan (M4-0 … M4-12) in [`docs/m4-readiness-review.md`](docs/m4-readiness-review.md). Blocked on three author decisions — see Blockers |
+| M4 — multi-tenant hosted preview | in progress | Work plan (M4-0 … M4-12) in [`docs/m4-readiness-review.md`](docs/m4-readiness-review.md). Track A underway: M4-0…M4-4 (org schema, org-scoped tokens, org policy plane, quotas/GC, audit-log export) landed. M4-9 (runner) in progress, sliced queue-first: M4-9a (gate-job queue) in flight. Blocked on three author decisions for the rest of Track B — see Blockers |
 | M5 — substrate hardening | not started | Evidence-gated: every item requires a written justification citing M3/M4 telemetry |
 
 ## Now / Next / Later
 
-- **Now:** nothing in flight. M3 is closed. M4 is sequenced (`docs/m4-readiness-review.md`) but
-  Track A (org schema, tokens, policy plane, quotas/GC, audit export, runner, observability,
-  self-host artifacts — M4-0…M4-4, M4-9, M4-11, M4-12) needs no decision to start.
+- **Now:** M4 Track A in progress (`docs/m4-readiness-review.md`) — M4-0…M4-4 landed
+  (org schema, tokens, policy plane, quotas/GC, audit export). M4-9 (runner) is being built
+  isolated from the start, sliced queue-first: M4-9a (gate-job queue: schema + claim/complete
+  REST routes, no runner exists yet) in flight. M4-11 (observability) and M4-12 (self-host
+  artifacts) remain, no decision needed.
 - **Next:** the three M4 decisions below, then Track B (OIDC/SSO/SCIM, managed Postgres + object
   store, the backup/PITR drill).
 - **Later:** M5 if and only if telemetry justifies each item.

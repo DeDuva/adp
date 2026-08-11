@@ -1139,6 +1139,128 @@ paths:
       responses:
         "200":
           description: Evidence bundle
+  /api/adp/repos/{owner}/{repo}/gate-jobs:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+    get:
+      summary: List gate jobs for this repo, newest first.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Gate jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [gate_jobs]
+                properties:
+                  gate_jobs:
+                    type: array
+                    items: { $ref: "#/components/schemas/GateJob" }
+    post:
+      summary: >
+        M4-9a: enqueue an isolated gate run. Queue only — no runner executes
+        anything here yet (M4-9b); a runner instance-wide polls
+        `/api/adp/gate-jobs/claim` and reports back via
+        `/api/adp/gate-jobs/{id}/complete`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [git_sha, name, image, command]
+              properties:
+                git_sha:
+                  type: string
+                  pattern: "^[0-9a-f]{40}$"
+                name:
+                  type: string
+                image:
+                  type: string
+                command:
+                  type: string
+                timeout_ms:
+                  type: integer
+                  default: 300000
+      responses:
+        "201":
+          description: Queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateJob"
+        "404":
+          description: Repository not found
+  /api/adp/gate-jobs/claim:
+    post:
+      summary: >
+        Instance-wide: claim the oldest queued gate job, atomically (`FOR
+        UPDATE SKIP LOCKED`), regardless of which repo it belongs to. Requires
+        the `runner` scope, distinct from `repo:write`/`repo:read` — a runner
+        process serves the whole instance and must not hold repo-scoped
+        write access just to pull work.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [claimed_by]
+              properties:
+                claimed_by:
+                  type: string
+                  description: Opaque runner identifier (hostname, pid, etc.) — never branched on.
+      responses:
+        "200":
+          description: A job was claimed and is now `running`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateJob"
+        "204":
+          description: No queued jobs
+  /api/adp/gate-jobs/{id}/complete:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    post:
+      summary: >
+        Report the result of a claimed gate job. Requires the `runner` scope.
+        Only a job currently `running` can be completed.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [succeeded, failed, timed_out, error]
+                exit_code:
+                  type: integer
+                logs:
+                  type: string
+      responses:
+        "200":
+          description: Recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateJob"
+        "404":
+          description: Gate job not found
+        "409":
+          description: Gate job is not `running` — was never claimed, or was already completed
   /api/adp/repos/{owner}/{repo}/candidate-sets:
     parameters:
       - $ref: "#/components/parameters/owner"
@@ -2065,6 +2187,33 @@ components:
         after: {}
         parent_op: { type: string, format: uuid, nullable: true }
         created_at: { type: string, format: date-time }
+    GateJob:
+      type: object
+      required: [id, repo_id, git_sha, name, image, command, timeout_ms, status, actor_id, created_at]
+      description: >
+        M4-9a: a queued unit of isolated gate execution. Queue-only — `status`
+        transitions queued -> running (via claim) -> a terminal state (via
+        complete); no runner attests anything about the isolation it ran
+        under here, that lands in M4-9c once a real gate_results row is
+        produced from a completed job.
+      properties:
+        id: { type: string, format: uuid }
+        repo_id: { type: string, format: uuid }
+        git_sha: { type: string, pattern: "^[0-9a-f]{40}$" }
+        name: { type: string }
+        image: { type: string }
+        command: { type: string }
+        timeout_ms: { type: integer }
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, timed_out, error]
+        actor_id: { type: string, format: uuid }
+        claimed_by: { type: string, nullable: true }
+        exit_code: { type: integer, nullable: true }
+        logs: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time, nullable: true }
+        finished_at: { type: string, format: date-time, nullable: true }
     CreateRepoRequest:
       type: object
       required: [name]
