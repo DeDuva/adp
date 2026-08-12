@@ -231,3 +231,66 @@ h3 { font-size: 0.95rem; margin: 1.25rem 0 0.5rem; color: var(--ink-soft); text-
 
 table.gate-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 table.gate-table th, table.gate-table td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); }
+
+/* M4-7 — the org policy console. */
+.note-banner {
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.kill-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  margin-bottom: 1.5rem;
+}
+/* Engaged is a state the page should not let anyone miss: every land in the
+   org is being refused while it is on. */
+.kill-switch.engaged { border-color: var(--danger); background: var(--danger-soft); }
+.kill-switch-state { font-size: 0.95rem; margin-bottom: 0.15rem; }
+.kill-switch .error-banner { flex-basis: 100%; margin: 0.5rem 0 0; }
+
+.layers { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem; }
+.layer {
+  display: flex;
+  gap: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+}
+.layer-name {
+  flex: none;
+  width: 8.5rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 0.15rem;
+}
+.layer-body { flex: 1; min-width: 0; }
+.layer-body .meta { margin-top: 0.35rem; }
+
+.quotas { display: flex; flex-direction: column; gap: 0.35rem; }
+.quota {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.45rem 0.2rem;
+}
+.quota:last-child { border-bottom: none; }
+.quota-label { flex: 1; font-size: 0.9rem; }
+.quota-value { font-size: 0.85rem; color: var(--ink-soft); }
+.quota-value.at-limit { color: var(--danger); }
+/* Sections stack in this view, unlike the single-h2 views elsewhere, so the
+   headings need breathing room above them rather than only below. */
+.org-console h2 { margin-top: 1.6rem; }

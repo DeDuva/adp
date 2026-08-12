@@ -149,6 +149,48 @@ export interface CandidateSetDetail extends Omit<CandidateSetSummary, "candidate
   candidates: Candidate[];
 }
 
+// M4-7 — the org policy console.
+export type LandRequirement = "gates_green" | "one_approval";
+export type PolicyLayer = "instance" | "org" | "repo";
+
+export interface OrgSummary {
+  id: string;
+  name: string;
+  kill_switch: boolean;
+}
+
+export interface OrgQuota {
+  // null is unlimited, not zero — the convention the org quota columns use.
+  limit: number | null;
+  used: number;
+}
+
+export interface OrgDetail extends OrgSummary {
+  policy_repo: { owner: string; name: string; default_branch: string } | null;
+  org_floor: {
+    require: LandRequirement[];
+    // "malformed" is the one worth rendering loudly: the floor shown is a
+    // fail-closed default, not something anyone chose.
+    source: "no_policy_repo" | "no_policy_file" | "ok" | "malformed";
+  };
+  instance_floor: LandRequirement[];
+  quotas: {
+    max_repos: OrgQuota;
+    max_concurrent_workspaces: OrgQuota;
+    max_concurrent_gate_jobs: OrgQuota;
+  };
+}
+
+export interface OrgRepoPolicy {
+  id: string;
+  owner: string;
+  name: string;
+  default_branch: string;
+  is_policy_repo: boolean;
+  repo_requirements: LandRequirement[];
+  resolved: { requirement: LandRequirement; from: PolicyLayer[] }[];
+}
+
 export interface EvidenceBundle {
   git_sha: string;
   change: { id: string; intent_id: string | null; provenance: unknown; signature: string; created_at: string } | null;
@@ -196,6 +238,19 @@ export const api = {
 
   getEvidence: (conn: Connection, gitSha: string) =>
     request<EvidenceBundle>(conn, `/api/adp/repos/${conn.owner}/${conn.repo}/evidence/${gitSha}`),
+
+  // M4-7. Org-scoped rather than repo-scoped, unlike everything above —
+  // `listOrgs` returns [] for a token that is not scoped to an org, which is
+  // what the console renders its "connect with an org-scoped token" state on.
+  listOrgs: (conn: Connection) => request<OrgSummary[]>(conn, "/api/adp/orgs"),
+  getOrg: (conn: Connection, orgId: string) => request<OrgDetail>(conn, `/api/adp/orgs/${orgId}`),
+  listOrgRepos: (conn: Connection, orgId: string) =>
+    request<OrgRepoPolicy[]>(conn, `/api/adp/orgs/${orgId}/repos`),
+  setOrgKillSwitch: (conn: Connection, orgId: string, killSwitch: boolean) =>
+    request<OrgSummary>(conn, `/api/adp/orgs/${orgId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ kill_switch: killSwitch }),
+    }),
 
   whoami: (conn: Connection) => request<{ login: string }>(conn, "/api/v3/user"),
 };

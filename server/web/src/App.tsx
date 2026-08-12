@@ -8,6 +8,7 @@ import ProposalDetail from "./components/ProposalDetail.js";
 import OperationsLog from "./components/OperationsLog.js";
 import EvidenceView from "./components/EvidenceView.js";
 import { CandidateSetList, CandidateSetDetailView } from "./components/CandidateSets.js";
+import OrgConsole from "./components/OrgConsole.js";
 
 type Route =
   | { view: "issues" }
@@ -17,6 +18,7 @@ type Route =
   | { view: "operations" }
   | { view: "candidate-sets" }
   | { view: "candidate-set"; id: string }
+  | { view: "organization" }
   | { view: "evidence"; sha: string; back: Route };
 
 export default function App() {
@@ -65,6 +67,15 @@ export default function App() {
           <button className={tab === "operations" ? "active" : ""} onClick={() => setRoute({ view: "operations" })}>
             Operation log
           </button>
+          {/* M4-7. The only org-scoped view here — everything above is about
+              the one repo named in the connection, this one is about the org
+              that repo belongs to. */}
+          <button
+            className={tab === "organization" ? "active" : ""}
+            onClick={() => setRoute({ view: "organization" })}
+          >
+            Organization
+          </button>
         </nav>
         <button
           className="disconnect"
@@ -107,6 +118,7 @@ export default function App() {
         {route.view === "operations" && (
           <OperationsLog conn={conn} onViewEvidence={(sha) => setRoute({ view: "evidence", sha, back: route })} />
         )}
+        {route.view === "organization" && <OrgConsole conn={conn} />}
         {route.view === "evidence" && (
           <EvidenceView conn={conn} sha={route.sha} onBack={() => setRoute(route.back)} />
         )}
