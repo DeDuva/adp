@@ -129,4 +129,60 @@ echo "--- starting stack ---"
 cd "$${REPO_DIR}/deploy"
 docker compose up -d --build --remove-orphans
 
+# --- observability ----------------------------------------------------------
+# M4-11 (docs/observability.md). The Ops Agent scrapes ADP's own /metrics and
+# republishes every family as prometheus.googleapis.com/<name>/<type>, which is
+# what infra/dev/monitoring.tf's dashboard and alert policies read.
+#
+# It scrapes the LOOPBACK, not the public hostname: deploy/docker-compose.yml
+# publishes the server on 127.0.0.1 only, and deploy/Caddyfile refuses /metrics
+# at the edge. The endpoint is unauthenticated by design (it is an operator's
+# scraper, not a repo-scoped resource) — which is fine on a host-local socket
+# and not fine on the open internet.
+#
+# The VM's service account already holds roles/monitoring.metricWriter (iam.tf),
+# so nothing else needs granting for this to work.
+if ! dpkg -s google-cloud-ops-agent >/dev/null 2>&1; then
+  echo "--- installing the ops agent ---"
+  curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+  bash add-google-cloud-ops-agent-repo.sh --also-install
+  rm -f add-google-cloud-ops-agent-repo.sh
+fi
+
+# The pipeline is named `adp`, not `default_pipeline`: the agent merges this
+# file over its built-in config, and reusing the built-in name would replace
+# the host-metrics pipeline (CPU, disk, memory) instead of adding to it. The
+# scrape target port matches the PORT written into deploy/.env above.
+#
+# Written to a temp file and compared, not written in place: this script runs
+# on every boot, and restarting the agent unconditionally would drop a scrape
+# interval for no reason on each one.
+OPS_AGENT_CONFIG=/etc/google-cloud-ops-agent/config.yaml
+mkdir -p "$(dirname "$${OPS_AGENT_CONFIG}")"
+cat > /tmp/adp-ops-agent-config.yaml <<EOF
+metrics:
+  receivers:
+    adp:
+      type: prometheus
+      config:
+        scrape_configs:
+          - job_name: adp
+            scrape_interval: 30s
+            metrics_path: /metrics
+            static_configs:
+              - targets: ['127.0.0.1:3000']
+  service:
+    pipelines:
+      adp:
+        receivers: [adp]
+EOF
+
+if ! cmp -s /tmp/adp-ops-agent-config.yaml "$${OPS_AGENT_CONFIG}"; then
+  echo "--- updating ops agent config ---"
+  mv /tmp/adp-ops-agent-config.yaml "$${OPS_AGENT_CONFIG}"
+  systemctl restart google-cloud-ops-agent
+else
+  rm -f /tmp/adp-ops-agent-config.yaml
+fi
+
 echo "=== adp startup complete $(date -Is) ==="

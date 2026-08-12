@@ -347,6 +347,22 @@ grep -q '^adp_http_requests_total{' <<<"$METRICS" || fail "D13: /metrics has no 
 grep -q '^adp_graphql_operations_total{' <<<"$METRICS" || fail "D13: /metrics has no GraphQL operation samples"
 pass "D13 /metrics carries real REST and GraphQL counters"
 
+# D13b — M4-11. The families infra/dev/'s dashboards and alert policies are
+# built against (server/src/observability-coverage.test.ts checks that mapping
+# statically; this checks the running process actually emits them).
+#
+# The queue gauge is the interesting one: it is populated by a background
+# sampler main.ts starts, not by any request, so its presence here proves the
+# sampler ran against real Postgres in the real server process. A zero is the
+# expected value — the acceptance walkthrough enqueues no gate jobs — and a
+# zero is precisely what must be distinguishable from silence.
+for family in adp_gate_jobs adp_gate_job_oldest_queued_age_seconds adp_gate_job_completions_total; do
+  grep -q "^# TYPE ${family} " <<<"$METRICS" || fail "D13b: /metrics missing the ${family} family"
+done
+grep -q '^adp_gate_jobs{status="queued"} ' <<<"$METRICS" \
+  || fail "D13b: /metrics has no gate-job queue gauge — the sampler (main.ts) never ran"
+pass "D13b /metrics carries the gate-job queue families the dashboards read"
+
 # D14 — the adp CLI: a second client against the same REST surface gh and
 # curl have been using. Built once, cached like the pinned gh binary above.
 CLI_BIN="$REPO_ROOT/cli/dist/index.js"

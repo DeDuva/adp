@@ -173,6 +173,24 @@ Secrets and the state bucket survive `destroy` (they are not Terraform-managed),
 `apply` brings back an instance with the *same signing identity*. If you want a genuinely clean
 slate, delete the secrets too — but understand that this changes the server's identity.
 
+**Monitoring** is applied with everything else (`monitoring.tf`): a service-overview dashboard, an
+uptime check on `/healthz`, and five alert policies over the metrics the server already exports.
+The Ops Agent scrapes `/metrics` over the host loopback and republishes it to Cloud Monitoring; the
+endpoint is not reachable from the internet.
+
+```
+terraform output dashboard_url      # link to the dashboard
+terraform output alerting_status    # how many policies notify, where, and whether availability paging is on
+```
+
+Two of the five policies — "endpoint not serving" and "metrics scrape stopped" — **do not notify by
+default on this rung**, because auto-shutdown stops the box every evening and a nightly page for
+working-as-designed behaviour is how an alert channel gets ignored. Set `auto_shutdown = false` (or
+`enable_availability_alerts = true`) on a box that is meant to stay up. Alerts go to `owner_email`
+unless `alert_email` says otherwise.
+
+What each alert means and what to do about it: [`docs/observability.md`](../docs/observability.md).
+
 ---
 
 ## Design notes

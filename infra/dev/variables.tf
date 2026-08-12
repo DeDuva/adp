@@ -85,6 +85,26 @@ variable "schedule_timezone" {
   default     = "America/Los_Angeles"
 }
 
+# M4-11 (docs/observability.md). Both default to "follow what the rest of the
+# config already decided" rather than to a value, so the common case needs no
+# entry in terraform.tfvars at all.
+variable "alert_email" {
+  description = "Where Cloud Monitoring alerts are delivered. Defaults to owner_email — the address already accountable for the instance."
+  type        = string
+  default     = null
+}
+
+variable "enable_availability_alerts" {
+  description = <<-EOT
+    Whether "the endpoint is down" and "the metrics scrape stopped" notify.
+    Defaults to the inverse of auto_shutdown: a box that is stopped every
+    evening by design would otherwise page every evening, which trains the
+    recipient to ignore the channel. Set true to alert anyway.
+  EOT
+  type        = bool
+  default     = null
+}
+
 variable "adp_git_ref" {
   description = "Branch or tag of the public ADP repo the instance builds and runs."
   type        = string

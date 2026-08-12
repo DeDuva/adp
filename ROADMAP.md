@@ -34,22 +34,24 @@ The dependency map and what-breaks-what live in [`docs/ecosystem.md`](docs/ecosy
 | M2 — adoption + trust ramp | complete 2026-08-03 | Mirror mode, outbound webhooks, `adp` CLI, telemetry, scanner-as-gate adapters, dependency admission v0, SBOM per land, Actions read-only passthrough. Verified scope: [`docs/m2-readiness-review.md`](docs/m2-readiness-review.md) |
 | Runs / trajectories / eval-gated close *(capability slice)* | complete 2026-08-05 | PRs #58–#61 — took the wire contract 0.1.0 → 0.2.0. Driven by downstream consumers, not M3 scope. Detail: [`docs/trajectory-eval-slice.md`](docs/trajectory-eval-slice.md) |
 | M3 — fleet + differentiation | complete 2026-08-10 | M3-0 … M3-6 landed (sequenced by [`docs/m3-readiness-review.md`](docs/m3-readiness-review.md)). All three benchmark arms published: [`bench/report/merge-contention.md`](bench/report/merge-contention.md) (arm 1, deterministic), [`bench/report/three-way-cost.md`](bench/report/three-way-cost.md) (arm 2, pilot scale), squad's duva-bench track (arm 3 — [squad PR #119](https://github.com/DeDuva/squad/pull/119)) |
-| M4 — multi-tenant hosted preview | in progress | Work plan (M4-0 … M4-12) in [`docs/m4-readiness-review.md`](docs/m4-readiness-review.md). Track A underway: M4-0…M4-4 (org schema, org-scoped tokens, org policy plane, quotas/GC, audit-log export) landed. M4-9 (runner), sliced queue-first: M4-9a (gate-job queue), M4-9b (`runner/` package — isolated Docker executor), and M4-9c (adp.yaml parsing + gate_results wiring) landed; M4-9d (per-org concurrency caps, the last M4-9 slice) in flight. Blocked on three author decisions for the rest of Track B — see Blockers |
+| M4 — multi-tenant hosted preview | in progress | Work plan (M4-0 … M4-12) in [`docs/m4-readiness-review.md`](docs/m4-readiness-review.md). Track A underway: M4-0…M4-4 (org schema, org-scoped tokens, org policy plane, quotas/GC, audit-log export) landed. M4-9 (runner) complete, sliced queue-first: M4-9a (gate-job queue), M4-9b (`runner/` package — isolated Docker executor), M4-9c (adp.yaml parsing + gate_results wiring), M4-9d (per-org concurrency caps). M4-11 (observability — Cloud Monitoring dashboard + 5 alert policies over `/metrics`, plus the queue telemetry M4-9 shipped without: [`docs/observability.md`](docs/observability.md)) landed. M4-12 (self-host artifacts) is the last unblocked Track A item. Blocked on three author decisions for the rest of Track B — see Blockers |
 | M5 — substrate hardening | not started | Evidence-gated: every item requires a written justification citing M3/M4 telemetry |
 
 ## Now / Next / Later
 
 - **Now:** M4 Track A in progress (`docs/m4-readiness-review.md`) — M4-0…M4-4 landed
-  (org schema, tokens, policy plane, quotas/GC, audit export). M4-9 (runner), sliced
-  queue-first, has three of four slices landed: M4-9a (gate-job queue), M4-9b (the
-  `runner/` package — a pure-HTTP-client Docker executor with network-deny, no host mounts,
-  no ambient secrets, CPU/memory/wall-clock caps), and M4-9c (adp.yaml's `runner.gates`
-  auto-enqueues a job on push; a checkout tarball — `git archive`, `docker cp`, never a bind
-  mount — lets the executor build/test the pushed sha; completion produces real, signed
-  `gate_results` evidence). M4-9d (per-org concurrency caps, capping how many of an org's
-  gate jobs run at once, scoped at claim time so it never starves a different org's queue)
-  in flight — the last M4-9 slice. M4-11 (observability) and M4-12 (self-host artifacts)
-  remain, no decision needed.
+  (org schema, tokens, policy plane, quotas/GC, audit export). M4-9 (runner) is complete
+  across all four slices: M4-9a (gate-job queue), M4-9b (the `runner/` package — a
+  pure-HTTP-client Docker executor with network-deny, no host mounts, no ambient secrets,
+  CPU/memory/wall-clock caps), M4-9c (adp.yaml's `runner.gates` auto-enqueues a job on
+  push; a checkout tarball — `git archive`, `docker cp`, never a bind mount — lets the
+  executor build/test the pushed sha; completion produces real, signed `gate_results`
+  evidence), and M4-9d (per-org concurrency caps, scoped at claim time so one org's backlog
+  never starves another's queue). M4-11 (observability) landed: a Cloud Monitoring dashboard
+  and five alert policies over `/metrics` (`infra/dev/monitoring.tf`), the queue telemetry
+  M4-9 shipped without, and a coverage test that fails when a dashboard or alert names a
+  metric the server does not export — [`docs/observability.md`](docs/observability.md).
+  M4-12 (self-host artifacts) is the last unblocked Track A item, no decision needed.
 - **Next:** the three M4 decisions below, then Track B (OIDC/SSO/SCIM, managed Postgres + object
   store, the backup/PITR drill).
 - **Later:** M5 if and only if telemetry justifies each item.
@@ -81,4 +83,6 @@ The dependency map and what-breaks-what live in [`docs/ecosystem.md`](docs/ecosy
   verified entering each milestone; M3's and M4's carry the executable work plan.
 - [`docs/trajectory-eval-slice.md`](docs/trajectory-eval-slice.md) — the 0.2.0
   capability slice.
+- [`docs/observability.md`](docs/observability.md) — M4-11: what is measured, what pages,
+  and what to do when it does.
 - [`docs/ecosystem.md`](docs/ecosystem.md) — the cross-repo dependency map.

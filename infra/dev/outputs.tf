@@ -28,6 +28,22 @@ output "start_instance_command" {
   value       = "gcloud compute instances start adp-dev --zone ${var.zone} --project ${var.project_id}"
 }
 
+output "dashboard_url" {
+  description = "The M4-11 service-overview dashboard (infra/dev/dashboards/adp-overview.json)."
+  value       = "https://console.cloud.google.com/monitoring/dashboards/builder/${basename(google_monitoring_dashboard.overview.id)}?project=${var.project_id}"
+}
+
+output "alerting_status" {
+  description = "Which alert policies notify on this rung, and where."
+  value = format(
+    "5 policies defined, %d notifying %s. Availability + scrape-absence alerts are %s (auto_shutdown = %t).",
+    local.availability_alerting ? 5 : 3,
+    local.alert_email,
+    local.availability_alerting ? "on" : "off",
+    var.auto_shutdown,
+  )
+}
+
 output "workload_identity_provider" {
   description = "Value for the google-github-actions/auth workload_identity_provider input."
   value       = google_iam_workload_identity_pool_provider.github.name

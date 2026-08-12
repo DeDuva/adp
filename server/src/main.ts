@@ -15,6 +15,7 @@ import { startWorkspaceSweeper } from "./core/workspace-sweeper.js";
 import { findOrCreateSystemIdentity } from "./core/system-identity.js";
 import { LandRequirement } from "./core/repo-policy.js";
 import { recordHttpRequest, renderMetrics } from "./core/telemetry.js";
+import { startGateJobMetricsSampler } from "./core/gate-job-metrics.js";
 import { registerVersionRoute, resolveBuildInfo } from "./core/version.js";
 
 async function main() {
@@ -116,6 +117,11 @@ async function main() {
 
   const sweeperActorId = await findOrCreateSystemIdentity(db, "system:workspace-sweeper");
   startWorkspaceSweeper(db, gitBackend, sweeperActorId, config.WORKSPACE_SWEEP_INTERVAL_MS);
+
+  // M4-11: keeps the gate-job queue gauges on /metrics current. No actor
+  // identity and no recordOperation — unlike the sweeper this changes
+  // nothing, it only reads.
+  startGateJobMetricsSampler(db, config.GATE_JOB_METRICS_INTERVAL_MS);
 }
 
 main().catch((err) => {

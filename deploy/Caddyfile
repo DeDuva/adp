@@ -1,3 +1,10 @@
 {$PUBLIC_URL} {
+	# M4-11: /metrics is an operator surface, not a client one. It is
+	# unauthenticated by design (server/src/main.ts — a scraper is not a
+	# repo-scoped resource), and the scraper that reads it is the Ops Agent on
+	# this same host, over the loopback port docker-compose.yml publishes.
+	# Nothing legitimate reaches it from the internet, so nothing does.
+	respond /metrics 404
+
 	reverse_proxy server:3000
 }

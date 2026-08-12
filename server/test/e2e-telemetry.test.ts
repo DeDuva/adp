@@ -5,8 +5,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
-import { identities } from "../src/db/schema.js";
+import { identities, repos, gateJobs } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
@@ -16,6 +17,7 @@ import { attachResolvers } from "../src/http-gql/attach-resolvers.js";
 import { createResolvers } from "../src/http-gql/resolvers.js";
 import { registerGraphQLRoute } from "../src/http-gql/route.js";
 import { recordHttpRequest, renderMetrics, resetMetricsForTest } from "../src/core/telemetry.js";
+import { sampleGateJobMetrics } from "../src/core/gate-job-metrics.js";
 
 // M2: API-traffic telemetry (docs/m2-readiness-review.md's "measurement gap"
 // item) — this is the wiring test (main.ts's onResponse hook + /metrics
@@ -28,6 +30,7 @@ describe.skipIf(skipWithoutDb)("M2: API-traffic telemetry", () => {
   let gitRoot: string;
   let port: number;
   let token: string;
+  let actorId: string;
   const owner = `telemetry-owner-${Date.now()}`;
 
   beforeAll(async () => {
@@ -66,7 +69,8 @@ describe.skipIf(skipWithoutDb)("M2: API-traffic telemetry", () => {
       .insert(identities)
       .values({ kind: "human", principal: `telemetry-e2e-${Date.now()}` })
       .returning();
-    token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    actorId = identity!.id;
+    token = await mintToken(db, actorId, ["repo:read", "repo:write", "admin"]);
   });
 
   afterAll(async () => {
@@ -102,5 +106,51 @@ describe.skipIf(skipWithoutDb)("M2: API-traffic telemetry", () => {
     expect(body).toContain(
       'adp_graphql_operations_total{operation_type="query",field="repository",outcome="ok"}',
     );
+  });
+
+  // M4-11: the gate-job queue gauges, sampled against real Postgres rather
+  // than a stubbed count — the query (a GROUP BY with an epoch extract) is
+  // the part that can be wrong, and it cannot be wrong in a mock.
+  //
+  // `gate_jobs` is instance-wide and shared with every other e2e file vitest
+  // runs concurrently against this database (the lesson M4-9d's tests
+  // learned the hard way), so nothing here asserts an exact queue depth.
+  // The backdated job below makes the interesting assertion concurrency-proof
+  // in the right direction: "oldest" is a max over ages, so another test's
+  // queued job can only push the sampled age up, never below this one's.
+  it("samples gate-job queue depth and oldest-queued age from real rows", async () => {
+    const [repo] = await db.select().from(repos).where(eq(repos.owner, owner));
+    expect(repo).toBeDefined();
+
+    const backdated = new Date(Date.now() - 600_000);
+    const [job] = await db
+      .insert(gateJobs)
+      .values({
+        repoId: repo!.id,
+        gitSha: "b".repeat(40),
+        name: "queue-gauge",
+        image: "busybox:1",
+        command: "true",
+        timeoutMs: 60_000,
+        actorId,
+        createdAt: backdated,
+      })
+      .returning();
+
+    try {
+      const sample = await sampleGateJobMetrics(db);
+
+      // Zero-fill, not omission: both non-terminal states are always present.
+      expect([...sample.byStatus.keys()].sort()).toEqual(["queued", "running"]);
+      expect(sample.byStatus.get("queued")).toBeGreaterThanOrEqual(1);
+      expect(sample.oldestQueuedAgeSeconds).toBeGreaterThanOrEqual(600);
+
+      const metricsRes = await fetch(`http://127.0.0.1:${port}/metrics`);
+      const body = await metricsRes.text();
+      expect(body).toMatch(/^adp_gate_jobs\{status="queued"\} \d+$/m);
+      expect(body).toMatch(/^adp_gate_job_oldest_queued_age_seconds \d+$/m);
+    } finally {
+      await db.delete(gateJobs).where(eq(gateJobs.id, job!.id));
+    }
   });
 });
