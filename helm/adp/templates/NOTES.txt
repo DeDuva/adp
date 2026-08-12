@@ -1,0 +1,47 @@
+ADP {{ .Chart.AppVersion }} is installing as {{ include "adp.fullname" . }}.
+
+Watch it come up:
+
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "adp.fullname" . }}
+
+Mint the first token — nothing can be done without one:
+
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "adp.fullname" . }} -- \
+    node dist/bootstrap.js "you@example.com" --org your-org
+
+{{ if .Values.ingress.enabled -}}
+Reachable at {{ include "adp.publicUrl" . }} once DNS points at your ingress.
+{{- else -}}
+No ingress is enabled, so nothing outside the cluster can reach this yet. To
+look around first:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "adp.fullname" . }} 8080:{{ .Values.service.port }}
+
+then open http://localhost:8080/ui/ — but note PUBLIC_URL is
+{{ include "adp.publicUrl" . }}, which is what clone URLs and signed evidence
+will say regardless of how you reached it.
+{{- end }}
+
+{{ if and .Values.postgres.enabled (not .Values.externalDatabase.url) }}
+⚠  Using the BUNDLED Postgres. It has no backups, no PITR, and no failover.
+   That is fine for an evaluation and not fine for anything you would miss —
+   set externalDatabase.url to a managed instance before this holds real work.
+   (docs/environments-plan.md §3.)
+{{ end -}}
+{{ if not .Values.persistence.enabled }}
+⚠  persistence.enabled is false: every repository this instance hosts lives in
+   an emptyDir and disappears when the pod restarts.
+{{ end -}}
+{{ if .Values.runner.enabled }}
+⚠  The gate runner is enabled and mounts {{ .Values.runner.dockerSocket }} from
+   its node. That is root on that node, by design and unavoidably — it is how
+   gates execute. Confirm the node you selected is dedicated to gate execution
+   and is NOT the node running the API server or holding the signing key.
+   (docs/self-hosting.md §4.)
+{{ end -}}
+{{ if not .Values.ingress.tls.enabled }}
+⚠  TLS is not enabled on the ingress. `gh` refuses plain HTTP for any host
+   other than github.com, so the GitHub-compatible surface — the entire point
+   of this server — will not work for real clients until it is.
+{{ end }}
+Next: docs/self-hosting.md.

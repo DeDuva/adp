@@ -1,0 +1,102 @@
+{{- if .Values.runner.enabled }}
+{{/*
+  M4-9's design in one manifest, and the one place this chart refuses to be
+  convenient.
+
+  The runner executes code out of a repository's adp.yaml. It does that inside
+  a container it creates through a Docker daemon, and a mounted daemon socket
+  is root on the node holding it — `docs/pragmatic_mvp.md` §4.5 says so in
+  those words, and it is why the runner was built as a pure HTTP client with no
+  database credential and no signing key. That separation is worth nothing if
+  the pod lands on the node running the API server.
+
+  Kubernetes cannot express "a different host" for us, so the chart requires
+  the operator to name one. There is no default node selector, because every
+  possible default would name somebody else's node.
+*/}}
+{{- if not .Values.runner.nodeSelector }}
+{{- fail "runner.nodeSelector is required when runner.enabled is true. The runner mounts a Docker socket, which is root on whatever node it lands on — pin it to a node dedicated to running gates, and not the one running the API server. See docs/self-hosting.md §4." }}
+{{- end }}
+{{- if not (or .Values.runner.token .Values.runner.existingSecret) }}
+{{- fail "runner.token (or runner.existingSecret) is required when runner.enabled is true. Mint a token carrying ONLY the 'runner' scope — it needs no repo:read, and must never carry admin." }}
+{{- end }}
+{{- if not .Values.runner.existingSecret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "adp.fullname" . }}-runner
+  labels:
+    {{- include "adp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: runner
+type: Opaque
+stringData:
+  ADP_RUNNER_TOKEN: {{ .Values.runner.token | quote }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "adp.fullname" . }}-runner
+  labels:
+    {{- include "adp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: runner
+spec:
+  replicas: {{ .Values.runner.replicas }}
+  selector:
+    matchLabels:
+      {{- include "adp.runnerSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "adp.runnerSelectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.runner.nodeSelector | nindent 8 }}
+      {{- with .Values.runner.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # No service account token: like the server, the runner has no business
+      # with the Kubernetes API. Unlike the server, it is the process most
+      # likely to be running something hostile.
+      automountServiceAccountToken: false
+      containers:
+        - name: runner
+          image: {{ include "adp.runnerImage" . }}
+          imagePullPolicy: {{ .Values.runner.image.pullPolicy }}
+          env:
+            # In-cluster, so the API is reached by service name rather than
+            # through the ingress — no round trip through the public origin,
+            # and no dependency on DNS the cluster does not control.
+            - name: ADP_SERVER_URL
+              value: {{ printf "http://%s:%v" (include "adp.fullname" .) .Values.service.port | quote }}
+            - name: ADP_RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.runner.existingSecret | default (printf "%s-runner" (include "adp.fullname" .)) }}
+                  key: ADP_RUNNER_TOKEN
+            - name: POLL_INTERVAL_MS
+              value: {{ .Values.runner.pollIntervalMs | quote }}
+            - name: RUNNER_MEMORY
+              value: {{ .Values.runner.jobMemory | quote }}
+            - name: RUNNER_CPUS
+              value: {{ .Values.runner.jobCpus | quote }}
+            - name: RUNNER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: docker-socket
+              mountPath: /var/run/docker.sock
+          resources:
+            {{- toYaml .Values.runner.resources | nindent 12 }}
+      volumes:
+        - name: docker-socket
+          hostPath:
+            path: {{ .Values.runner.dockerSocket }}
+            type: Socket
+{{- end }}

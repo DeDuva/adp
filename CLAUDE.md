@@ -42,6 +42,7 @@ a path named here stops existing.
 | `spec/` | the published contract: `spec/openapi.yaml`, `spec/schemas/`, `spec/graphql/github.graphql` |
 | `scripts/dev/` | what the Makefile actually runs — `up`, `down`, `doctor`, `verify-clean` |
 | `deploy/`, `infra/` | production compose stack; Terraform for the GCP dev box |
+| `helm/adp/` | the self-host chart (M4-12). `make helm` lints it, renders every branch, and asserts the combinations it must *refuse* still refuse — `scripts/dev/helm-check.sh` |
 
 Node 22 (`.nvmrc`).
 
