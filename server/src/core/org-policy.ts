@@ -27,29 +27,53 @@ export interface OrgPolicy {
 export const EMPTY_ORG_POLICY: OrgPolicy = { land: { require: [] } };
 const FAIL_CLOSED_ORG_POLICY: OrgPolicy = { land: { require: [...LandRequirement.options] } };
 
-// `policyRepo` is null when the org has designated no policy repo — every
-// org today, until something sets orgs.policyRepoId, which this slice does
-// not yet expose a route to do (M4-2's PR description records that as a
-// deliberate, narrow scope: the resolution mechanism is what this item
-// builds, not an org-management console — that's M4-7).
-export async function loadOrgPolicy(
+// Where the floor an org is currently enforcing actually came from. M4-7
+// added this: `loadOrgPolicy` alone cannot distinguish an org that
+// deliberately requires everything from one whose policy.yaml is malformed
+// and is being failed closed — the two return an identical policy, which is
+// the correct enforcement decision and a terrible thing to show an operator
+// without comment. The console renders "no policy repo", "no file", "this
+// file is broken and you are being failed closed" and "this is what you
+// asked for" differently (http-rest/orgs.ts, web/src/components/OrgConsole.tsx).
+export type OrgPolicySource = "no_policy_repo" | "no_policy_file" | "ok" | "malformed";
+
+export interface OrgPolicyResolution {
+  policy: OrgPolicy;
+  source: OrgPolicySource;
+}
+
+// `policyRepo` is null when the org has designated no policy repo — the state
+// every org starts in, and one an operator has to be able to see, because an
+// org with no policy repo contributes nothing to the floor no matter what
+// anyone believes it is enforcing.
+export async function describeOrgPolicy(
   gitBackend: GitBackend,
   policyRepo: { owner: string; name: string; defaultBranch: string } | null,
-): Promise<OrgPolicy> {
-  if (!policyRepo) return EMPTY_ORG_POLICY;
+): Promise<OrgPolicyResolution> {
+  if (!policyRepo) return { policy: EMPTY_ORG_POLICY, source: "no_policy_repo" };
 
   const stat = await gitBackend.statPath(policyRepo.owner, policyRepo.name, policyRepo.defaultBranch, "policy.yaml");
-  if (!stat || stat.type !== "blob") return EMPTY_ORG_POLICY;
+  if (!stat || stat.type !== "blob") return { policy: EMPTY_ORG_POLICY, source: "no_policy_file" };
 
   const raw = await gitBackend.readBlob(policyRepo.owner, policyRepo.name, stat.sha);
   let parsed: unknown;
   try {
     parsed = parseYaml(raw.toString("utf8"));
   } catch {
-    return FAIL_CLOSED_ORG_POLICY;
+    return { policy: FAIL_CLOSED_ORG_POLICY, source: "malformed" };
   }
 
   const result = OrgPolicySchema.safeParse(parsed ?? {});
-  if (!result.success) return FAIL_CLOSED_ORG_POLICY;
-  return result.data;
+  if (!result.success) return { policy: FAIL_CLOSED_ORG_POLICY, source: "malformed" };
+  return { policy: result.data, source: "ok" };
+}
+
+// The enforcement path's entry point, unchanged in behaviour and signature:
+// land policy needs the floor, not the story behind it.
+export async function loadOrgPolicy(
+  gitBackend: GitBackend,
+  policyRepo: { owner: string; name: string; defaultBranch: string } | null,
+): Promise<OrgPolicy> {
+  const { policy } = await describeOrgPolicy(gitBackend, policyRepo);
+  return policy;
 }

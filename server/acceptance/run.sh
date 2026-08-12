@@ -133,7 +133,13 @@ pass "TLS proxy on :$TLS_PORT"
 
 OWNER="acceptance-$$"
 REPO="widget"
-TOKEN=$(npx tsx src/bootstrap.ts "acceptance-actor-$$" 2>&1 | grep '^Token:' | awk '{print $2}')
+# --org, as of M4-7: repos.ts find-or-creates one org per owner string, so
+# scoping the token to "$OWNER" scopes it to exactly the org that will own the
+# repo created on the next line. Every step below behaves identically — the
+# scopes are unchanged and only the org routes consult a token's org — but the
+# walkthrough now runs as a real multi-tenant principal rather than as the
+# pre-M4 unscoped one, which is what lets C13 exercise the org console.
+TOKEN=$(npx tsx src/bootstrap.ts "acceptance-actor-$$" --org "$OWNER" 2>&1 | grep '^Token:' | awk '{print $2}')
 [ -n "$TOKEN" ] || fail "bootstrap didn't mint a token"
 api POST "/api/v3/repos/${OWNER}" -d "{\"name\":\"${REPO}\"}" -o /dev/null -f || fail "repo create failed"
 pass "repo ${OWNER}/${REPO}"
@@ -322,6 +328,7 @@ if [ "${ADP_ACCEPTANCE_UI:-0}" = "1" ]; then
     || fail "the web UI checks failed"
   pass "C9-C11 UI rendered the intent, evidence, provenance and op log"
   pass "C12 undo performed by clicking Undo in the UI"
+  pass "C13 org console showed the resolved policy for ${OWNER}"
   note "screenshots in $ARTIFACTS"
 else
   note "web UI checks skipped (set ADP_ACCEPTANCE_UI=1 to run them)"

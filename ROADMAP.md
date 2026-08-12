@@ -34,7 +34,7 @@ The dependency map and what-breaks-what live in [`docs/ecosystem.md`](docs/ecosy
 | M2 — adoption + trust ramp | complete 2026-08-03 | Mirror mode, outbound webhooks, `adp` CLI, telemetry, scanner-as-gate adapters, dependency admission v0, SBOM per land, Actions read-only passthrough. Verified scope: [`docs/m2-readiness-review.md`](docs/m2-readiness-review.md) |
 | Runs / trajectories / eval-gated close *(capability slice)* | complete 2026-08-05 | PRs #58–#61 — took the wire contract 0.1.0 → 0.2.0. Driven by downstream consumers, not M3 scope. Detail: [`docs/trajectory-eval-slice.md`](docs/trajectory-eval-slice.md) |
 | M3 — fleet + differentiation | complete 2026-08-10 | M3-0 … M3-6 landed (sequenced by [`docs/m3-readiness-review.md`](docs/m3-readiness-review.md)). All three benchmark arms published: [`bench/report/merge-contention.md`](bench/report/merge-contention.md) (arm 1, deterministic), [`bench/report/three-way-cost.md`](bench/report/three-way-cost.md) (arm 2, pilot scale), squad's duva-bench track (arm 3 — [squad PR #119](https://github.com/DeDuva/squad/pull/119)) |
-| M4 — multi-tenant hosted preview | in progress | Work plan (M4-0 … M4-12) in [`docs/m4-readiness-review.md`](docs/m4-readiness-review.md). Track A underway: M4-0…M4-4 (org schema, org-scoped tokens, org policy plane, quotas/GC, audit-log export) landed. M4-9 (runner) complete, sliced queue-first: M4-9a (gate-job queue), M4-9b (`runner/` package — isolated Docker executor), M4-9c (adp.yaml parsing + gate_results wiring), M4-9d (per-org concurrency caps). M4-11 (observability — Cloud Monitoring dashboard + 5 alert policies over `/metrics`, plus the queue telemetry M4-9 shipped without: [`docs/observability.md`](docs/observability.md)) landed. M4-12 (self-host artifacts) is the last unblocked Track A item. Blocked on three author decisions for the rest of Track B — see Blockers |
+| M4 — multi-tenant hosted preview | in progress | Work plan (M4-0 … M4-12) in [`docs/m4-readiness-review.md`](docs/m4-readiness-review.md). Track A underway: M4-0…M4-4 (org schema, org-scoped tokens, org policy plane, quotas/GC, audit-log export) landed. M4-9 (runner) complete, sliced queue-first: M4-9a (gate-job queue), M4-9b (`runner/` package — isolated Docker executor), M4-9c (adp.yaml parsing + gate_results wiring), M4-9d (per-org concurrency caps). M4-11 (observability — Cloud Monitoring dashboard + 5 alert policies over `/metrics`, plus the queue telemetry M4-9 shipped without: [`docs/observability.md`](docs/observability.md)) landed. M4-7 (org policy console — the org REST surface M4-2 deferred, plus the supervision UI view over it) landed. M4-12 (self-host artifacts) is the last unblocked item. Blocked on three author decisions for the rest of Track B — see Blockers |
 | M5 — substrate hardening | not started | Evidence-gated: every item requires a written justification citing M3/M4 telemetry |
 
 ## Now / Next / Later
@@ -51,9 +51,17 @@ The dependency map and what-breaks-what live in [`docs/ecosystem.md`](docs/ecosy
   and five alert policies over `/metrics` (`infra/dev/monitoring.tf`), the queue telemetry
   M4-9 shipped without, and a coverage test that fails when a dashboard or alert names a
   metric the server does not export — [`docs/observability.md`](docs/observability.md).
-  M4-12 (self-host artifacts) is the last unblocked Track A item, no decision needed.
-- **Next:** the three M4 decisions below, then Track B (OIDC/SSO/SCIM, managed Postgres + object
-  store, the backup/PITR drill).
+  M4-7 (org policy console) landed: `GET /api/adp/orgs`, org detail, per-repo resolved
+  policy, and a kill-switch `PATCH` — the org REST surface M4-2 explicitly deferred to this
+  item — under an Organization view in the supervision UI that shows what each repo actually
+  requires to land and which of the three layers (instance ∪ org ∪ repo) imposed it. The
+  floor stays uneditable from the console by design: it is a `policy.yaml` in a repo, so it
+  changes by landing a change to that file. M4-12 (self-host artifacts) is the last
+  unblocked item, no decision needed.
+- **Next:** M4-12, then the three M4 decisions below and the rest of Track B (OIDC/SSO/SCIM,
+  managed Postgres + object store, the backup/PITR drill). M4-12 is sequenced last on purpose
+  (`docs/m4-readiness-review.md` §4) so it describes the *final* multi-tenant deploy; its
+  object-store section is the one part that stays provisional until decision 2 unblocks M4-8.
 - **Later:** M5 if and only if telemetry justifies each item.
 
 ## Blockers and open decisions

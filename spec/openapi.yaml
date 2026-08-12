@@ -1097,6 +1097,108 @@ paths:
           description: The recorded undo operation
         "422":
           description: This operation is not undoable, or was already undone
+  /api/adp/orgs:
+    get:
+      summary: >
+        M4-7: the organizations this token can see — at most one. Access is
+        granted by the token being scoped to an org (auth/plugin.ts's
+        requireOrgAccess), not by the identity's memberships, so a human in
+        several orgs still sees one per token. An empty array means the token
+        is not org-scoped, which is the state every pre-M4 token is in.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Organizations visible to this token
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OrgSummary"
+  /api/adp/orgs/{orgId}:
+    parameters:
+      - $ref: "#/components/parameters/orgId"
+    get:
+      summary: >
+        M4-7: an org's policy posture in one read — the floor it contributes
+        and where that floor came from, the instance floor it sits on top of,
+        its kill switch, and each quota beside its current usage.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Organization detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgDetail"
+        "403":
+          description: Token is not scoped to this org, or not a member
+        "404":
+          description: No such organization
+    patch:
+      summary: >
+        M4-7: set the org kill switch, which refuses every land attempt for
+        every repo in the org while it is on (core/land-policy.ts). Requires
+        the `admin` scope, not `repo:write` — this is not something the ability
+        to push code should carry with it. Recorded in the operation log as
+        `org.kill_switch`, in the same transaction, like every other change.
+        The org's land floor is deliberately NOT editable here: it is a
+        `policy.yaml` in the org's policy repo, changed by landing a change to
+        it, so that policy travels the same signed, reviewable path as code.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kill_switch]
+              properties:
+                kill_switch: { type: boolean }
+      responses:
+        "200":
+          description: The updated organization
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgSummary"
+        "403":
+          description: Requires the admin scope, or the token is not scoped to this org
+        "404":
+          description: No such organization
+        "422":
+          description: Validation failed
+  /api/adp/orgs/{orgId}/repos:
+    parameters:
+      - $ref: "#/components/parameters/orgId"
+    get:
+      summary: >
+        M4-7: every repo in the org with the land requirements that actually
+        resolve for it right now (instance ∪ org ∪ repo, the union
+        core/repo-policy.ts's resolveLandRequirements computes), each one
+        annotated with which layers ask for it. This is the answer to "why does
+        this repo require an approval?" that otherwise means reading two YAML
+        files out of two repos and knowing how the union works.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Repos in the org with their resolved land policy
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OrgRepoPolicy"
+        "403":
+          description: Token is not scoped to this org, or not a member
+        "404":
+          description: No such organization
+        "422":
+          description: Validation failed
   /api/adp/orgs/{orgId}/audit-log:
     parameters:
       - $ref: "#/components/parameters/orgId"
@@ -2194,6 +2296,88 @@ components:
         events:
           type: array
           items: { $ref: "#/components/schemas/TrajectoryEvent" }
+    OrgSummary:
+      type: object
+      required: [id, name, kill_switch]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        kill_switch: { type: boolean }
+    OrgQuota:
+      type: object
+      required: [limit, used]
+      description: >
+        `limit: null` means unlimited — the "absence is not a limit"
+        convention the org quota columns already use (M4-3, M4-9d). `used` is
+        counted by the same query the enforcement path runs, so the console
+        and the thing doing the refusing cannot disagree.
+      properties:
+        limit: { type: integer, nullable: true }
+        used: { type: integer }
+    OrgDetail:
+      type: object
+      required: [id, name, kill_switch, policy_repo, org_floor, instance_floor, quotas]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        kill_switch: { type: boolean }
+        policy_repo:
+          type: object
+          nullable: true
+          description: The repo whose `policy.yaml` carries this org's floor. Null until one is designated.
+          required: [owner, name, default_branch]
+          properties:
+            owner: { type: string }
+            name: { type: string }
+            default_branch: { type: string }
+        org_floor:
+          type: object
+          required: [require, source]
+          properties:
+            require:
+              type: array
+              items: { type: string, enum: [gates_green, one_approval] }
+            source:
+              type: string
+              enum: [no_policy_repo, no_policy_file, ok, malformed]
+              description: >
+                Where the floor came from. `malformed` is the one that matters:
+                a policy.yaml that does not parse is failed closed to every
+                known requirement, which is the right enforcement decision and
+                indistinguishable from a deliberate one without this field.
+        instance_floor:
+          type: array
+          items: { type: string, enum: [gates_green, one_approval] }
+        quotas:
+          type: object
+          required: [max_repos, max_concurrent_workspaces, max_concurrent_gate_jobs]
+          properties:
+            max_repos: { $ref: "#/components/schemas/OrgQuota" }
+            max_concurrent_workspaces: { $ref: "#/components/schemas/OrgQuota" }
+            max_concurrent_gate_jobs: { $ref: "#/components/schemas/OrgQuota" }
+    OrgRepoPolicy:
+      type: object
+      required: [id, owner, name, default_branch, is_policy_repo, repo_requirements, resolved]
+      properties:
+        id: { type: string, format: uuid }
+        owner: { type: string }
+        name: { type: string }
+        default_branch: { type: string }
+        is_policy_repo: { type: boolean }
+        repo_requirements:
+          type: array
+          items: { type: string, enum: [gates_green, one_approval] }
+        resolved:
+          type: array
+          description: The union in force, each requirement annotated with every layer that asks for it.
+          items:
+            type: object
+            required: [requirement, from]
+            properties:
+              requirement: { type: string, enum: [gates_green, one_approval] }
+              from:
+                type: array
+                items: { type: string, enum: [instance, org, repo] }
     AuditLogEntry:
       type: object
       required: [id, actor_id, verb, target, created_at]

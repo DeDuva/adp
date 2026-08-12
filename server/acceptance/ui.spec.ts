@@ -125,6 +125,48 @@ test("C9-C12: the supervision UI shows intent, evidence, provenance, op log — 
     await shot(page, "05-undone");
   });
 
+  // M4-7 — the org policy console. Not part of §2.1's definition of done, so
+  // it runs after C12 rather than inside it: the walkthrough above must fail
+  // for §2.1 reasons only.
+  //
+  // The token run.sh mints is org-scoped as of M4-7 (`bootstrap.ts --org`),
+  // scoped to the org that owns this very repo, so the console has something
+  // real to render rather than its "not org-scoped" empty state.
+  await test.step("C13 read the org's resolved policy", async () => {
+    await page.getByRole("button", { name: "Organization" }).click();
+    await expect(page.getByRole("heading", { name: OWNER })).toBeVisible();
+
+    // The kill switch is off and says so. Asserting the off state matters as
+    // much as the on state would: an operator reading this page during an
+    // incident is asking exactly this question.
+    await expect(page.locator(".kill-switch").getByText("off", { exact: true })).toBeVisible();
+
+    // The three layers, named. This is the view's whole reason to exist —
+    // "gates_green because the instance says so" is not derivable from any
+    // other screen.
+    //
+    // Scoped to .layer-name rather than a bare getByText: the explanatory
+    // banner above also says "instance floor" in prose, so an unscoped match
+    // is ambiguous and Playwright is right to refuse it.
+    const layers = page.locator(".layer-name");
+    await expect(layers.filter({ hasText: "Instance floor" })).toBeVisible();
+    await expect(layers.filter({ hasText: "Org floor" })).toBeVisible();
+
+    // This org designates no policy repo, so it contributes nothing — and the
+    // console says which of the four reasons an empty floor can have applies,
+    // rather than rendering the same blank either way.
+    await expect(page.getByText("No policy repo is designated")).toBeVisible();
+
+    // The resolved table: the acceptance repo, and the instance floor showing
+    // up as its requirement with the layer that imposed it named.
+    const row = page.locator(".gate-table tbody tr").filter({ hasText: `${OWNER}/${REPO}` });
+    await expect(row).toBeVisible();
+    await expect(row.getByText("gates green").first()).toBeVisible();
+    await expect(row.getByText("instance", { exact: false }).first()).toBeVisible();
+
+    await shot(page, "06-org-console");
+  });
+
   expect(
     pageErrors,
     `the page reported errors:\n${pageErrors.join("\n")}` +
