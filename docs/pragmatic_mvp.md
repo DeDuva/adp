@@ -916,6 +916,32 @@ Backup/PITR with an **executed** restore drill. Runner pool isolation. Observabi
 Docs, quickstart, self-host artifacts (image + compose + helm).
 **Exit:** external users can sign up and run a real workload; restore drill completed.
 
+*Amended 2026-08-13 by [`m4-postmortem-audit.md`](m4-postmortem-audit.md), after the M4 code
+landed.* The audit found the code present but the milestone not met, and made four scope
+decisions that this plan of record now carries:
+
+1. **M4-9 (runner pool isolation) is not done as shipped.** The container executor is real and
+   well-tested, but org isolation is enforced on 4 of ~98 operations, the queue cannot recover a
+   job whose runner died, and no runner-scoped token can be minted (the runner is handed an
+   `admin` token). These are P0 fixes that gate the milestone, not follow-ups. The org-isolation
+   matrix test is exit criterion #1 and does not exist yet.
+2. **A 0.3.0 breaking batch, taken now.** Eleven operations landed additively without a version
+   bump; the audit bundles that correction with the breaking contract fixes worth making while
+   the only tokens in existence are hand-minted — an `Error` schema, auth/scopes declared in the
+   spec, bounded list endpoints, audited write paths for quota and policy-repo changes. **It keeps
+   `{owner}/{repo}` URLs** (the owner string becomes the org's immutable URL slug; org rename
+   stays unsupported pre-1.0), because `gh` fidelity requires owner-shaped URLs. One coordinated
+   release so downstream consumers regenerate once.
+3. **Google OIDC for M4-5; SCIM (M4-6) deferred.** This resolves the readiness review's decision 1:
+   OIDC login is built and acceptance-tested against real Google. SCIM is parked until a
+   procurement conversation demands it — it is not blocked, it is out of scope until there is a
+   consumer.
+4. **No hosted staging rung yet.** Downstream consumers get a *pinnable artifact* — a git tag, a
+   GitHub release, and a published, versioned server image — rather than a shared always-on
+   instance; each consumer keeps running its own pinned instance. The separation of active
+   development from what stakeholders depend on is source-level, not a second box. See
+   [`environments-plan.md`](environments-plan.md) §"No hosted staging yet".
+
 ### M5 — Substrate hardening (evidence-gated, open-ended)
 Only if measurement demands: jj-derived change engine with first-class conflicts; VFS lazy
 materialization; speculative merge batching; pluggable storage backends (Lore evaluation, A3);
