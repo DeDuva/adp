@@ -1338,9 +1338,10 @@ paths:
         design) for the isolated executor to `docker cp` into a container,
         never a host mount and never routed through the container's own
         (network-denied) network. Requires the `runner` scope. Bounded to
-        jobs currently `running`: the window in which this route grants any
-        read access to a repo's contents at all is the same narrow window a
-        legitimate runner is actively working the job in.
+        jobs currently `running` and served only to the identity whose claim
+        holds the job: the window in which this route grants any read access
+        to a repo's contents at all is the same narrow window the caller
+        itself is actively working the job in.
       security:
         - bearerAuth: []
       responses:
@@ -1351,6 +1352,8 @@ paths:
               schema:
                 type: string
                 format: binary
+        "403":
+          description: The job is held by a different runner identity's claim
         "404":
           description: Gate job not found
         "409":
@@ -1361,7 +1364,9 @@ paths:
     post:
       summary: >
         Report the result of a claimed gate job. Requires the `runner` scope.
-        Only a job currently `running` can be completed.
+        Only a job currently `running` can be completed, and only by the
+        identity whose claim holds it — completion writes signed gate
+        evidence that land policy trusts.
       security:
         - bearerAuth: []
       requestBody:
@@ -1386,6 +1391,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GateJob"
+        "403":
+          description: The job is held by a different runner identity's claim
         "404":
           description: Gate job not found
         "409":

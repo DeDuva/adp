@@ -179,6 +179,48 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
     expect(completed.body!.finished_at).toBeTruthy();
   });
 
+  // #88's proof (docs/m4-postmortem-audit.md §P0-3): before the ownership
+  // check, ANY runner-scope token could tarball any org's source and
+  // "complete" any org's job with `succeeded`, writing signed gate evidence
+  // land policy trusts — a cross-tenant land-policy bypass from the
+  // least-privileged token type. Ownership binds to the authenticated
+  // identity that claimed the job, not the client-supplied `claimed_by`
+  // string — which the intruder here deliberately echoes verbatim to prove
+  // that forging it doesn't help.
+  it("refuses checkout and complete from a runner identity that didn't claim the job", async () => {
+    const enqueued = await api(`/api/adp/repos/${owner}/${repoName}/gate-jobs`, writeToken, {
+      method: "POST",
+      body: JSON.stringify({ git_sha: gitSha, name: "ownership", image: "node:22", command: "npm test" }),
+    });
+    expect(enqueued.status).toBe(201);
+    const jobId = enqueued.body!.id as string;
+    await claimJobId(jobId, "victim-runner-1");
+
+    const [intruder] = await db
+      .insert(identities)
+      .values({ kind: "agent", principal: `gj-intruder-${Date.now()}` })
+      .returning();
+    const intruderToken = await mintToken(db, intruder!.id, ["runner"]);
+
+    const checkoutRes = await api(`/api/adp/gate-jobs/${jobId}/checkout`, intruderToken);
+    expect(checkoutRes.status).toBe(403);
+
+    const completeRes = await api(`/api/adp/gate-jobs/${jobId}/complete`, intruderToken, {
+      method: "POST",
+      body: JSON.stringify({ status: "succeeded", exit_code: 0, logs: "claimed_by was victim-runner-1, honest\n" }),
+    });
+    expect(completeRes.status).toBe(403);
+
+    // The refusals changed nothing: the job is still running, still held by
+    // its claimant, and that claimant can still complete it.
+    const ownerComplete = await api(`/api/adp/gate-jobs/${jobId}/complete`, runnerToken, {
+      method: "POST",
+      body: JSON.stringify({ status: "succeeded", exit_code: 0 }),
+    });
+    expect(ownerComplete.status).toBe(200);
+    expect(ownerComplete.body).toMatchObject({ id: jobId, status: "succeeded" });
+  });
+
   it("refuses to complete a job that isn't running (already terminal)", async () => {
     const enqueued = await api(`/api/adp/repos/${owner}/${repoName}/gate-jobs`, writeToken, {
       method: "POST",

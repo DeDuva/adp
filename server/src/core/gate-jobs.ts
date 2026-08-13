@@ -60,7 +60,14 @@ export async function enqueueGateJob(db: Db, params: EnqueueGateJobParams): Prom
 // whose org is currently at its running-job ceiling and consider the
 // next-oldest one instead, all inside the same `FOR UPDATE SKIP LOCKED`
 // transaction mirror-poller.ts's idiom already uses.
-export async function claimGateJob(db: Db, claimedBy: string): Promise<typeof gateJobs.$inferSelect | null> {
+// `claimedBy` is the runner's self-reported label (observability only);
+// `claimedByIdentityId` is the authenticated identity the claim happened
+// under, which is what checkout/complete's ownership check trusts (#88).
+export async function claimGateJob(
+  db: Db,
+  claimedBy: string,
+  claimedByIdentityId: string,
+): Promise<typeof gateJobs.$inferSelect | null> {
   return await db.transaction(async (tx) => {
     const [candidate] = await tx
       .select({ id: gateJobs.id })
@@ -91,7 +98,7 @@ export async function claimGateJob(db: Db, claimedBy: string): Promise<typeof ga
 
     const [row] = await tx
       .update(gateJobs)
-      .set({ status: "running", claimedBy, startedAt: new Date() })
+      .set({ status: "running", claimedBy, claimedByIdentityId, startedAt: new Date() })
       .where(eq(gateJobs.id, candidate.id))
       .returning();
     return row!;

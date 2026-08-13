@@ -39,6 +39,7 @@ describe.skipIf(skipWithoutDb)("M4-9c: adp.yaml-driven gate jobs", () => {
   let port: number;
   let writeToken: string;
   let runnerToken: string;
+  let runnerIdentityId: string;
   const owner = `runner-gates-owner-${Date.now()}`;
 
   async function api(pathAndQuery: string, token: string, init: RequestInit = {}) {
@@ -86,6 +87,7 @@ describe.skipIf(skipWithoutDb)("M4-9c: adp.yaml-driven gate jobs", () => {
     writeToken = await mintToken(db, writer!.id, ["repo:read", "repo:write"]);
 
     const [runner] = await db.insert(identities).values({ kind: "agent", principal: `rg-runner-${Date.now()}` }).returning();
+    runnerIdentityId = runner!.id;
     runnerToken = await mintToken(db, runner!.id, ["runner"]);
   });
 
@@ -134,16 +136,27 @@ describe.skipIf(skipWithoutDb)("M4-9c: adp.yaml-driven gate jobs", () => {
     expect(job).toMatchObject({ image: "busybox:1", command: "echo setting-up && cat marker.txt" });
     const jobId = job!.id;
 
-    // /checkout and /complete don't check *who* claimed a job, only that it
-    // currently is one (http-rest/gate-jobs.ts) — so rather than asserting
-    // this test's own claim() call is what claims jobId (which a
-    // concurrently-running file's own claim polling could just as easily
-    // do first), this drives claim() itself to make progress, racing
-    // against everyone else like a real second runner would, while polling
-    // jobId's own DB status directly until it's no longer `queued`.
+    // Since #88, /checkout and /complete only serve the identity that
+    // claimed the job — so this test must end up holding jobId's claim
+    // *itself*, not merely observe that someone claimed it. Claim is still
+    // instance-wide and raced by every other e2e file polling this same
+    // shared database, and a job another file's identity claims is
+    // unrecoverable to us until the #92 lease/reaper exists — so when that
+    // happens, requeue the row directly in the DB (a manual stand-in for
+    // that reaper, on a job this test itself enqueued and owns) and keep
+    // claiming until our own identity wins it.
     for (let i = 0; i < 40; i++) {
-      const [row] = await db.select({ status: gateJobs.status }).from(gateJobs).where(eq(gateJobs.id, jobId));
-      if (row!.status !== "queued") break;
+      const [row] = await db
+        .select({ status: gateJobs.status, claimedByIdentityId: gateJobs.claimedByIdentityId })
+        .from(gateJobs)
+        .where(eq(gateJobs.id, jobId));
+      if (row!.status === "running" && row!.claimedByIdentityId === runnerIdentityId) break;
+      if (row!.status === "running") {
+        await db
+          .update(gateJobs)
+          .set({ status: "queued", claimedBy: null, claimedByIdentityId: null, startedAt: null })
+          .where(eq(gateJobs.id, jobId));
+      }
       await api("/api/adp/gate-jobs/claim", runnerToken, { method: "POST", body: JSON.stringify({ claimed_by: "stub-runner-1" }) });
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
