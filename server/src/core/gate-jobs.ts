@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { gateJobs, repos, orgs } from "../db/schema.js";
 import { recordOperation } from "./operations.js";
@@ -75,14 +75,17 @@ export const GATE_JOB_LEASE_GRACE_MS = 60_000;
 // one.
 // The candidate selection, exported so the #93 regression test can run it
 // inside a transaction of its own against a deliberately-held repos lock.
-export async function selectClaimCandidate(tx: Pick<Db, "select">) {
+// `excludeIds` lets claimGateJob's admission loop move past a candidate
+// whose org turned out to be at its cap under the lock (#94).
+export async function selectClaimCandidate(tx: Pick<Db, "select">, excludeIds: string[] = []) {
   const [candidate] = await tx
-    .select({ id: gateJobs.id, timeoutMs: gateJobs.timeoutMs })
+    .select({ id: gateJobs.id, timeoutMs: gateJobs.timeoutMs, orgId: repos.orgId })
     .from(gateJobs)
     .innerJoin(repos, eq(gateJobs.repoId, repos.id))
     .where(
       and(
         eq(gateJobs.status, "queued"),
+        excludeIds.length > 0 ? notInArray(gateJobs.id, excludeIds) : undefined,
         sql`(
           ${repos.orgId} is null
           or not exists (
@@ -120,7 +123,42 @@ export async function claimGateJob(
   claimedByIdentityId: string,
 ): Promise<typeof gateJobs.$inferSelect | null> {
   return await db.transaction(async (tx) => {
-    const candidate = await selectClaimCandidate(tx);
+    // #94 (audit §P1-3): the cap condition inside selectClaimCandidate is a
+    // cheap pre-filter, not the authority — two concurrent claims can both
+    // evaluate it at count = cap - 1 and both pass, because SKIP LOCKED
+    // prevents taking the same *row*, not the same *budget*. The authority
+    // is the recount below, taken while holding FOR UPDATE on the org row:
+    // same-org admissions serialize there, so the running count a claim
+    // admits against already includes every admission that beat it. A
+    // candidate whose org turns out to be at cap under the lock is excluded
+    // and the next-oldest considered — same no-starvation rule the
+    // pre-filter applies, one candidate later.
+    const excluded: string[] = [];
+    let candidate: Awaited<ReturnType<typeof selectClaimCandidate>> = null;
+    for (let i = 0; i < 10 && !candidate; i++) {
+      const next = await selectClaimCandidate(tx, excluded);
+      if (!next) return null;
+
+      if (next.orgId !== null) {
+        await tx.execute(sql`select id from ${orgs} where id = ${next.orgId} for update`);
+        const [org] = await tx
+          .select({ maxConcurrentGateJobs: orgs.maxConcurrentGateJobs })
+          .from(orgs)
+          .where(eq(orgs.id, next.orgId));
+        if (org?.maxConcurrentGateJobs != null) {
+          const [running] = await tx
+            .select({ n: sql<number>`count(*)::int` })
+            .from(gateJobs)
+            .innerJoin(repos, eq(gateJobs.repoId, repos.id))
+            .where(and(eq(repos.orgId, next.orgId), eq(gateJobs.status, "running")));
+          if ((running?.n ?? 0) >= org.maxConcurrentGateJobs) {
+            excluded.push(next.id);
+            continue;
+          }
+        }
+      }
+      candidate = next;
+    }
     if (!candidate) return null;
 
     const now = new Date();
