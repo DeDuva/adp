@@ -18,6 +18,7 @@ import { registerDependencyAdmissionRoutes } from "./http-rest/dependency-admiss
 import { registerOperationRoutes } from "./http-rest/operations.js";
 import { registerAuditLogRoutes } from "./http-rest/audit-log.js";
 import { registerOrgRoutes } from "./http-rest/orgs.js";
+import { registerTokenRoutes } from "./http-rest/tokens.js";
 import { registerWorkspaceRoutes } from "./http-rest/workspaces.js";
 import { registerEvidenceRoutes } from "./http-rest/evidence.js";
 import { registerSessionRoutes } from "./http-rest/sessions.js";
@@ -86,6 +87,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   registerOperationRoutes(app, db, gitBackend);
   registerAuditLogRoutes(app, db);
   registerOrgRoutes(app, db, gitBackend, instanceFloor);
+  registerTokenRoutes(app, db);
   registerWorkspaceRoutes(app, db, gitBackend);
   registerEvidenceRoutes(app, db);
   registerSessionRoutes(app, db, gitBackend, signer, publicUrl);

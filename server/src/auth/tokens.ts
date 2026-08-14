@@ -54,8 +54,12 @@ export interface MintTokenOptions {
   orgId?: string;
 }
 
+// `Pick` rather than `Db` so a transaction (`tx` inside `db.transaction()`)
+// satisfies it too — http-rest/tokens.ts mints inside the same transaction
+// that records the token.mint operation, same reasoning as
+// core/org-lookup.ts's findOrCreateOrg.
 export async function mintToken(
-  db: Db,
+  db: Pick<Db, "insert">,
   identityId: string,
   scopes: string[],
   opts: MintTokenOptions = {},
