@@ -91,9 +91,10 @@ browser: ## Download the pinned Chromium build Playwright drives
 browser-deps: ## Install Chromium's system libraries (needs root)
 	npx --prefix server playwright install-deps chromium
 
-web: ## Typecheck and build the supervision UI
+web: ## Typecheck, build, and test the supervision UI
 	npm run typecheck --prefix server/web
 	npm run build --prefix server/web
+	npm test --prefix server/web
 
 cli: ## Typecheck, build, and test the adp CLI (no database needed)
 	npm run typecheck --prefix cli

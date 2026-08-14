@@ -150,7 +150,16 @@ export interface CandidateSetDetail extends Omit<CandidateSetSummary, "candidate
 }
 
 // M4-7 — the org policy console.
-export type LandRequirement = "gates_green" | "one_approval";
+//
+// A runtime array, not just a type (#98): this is a hand-copy of the
+// server's LandRequirement enum (server/src/core/repo-policy.ts), and the
+// copy had already drifted once — `gates_confident` was missing, so the
+// console rendered that requirement as a blank label precisely on the
+// malformed-policy fail-closed path it has a dedicated red banner for. The
+// array is what api.test.ts binds to the server's z.enum, both directions;
+// the type is derived so it can never disagree with the array.
+export const LAND_REQUIREMENTS = ["gates_green", "one_approval", "gates_confident"] as const;
+export type LandRequirement = (typeof LAND_REQUIREMENTS)[number];
 export type PolicyLayer = "instance" | "org" | "repo";
 
 export interface OrgSummary {

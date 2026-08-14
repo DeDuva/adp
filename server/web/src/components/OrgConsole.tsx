@@ -28,9 +28,15 @@ import {
 //      a file, and because it is what someone reaches for during an incident.
 //      Until M4-7 there was no way to throw it outside of `psql`.
 
+// Exhaustive over LandRequirement by type: when the server enum grows and
+// api.ts's LAND_REQUIREMENTS follows (its binding test forces that), this
+// Record fails to compile until the new requirement gets a label — the
+// alternative was rendering it as blank text, which is how a fail-closed
+// policy looked like an enforced-but-nameless one.
 const REQUIREMENT_LABEL: Record<LandRequirement, string> = {
   gates_green: "gates green",
   one_approval: "one approval",
+  gates_confident: "gates confident",
 };
 
 const LAYER_LABEL: Record<PolicyLayer, string> = {
