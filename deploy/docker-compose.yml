@@ -15,6 +15,14 @@ services:
       retries: 10
 
   server:
+    # #101: a published, pinnable artifact is the separation mechanism
+    # between active development and what stakeholders depend on — there is
+    # deliberately no hosted staging rung (docs/environments-plan.md). Pull
+    # the released image by default; `docker compose build` still works and
+    # produces the same image from source when iterating on the deploy
+    # itself. Pin harder with ADP_IMAGE=ghcr.io/deduva/adp@sha256:... — the
+    # release workflow prints each release's digest.
+    image: ${ADP_IMAGE:-ghcr.io/deduva/adp:v0.3.0}
     build:
       context: ..
       dockerfile: deploy/Dockerfile
