@@ -152,6 +152,53 @@ jobs:
       # actually running a container, not by asserting on an argument list.
       - run: ADP_REQUIRE_DOCKER=1 npm test
 
+  # #99: the §2.1 definition-of-done walkthrough. This is the only thing
+  # asserting the `gh pr checks` gap is closed the way the docs promise, and
+  # until now it ran only when a human typed `make check` — a headline exit
+  # criterion protected by muscle memory. The script is self-contained
+  # (migrates, boots its own server on random ports, pins its own gh); it
+  # needs Postgres, egress (D16/D17 hit live scanners), and the cli/adapters
+  # workspaces it drives.
+  acceptance:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: adp
+          POSTGRES_PASSWORD: adp
+          POSTGRES_DB: adp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U adp -d adp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://adp:adp@localhost:5432/adp
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - working-directory: cli
+        run: npm ci
+      - working-directory: adapters
+        run: npm ci
+      - name: Cache pinned gh release
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/adp-conformance-gh
+          key: gh-conformance-${{ hashFiles('server/conformance/run.sh') }}
+      - run: bash acceptance/run.sh
+
   bench:
     runs-on: ubuntu-latest
     defaults:

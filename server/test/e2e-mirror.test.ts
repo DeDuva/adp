@@ -9,6 +9,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq, and } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
+import { skipWithoutDb } from "./require-db.js";
 import { changes, identities, mirrors, mirrorSyncLog, operations, repos } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { grantOwner } from "./org-fixture.js";
@@ -33,7 +34,7 @@ const CREDENTIAL_KEY = "e2e-mirror-credential-key";
 // GitHub's, triggers a fetch back into ADP with auto-record), divergence
 // (neither side force-moves a ref it can't fast-forward), and a bad
 // signature (rejected before any DB write).
-describe.skipIf(!process.env.DATABASE_URL)("M2: mirror mode", () => {
+describe.skipIf(skipWithoutDb)("M2: mirror mode", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;
