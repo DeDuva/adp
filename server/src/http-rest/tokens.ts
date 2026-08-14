@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { validationErrors } from "./validation-errors.js";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { identities } from "../db/schema.js";
@@ -31,7 +32,7 @@ export function registerTokenRoutes(app: FastifyInstance, db: Db) {
   app.post("/api/adp/tokens", { preHandler: requireScope("admin") }, async (req, reply) => {
     const parsed = MintTokenBody.safeParse(req.body);
     if (!parsed.success) {
-      reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+      reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
       return;
     }
     const { principal, kind, scopes, expires_at } = parsed.data;
@@ -59,6 +60,7 @@ export function registerTokenRoutes(app: FastifyInstance, db: Db) {
       });
       await recordOperation(tx, {
         repoId: null,
+        orgId,
         actorId: req.identity!.identityId,
         verb: "token.mint",
         target: principal,

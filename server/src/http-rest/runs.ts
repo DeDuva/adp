@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { validationErrors } from "./validation-errors.js";
 import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
@@ -90,7 +91,7 @@ export function registerRunRoutes(
   app.post("/api/adp/repos/:owner/:repo/runs", { preHandler: requireScope("repo:write") }, async (req, reply) => {
     const parsed = OpenRunBody.safeParse(req.body);
     if (!parsed.success) {
-      reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+      reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
       return;
     }
     const repo = await repoOr404(req, reply);
@@ -193,7 +194,7 @@ export function registerRunRoutes(
     async (req, reply) => {
       const parsed = CloseRunBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
       const repo = await repoOr404(req, reply);
@@ -229,7 +230,7 @@ export function registerRunRoutes(
     async (req, reply) => {
       const parsed = AbandonRunBody.safeParse(req.body ?? {});
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
       const repo = await repoOr404(req, reply);
@@ -382,7 +383,7 @@ export function registerRunRoutes(
     async (req, reply) => {
       const parsed = RecordEvalBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
       const repo = await repoOr404(req, reply);

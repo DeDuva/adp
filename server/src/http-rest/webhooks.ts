@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { PerPageQuery } from "./pagination.js";
+import { validationErrors } from "./validation-errors.js";
+import { and, asc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { webhooks } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
@@ -42,7 +44,7 @@ export function registerWebhookRoutes(app: FastifyInstance, db: Db, credentialKe
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const parsed = CreateWebhookBody.safeParse(req.body);
     if (!parsed.success) {
-      reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+      reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
       return;
     }
     const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
@@ -89,7 +91,15 @@ export function registerWebhookRoutes(app: FastifyInstance, db: Db, credentialKe
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
     }
-    const rows = await db.select().from(webhooks).where(eq(webhooks.repoId, repo.id));
+    // #97: bounded like every other compat-plane list.
+    const { per_page, page } = PerPageQuery.parse(req.query ?? {});
+    const rows = await db
+      .select()
+      .from(webhooks)
+      .where(eq(webhooks.repoId, repo.id))
+      .orderBy(asc(webhooks.createdAt))
+      .limit(per_page)
+      .offset((page - 1) * per_page);
     reply.send(rows.map(serializeWebhook));
   });
 

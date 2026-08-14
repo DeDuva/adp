@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { validationErrors } from "./validation-errors.js";
 import { and, count, eq, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
@@ -151,7 +152,7 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     const { owner } = req.params as { owner: string };
     const parsed = CreateRepoBody.safeParse(req.body);
     if (!parsed.success) {
-      reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+      reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
       return;
     }
     const { name, default_branch } = parsed.data;
@@ -186,7 +187,7 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
   app.post("/api/v3/user/repos", { preHandler: requireScope("repo:write") }, async (req, reply) => {
     const parsed = CreateRepoBody.safeParse(req.body);
     if (!parsed.success) {
-      reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+      reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
       return;
     }
     const owner = req.identity!.principal;
@@ -223,7 +224,7 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     const { org } = req.params as { org: string };
     const parsed = CreateRepoBody.safeParse(req.body);
     if (!parsed.success) {
-      reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+      reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
       return;
     }
     const { name, default_branch } = parsed.data;

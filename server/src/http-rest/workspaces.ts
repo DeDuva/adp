@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { KeysetQuery, decodeCursor, encodeCursor, NEXT_CURSOR_HEADER } from "./pagination.js";
+import { validationErrors } from "./validation-errors.js";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
 import { workspaces } from "../db/schema.js";
@@ -36,7 +38,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, db: Db, gitBackend
       const { owner, repo: repoName } = req.params as { owner: string; repo: string };
       const parsed = CreateWorkspaceBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
       const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
@@ -71,7 +73,27 @@ export function registerWorkspaceRoutes(app: FastifyInstance, db: Db, gitBackend
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
       }
-      const rows = await db.select().from(workspaces).where(eq(workspaces.repoId, repo.id));
+      // #97: bounded, native-plane style — `limit` + keyset cursor, next
+      // page's cursor in the ADP-Next-Cursor header so the body shape every
+      // existing consumer reads stays exactly as it was.
+      const { limit, cursor } = KeysetQuery.parse(req.query ?? {});
+      const pos = decodeCursor(cursor);
+      const rows = await db
+        .select()
+        .from(workspaces)
+        .where(
+          and(
+            eq(workspaces.repoId, repo.id),
+            pos
+              ? sql`(${workspaces.createdAt}, ${workspaces.id}) < (${pos.createdAt}, ${pos.id})`
+              : undefined,
+          ),
+        )
+        .orderBy(desc(workspaces.createdAt), desc(workspaces.id))
+        .limit(limit);
+      if (rows.length === limit) {
+        reply.header(NEXT_CURSOR_HEADER, encodeCursor({ createdAt: rows[rows.length - 1]!.createdAt, id: rows[rows.length - 1]!.id }));
+      }
       reply.send(rows.map(serializeWorkspace));
     },
   );

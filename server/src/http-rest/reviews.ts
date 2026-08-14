@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { PerPageQuery } from "./pagination.js";
+import { validationErrors } from "./validation-errors.js";
+import { and, asc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { proposals, reviews } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
@@ -37,7 +39,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Db) {
       const { owner, repo: repoName, number } = req.params as { owner: string; repo: string; number: string };
       const parsed = CreateReviewBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
 
@@ -100,7 +102,14 @@ export function registerReviewRoutes(app: FastifyInstance, db: Db) {
       return;
     }
 
-    const rows = await db.select().from(reviews).where(eq(reviews.proposalId, proposal.id));
+    const { per_page, page } = PerPageQuery.parse(req.query ?? {});
+    const rows = await db
+      .select()
+      .from(reviews)
+      .where(eq(reviews.proposalId, proposal.id))
+      .orderBy(asc(reviews.createdAt))
+      .limit(per_page)
+      .offset((page - 1) * per_page);
     reply.send(rows.map(serializeReview));
   });
 }

@@ -40,14 +40,22 @@ const UNDOCUMENTED: { pattern: RegExp; why: string }[] = [
   },
 ];
 
-function collectRoutes(): { method: string; url: string }[] {
+function collectRoutes(): { method: string; url: string; requiredScope?: string }[] {
   const app = Fastify({ logger: false });
-  const routes: { method: string; url: string }[] = [];
+  const routes: { method: string; url: string; requiredScope?: string }[] = [];
   app.addHook("onRoute", (route) => {
+    // #97: requireScope's returned handler carries the scope it enforces
+    // (auth/plugin.ts) precisely so this test can compare it to the spec's
+    // x-required-scope — the contract's authorization story is asserted
+    // against the code, not maintained beside it.
+    const handlers = Array.isArray(route.preHandler) ? route.preHandler : route.preHandler ? [route.preHandler] : [];
+    const scoped = handlers.find((h) => typeof h === "function" && "requiredScope" in h) as
+      | { requiredScope: string }
+      | undefined;
     const methods = Array.isArray(route.method) ? route.method : [route.method];
     for (const method of methods) {
       if (method === "HEAD" || method === "OPTIONS") continue;
-      routes.push({ method, url: route.url });
+      routes.push({ method, url: route.url, requiredScope: scoped?.requiredScope });
     }
   });
 
@@ -129,6 +137,95 @@ describe("spec/openapi.yaml describes the API this server actually serves", () =
   });
 });
 
+// ── Scopes: the spec's authorization story matches the code's (#97) ───────
+//
+// Before 0.3.0 scopes lived only in prose: 8 authenticated GETs were marked
+// anonymous and no operation declared which scope it demands. Every scoped
+// route now carries `x-required-scope`, and this fails in both directions —
+// a route that gained/changed a scope without the spec following, and a
+// spec claim no route backs.
+describe("x-required-scope matches requireScope, both directions", () => {
+  const routes = collectRoutes();
+  // Operations whose authorization is real but not expressed as a
+  // requireScope preHandler, each with the mechanism that covers it.
+  const INLINE_AUTH: Record<string, string> = {
+    // http-gql/route.ts gates on hasScope(identity, "repo:read") inline and
+    // mutations re-check repo:write per-resolver.
+    "POST /api/graphql": "inline hasScope in the GraphQL route",
+    // requireAuth only — any authenticated identity, no scope.
+    "GET /api/v3": "requireAuth (identity probe)",
+    "GET /api/v3/user": "requireAuth (identity probe)",
+    "GET /api/v3/rate_limit": "requireAuth (identity probe)",
+  };
+
+  it("every scoped route's operation declares that exact scope; no operation claims a scope its route lacks", () => {
+    const codeSide = new Map<string, string | undefined>();
+    for (const r of routes) {
+      if (UNDOCUMENTED.some((u) => u.pattern.test(r.url))) continue;
+      codeSide.set(`${r.method.toUpperCase()} ${toSpecPath(r.url)}`, r.requiredScope);
+    }
+
+    const mismatches: string[] = [];
+    for (const [path, entry] of Object.entries(spec.paths)) {
+      for (const [method, op] of Object.entries(entry)) {
+        if (typeof op !== "object" || op === null) continue;
+        const id = `${method.toUpperCase()} ${path}`;
+        if (!codeSide.has(id)) continue; // process-level endpoints, covered elsewhere
+        const declared = (op as { "x-required-scope"?: string })["x-required-scope"];
+        const enforced = codeSide.get(id);
+        if (declared === enforced) continue;
+        if (!enforced && id in INLINE_AUTH) continue;
+        mismatches.push(`${id}: spec says ${declared ?? "(none)"}, code enforces ${enforced ?? "(none)"}`);
+      }
+    }
+    expect(mismatches, `scope drift between spec and code:\n  ${mismatches.join("\n  ")}`).toEqual([]);
+  });
+});
+
+// ── The operation set is bound to the version (#97 C-1) ───────────────────
+//
+// Eleven M4 operations shipped under an unmoved 0.2.0 because nothing bound
+// "what the spec offers" to "what the spec claims to be" — and the version
+// test passed vacuously the whole time. The checked-in snapshot
+// (spec/operations.snapshot.json, regenerated via `npm run spec:snapshot`)
+// records the operation set as of the current version; changing the set
+// without moving `info.version` is the exact failure this catches.
+describe("the operation set moves the version with it", () => {
+  const METHODS = ["get", "put", "post", "delete", "patch"];
+  const currentOps = Object.entries(spec.paths)
+    .flatMap(([path, entry]) => METHODS.filter((m) => m in entry).map((m) => `${m.toUpperCase()} ${path}`))
+    .sort();
+  const snapshot = JSON.parse(
+    readFileSync(new URL("../../spec/operations.snapshot.json", import.meta.url), "utf8"),
+  ) as { version: string; operations: string[] };
+  const specVersion = (spec as unknown as { info: { version: string } }).info.version;
+
+  it("fails when operations change without info.version moving", () => {
+    const added = currentOps.filter((o) => !snapshot.operations.includes(o));
+    const removed = snapshot.operations.filter((o) => !currentOps.includes(o));
+    if (added.length === 0 && removed.length === 0) return;
+
+    expect(
+      specVersion,
+      "the operation set changed but info.version did not — a consumer's generated client is now stale " +
+        "under a version that claims otherwise. Bump API_VERSION + spec info.version, then `npm run spec:snapshot`.\n" +
+        `  added:\n    ${added.join("\n    ")}\n  removed:\n    ${removed.join("\n    ")}`,
+    ).not.toBe(snapshot.version);
+
+    // The version DID move — the snapshot just wasn't regenerated with it.
+    expect.fail(
+      `info.version moved (${snapshot.version} -> ${specVersion}) but the snapshot is stale — run \`npm run spec:snapshot\` and commit it with the change.`,
+    );
+  });
+
+  it("keeps the snapshot's version current so the guard above compares against the right baseline", () => {
+    expect(
+      snapshot.version,
+      "spec/operations.snapshot.json records a different version than the spec serves — run `npm run spec:snapshot`",
+    ).toBe(specVersion);
+  });
+});
+
 // ── Response schemas on the native plane ──────────────────────────────────
 //
 // Requests were typed by the spec and responses were not, so a generated client
@@ -147,13 +244,9 @@ const RESPONSE_SCHEMA_DEBT = new Set<string>([
   "GET /api/adp/repos/{owner}/{repo}/evidence/{sha}",
   "GET /api/adp/repos/{owner}/{repo}/operations",
   "GET /api/adp/repos/{owner}/{repo}/operations/{id}",
-  "GET /api/adp/repos/{owner}/{repo}/runs",
-  "GET /api/adp/repos/{owner}/{repo}/runs/compare",
   "GET /api/adp/repos/{owner}/{repo}/runs/{runId}",
-  "GET /api/adp/repos/{owner}/{repo}/runs/{runId}/evals",
   "GET /api/adp/repos/{owner}/{repo}/runs/{runId}/stats",
   "GET /api/adp/repos/{owner}/{repo}/runs/{runId}/trajectory",
-  "GET /api/adp/repos/{owner}/{repo}/runs/{runId}/verify",
   "GET /api/adp/repos/{owner}/{repo}/sessions/{id}",
   "GET /api/adp/repos/{owner}/{repo}/sessions/{id}/checkpoints",
   "GET /api/adp/repos/{owner}/{repo}/workspaces",
@@ -182,7 +275,13 @@ describe("native-plane responses are typed, not merely described", () => {
       if (!responses) continue;
       operations.push({
         id: `${method.toUpperCase()} ${path}`,
-        hasSchema: Object.values(responses).some((r) => r && typeof r === "object" && "content" in r),
+        // SUCCESS responses only: since 0.3.0 every operation's 4xx carries
+        // the shared Error schema, so "some response has content" would be
+        // vacuously true everywhere — the debt this ratchet tracks is the
+        // untyped 2xx a client actually consumes.
+        hasSchema: Object.entries(responses).some(
+          ([code, r]) => code.startsWith("2") && r && typeof r === "object" && "content" in r,
+        ),
       });
     }
   }

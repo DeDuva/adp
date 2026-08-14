@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { validationErrors } from "./validation-errors.js";
+import { and, desc, eq, gte, inArray, lte, or } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { operations, repos } from "../db/schema.js";
 import { requireScope, requireOrgAccess } from "../auth/plugin.js";
@@ -45,32 +46,37 @@ export function registerAuditLogRoutes(app: FastifyInstance, db: Db) {
       const { orgId } = req.params as { orgId: string };
       const parsed = AuditLogQuery.safeParse(req.query);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
 
       const orgRepos = await db.select({ id: repos.id }).from(repos).where(eq(repos.orgId, orgId));
       const orgRepoIds = orgRepos.map((r) => r.id);
 
-      // An org with no repos yet has an empty, valid audit log — not an
-      // error, and not an empty inArray() call, which drizzle refuses.
-      const rows =
-        orgRepoIds.length === 0
-          ? []
-          : await db
-              .select()
-              .from(operations)
-              .where(
-                and(
-                  inArray(operations.repoId, orgRepoIds),
-                  parsed.data.actor ? eq(operations.actorId, parsed.data.actor) : undefined,
-                  parsed.data.verb ? eq(operations.verb, parsed.data.verb) : undefined,
-                  parsed.data.since ? gte(operations.createdAt, new Date(parsed.data.since)) : undefined,
-                  parsed.data.until ? lte(operations.createdAt, new Date(parsed.data.until)) : undefined,
-                ),
-              )
-              .orderBy(desc(operations.createdAt))
-              .limit(parsed.data.limit);
+      // Two ways an operation belongs to this org (#97): through one of its
+      // repos, or directly — org-LEVEL verbs (org.kill_switch, org.create,
+      // org.quota_update, org-scoped token.mint) carry operations.org_id and
+      // no repo. The export used to see only the repo-scoped kind, which
+      // made the kill switch — the single op an org's audit reviewer most
+      // wants — invisible here. (An org with no repos still has its
+      // org-level rows; the empty-inArray guard drizzle needs is why the
+      // membership test is built conditionally.)
+      const rows = await db
+        .select()
+        .from(operations)
+        .where(
+          and(
+            orgRepoIds.length > 0
+              ? or(inArray(operations.repoId, orgRepoIds), eq(operations.orgId, orgId))
+              : eq(operations.orgId, orgId),
+            parsed.data.actor ? eq(operations.actorId, parsed.data.actor) : undefined,
+            parsed.data.verb ? eq(operations.verb, parsed.data.verb) : undefined,
+            parsed.data.since ? gte(operations.createdAt, new Date(parsed.data.since)) : undefined,
+            parsed.data.until ? lte(operations.createdAt, new Date(parsed.data.until)) : undefined,
+          ),
+        )
+        .orderBy(desc(operations.createdAt))
+        .limit(parsed.data.limit);
 
       if (parsed.data.format === "csv") {
         const body = rows

@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { desc, eq } from "drizzle-orm";
+import { KeysetQuery, decodeCursor, encodeCursor, NEXT_CURSOR_HEADER } from "./pagination.js";
+import { validationErrors } from "./validation-errors.js";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
 import type { Signer } from "../core/signing.js";
@@ -96,7 +98,7 @@ export function registerGateJobRoutes(
       const { owner, repo: repoName } = req.params as { owner: string; repo: string };
       const parsed = EnqueueBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
 
@@ -133,14 +135,32 @@ export function registerGateJobRoutes(
         return;
       }
 
+      // #97: real pagination (limit + keyset cursor in ADP-Next-Cursor)
+      // instead of a silent 200-row truncation — and no inline `logs`: a
+      // page of jobs each carrying up to 1MB of logs made the listing cost
+      // whatever its noisiest job cost. Logs stay on the single-job
+      // responses (claim, complete), where one job is the point.
+      const { limit, cursor } = KeysetQuery.parse(req.query ?? {});
+      const pos = decodeCursor(cursor);
       const rows = await db
         .select()
         .from(gateJobs)
-        .where(eq(gateJobs.repoId, repo.id))
-        .orderBy(desc(gateJobs.createdAt))
-        .limit(200);
+        .where(
+          and(
+            eq(gateJobs.repoId, repo.id),
+            pos ? sql`(${gateJobs.createdAt}, ${gateJobs.id}) < (${pos.createdAt}, ${pos.id})` : undefined,
+          ),
+        )
+        .orderBy(desc(gateJobs.createdAt), desc(gateJobs.id))
+        .limit(limit);
+      if (rows.length === limit) {
+        reply.header(
+          NEXT_CURSOR_HEADER,
+          encodeCursor({ createdAt: rows[rows.length - 1]!.createdAt, id: rows[rows.length - 1]!.id }),
+        );
+      }
 
-      reply.send({ gate_jobs: rows.map(serializeGateJob) });
+      reply.send({ gate_jobs: rows.map((row) => ({ ...serializeGateJob(row), logs: undefined })) });
     },
   );
 
@@ -152,7 +172,7 @@ export function registerGateJobRoutes(
   app.post("/api/adp/gate-jobs/claim", { preHandler: requireScope("runner") }, async (req, reply) => {
     const parsed = ClaimBody.safeParse(req.body);
     if (!parsed.success) {
-      reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+      reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
       return;
     }
 
@@ -213,7 +233,7 @@ export function registerGateJobRoutes(
     const { id } = req.params as { id: string };
     const parsed = CompleteBody.safeParse(req.body);
     if (!parsed.success) {
-      reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+      reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
       return;
     }
 
