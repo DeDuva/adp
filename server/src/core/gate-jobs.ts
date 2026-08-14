@@ -73,37 +73,54 @@ export const GATE_JOB_LEASE_GRACE_MS = 60_000;
 // audit §P1-5) — it is the one lifecycle transition an incident review
 // needs (which runner took the job, and when) and was the only unrecorded
 // one.
+// The candidate selection, exported so the #93 regression test can run it
+// inside a transaction of its own against a deliberately-held repos lock.
+export async function selectClaimCandidate(tx: Pick<Db, "select">) {
+  const [candidate] = await tx
+    .select({ id: gateJobs.id, timeoutMs: gateJobs.timeoutMs })
+    .from(gateJobs)
+    .innerJoin(repos, eq(gateJobs.repoId, repos.id))
+    .where(
+      and(
+        eq(gateJobs.status, "queued"),
+        sql`(
+          ${repos.orgId} is null
+          or not exists (
+            select 1 from ${orgs}
+            where ${orgs.id} = ${repos.orgId}
+              and ${orgs.maxConcurrentGateJobs} is not null
+              and (
+                select count(*) from ${gateJobs}
+                inner join ${repos} as running_repo on running_repo.id = ${gateJobs.repoId}
+                where running_repo.org_id = ${repos.orgId} and ${gateJobs.status} = 'running'
+              ) >= ${orgs.maxConcurrentGateJobs}
+          )
+        )`,
+      ),
+    )
+    .orderBy(gateJobs.createdAt)
+    .limit(1)
+    // `of: gateJobs`, not a bare FOR UPDATE (#93, audit §P1-2): without OF,
+    // Postgres locks rows from every table in FROM — including the joined
+    // repos row — and, worse, SKIP LOCKED then also *skips* a candidate
+    // whose repos row someone else has locked. Issue and proposal number
+    // assignment (http-rest/issues.ts, proposals.ts) each hold
+    // `select id from repos ... for update` while they compute a number,
+    // so under the bare form, creating an issue starved that repo's gate
+    // queue for the duration — and the claim conversely held the repos
+    // row lock against them. The queue's mutual exclusion is about
+    // gate_jobs rows only; lock exactly those.
+    .for("update", { of: gateJobs, skipLocked: true });
+  return candidate ?? null;
+}
+
 export async function claimGateJob(
   db: Db,
   claimedBy: string,
   claimedByIdentityId: string,
 ): Promise<typeof gateJobs.$inferSelect | null> {
   return await db.transaction(async (tx) => {
-    const [candidate] = await tx
-      .select({ id: gateJobs.id, timeoutMs: gateJobs.timeoutMs })
-      .from(gateJobs)
-      .innerJoin(repos, eq(gateJobs.repoId, repos.id))
-      .where(
-        and(
-          eq(gateJobs.status, "queued"),
-          sql`(
-            ${repos.orgId} is null
-            or not exists (
-              select 1 from ${orgs}
-              where ${orgs.id} = ${repos.orgId}
-                and ${orgs.maxConcurrentGateJobs} is not null
-                and (
-                  select count(*) from ${gateJobs}
-                  inner join ${repos} as running_repo on running_repo.id = ${gateJobs.repoId}
-                  where running_repo.org_id = ${repos.orgId} and ${gateJobs.status} = 'running'
-                ) >= ${orgs.maxConcurrentGateJobs}
-            )
-          )`,
-        ),
-      )
-      .orderBy(gateJobs.createdAt)
-      .limit(1)
-      .for("update", { skipLocked: true });
+    const candidate = await selectClaimCandidate(tx);
     if (!candidate) return null;
 
     const now = new Date();

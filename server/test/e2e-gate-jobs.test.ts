@@ -7,7 +7,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
 import { and, eq } from "drizzle-orm";
-import { identities, gateJobs } from "../src/db/schema.js";
+import { identities, gateJobs, repos } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
@@ -15,6 +15,7 @@ import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerGateJobRoutes } from "../src/http-rest/gate-jobs.js";
+import { selectClaimCandidate } from "../src/core/gate-jobs.js";
 
 // M4-9a (docs/m4-readiness-review.md §4): the gate-job queue mechanism,
 // proven end-to-end over real HTTP acting as a stub runner — no `runner/`
@@ -28,6 +29,7 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
   let writeToken: string;
   let runnerToken: string;
   let runnerIdentityId: string;
+  let writerId: string;
   const owner = `gj-owner-${Date.now()}`;
   const repoName = "target";
   const gitSha = "a".repeat(40);
@@ -60,6 +62,7 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
     port = typeof address === "object" && address ? address.port : 0;
 
     const [writer] = await db.insert(identities).values({ kind: "human", principal: `gj-writer-${Date.now()}` }).returning();
+    writerId = writer!.id;
     writeToken = await mintToken(db, writer!.id, ["repo:write"]);
     await grantOwner(db, writer!.id, owner);
 
@@ -257,6 +260,73 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
     });
     expect(ownerComplete.status).toBe(200);
     expect(ownerComplete.body).toMatchObject({ id: jobId, status: "succeeded" });
+  });
+
+  // #93 (audit §P1-2): the claim lock is FOR UPDATE OF gate_jobs, not a bare
+  // FOR UPDATE over the join. Issue/proposal number assignment holds
+  // `select id from repos ... for update` while it computes a number; under
+  // the bare form, SKIP LOCKED treated a candidate whose (joined) repos row
+  // was locked as locked itself and skipped it — creating an issue starved
+  // that repo's gate queue for the duration of every numbering transaction.
+  //
+  // Proven at the candidate-select layer on purpose. The full claim cannot
+  // demonstrate it black-box: since #92, the claim transaction writes a
+  // gate_job.claim operation whose repo_id FK takes KEY SHARE on the repos
+  // row, so against a *held* lock a fixed claim parks there until release —
+  // a bounded wait in production (numbering commits in milliseconds), but
+  // in a test it just measures the release, not the lock granularity. The
+  // exported selectClaimCandidate is exactly the statement whose OF clause
+  // is the fix, and its answer while the lock is held is the whole story:
+  // with OF it returns the locked repo's job; bare, SKIP LOCKED skips it.
+  it("the claim candidate select does not skip a job whose repos row is locked", async () => {
+    const [repo] = await db.select().from(repos).where(and(eq(repos.owner, owner), eq(repos.name, repoName)));
+
+    // The job must be the oldest queued row in the shared table so the
+    // LIMIT 1 answer is deterministic — backdate it well past anything the
+    // concurrently-running files enqueue. That also makes it prime theft
+    // material for their claim loops, hence the retry.
+    for (let attempt = 0; ; attempt++) {
+      const [job] = await db
+        .insert(gateJobs)
+        .values({
+          repoId: repo!.id,
+          gitSha,
+          name: `lock-skip-${attempt}`,
+          image: "node:22",
+          command: "true",
+          timeoutMs: 60_000,
+          actorId: writerId,
+          createdAt: new Date(Date.now() - 3_600_000),
+        })
+        .returning();
+
+      const client = await pool.connect();
+      let won = false;
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT id FROM repos WHERE owner = $1 AND name = $2 FOR UPDATE", [owner, repoName]);
+
+        const candidate = await db.transaction(async (tx) => {
+          const c = await selectClaimCandidate(tx);
+          // Roll back: this test asserts on the selection, it does not claim.
+          throw Object.assign(new Error("rollback"), { candidate: c });
+        }).catch((err: Error & { candidate?: { id: string } | null }) => err.candidate);
+
+        won = candidate?.id === job!.id;
+      } finally {
+        await client.query("ROLLBACK").catch(() => {});
+        client.release();
+        await db.delete(gateJobs).where(eq(gateJobs.id, job!.id));
+      }
+
+      if (won) return; // the property held — done
+
+      // A concurrent file's claim loop got to the row first (it was the
+      // oldest job in the queue, after all) — that attempt's row is already
+      // retired above; try again with a fresh one.
+      if (attempt >= 9) throw new Error("candidate select never returned the locked repo's job in 10 attempts");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
   });
 
   it("refuses to complete a job that isn't running (already terminal)", async () => {
