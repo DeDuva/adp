@@ -4,12 +4,12 @@ import { desc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
 import type { Signer } from "../core/signing.js";
-import { gateJobs } from "../db/schema.js";
+import { gateJobs, repos } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepoAuthorized, findRepoById } from "../core/repos-lookup.js";
 import { enqueueGateJob, claimGateJob } from "../core/gate-jobs.js";
-import { recordGateResult } from "../core/gate-results.js";
+import { recordGateResultIn, emitGateResultWebhook, type RecordGateResultParams } from "../core/gate-results.js";
 import { recordGateJobCompletion } from "../core/telemetry.js";
 
 const EnqueueBody = z.object({
@@ -238,7 +238,18 @@ export function registerGateJobRoutes(
       return;
     }
 
-    const row = await db.transaction(async (tx) => {
+    // #95 (audit §P1-4): the status flip, its operation, AND the signed
+    // evidence commit or roll back together. The evidence used to be a
+    // second transaction after this one — a crash between the two left a
+    // terminal job with no gate_results row and no way to re-drive it
+    // (complete refuses non-running jobs), which for a gates_green land
+    // policy meant that commit was permanently blocked. Now a failure
+    // anywhere in here (the signer included) leaves the job `running`, and
+    // the runner's normal retry of /complete produces both records or
+    // neither. The repo lookup rides inside too: a repo deleted between
+    // claim and complete still completes the job, minus evidence there is
+    // no repo left for gates_green to check against anyway.
+    const { row, evidenceParams } = await db.transaction(async (tx) => {
       const [row] = await tx
         .update(gateJobs)
         .set({
@@ -258,40 +269,34 @@ export function registerGateJobRoutes(
         after: { status: parsed.data.status },
       });
 
-      return row!;
-    });
-
-    // M4-11. Outside the transaction on purpose: this is a process-local
-    // counter for the dashboards, not part of the durable record — the
-    // durable record is the recordOperation above, and a metric that could
-    // roll back with it would be the tail wagging the dog.
-    recordGateJobCompletion(row.status);
-
-    // The queue-lifecycle event above is recorded regardless; the signed
-    // evidence below is best-effort against a repo that might (in principle)
-    // have been deleted between claim and complete — if so, there is
-    // nothing left for gates_green to check against anyway.
-    const repo = await findRepoById(db, row.repoId);
-    if (repo) {
-      await recordGateResult(
-        db,
-        signer,
-        publicUrl,
-        credentialKey,
-        {
-          repoId: row.repoId,
+      const [repo] = await tx.select().from(repos).where(eq(repos.id, row!.repoId));
+      let evidenceParams: RecordGateResultParams | null = null;
+      if (repo) {
+        evidenceParams = {
+          repoId: row!.repoId,
           owner: repo.owner,
           repoName: repo.name,
-          gitSha: row.gitSha,
-          name: row.name,
-          status: toGateResultStatus(row.status as "succeeded" | "failed" | "timed_out" | "error"),
-          summary: `gate runner: ${row.status}${row.exitCode !== null ? ` (exit ${row.exitCode})` : ""}`,
+          gitSha: row!.gitSha,
+          name: row!.name,
+          status: toGateResultStatus(row!.status as "succeeded" | "failed" | "timed_out" | "error"),
+          summary: `gate runner: ${row!.status}${row!.exitCode !== null ? ` (exit ${row!.exitCode})` : ""}`,
           reporterId: req.identity!.identityId,
           reporterPrincipal: req.identity!.principal,
-          externalId: `gate_job:${row.id}`,
-        },
-        req.log,
-      );
+          externalId: `gate_job:${row!.id}`,
+        };
+        await recordGateResultIn(tx, signer, publicUrl, evidenceParams);
+      }
+
+      return { row: row!, evidenceParams };
+    });
+
+    // Post-commit side effects only from here down: the process-local
+    // completion counter (a metric that could roll back with the
+    // transaction would be the tail wagging the dog) and the webhook
+    // announcing evidence that has actually committed.
+    recordGateJobCompletion(row.status);
+    if (evidenceParams) {
+      emitGateResultWebhook(db, evidenceParams, req.log, credentialKey);
     }
 
     reply.send(serializeGateJob(row));
