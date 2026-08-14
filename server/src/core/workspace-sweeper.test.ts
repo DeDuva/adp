@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq } from "drizzle-orm";
 import { createDb, type Db } from "../db/client.js";
+import { skipWithoutDb } from "../../test/require-db.js";
 import { identities, repos, workspaces } from "../db/schema.js";
 import { GitBackend } from "./git-backend.js";
 import { findOrCreateOrg } from "./org-lookup.js";
@@ -17,7 +18,7 @@ const execFileAsync = promisify(execFile);
 // M4-3: the scheduled sweep that generalizes M3-2's on-demand candidate-set
 // reclamation, against real Postgres + a real bare repo — same rigor
 // mirror-poller.test.ts holds the mirror outbox poller to.
-describe.skipIf(!process.env.DATABASE_URL)("sweepExpiredWorkspaces", () => {
+describe.skipIf(skipWithoutDb)("sweepExpiredWorkspaces", () => {
   let db: Db;
   let pool: import("pg").Pool;
   let gitRoot: string;
