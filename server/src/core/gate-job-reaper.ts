@@ -3,6 +3,7 @@ import type { Db } from "../db/client.js";
 import { gateJobs } from "../db/schema.js";
 import { recordOperation } from "./operations.js";
 import { recordGateJobCompletion } from "./telemetry.js";
+import { withTickLock, TICK_LOCKS } from "./tick-lock.js";
 
 const BATCH_SIZE = 50;
 
@@ -92,11 +93,19 @@ export async function sweepExpiredGateJobs(
   });
 }
 
+// The reaper's tick behind its advisory lock (#96) — two replicas would
+// otherwise both reap, and the loser's requeue-then-claim interleavings are
+// exactly the kind of double-handling the lease exists to prevent. Null
+// means another instance held the lock; this tick correctly did nothing.
+export async function gateJobReapTick(db: Db, actorId: string): Promise<{ requeued: number; errored: number } | null> {
+  return await withTickLock(db, TICK_LOCKS.gateJobReap, () => sweepExpiredGateJobs(db, actorId));
+}
+
 // Same shape as startWorkspaceSweeper: an interval owned by main.ts, with a
 // real system identity so the operations it records name their actor.
 export function startGateJobReaper(db: Db, actorId: string, intervalMs: number): NodeJS.Timeout {
   return setInterval(() => {
-    sweepExpiredGateJobs(db, actorId).catch((err) => {
+    gateJobReapTick(db, actorId).catch((err) => {
       console.error("gate-job reaper tick failed:", err);
     });
   }, intervalMs);

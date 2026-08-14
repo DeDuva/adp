@@ -3,6 +3,7 @@ import type { Db } from "../db/client.js";
 import type { GitBackend } from "./git-backend.js";
 import { repos, workspaces } from "../db/schema.js";
 import { destroyWorkspace } from "./workspaces.js";
+import { withTickLock, TICK_LOCKS } from "./tick-lock.js";
 
 const BATCH_SIZE = 50;
 
@@ -59,6 +60,19 @@ export async function sweepExpiredWorkspaces(
   return { swept, failed };
 }
 
+// The tick the interval (and any second replica's interval) actually runs:
+// the sweep behind its advisory lock (#96). Null means another instance
+// held the lock and this tick correctly did nothing. Exported so the test
+// can prove the exclusion; sweepExpiredWorkspaces itself stays directly
+// callable for tests that want the sweep's own behavior without the guard.
+export async function workspaceSweepTick(
+  db: Db,
+  gitBackend: GitBackend,
+  actorId: string,
+): Promise<{ swept: number; failed: number } | null> {
+  return await withTickLock(db, TICK_LOCKS.workspaceSweep, () => sweepExpiredWorkspaces(db, gitBackend, actorId));
+}
+
 export function startWorkspaceSweeper(
   db: Db,
   gitBackend: GitBackend,
@@ -66,7 +80,7 @@ export function startWorkspaceSweeper(
   intervalMs: number,
 ): NodeJS.Timeout {
   return setInterval(() => {
-    sweepExpiredWorkspaces(db, gitBackend, actorId).catch((err) => {
+    workspaceSweepTick(db, gitBackend, actorId).catch((err) => {
       console.error("workspace sweeper tick failed:", err);
     });
   }, intervalMs);
