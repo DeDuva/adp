@@ -3,7 +3,7 @@ import { z } from "zod";
 import { validationErrors } from "./validation-errors.js";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
-import type { Signer } from "../core/signing.js";
+import { KeyRegistry, type Signer } from "../core/signing.js";
 import { requireScope } from "../auth/plugin.js";
 import { findRepoAuthorized } from "../core/repos-lookup.js";
 import {
@@ -125,6 +125,9 @@ export function registerSessionRoutes(
   gitBackend: GitBackend,
   signer: Signer,
   publicUrl: string,
+  // #102: resume verifies checkpoint envelopes through the registry, so a
+  // checkpoint signed before a key rotation stays resumable after it.
+  keyRegistry: KeyRegistry = new KeyRegistry(signer),
 ) {
   app.post(
     "/api/adp/repos/:owner/:repo/sessions",
@@ -277,6 +280,7 @@ export function registerSessionRoutes(
         id,
         { harness: parsed.data.harness, checkpointId: parsed.data.checkpoint_id },
         req.identity!.identityId,
+        keyRegistry,
       );
       if (!result.ok) {
         reply.code(result.status).send({ message: result.message });

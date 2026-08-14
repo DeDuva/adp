@@ -193,6 +193,17 @@ but the rule now has a live subject rather than a hypothetical one. Splitting th
 giving it a bounded, non-`admin` token are P0 items in
 [`m4-postmortem-audit.md`](m4-postmortem-audit.md), and no production rung may co-locate the two.
 
+*Updated 2026-08-14 (#102):* the tooling half of that rule now exists, so the rule is enforceable
+rather than aspirational. A runner host gets a bounded `runner`-scoped token from
+`POST /api/adp/tokens` (#90; `admin` no longer satisfies `runner`), so it holds neither
+`SIGNING_KEY` nor `DATABASE_URL` — `runner/src/config.test.ts` asserts the absence. And key
+rotation is survivable: `verifyEnvelope` resolves each envelope's `keyid` through a
+`KeyRegistry` (active signer + `RETIRED_SIGNING_PUBLIC_KEYS`, public halves only), so rotating
+`SIGNING_KEY` no longer invalidates every already-signed piece of evidence. **The standing rule,
+restated as deployment policy: a production rung runs the runner on its own host with only its
+runner token; the signing key lives only with the API; a rotated-out key's public half goes into
+`RETIRED_SIGNING_PUBLIC_KEYS` and its private half is destroyed.**
+
 **Auth from CI.** GitHub Actions → GCP should use OIDC workload identity federation, not a
 long-lived service-account key. It is a strictly better default and awkward to retrofit once a key
 is in circulation.

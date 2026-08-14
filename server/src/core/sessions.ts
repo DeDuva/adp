@@ -8,6 +8,7 @@ import { recordOperation } from "./operations.js";
 import { chainGenesis } from "./trajectory.js";
 import { createWorkspace } from "./workspaces.js";
 import { signStatement, verifyEnvelope, decodeStatement, type DsseEnvelope, type InTotoStatement } from "./dsse.js";
+import { KeyRegistry } from "./signing.js";
 
 export type SessionRow = typeof sessions.$inferSelect;
 export type CheckpointRow = typeof checkpoints.$inferSelect;
@@ -260,6 +261,10 @@ export async function resumeSession(
   sessionId: string,
   input: { harness: string; checkpointId?: string },
   actorId: string,
+  // #102: resolves the checkpoint envelope's keyid — a checkpoint signed
+  // before a key rotation must stay resumable after it. Defaults to the
+  // active signer alone for callers that predate registries.
+  keyRegistry: KeyRegistry = new KeyRegistry(signer),
 ): Promise<ResumeResult | SessionError> {
   const [session] = await db
     .select()
@@ -285,7 +290,7 @@ export async function resumeSession(
   // Verification is not optional. An unverified resume would make "one
   // continuous signed history" false while still looking true from the
   // outside — the whole D2 claim rests on this call.
-  if (!verifyEnvelope(signer, checkpoint.envelope as DsseEnvelope)) {
+  if (!verifyEnvelope(keyRegistry, checkpoint.envelope as DsseEnvelope)) {
     return {
       ok: false,
       status: 422,

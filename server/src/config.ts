@@ -4,6 +4,12 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
   GIT_ROOT: z.string().min(1),
   SIGNING_KEY: z.string().min(1),
+  // #102: retired signing keys' PUBLIC halves, comma-separated hex, so
+  // evidence signed before a key rotation keeps verifying after it (the
+  // KeyRegistry core/signing.ts builds from this). Public keys only — the
+  // rotated-out private key should not survive anywhere, this env var
+  // included.
+  RETIRED_SIGNING_PUBLIC_KEYS: z.string().optional(),
   PUBLIC_URL: z.string().url(),
   PORT: z.coerce.number().int().positive().default(3000),
   // Real repos push real-sized packs; Fastify's 1 MiB default 413s those.
