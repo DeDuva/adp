@@ -46,9 +46,19 @@ export function requireAuth(req: FastifyRequest, reply: FastifyReply, done: () =
 
 // Scopes are minted (auth/tokens.ts mintToken) but were never checked
 // anywhere before this — any authenticated token could do anything.
-// "admin" satisfies every check; "repo:write" also satisfies "repo:read"
-// (a write token can obviously read), matching GitHub's own scope nesting.
+// "admin" satisfies the CRUD scopes; "repo:write" also satisfies
+// "repo:read" (a write token can obviously read), matching GitHub's own
+// scope nesting.
+//
+// "runner" is deliberately OUTSIDE admin's umbrella (#90, audit §P0-4):
+// it is not a privilege level, it is a *plane* — the token type handed to
+// the host that executes untrusted code. When admin satisfied runner, the
+// path of least resistance for a deployment was to hand the runner its
+// bootstrap admin token and watch it work; refusing admin here makes that
+// lazy path fail closed, so the only token that can work the gate queue
+// is one minted to hold nothing else (http-rest/tokens.ts).
 export function hasScope(scopes: string[], required: "repo:read" | "repo:write" | "admin" | "runner"): boolean {
+  if (required === "runner") return scopes.includes("runner");
   if (scopes.includes("admin")) return true;
   if (required === "admin") return false; // only an actual "admin" scope satisfies "admin" (checked above)
   if (scopes.includes(required)) return true;
