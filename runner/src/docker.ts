@@ -23,6 +23,7 @@ export interface GateJobSpec {
 export interface RunnerLimits {
   memory: string;
   cpus: string;
+  pidsLimit: number;
 }
 
 export interface ExecutionResult {
@@ -70,6 +71,29 @@ export function buildCreateArgs(job: GateJobSpec, limits: RunnerLimits): string[
     limits.memory,
     "--cpus",
     limits.cpus,
+    // #100: the rest of the cage. --pids-limit bounds a fork bomb to the
+    // container. --cap-drop=ALL strips every Linux capability — a gate
+    // script has no business with CAP_SYS_ADMIN, CAP_NET_RAW, or any other
+    // escape primitive; docker's default grant exists for images that act
+    // like tiny systems, and a gate is a command. no-new-privileges pins
+    // that down: nothing in the container (setuid binaries included) can
+    // gain privileges the process didn't start with.
+    //
+    // Deliberately still absent, each blocked by the docker-cp checkout
+    // design rather than forgotten: --read-only (gates build INTO the
+    // checkout at WORKDIR, which lives on the rootfs; a tmpfs there would
+    // shadow the checkout `docker cp` placed before start), --user (the
+    // cp'd checkout is root-owned inside the container, so a non-root user
+    // can't write the tree it is supposed to build), and a storage cap
+    // (--storage-opt size requires a pquota-mounted overlay2 backing store
+    // and hard-errors on the default ext4). Revisit all three together if
+    // the checkout ever moves to a volume.
+    "--pids-limit",
+    String(limits.pidsLimit),
+    "--cap-drop",
+    "ALL",
+    "--security-opt",
+    "no-new-privileges:true",
     "-w",
     WORKDIR,
     job.image,
