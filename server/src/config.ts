@@ -36,6 +36,11 @@ const EnvSchema = z.object({
   // how stale `adp_gate_job_oldest_queued_age_seconds` can be when the alert
   // on it evaluates.
   GATE_JOB_METRICS_INTERVAL_MS: z.coerce.number().int().positive().default(15_000),
+  // #92: how often expired gate-job leases are reaped
+  // (core/gate-job-reaper.ts). Half a minute bounds how long a dead
+  // runner's job stays wedged past its lease — fast enough that a requeue
+  // beats any human noticing, coarse enough to cost nothing.
+  GATE_JOB_REAPER_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
 });
 
 export type Config = z.infer<typeof EnvSchema>;

@@ -143,11 +143,12 @@ describe.skipIf(skipWithoutDb)("M4-9c: adp.yaml-driven gate jobs", () => {
     // claimed the job — so this test must end up holding jobId's claim
     // *itself*, not merely observe that someone claimed it. Claim is still
     // instance-wide and raced by every other e2e file polling this same
-    // shared database, and a job another file's identity claims is
-    // unrecoverable to us until the #92 lease/reaper exists — so when that
-    // happens, requeue the row directly in the DB (a manual stand-in for
-    // that reaper, on a job this test itself enqueued and owns) and keep
-    // claiming until our own identity wins it.
+    // shared database. The #92 reaper would eventually recover a job another
+    // file's identity claimed, but only after a full lease (the job's
+    // timeout + grace — minutes), so when that happens, requeue the row
+    // directly in the DB (the reaper's own move, taken immediately, on a job
+    // this test itself enqueued and owns) and keep claiming until our own
+    // identity wins it.
     for (let i = 0; i < 40; i++) {
       const [row] = await db
         .select({ status: gateJobs.status, claimedByIdentityId: gateJobs.claimedByIdentityId })

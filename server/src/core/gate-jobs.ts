@@ -60,9 +60,19 @@ export async function enqueueGateJob(db: Db, params: EnqueueGateJobParams): Prom
 // whose org is currently at its running-job ceiling and consider the
 // next-oldest one instead, all inside the same `FOR UPDATE SKIP LOCKED`
 // transaction mirror-poller.ts's idiom already uses.
+// #92: the slack a lease allows past the job's own wall-clock timeout — a
+// live runner enforces timeout_ms on the container and then still needs to
+// report; a runner that hasn't reported this long after the deadline is
+// presumed dead and its claim is up for reaping.
+export const GATE_JOB_LEASE_GRACE_MS = 60_000;
+
 // `claimedBy` is the runner's self-reported label (observability only);
 // `claimedByIdentityId` is the authenticated identity the claim happened
 // under, which is what checkout/complete's ownership check trusts (#88).
+// The claim is recorded in the operation log in the same transaction (#92,
+// audit §P1-5) — it is the one lifecycle transition an incident review
+// needs (which runner took the job, and when) and was the only unrecorded
+// one.
 export async function claimGateJob(
   db: Db,
   claimedBy: string,
@@ -70,7 +80,7 @@ export async function claimGateJob(
 ): Promise<typeof gateJobs.$inferSelect | null> {
   return await db.transaction(async (tx) => {
     const [candidate] = await tx
-      .select({ id: gateJobs.id })
+      .select({ id: gateJobs.id, timeoutMs: gateJobs.timeoutMs })
       .from(gateJobs)
       .innerJoin(repos, eq(gateJobs.repoId, repos.id))
       .where(
@@ -96,11 +106,28 @@ export async function claimGateJob(
       .for("update", { skipLocked: true });
     if (!candidate) return null;
 
+    const now = new Date();
     const [row] = await tx
       .update(gateJobs)
-      .set({ status: "running", claimedBy, claimedByIdentityId, startedAt: new Date() })
+      .set({
+        status: "running",
+        claimedBy,
+        claimedByIdentityId,
+        startedAt: now,
+        leaseExpiresAt: new Date(now.getTime() + candidate.timeoutMs + GATE_JOB_LEASE_GRACE_MS),
+        attempts: sql`${gateJobs.attempts} + 1`,
+      })
       .where(eq(gateJobs.id, candidate.id))
       .returning();
+
+    await recordOperation(tx, {
+      repoId: row!.repoId,
+      actorId: claimedByIdentityId,
+      verb: "gate_job.claim",
+      target: `${row!.repoId}@${row!.gitSha}#${row!.name}`,
+      after: { claimed_by: claimedBy, attempt: row!.attempts, lease_expires_at: row!.leaseExpiresAt?.toISOString() },
+    });
+
     return row!;
   });
 }

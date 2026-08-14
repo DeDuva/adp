@@ -25,6 +25,11 @@ import { setGateJobGauges } from "./telemetry.js";
 export interface GateJobSample {
   byStatus: Map<string, number>;
   oldestQueuedAgeSeconds: number;
+  // #92: measured from started_at. The queued-age gauge cannot see a wedged
+  // running job at all — a dead runner's job is precisely NOT queued — so
+  // before this existed, the failure mode the reaper handles was invisible
+  // on the dashboards while it was happening.
+  oldestRunningAgeSeconds: number;
 }
 
 // Non-terminal only. A gauge over terminal states would grow without bound
@@ -38,7 +43,9 @@ export async function sampleGateJobMetrics(db: Db): Promise<GateJobSample> {
     .select({
       status: gateJobs.status,
       count: sql<number>`count(*)::int`,
-      oldestAgeSeconds: sql<number>`coalesce(extract(epoch from (now() - min(${gateJobs.createdAt})))::int, 0)`,
+      // Age is anchored per status: a queued job has been waiting since it
+      // was created; a running job has been running since it was claimed.
+      oldestAgeSeconds: sql<number>`coalesce(extract(epoch from (now() - min(case when ${gateJobs.status} = 'running' then ${gateJobs.startedAt} else ${gateJobs.createdAt} end)))::int, 0)`,
     })
     .from(gateJobs)
     .where(sql`${gateJobs.status} in ('queued', 'running')`)
@@ -50,12 +57,14 @@ export async function sampleGateJobMetrics(db: Db): Promise<GateJobSample> {
   // operator is most likely to be looking at the chart.
   const byStatus = new Map<string, number>(NON_TERMINAL.map((status) => [status, 0]));
   let oldestQueuedAgeSeconds = 0;
+  let oldestRunningAgeSeconds = 0;
   for (const row of rows) {
     byStatus.set(row.status, Number(row.count));
     if (row.status === "queued") oldestQueuedAgeSeconds = Number(row.oldestAgeSeconds);
+    if (row.status === "running") oldestRunningAgeSeconds = Number(row.oldestAgeSeconds);
   }
 
-  const sample = { byStatus, oldestQueuedAgeSeconds };
+  const sample = { byStatus, oldestQueuedAgeSeconds, oldestRunningAgeSeconds };
   setGateJobGauges(sample);
   return sample;
 }
