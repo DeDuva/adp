@@ -74,6 +74,12 @@ jobs:
         run: npm run typecheck
       - working-directory: server/web
         run: npm run build
+      # #98: web/ built in CI but never ran a test, which is how api.ts's
+      # hand-copied server enum drifted (gates_confident missing) and the
+      # org console rendered a requirement as a blank label. The suite is
+      # tiny and DB-free; its job is binding those copies to their sources.
+      - working-directory: server/web
+        run: npm test
 
       - name: Cache pinned gh release
         uses: actions/cache@v4
