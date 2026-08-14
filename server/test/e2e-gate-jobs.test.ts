@@ -6,7 +6,8 @@ import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
-import { identities } from "../src/db/schema.js";
+import { and, eq } from "drizzle-orm";
+import { identities, gateJobs } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
@@ -26,6 +27,7 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
   let port: number;
   let writeToken: string;
   let runnerToken: string;
+  let runnerIdentityId: string;
   const owner = `gj-owner-${Date.now()}`;
   const repoName = "target";
   const gitSha = "a".repeat(40);
@@ -62,6 +64,7 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
     await grantOwner(db, writer!.id, owner);
 
     const [runner] = await db.insert(identities).values({ kind: "agent", principal: `gj-runner-${Date.now()}` }).returning();
+    runnerIdentityId = runner!.id;
     runnerToken = await mintToken(db, runner!.id, ["runner"]);
 
     await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
@@ -123,24 +126,57 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
     }
   });
 
+  // Reclaim our own target (any holder, never a terminal row) vs release a
+  // foreign job we popped (only while we still hold it — its owner may have
+  // force-reclaimed it mid-hunt, and an unconditional requeue would yank it
+  // back out of their claim mid-test). Same pair as e2e-gate-job-lease.
+  async function reclaimTarget(id: string) {
+    await db
+      .update(gateJobs)
+      .set({ status: "queued", claimedBy: null, claimedByIdentityId: null, startedAt: null, leaseExpiresAt: null })
+      .where(and(eq(gateJobs.id, id), eq(gateJobs.status, "running")));
+  }
+
+  async function releaseHeld(id: string) {
+    await db
+      .update(gateJobs)
+      .set({ status: "queued", claimedBy: null, claimedByIdentityId: null, startedAt: null, leaseExpiresAt: null })
+      .where(and(eq(gateJobs.id, id), eq(gateJobs.status, "running"), eq(gateJobs.claimedByIdentityId, runnerIdentityId)));
+  }
+
   // Claim is instance-wide and this database is shared with every other e2e
   // file vitest runs concurrently — another file's own claim polling (or,
   // starting with M4-9d, a test that deliberately holds jobs claimed for a
   // measurable window while it proves an org's concurrency cap) can
   // legitimately claim this test's just-enqueued job before this test's own
-  // next claim call runs. Loop past anything that isn't `targetJobId`
-  // instead of assuming the very next claim is it — and never complete a
-  // job that isn't ours; that would corrupt whichever test actually owns it.
-  async function claimJobId(targetJobId: string, claimedBy: string, maxAttempts = 40): Promise<Record<string, unknown>> {
-    for (let i = 0; i < maxAttempts; i++) {
-      const res = await api("/api/adp/gate-jobs/claim", runnerToken, {
-        method: "POST",
-        body: JSON.stringify({ claimed_by: claimedBy }),
-      });
-      if (res.status === 200 && res.body!.id === targetJobId) return res.body!;
-      await new Promise((resolve) => setTimeout(resolve, 25));
+  // next claim call runs. Loop toward `targetJobId` instead of assuming the
+  // very next claim is it, force-requeueing our own target out of a foreign
+  // claimant's hands (legitimate: this test enqueued and owns it). Never
+  // complete a foreign job — and don't requeue one mid-hunt either: claim
+  // serves oldest-first, so an immediately-requeued old job is what the
+  // next claim pops again, forever. Hold what the hunt pops, hand it all
+  // back in finally — see e2e-gate-job-lease.test.ts's claimOurs for the
+  // livelock this exact shape avoids.
+  async function claimJobId(targetJobId: string, claimedBy: string, maxAttempts = 100): Promise<Record<string, unknown>> {
+    const held: string[] = [];
+    try {
+      for (let i = 0; i < maxAttempts; i++) {
+        const [target] = await db.select().from(gateJobs).where(eq(gateJobs.id, targetJobId));
+        if (target!.status === "running" && target!.claimedByIdentityId !== runnerIdentityId) {
+          await reclaimTarget(targetJobId);
+        }
+        const res = await api("/api/adp/gate-jobs/claim", runnerToken, {
+          method: "POST",
+          body: JSON.stringify({ claimed_by: claimedBy }),
+        });
+        if (res.status === 200 && res.body!.id === targetJobId) return res.body!;
+        if (res.status === 200) held.push(res.body!.id as string);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      throw new Error(`claimJobId: ${targetJobId} was never claimed after ${maxAttempts} attempts`);
+    } finally {
+      for (const id of held) await releaseHeld(id);
     }
-    throw new Error(`claimJobId: ${targetJobId} was never claimed after ${maxAttempts} attempts`);
   }
 
   it("runs the full enqueue -> claim -> complete lifecycle", async () => {

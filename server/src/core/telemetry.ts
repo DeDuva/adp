@@ -46,6 +46,11 @@ export const METRIC_FAMILIES: readonly MetricFamily[] = [
     help: "Age of the oldest gate job still waiting to be claimed, in seconds. Zero when the queue is empty.",
   },
   {
+    name: "adp_gate_job_oldest_running_age_seconds",
+    type: "gauge",
+    help: "Age of the oldest gate job still running, in seconds. Zero when nothing is running. A wedged running job (#92) climbs here even though the queued-age gauge stays flat.",
+  },
+  {
     name: "adp_gate_job_completions_total",
     type: "counter",
     help: "Total gate jobs reported complete by a runner, by terminal status.",
@@ -62,7 +67,11 @@ const gateJobCompletions = new Map<string, number>();
 // that moved it (another API replica, a manual fix, a restart mid-claim).
 // Null until the first sample, so a scrape taken before the sampler has run
 // emits no sample at all rather than a confident zero.
-let gateJobGauge: { byStatus: Map<string, number>; oldestQueuedAgeSeconds: number } | null = null;
+let gateJobGauge: {
+  byStatus: Map<string, number>;
+  oldestQueuedAgeSeconds: number;
+  oldestRunningAgeSeconds: number;
+} | null = null;
 
 // NUL, because it is the one byte that cannot appear in any of the label
 // values these keys are assembled from (a Fastify route pattern, a GraphQL
@@ -98,7 +107,11 @@ export function recordGateJobCompletion(status: string): void {
   bump(gateJobCompletions, status);
 }
 
-export function setGateJobGauges(sample: { byStatus: Map<string, number>; oldestQueuedAgeSeconds: number }): void {
+export function setGateJobGauges(sample: {
+  byStatus: Map<string, number>;
+  oldestQueuedAgeSeconds: number;
+  oldestRunningAgeSeconds: number;
+}): void {
   gateJobGauge = sample;
 }
 
@@ -154,6 +167,11 @@ export function renderMetrics(): string {
   familyHeader(lines, "adp_gate_job_oldest_queued_age_seconds");
   if (gateJobGauge) {
     lines.push(`adp_gate_job_oldest_queued_age_seconds ${gateJobGauge.oldestQueuedAgeSeconds}`);
+  }
+
+  familyHeader(lines, "adp_gate_job_oldest_running_age_seconds");
+  if (gateJobGauge) {
+    lines.push(`adp_gate_job_oldest_running_age_seconds ${gateJobGauge.oldestRunningAgeSeconds}`);
   }
 
   familyHeader(lines, "adp_gate_job_completions_total");

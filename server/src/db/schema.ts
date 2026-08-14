@@ -717,6 +717,16 @@ export const gateJobs = pgTable(
     // `running` row with this still null (claimed before the column existed)
     // fails the ownership check closed rather than open.
     claimedByIdentityId: uuid("claimed_by_identity_id").references(() => identities.id),
+    // #92: the claim is a LEASE, not a permanent grant. Set at claim time to
+    // now + timeout_ms + a fixed grace; the reaper (core/gate-job-reaper.ts)
+    // requeues a `running` job whose lease has expired — a runner that died
+    // used to leave the job `running` forever, blocking that commit's land
+    // and holding an org concurrency slot with no recovery short of psql.
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    // How many times this job has been claimed. Bounded by the reaper's
+    // retry cap: a job that keeps expiring stops being requeued and is
+    // marked `error` instead of looping forever.
+    attempts: integer("attempts").notNull().default(0),
     exitCode: integer("exit_code"),
     // Inline, bounded (truncated by http-rest/gate-jobs.ts's complete
     // handler) rather than a pointer into an object store — there isn't one

@@ -85,7 +85,7 @@ system also renders.
 
 ## 3. The alerts
 
-Five policies. Each names a distinct thing that can be wrong and has an action attached; signals
+Six policies. Each names a distinct thing that can be wrong and has an action attached; signals
 that are interesting but not actionable stayed on the dashboard.
 
 | # | Fires when | Gated? |
@@ -95,6 +95,7 @@ that are interesting but not actionable stayed on the dashboard.
 | 3 | 5xx responses exceed 0.05/s (≈3/min) for 10 min | no |
 | 4 | The oldest unclaimed gate job has waited more than 15 min | no |
 | 5 | Gate jobs complete with status `error` for 5 min | no |
+| 6 | The oldest *running* gate job is older than 45 min — past every timeout plus the #92 reaper's lease grace, so it means the reaper itself is not running, not that a job is slow | no |
 
 Each policy carries its own runbook in its `documentation` block, which is what Cloud Monitoring
 shows in the notification itself — the place an operator is actually reading at the moment it
