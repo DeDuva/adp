@@ -6,9 +6,9 @@ import type { GitBackend } from "../core/git-backend.js";
 import { orgs, repos } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
-import { findRepo } from "../core/repos-lookup.js";
-import { findOrCreateOrg } from "../core/org-lookup.js";
+import { findRepo, findRepoAuthorized, mayAccessOrg } from "../core/repos-lookup.js";
 import { isSafeRepoSegment } from "../core/git-backend.js";
+import type { AuthenticatedIdentity } from "../auth/tokens.js";
 
 const CreateRepoBody = z.object({
   name: z.string().min(1).regex(/^[a-zA-Z0-9._-]+$/),
@@ -31,8 +31,9 @@ async function createRepo(
   owner: string,
   name: string,
   defaultBranch: string,
-  actorId: string,
+  identity: AuthenticatedIdentity,
 ) {
+  const actorId = identity.identityId;
   // The owner comes from a route path param (or the token's principal), not
   // the zod-validated body — and find-my-way %2F-decodes params, so without
   // this check "..%2F..%2Ftmp%2Fx" reaches path.join in git-backend.ts as a
@@ -48,18 +49,28 @@ async function createRepo(
     return { status: "conflict" as const };
   }
 
-  // M4-3: every repo gets an org going forward, the same org the M4-0
-  // migration would have backfilled this owner string into if the repo had
-  // predated it — one org per distinct owner, found-or-created here rather
-  // than left null, which is what makes maxRepos below able to mean anything.
-  const orgId = await findOrCreateOrg(db, owner);
-  const [org] = await db.select({ maxRepos: orgs.maxRepos }).from(orgs).where(eq(orgs.id, orgId));
-  if (org?.maxRepos != null) {
-    const [row] = await db.select({ existing: count() }).from(repos).where(eq(repos.orgId, orgId));
+  // #91 (audit §P0-2): the org must already exist, and the caller must be
+  // allowed in it. This used to be findOrCreateOrg — naming an unseen owner
+  // string silently *created* an org, which made the caller its de facto
+  // first owner and made the per-org maxRepos quota trivially escapable
+  // (hit the cap, POST under a fresh owner, get a new unlimited org).
+  // Provisioning an org is now an explicit, audited action (POST
+  // /api/adp/orgs, or bootstrap --org at the host).
+  const [org] = await db.select().from(orgs).where(eq(orgs.name, owner));
+  if (!org) {
+    return { status: "no-such-org" as const };
+  }
+  if (!(await mayAccessOrg(db, identity, org.id))) {
+    return { status: "not-a-member" as const };
+  }
+
+  if (org.maxRepos != null) {
+    const [row] = await db.select({ existing: count() }).from(repos).where(eq(repos.orgId, org.id));
     if ((row?.existing ?? 0) >= org.maxRepos) {
       return { status: "quota-exceeded" as const, maxRepos: org.maxRepos };
     }
   }
+  const orgId = org.id;
 
   // git init happens outside the DB transaction (it's not transactional
   // infrastructure), but the repo row and its op-log entry are atomic.
@@ -130,13 +141,21 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     }
     const { name, default_branch } = parsed.data;
 
-    const result = await createRepo(db, gitBackend, owner, name, default_branch, req.identity!.identityId);
+    const result = await createRepo(db, gitBackend, owner, name, default_branch, req.identity!);
     if (result.status === "invalid-owner") {
       reply.code(422).send({ message: `Validation failed: owner '${owner}' is not a valid repository owner` });
       return;
     }
     if (result.status === "conflict") {
       reply.code(422).send({ message: `Repository ${owner}/${name} already exists` });
+      return;
+    }
+    if (result.status === "no-such-org") {
+      reply.code(404).send({ message: "Organization not found - orgs are provisioned explicitly (POST /api/adp/orgs)" });
+      return;
+    }
+    if (result.status === "not-a-member") {
+      reply.code(403).send({ message: "Not a member of this organization" });
       return;
     }
     if (result.status === "quota-exceeded") {
@@ -158,7 +177,7 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     const owner = req.identity!.principal;
     const { name, default_branch } = parsed.data;
 
-    const result = await createRepo(db, gitBackend, owner, name, default_branch, req.identity!.identityId);
+    const result = await createRepo(db, gitBackend, owner, name, default_branch, req.identity!);
     if (result.status === "invalid-owner") {
       // The owner here is the token's own principal — minted by an operator,
       // not typed by the caller — so a rejection means the principal itself
@@ -168,6 +187,14 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     }
     if (result.status === "conflict") {
       reply.code(422).send({ message: `Repository ${owner}/${name} already exists` });
+      return;
+    }
+    if (result.status === "no-such-org") {
+      reply.code(404).send({ message: "Organization not found - orgs are provisioned explicitly (POST /api/adp/orgs)" });
+      return;
+    }
+    if (result.status === "not-a-member") {
+      reply.code(403).send({ message: "Not a member of this organization" });
       return;
     }
     if (result.status === "quota-exceeded") {
@@ -186,13 +213,21 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     }
     const { name, default_branch } = parsed.data;
 
-    const result = await createRepo(db, gitBackend, org, name, default_branch, req.identity!.identityId);
+    const result = await createRepo(db, gitBackend, org, name, default_branch, req.identity!);
     if (result.status === "invalid-owner") {
       reply.code(422).send({ message: `Validation failed: org '${org}' is not a valid repository owner` });
       return;
     }
     if (result.status === "conflict") {
       reply.code(422).send({ message: `Repository ${org}/${name} already exists` });
+      return;
+    }
+    if (result.status === "no-such-org") {
+      reply.code(404).send({ message: "Organization not found - orgs are provisioned explicitly (POST /api/adp/orgs)" });
+      return;
+    }
+    if (result.status === "not-a-member") {
+      reply.code(403).send({ message: "Not a member of this organization" });
       return;
     }
     if (result.status === "quota-exceeded") {
@@ -204,7 +239,7 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
 
   app.get("/api/v3/repos/:owner/:repo", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: name } = req.params as { owner: string; repo: string };
-    const repo = await findRepo(db, owner, name);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, name);
     if (!repo) {
       reply.code(404).send({ message: "Not Found" });
       return;

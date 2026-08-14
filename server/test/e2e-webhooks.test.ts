@@ -13,9 +13,11 @@ import { createDb, type Db } from "../src/db/client.js";
 import { eq } from "drizzle-orm";
 import { identities, operations } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerProposalRoutes } from "../src/http-rest/proposals.js";
 import { registerGateRoutes } from "../src/http-rest/gates.js";
@@ -85,7 +87,7 @@ describe.skipIf(skipWithoutDb)("M2: outbound webhook emitter", () => {
     registerProposalRoutes(app, db, gitBackend, credentialKey);
     registerGateRoutes(app, db, signer, "http://localhost", credentialKey);
     registerWebhookRoutes(app, db, credentialKey);
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -96,6 +98,7 @@ describe.skipIf(skipWithoutDb)("M2: outbound webhook emitter", () => {
       .values({ kind: "human", principal: `webhooks-e2e-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
   });
 
   afterAll(async () => {

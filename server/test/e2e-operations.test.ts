@@ -10,9 +10,11 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerProposalRoutes } from "../src/http-rest/proposals.js";
 import { registerOperationRoutes } from "../src/http-rest/operations.js";
@@ -65,7 +67,7 @@ describe.skipIf(skipWithoutDb)("M1c: operations log + undo", () => {
     registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key", []); // no land-policy floor in this suite
     registerOperationRoutes(app, db, gitBackend);
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -76,6 +78,7 @@ describe.skipIf(skipWithoutDb)("M1c: operations log + undo", () => {
       .values({ kind: "human", principal: `ops-e2e-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
   });
 
   afterAll(async () => {

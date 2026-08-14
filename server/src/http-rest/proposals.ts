@@ -7,7 +7,7 @@ import type { Signer } from "../core/signing.js";
 import { proposals, changes, candidateSets } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
-import { findRepo } from "../core/repos-lookup.js";
+import { findRepoAuthorized } from "../core/repos-lookup.js";
 import type { LandRequirement } from "../core/repo-policy.js";
 import { emitWebhookEvent } from "../core/webhooks.js";
 import { landProposal } from "../core/land.js";
@@ -71,7 +71,7 @@ export function registerProposalRoutes(
         return;
       }
 
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -178,7 +178,7 @@ export function registerProposalRoutes(
   app.get("/api/v3/repos/:owner/:repo/pulls", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const { per_page, page } = req.query as { per_page?: string; page?: string };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -196,7 +196,7 @@ export function registerProposalRoutes(
 
   app.get("/api/v3/repos/:owner/:repo/pulls/:number", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, number } = req.params as { owner: string; repo: string; number: string };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -224,7 +224,7 @@ export function registerProposalRoutes(
 
   app.get("/api/v3/repos/:owner/:repo/pulls/:number/files", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, number } = req.params as { owner: string; repo: string; number: string };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -252,7 +252,7 @@ export function registerProposalRoutes(
         return;
       }
 
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -325,7 +325,7 @@ export function registerProposalRoutes(
         reply.code(422).send({ message: "Validation failed", errors: parsedMerge.error.issues });
         return;
       }
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;

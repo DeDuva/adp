@@ -9,6 +9,7 @@ import { desc, eq, isNull, and } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities, orgs, operations } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
@@ -65,6 +66,7 @@ describe.skipIf(skipWithoutDb)("#90: token minting and the runner scope boundary
     const [admin] = await db.insert(identities).values({ kind: "human", principal: `tok-admin-${Date.now()}` }).returning();
     adminIdentityId = admin!.id;
     adminToken = await mintToken(db, admin!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, admin!.id, owner);
 
     await api(`/api/v3/repos/${owner}`, adminToken, { method: "POST", body: JSON.stringify({ name: "target" }) });
   });

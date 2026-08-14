@@ -8,12 +8,14 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerProposalRoutes } from "../src/http-rest/proposals.js";
 import { registerGitDataRoutes } from "../src/http-rest/git-data.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { runMergeContention } from "../../bench/lib/merge-contention.mjs";
 
 // M3-5, arm 1 (docs/m3-readiness-review.md): the merge-contention benchmark,
@@ -56,7 +58,7 @@ describe.skipIf(skipWithoutDb)("M3: merge-contention benchmark arm", () => {
     registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerProposalRoutes(app, db, gitBackend, "e2e-bench-credential-key", []);
     registerGitDataRoutes(app, db, gitBackend);
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -67,6 +69,7 @@ describe.skipIf(skipWithoutDb)("M3: merge-contention benchmark arm", () => {
       .values({ kind: "agent", principal: `bench-e2e-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
 
     await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
       method: "POST",

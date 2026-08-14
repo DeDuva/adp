@@ -12,10 +12,12 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerChangeRoutes } from "../src/http-rest/changes.js";
 import { registerIssueRoutes } from "../src/http-rest/issues.js";
@@ -74,7 +76,7 @@ describe.skipIf(skipWithoutDb)("M1c: MCP native plane", () => {
     registerWorkspaceRoutes(app, db, gitBackend);
     registerEvidenceRoutes(app, db);
     registerCandidateSetRoutes(app, db, gitBackend);
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -85,6 +87,7 @@ describe.skipIf(skipWithoutDb)("M1c: MCP native plane", () => {
       .values({ kind: "agent", principal: `mcp-e2e-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
 
     await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
       method: "POST",

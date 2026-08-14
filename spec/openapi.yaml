@@ -1098,6 +1098,37 @@ paths:
         "422":
           description: This operation is not undoable, or was already undone
   /api/adp/orgs:
+    post:
+      summary: >
+        #91: provision an organization, explicitly and audited. Until this
+        route, orgs came into being as a side effect of naming an unseen
+        owner string on repo-create, which made per-org quotas escapable by
+        anyone. Requires the `admin` scope; the org's name must be a valid
+        owner path segment; the creator is seeded as an owner-member; the
+        act is recorded as an `org.create` operation.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        "201":
+          description: The provisioned organization
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgSummary"
+        "403":
+          description: Requires the `admin` scope
+        "422":
+          description: Invalid name, or an org by this name already exists
     get:
       summary: >
         M4-7: the organizations this token can see — at most one. Access is

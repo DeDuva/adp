@@ -11,10 +11,12 @@ import { eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities, gateJobs } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerHookRoutes } from "../src/http-git/hooks.js";
 import { registerGateJobRoutes } from "../src/http-rest/gate-jobs.js";
@@ -76,7 +78,7 @@ describe.skipIf(skipWithoutDb)("M4-9c: adp.yaml-driven gate jobs", () => {
     registerHookRoutes(app, db, gitBackend, signer, "e2e-test-credential-key");
     registerGateJobRoutes(app, db, gitBackend, signer, "https://adp.example.com", "e2e-test-credential-key");
     registerGateRoutes(app, db, signer, "https://adp.example.com", "e2e-test-credential-key");
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -85,6 +87,7 @@ describe.skipIf(skipWithoutDb)("M4-9c: adp.yaml-driven gate jobs", () => {
 
     const [writer] = await db.insert(identities).values({ kind: "human", principal: `rg-writer-${Date.now()}` }).returning();
     writeToken = await mintToken(db, writer!.id, ["repo:read", "repo:write"]);
+    await grantOwner(db, writer!.id, owner);
 
     const [runner] = await db.insert(identities).values({ kind: "agent", principal: `rg-runner-${Date.now()}` }).returning();
     runnerIdentityId = runner!.id;

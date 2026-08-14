@@ -9,6 +9,7 @@ import { eq, and } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { gateResults, identities, mirrors, operations, repos } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
@@ -83,6 +84,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M2: Actions ingest + passthrough", (
       .values({ kind: "human", principal: `actions-e2e-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
   });
 
   afterAll(async () => {

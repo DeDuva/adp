@@ -5,7 +5,7 @@ import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
 import type { Signer } from "../core/signing.js";
 import { requireScope } from "../auth/plugin.js";
-import { findRepo } from "../core/repos-lookup.js";
+import { findRepoAuthorized } from "../core/repos-lookup.js";
 import { runs, sessions } from "../db/schema.js";
 import { verifyEnvelope, decodeStatement, type DsseEnvelope } from "../core/dsse.js";
 import {
@@ -74,9 +74,12 @@ export function registerRunRoutes(
   signer: Signer,
   publicUrl: string,
 ) {
-  async function repoOr404(req: { params: unknown }, reply: { code: (n: number) => { send: (b: unknown) => void } }) {
+  async function repoOr404(
+    req: { params: unknown; identity?: import("../auth/tokens.js").AuthenticatedIdentity },
+    reply: { code: (n: number) => { send: (b: unknown) => void } },
+  ) {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return null;

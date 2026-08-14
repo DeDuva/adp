@@ -118,7 +118,7 @@ curl -sf "http://localhost:${PORT}/healthz" >/dev/null || { cat "$WORKDIR/server
 
 # --- fixture repo -----------------------------------------------------------
 OWNER="conformance-$$"
-TOKEN=$(npx tsx src/bootstrap.ts "conformance-actor-$$" 2>&1 | grep '^Token:' | awk '{print $2}')
+TOKEN=$(npx tsx src/bootstrap.ts "conformance-actor-$$" --org "$OWNER" 2>&1 | grep '^Token:' | awk '{print $2}')
 [ -n "$TOKEN" ] || fail "bootstrap didn't mint a token"
 
 curl -sf -X POST "http://localhost:${PORT}/api/v3/repos/${OWNER}" \

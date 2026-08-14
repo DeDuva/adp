@@ -3,10 +3,11 @@ import { z } from "zod";
 import { and, count, eq, isNull } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
-import { orgs, repos, workspaces, gateJobs } from "../db/schema.js";
+import { orgs, orgMemberships, repos, workspaces, gateJobs } from "../db/schema.js";
 import { requireScope, requireOrgAccess } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { isOrgMember } from "../auth/tokens.js";
+import { isSafeRepoSegment } from "../core/git-backend.js";
 import { describeOrgPolicy } from "../core/org-policy.js";
 import { loadRepoPolicy, resolveLandRequirements, type LandRequirement } from "../core/repo-policy.js";
 
@@ -87,12 +88,56 @@ async function policyRepoFor(db: Db, policyRepoId: string | null) {
   return { owner: row.owner, name: row.name, defaultBranch: row.defaultBranch };
 }
 
+const CreateOrgBody = z.object({
+  // The same segment rule repo owners live under (#89): an org's name IS the
+  // owner path segment of every repo it will hold.
+  name: z.string().min(1),
+});
+
 export function registerOrgRoutes(
   app: FastifyInstance,
   db: Db,
   gitBackend: GitBackend,
   instanceFloor: LandRequirement[],
 ) {
+  // #91 (audit §P0-2): the explicit provisioning path. Until this route,
+  // orgs came into being as a side effect of naming an unseen owner string
+  // on repo-create — which made "org" a thing anyone could conjure and the
+  // per-org quotas a thing anyone could escape. Now an org exists because an
+  // admin created it (here, or bootstrap --org at the host), and the act is
+  // recorded. The creator is seeded as an owner-member so the org is usable
+  // by a real principal from the first moment — an instance admin passes
+  // every membership check anyway, but an org-scoped admin's org would
+  // otherwise be born with nobody allowed in.
+  app.post("/api/adp/orgs", { preHandler: requireScope("admin") }, async (req, reply) => {
+    const parsed = CreateOrgBody.safeParse(req.body);
+    if (!parsed.success || !isSafeRepoSegment(parsed.data.name)) {
+      reply.code(422).send({ message: "Validation failed: org name must be a valid owner path segment" });
+      return;
+    }
+    const { name } = parsed.data;
+
+    const created = await db.transaction(async (tx) => {
+      const [org] = await tx.insert(orgs).values({ name }).onConflictDoNothing().returning();
+      if (!org) return null;
+      await tx.insert(orgMemberships).values({ orgId: org.id, identityId: req.identity!.identityId, role: "admin" });
+      await recordOperation(tx, {
+        repoId: null,
+        actorId: req.identity!.identityId,
+        verb: "org.create",
+        target: name,
+        after: { org_id: org.id, seeded_admin_member: req.identity!.identityId },
+      });
+      return org;
+    });
+
+    if (!created) {
+      reply.code(422).send({ message: `Organization '${name}' already exists` });
+      return;
+    }
+    reply.code(201).send({ id: created.id, name: created.name, kill_switch: created.killSwitch });
+  });
+
   // Which org this token can look at. Returns at most one: `requireOrgAccess`
   // (M4-1) grants access only where the *token* is scoped to the org, so a
   // human who belongs to three orgs still sees one per token — the token

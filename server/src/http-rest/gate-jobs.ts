@@ -7,7 +7,7 @@ import type { Signer } from "../core/signing.js";
 import { gateJobs } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
-import { findRepo, findRepoById } from "../core/repos-lookup.js";
+import { findRepoAuthorized, findRepoById } from "../core/repos-lookup.js";
 import { enqueueGateJob, claimGateJob } from "../core/gate-jobs.js";
 import { recordGateResult } from "../core/gate-results.js";
 import { recordGateJobCompletion } from "../core/telemetry.js";
@@ -100,7 +100,7 @@ export function registerGateJobRoutes(
         return;
       }
 
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -127,7 +127,7 @@ export function registerGateJobRoutes(
     { preHandler: requireScope("repo:read") },
     async (req, reply) => {
       const { owner, repo: repoName } = req.params as { owner: string; repo: string };
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;

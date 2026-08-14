@@ -10,10 +10,12 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerIdentityRoutes } from "../src/http-rest/identity.js";
 import { registerIssueRoutes } from "../src/http-rest/issues.js";
@@ -64,7 +66,7 @@ describe.skipIf(skipWithoutDb)("M0 end-to-end: token -> repo create -> clone -> 
     registerChangeRoutes(app, db, gitBackend, new Signer("e2e-test-signing-key"));
     registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key");
     registerReviewRoutes(app, db);
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -75,6 +77,7 @@ describe.skipIf(skipWithoutDb)("M0 end-to-end: token -> repo create -> clone -> 
       .values({ kind: "human", principal: `e2e-test-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
     readOnlyToken = await mintToken(db, identity!.id, ["repo:read"]);
   });
 

@@ -7,7 +7,7 @@ import type { Signer } from "../core/signing.js";
 import { changes, intents } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
-import { findRepo } from "../core/repos-lookup.js";
+import { findRepoAuthorized } from "../core/repos-lookup.js";
 import type { AuthenticatedIdentity } from "../auth/tokens.js";
 
 const CreateChangeBody = z.object({
@@ -61,7 +61,7 @@ export function registerChangeRoutes(
         return;
       }
 
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -121,7 +121,7 @@ export function registerChangeRoutes(
 
   app.get("/api/v3/repos/:owner/:repo/changes/:id", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;

@@ -6,7 +6,7 @@ import type { Db } from "../db/client.js";
 import { identities, mirrors, mirrorSyncLog } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
-import { findRepo } from "../core/repos-lookup.js";
+import { findRepoAuthorized } from "../core/repos-lookup.js";
 import { findMirror } from "../core/mirrors-lookup.js";
 import { encryptCredential } from "../core/mirror-crypto.js";
 
@@ -35,7 +35,7 @@ export function registerMirrorRoutes(app: FastifyInstance, db: Db, credentialKey
   // external GitHub repo — a materially higher bar than repo:write.
   app.post("/api/v3/repos/:owner/:repo/mirror", { preHandler: requireScope("admin") }, async (req, reply) => {
     const { owner, repo: name } = req.params as { owner: string; repo: string };
-    const repo = await findRepo(db, owner, name);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, name);
     if (!repo) {
       reply.code(404).send({ message: "Not Found" });
       return;
@@ -95,7 +95,7 @@ export function registerMirrorRoutes(app: FastifyInstance, db: Db, credentialKey
 
   app.get("/api/v3/repos/:owner/:repo/mirror", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: name } = req.params as { owner: string; repo: string };
-    const repo = await findRepo(db, owner, name);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, name);
     if (!repo) {
       reply.code(404).send({ message: "Not Found" });
       return;
@@ -131,7 +131,7 @@ export function registerMirrorRoutes(app: FastifyInstance, db: Db, credentialKey
 
   app.delete("/api/v3/repos/:owner/:repo/mirror", { preHandler: requireScope("admin") }, async (req, reply) => {
     const { owner, repo: name } = req.params as { owner: string; repo: string };
-    const repo = await findRepo(db, owner, name);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, name);
     if (!repo) {
       reply.code(404).send({ message: "Not Found" });
       return;

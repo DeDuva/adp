@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities, orgs, gateJobs } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
@@ -27,6 +28,7 @@ describe.skipIf(skipWithoutDb)("M4-9d: gate-job org concurrency quota", () => {
   let gitRoot: string;
   let port: number;
   let writeToken: string;
+  let writerId: string;
   let runnerToken: string;
 
   async function api(pathAndQuery: string, init: RequestInit = {}, token = writeToken) {
@@ -63,6 +65,7 @@ describe.skipIf(skipWithoutDb)("M4-9d: gate-job org concurrency quota", () => {
     port = typeof address === "object" && address ? address.port : 0;
 
     const [writer] = await db.insert(identities).values({ kind: "human", principal: `gjq-writer-${Date.now()}` }).returning();
+    writerId = writer!.id;
     writeToken = await mintToken(db, writer!.id, ["repo:write"]);
 
     const [runner] = await db.insert(identities).values({ kind: "agent", principal: `gjq-runner-${Date.now()}` }).returning();
@@ -145,6 +148,10 @@ describe.skipIf(skipWithoutDb)("M4-9d: gate-job org concurrency quota", () => {
     const ownerB = `gjq-org-b-${Date.now()}`;
     await db.insert(orgs).values({ name: ownerA, maxConcurrentGateJobs: 1 });
     await db.insert(orgs).values({ name: ownerB }); // unlimited
+    // #91: the orgs exist (above, with their caps) but the writer must also
+    // be a member to create repos and enqueue in them.
+    await grantOwner(db, writerId, ownerA);
+    await grantOwner(db, writerId, ownerB);
 
     await api(`/api/v3/repos/${ownerA}`, { method: "POST", body: JSON.stringify({ name: "repo-a" }) });
     await api(`/api/v3/repos/${ownerB}`, { method: "POST", body: JSON.stringify({ name: "repo-b" }) });
@@ -189,6 +196,7 @@ describe.skipIf(skipWithoutDb)("M4-9d: gate-job org concurrency quota", () => {
   it("an org with no cap set is never blocked, regardless of how many of its jobs are running", async () => {
     const owner = `gjq-unlimited-${Date.now()}`;
     await db.insert(orgs).values({ name: owner }); // maxConcurrentGateJobs stays null
+    await grantOwner(db, writerId, owner);
     await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: "repo" }) });
 
     const ids = [await enqueue(owner, "repo", "u1"), await enqueue(owner, "repo", "u2"), await enqueue(owner, "repo", "u3")];

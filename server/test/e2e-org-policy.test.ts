@@ -11,9 +11,11 @@ import { and, eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities, orgs, repos } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerProposalRoutes } from "../src/http-rest/proposals.js";
 import { registerReviewRoutes } from "../src/http-rest/reviews.js";
@@ -82,7 +84,7 @@ describe.skipIf(skipWithoutDb)("M4-2: org policy plane", () => {
     // its own, not about instance/repo behavior already covered elsewhere.
     registerProposalRoutes(app, db, gitBackend, "e2e-org-policy-credential-key", []);
     registerReviewRoutes(app, db);
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -93,6 +95,7 @@ describe.skipIf(skipWithoutDb)("M4-2: org policy plane", () => {
       .values({ kind: "human", principal: `org-policy-e2e-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
   });
 
   afterAll(async () => {

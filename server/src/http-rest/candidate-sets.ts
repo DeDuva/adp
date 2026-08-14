@@ -4,7 +4,7 @@ import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { candidateSets, proposals } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
-import { findRepo } from "../core/repos-lookup.js";
+import { findRepoAuthorized } from "../core/repos-lookup.js";
 import {
   openCandidateSet,
   selectCandidate,
@@ -73,7 +73,7 @@ export function registerCandidateSetRoutes(
         reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
         return;
       }
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -99,7 +99,7 @@ export function registerCandidateSetRoutes(
     { preHandler: requireScope("repo:read") },
     async (req, reply) => {
       const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -144,7 +144,7 @@ export function registerCandidateSetRoutes(
     { preHandler: requireScope("repo:read") },
     async (req, reply) => {
       const { owner, repo: repoName } = req.params as { owner: string; repo: string };
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -176,7 +176,7 @@ export function registerCandidateSetRoutes(
         reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
         return;
       }
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -211,7 +211,7 @@ export function registerCandidateSetRoutes(
         reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
         return;
       }
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;

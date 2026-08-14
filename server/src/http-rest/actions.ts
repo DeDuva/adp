@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Db } from "../db/client.js";
 import { requireScope } from "../auth/plugin.js";
-import { findRepo } from "../core/repos-lookup.js";
+import { findRepoAuthorized } from "../core/repos-lookup.js";
 import { findMirror } from "../core/mirrors-lookup.js";
 import { decryptCredential } from "../core/mirror-crypto.js";
 
@@ -63,7 +63,7 @@ export function registerActionsRoutes(
         const params = req.params as { owner: string; repo: string; runId?: string };
         const { owner, repo: name } = params;
 
-        const repo = await findRepo(db, owner, name);
+        const repo = await findRepoAuthorized(db, req.identity!, owner, name);
         if (!repo) {
           reply.code(404).send({ message: `Repository ${owner}/${name} not found` });
           return;
