@@ -129,6 +129,17 @@ process.stdin.on("end", async () => {
 `;
 }
 
+// A single path segment safe to join under gitRoot: the same character set
+// CreateRepoBody allows for `name`, minus the two values that set alone
+// cannot exclude — "." and ".." both match [a-zA-Z0-9._-]+ and both mean
+// something to path.join. No slash, no backslash, no NUL, so nothing that
+// survives this can traverse (#89, audit §P0-5). Exported so routes can
+// reject bad input with a 4xx before it gets anywhere near the filesystem.
+const SAFE_SEGMENT = /^[a-zA-Z0-9._-]+$/;
+export function isSafeRepoSegment(segment: string): boolean {
+  return SAFE_SEGMENT.test(segment) && segment !== "." && segment !== "..";
+}
+
 export class GitBackend {
   // Not readonly: the internal URL's port is often only known once the
   // server is actually listening (e.g. tests that bind port 0 for an
@@ -144,6 +155,16 @@ export class GitBackend {
   }
 
   repoPath(owner: string, name: string): string {
+    // Last line of defense, not the primary validator (routes reject bad
+    // input with a 4xx first): find-my-way %2F-decodes path params, so an
+    // un-validated route handing its params straight here would turn
+    // owner="..%2F..%2Ftmp%2Fx" into a directory outside gitRoot. Every
+    // filesystem touch goes through this method, so throwing here caps the
+    // blast radius of any future route that forgets to validate — and
+    // exists() catches, so probes through it read as "not found".
+    if (!isSafeRepoSegment(owner) || !isSafeRepoSegment(name)) {
+      throw new Error(`Unsafe repo path segment in '${owner}/${name}'`);
+    }
     return path.join(this.gitRoot, owner, `${name}.git`);
   }
 

@@ -74,18 +74,37 @@ export const orgMemberships = pgTable(
   (table) => [unique().on(table.orgId, table.identityId)],
 );
 
-export const repos = pgTable("repos", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  owner: text("owner").notNull(),
-  name: text("name").notNull(),
-  defaultBranch: text("default_branch").notNull().default("main"),
-  // Nullable on purpose (M4-0): a pre-M4 repo keeps working with no org until
-  // the backfill migration assigns one per its `owner` string — `owner` stays
-  // the compat-plane URL identifier either way (`/api/v3/repos/{owner}/...`),
-  // this is the new relational backing underneath it, not a replacement for it.
-  orgId: uuid("org_id").references(() => orgs.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const repos = pgTable(
+  "repos",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    owner: text("owner").notNull(),
+    name: text("name").notNull(),
+    defaultBranch: text("default_branch").notNull().default("main"),
+    // NOT NULL since #89: M4-0's backfill synthesized an org per distinct
+    // `owner` string and every create path since assigns one, so "a repo
+    // with no org" stopped being a real state — and org isolation (#91)
+    // needs to key every repo-scoped check off this column, which it can
+    // only do if the column is always there. `owner` stays the compat-plane
+    // URL identifier (`/api/v3/repos/{owner}/...`); this is the relational
+    // backing underneath it, not a replacement for it.
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // The tenancy key and the hottest lookup in the server (findRepo). The
+    // uniqueness is the authority the create path's insert relies on (#89):
+    // the pre-insert existence check is a fast path, not the guard, so two
+    // concurrent creates of one owner/name can never make two rows for one
+    // on-disk repo.
+    uniqueIndex("repos_owner_name_idx").on(table.owner, table.name),
+    // A Postgres FK creates no index of its own; org_id is in the gate-job
+    // claim hot path, the audit export, and all three quota counts.
+    index("repos_org_id_idx").on(table.orgId),
+  ],
+);
 
 export const identities = pgTable("identities", {
   id: uuid("id").primaryKey().defaultRandom(),

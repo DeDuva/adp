@@ -10,6 +10,7 @@ import { createDb, type Db } from "../db/client.js";
 import { identities, mirrors, mirrorSyncLog, repos } from "../db/schema.js";
 import { GitBackend } from "./git-backend.js";
 import { encryptCredential } from "./mirror-crypto.js";
+import { findOrCreateOrg } from "./org-lookup.js";
 import { pollOnce } from "./mirror-poller.js";
 
 const execFileAsync = promisify(execFile);
@@ -57,7 +58,8 @@ describe.skipIf(!process.env.DATABASE_URL)("mirror-poller", () => {
     await rm(cloneDir, { recursive: true, force: true });
 
     const [identity] = await db.insert(identities).values({ kind: "human", principal: `poller-${Date.now()}` }).returning();
-    const [repo] = await db.insert(repos).values({ owner, name: "repo", defaultBranch: "main" }).returning();
+    const orgId = await findOrCreateOrg(db, owner);
+    const [repo] = await db.insert(repos).values({ owner, name: "repo", defaultBranch: "main", orgId }).returning();
     repoId = repo!.id;
     void identity;
 
