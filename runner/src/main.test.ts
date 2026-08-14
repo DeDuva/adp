@@ -142,7 +142,11 @@ describe("pollOnce", () => {
 
     expect(result).toBe(true);
     expect(seenJob).toEqual({ id: "job-42", image: "node:22", command: "npm test", timeoutMs: 60000 });
-    expect(seenLimits).toEqual({ memory: config.RUNNER_MEMORY, cpus: config.RUNNER_CPUS });
+    expect(seenLimits).toEqual({
+      memory: config.RUNNER_MEMORY,
+      cpus: config.RUNNER_CPUS,
+      pidsLimit: config.RUNNER_PIDS_LIMIT,
+    });
     expect(requests.some((r) => r.url === "/api/adp/gate-jobs/job-42/checkout")).toBe(true);
 
     const completeReq = requests.find((r) => r.url === "/api/adp/gate-jobs/job-42/complete");
@@ -152,5 +156,48 @@ describe("pollOnce", () => {
     // Cleaned up after the cycle, not left behind for every future job to
     // accumulate on disk.
     await expect(stat(seenCheckoutDir!)).rejects.toThrow();
+  });
+
+  // #100: the gate image is repo-controlled (any pushed adp.yaml names
+  // one), so the host operator's allowlist gets the last word. Refused
+  // before checkout — the job's code never even lands on this host — and
+  // completed as a terminal error, not abandoned to the reaper's retry cap.
+  it("refuses a non-allowlisted image before fetching the checkout, completing the job as error", async () => {
+    claimResponse = {
+      status: 200,
+      body: {
+        id: "job-43",
+        repo_id: "repo-1",
+        git_sha: "a".repeat(40),
+        name: "unit",
+        image: "ghcr.io/evil/backdoor:latest",
+        command: "true",
+        timeout_ms: 60000,
+        status: "running",
+        claimed_by: "test-runner-1",
+      },
+    };
+
+    let ran = false;
+    const client = new GateJobClient(`http://127.0.0.1:${port}`, "adp_pat_test");
+    const config = loadConfig({
+      ADP_SERVER_URL: `http://127.0.0.1:${port}`,
+      ADP_RUNNER_TOKEN: "adp_pat_test",
+      RUNNER_ID: "test-runner-1",
+      RUNNER_IMAGE_ALLOWLIST: "busybox:1, node:22",
+    });
+    const result = await pollOnce(client, config, async () => {
+      ran = true;
+      return { status: "succeeded", exitCode: 0, logs: "" };
+    });
+
+    expect(result).toBe(true);
+    expect(ran).toBe(false);
+    expect(requests.some((r) => r.url === "/api/adp/gate-jobs/job-43/checkout")).toBe(false);
+    const completeReq = requests.find((r) => r.url === "/api/adp/gate-jobs/job-43/complete");
+    expect(completeReq).toBeDefined();
+    const body = JSON.parse(completeReq!.body) as { status: string; logs: string };
+    expect(body.status).toBe("error");
+    expect(body.logs).toContain("RUNNER_IMAGE_ALLOWLIST");
   });
 });

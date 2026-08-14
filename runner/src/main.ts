@@ -1,5 +1,5 @@
 import { rm } from "node:fs/promises";
-import { loadConfig, type Config } from "./config.js";
+import { loadConfig, imageAllowed, type Config } from "./config.js";
 import { GateJobClient } from "./client.js";
 import { runGateJob } from "./docker.js";
 import { materializeCheckout } from "./checkout.js";
@@ -22,12 +22,27 @@ export async function pollOnce(client: GateJobClient, config: Config, run: typeo
   const job = await client.claim(config.RUNNER_ID);
   if (!job) return false;
 
+  // #100: the image is repo-controlled (any pushed adp.yaml names one), so
+  // the host operator's allowlist gets the last word — checked before the
+  // checkout is even fetched, and reported as a terminal `error` rather
+  // than left to the reaper: the job can never succeed on this host, and a
+  // requeue loop against the same allowlist would grind the retry cap for
+  // nothing.
+  if (!imageAllowed(job.image, config.RUNNER_IMAGE_ALLOWLIST)) {
+    await client.complete(job.id, {
+      status: "error",
+      exitCode: null,
+      logs: `image '${job.image}' is not permitted by this runner's RUNNER_IMAGE_ALLOWLIST`,
+    });
+    return true;
+  }
+
   const tar = await client.checkout(job.id);
   const checkoutDir = await materializeCheckout(tar);
   try {
     const result = await run(
       { id: job.id, image: job.image, command: job.command, timeoutMs: job.timeout_ms },
-      { memory: config.RUNNER_MEMORY, cpus: config.RUNNER_CPUS },
+      { memory: config.RUNNER_MEMORY, cpus: config.RUNNER_CPUS, pidsLimit: config.RUNNER_PIDS_LIMIT },
       checkoutDir,
     );
     await client.complete(job.id, result);

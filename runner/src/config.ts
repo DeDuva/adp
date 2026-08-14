@@ -22,9 +22,32 @@ const EnvSchema = z.object({
   // instance-wide ceiling until M4-9d scopes caps to an org's own quota.
   RUNNER_MEMORY: z.string().min(1).default("2g"),
   RUNNER_CPUS: z.string().min(1).default("2"),
+  // docker create --pids-limit (#100): a gate that fork-bombs takes down the
+  // container, not the host's PID space.
+  RUNNER_PIDS_LIMIT: z.coerce.number().int().positive().default(256),
+  // #100: which images a pushed adp.yaml may run on THIS host. The gate
+  // image is repo-controlled — any repo:write principal can name an
+  // arbitrary registry image and this process will pull and run it — so the
+  // host operator gets the last word. Comma-separated entries; an entry is
+  // an exact image reference (which is how a digest pin works:
+  // `img@sha256:...`) or a prefix ending in `*`. Unset means every image is
+  // allowed — the single-tenant dev default, stated rather than implied; a
+  // multi-tenant deployment should set it.
+  RUNNER_IMAGE_ALLOWLIST: z.string().optional(),
 });
 
 export type Config = z.infer<typeof EnvSchema>;
+
+// Exported for pollOnce and its tests. Deny by default once a list exists:
+// an unmatched image is the operator's answer, not a gap to fall through.
+export function imageAllowed(image: string, allowlist: string | undefined): boolean {
+  if (allowlist === undefined) return true;
+  const entries = allowlist
+    .split(",")
+    .map((e) => e.trim())
+    .filter(Boolean);
+  return entries.some((entry) => (entry.endsWith("*") ? image.startsWith(entry.slice(0, -1)) : image === entry));
+}
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = EnvSchema.safeParse(env);

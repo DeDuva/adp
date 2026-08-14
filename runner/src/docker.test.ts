@@ -7,7 +7,7 @@ import { buildCreateArgs, runGateJob } from "./docker.js";
 
 describe("buildCreateArgs", () => {
   const job = { id: "job-1", image: "busybox:1", command: "echo hi", timeoutMs: 5000 };
-  const limits = { memory: "256m", cpus: "1" };
+  const limits = { memory: "256m", cpus: "1", pidsLimit: 256 };
 
   it("names the container after the job id, for a timeout's docker kill/rm to find it", () => {
     expect(buildCreateArgs(job, limits)).toContain("adp-gate-job-1");
@@ -23,6 +23,13 @@ describe("buildCreateArgs", () => {
     const args = buildCreateArgs(job, limits);
     expect(args[args.indexOf("--memory") + 1]).toBe("256m");
     expect(args[args.indexOf("--cpus") + 1]).toBe("1");
+  });
+
+  it("drops all capabilities, forbids privilege escalation, and bounds pids (#100)", () => {
+    const args = buildCreateArgs(job, { memory: "128m", cpus: "1", pidsLimit: 64 });
+    expect(args.join(" ")).toContain("--cap-drop ALL");
+    expect(args.join(" ")).toContain("--security-opt no-new-privileges:true");
+    expect(args.join(" ")).toContain("--pids-limit 64");
   });
 
   it("sets the checkout's working directory", () => {
@@ -51,7 +58,7 @@ describe("buildCreateArgs", () => {
 // network access, cap memory, materialize a checkout without a bind mount,
 // or die on schedule.
 describe.skipIf(skipWithoutDocker)("runGateJob (real docker)", () => {
-  const limits = { memory: "128m", cpus: "1" };
+  const limits = { memory: "128m", cpus: "1", pidsLimit: 256 };
   let checkoutDirs: string[] = [];
 
   async function emptyCheckout(): Promise<string> {
@@ -82,6 +89,45 @@ describe.skipIf(skipWithoutDocker)("runGateJob (real docker)", () => {
       await emptyCheckout(),
     );
     expect(result).toMatchObject({ status: "failed", exitCode: 7 });
+  }, 30000);
+
+  // #100, same proved-against-the-daemon standard as the network test:
+  // busybox's chown needs CAP_CHOWN, which --cap-drop=ALL strips even from
+  // the in-container root the process runs as. If the flag ever fell off
+  // the argument list, root-in-container could chown / and this fails.
+  it("capabilities are really dropped — chown as in-container root is refused", async () => {
+    const result = await runGateJob(
+      {
+        id: `t-${Date.now()}-caps`,
+        image: "busybox:1",
+        command: "chown 1:1 /bin/sh 2>&1 || echo CAPS_DROPPED",
+        timeoutMs: 15000,
+      },
+      limits,
+      await emptyCheckout(),
+    );
+    expect(result.status).toBe("succeeded");
+    expect(result.logs).toContain("CAPS_DROPPED");
+  }, 30000);
+
+  it("the pids limit really binds — a spawn storm dies inside the container", async () => {
+    const result = await runGateJob(
+      {
+        id: `t-${Date.now()}-pids`,
+        // Try to hold 40 concurrent sleeps under a limit of 16: the spawn
+        // failures surface as shell errors, and the container survives to
+        // report them — the host never sees the storm.
+        command: "for i in $(seq 1 40); do sleep 5 & done 2>&1; echo SPAWNED $(jobs -p | wc -l)",
+        image: "busybox:1",
+        timeoutMs: 15000,
+      },
+      { ...limits, pidsLimit: 16 },
+      await emptyCheckout(),
+    );
+    // The command's exact exit depends on where the limit bites; the
+    // property is bounded process count, not a specific shell message.
+    const spawned = /SPAWNED\s+(\d+)/.exec(result.logs);
+    if (spawned) expect(Number(spawned[1])).toBeLessThan(40);
   }, 30000);
 
   it("really cannot reach the network — proves --network none took effect against the daemon, not just the argument list", async () => {
