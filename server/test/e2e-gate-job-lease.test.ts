@@ -196,7 +196,15 @@ describe.skipIf(skipWithoutDb)("#92: gate-job lease and reaper", () => {
     await claimOurs(jobId, runnerAToken, runnerAId);
 
     // Runner A "dies": nothing completes the job, the lease lapses.
-    await db.update(gateJobs).set({ leaseExpiresAt: new Date(Date.now() - 1000) }).where(eq(gateJobs.id, jobId));
+    // attempts is pinned to 1 along with the backdate — every claim
+    // increments it, and the steal/reclaim churn of concurrent files'
+    // hunts can have claimed this job several times on its way to us; the
+    // scenario under test is "the FIRST attempt's lease expired", not
+    // "however many claims the suite's traffic happened to make".
+    await db
+      .update(gateJobs)
+      .set({ leaseExpiresAt: new Date(Date.now() - 1000), attempts: 1 })
+      .where(eq(gateJobs.id, jobId));
 
     // A handful of tries, not one: the sweep's FOR UPDATE SKIP LOCKED can
     // transiently skip our row while a concurrent test file's transaction
