@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { count, eq } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
 import { orgs, repos } from "../db/schema.js";
@@ -64,47 +64,62 @@ async function createRepo(
     return { status: "not-a-member" as const };
   }
 
-  if (org.maxRepos != null) {
-    const [row] = await db.select({ existing: count() }).from(repos).where(eq(repos.orgId, org.id));
-    if ((row?.existing ?? 0) >= org.maxRepos) {
-      return { status: "quota-exceeded" as const, maxRepos: org.maxRepos };
-    }
-  }
-  const orgId = org.id;
-
-  // git init happens outside the DB transaction (it's not transactional
-  // infrastructure), but the repo row and its op-log entry are atomic.
-  await gitBackend.initBareRepo(owner, name, defaultBranch);
-
-  // Two concurrent creates can both pass the fast-path check above; the
-  // unique index turns the loser's insert into a 23505 here, which is the
-  // same "already exists" answer the fast path gives (#89, audit §P0-6).
-  // The loser's initBareRepo re-ran `git init` on the winner's (still
-  // empty) repo, which is harmless — git init on an existing repo touches
-  // nothing that exists.
-  let repo: typeof repos.$inferSelect;
+  // #94 (audit §P1-3): everything that admits the repo happens inside ONE
+  // transaction, serialized on the org row. The count-then-insert used to
+  // straddle the transaction boundary, so two concurrent creates both saw
+  // count = cap - 1, both passed, and the "hard ceiling" was advisory
+  // exactly when it was being contended. The FOR UPDATE on orgs is the
+  // budget token: same-org creates queue behind it for the few milliseconds
+  // an admission takes, different orgs never touch each other's.
+  //
+  // git init moved inside too, after the lock and the re-checks: two
+  // concurrent creates of one repo used to both run `git init`/`git config`
+  // on the same directory, and the loser could 500 out of a config.lock
+  // collision instead of getting its 422. Holding a row lock across the
+  // subprocess (~tens of ms) is the price of the loser never touching the
+  // filesystem at all; the unique index stays as the backstop for anything
+  // the lock doesn't cover (e.g. a same-name create under a different
+  // org... which cannot exist, but the constraint doesn't need the lock to
+  // be right).
   try {
-    repo = await db.transaction(async (tx) => {
-      const [repo] = await tx.insert(repos).values({ owner, name, defaultBranch, orgId }).returning();
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`select id from ${orgs} where id = ${org.id} for update`);
+
+      // Re-checks under the lock — the unlocked reads above are fast paths.
+      const [existing] = await tx
+        .select({ id: repos.id })
+        .from(repos)
+        .where(and(eq(repos.owner, owner), eq(repos.name, name)));
+      if (existing) return { status: "conflict" as const };
+
+      if (org.maxRepos != null) {
+        const [row] = await tx.select({ existing: count() }).from(repos).where(eq(repos.orgId, org.id));
+        if ((row?.existing ?? 0) >= org.maxRepos) {
+          return { status: "quota-exceeded" as const, maxRepos: org.maxRepos };
+        }
+      }
+
+      await gitBackend.initBareRepo(owner, name, defaultBranch);
+
+      const [repo] = await tx.insert(repos).values({ owner, name, defaultBranch, orgId: org.id }).returning();
 
       await recordOperation(tx, {
         repoId: repo!.id,
         actorId,
         verb: "repo.create",
         target: `${owner}/${name}`,
-        after: { id: repo!.id, owner, name, defaultBranch, orgId },
+        after: { id: repo!.id, owner, name, defaultBranch, orgId: org.id },
       });
 
-      return repo!;
+      return { status: "created" as const, repo: repo! };
     });
+    return result;
   } catch (err) {
     if (isUniqueViolation(err)) {
       return { status: "conflict" as const };
     }
     throw err;
   }
-
-  return { status: "created" as const, repo };
 }
 
 function serializeRepo(repo: typeof repos.$inferSelect, owner: string, name: string, publicUrl: string) {

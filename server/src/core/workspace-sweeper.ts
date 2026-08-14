@@ -43,9 +43,18 @@ export async function sweepExpiredWorkspaces(
       failed++;
       continue;
     }
-    const result = await destroyWorkspace(db, gitBackend, repo, workspace.id, actorId);
-    if (result.ok) swept++;
-    else failed++;
+    // One bad workspace must not take the batch down with it: an unexpected
+    // throw here used to abort the entire sweep, so every workspace sorted
+    // after the broken one stayed unreclaimed on every subsequent tick —
+    // the sweeper was wedged by exactly the kind of row it exists to clean.
+    try {
+      const result = await destroyWorkspace(db, gitBackend, repo, workspace.id, actorId);
+      if (result.ok) swept++;
+      else failed++;
+    } catch (err) {
+      console.error(`workspace sweep failed for ${workspace.id} (${repo.owner}/${repo.name}):`, err);
+      failed++;
+    }
   }
   return { swept, failed };
 }

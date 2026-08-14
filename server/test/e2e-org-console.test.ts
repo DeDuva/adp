@@ -222,7 +222,11 @@ describe.skipIf(skipWithoutDb)("M4-7: org policy console", () => {
     ]);
 
     expect(items.find((r) => r.name === "policy")!.is_policy_repo).toBe(true);
-  });
+    // 40s, not the 20s default: this test's setup is two real repos, real
+    // pushes, and per-repo git reads for the console payload — ~13s on a
+    // quiet run, and the suite runs 50+ files of git subprocess traffic
+    // concurrently against one machine.
+  }, 40_000);
 
   it("distinguishes a fail-closed floor from a deliberate one", async () => {
     // A policy.yaml that does not parse is failed closed to every known
