@@ -664,6 +664,12 @@ export const operations = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     repoId: uuid("repo_id").references(() => repos.id),
+    // #97: the org an org-LEVEL operation belongs to (org.kill_switch,
+    // org.create, org.quota_update, an org-scoped token.mint). Repo-scoped
+    // ops leave it null — their org is reachable through the repo — but an
+    // op with repoId null and orgId null is invisible to the org audit-log
+    // export, which is exactly what happened to the kill switch.
+    orgId: uuid("org_id").references(() => orgs.id),
     actorId: uuid("actor_id").notNull().references(() => identities.id),
     verb: text("verb").notNull(),
     target: text("target").notNull(),

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ADP API
-  version: 0.2.0
+  version: 0.3.0
   description: >
     Native and compat-plane HTTP surface for ADP — see docs/pragmatic_mvp.md
     §2.4 for what is in scope and §2.5 for what is deliberately cut.
@@ -68,6 +68,12 @@ paths:
                 operationName:
                   type: string
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: >
             Always 200 per GraphQL convention — check the response body's
@@ -78,6 +84,12 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: OK
   /api/v3/user:
@@ -86,6 +98,12 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: OK
   /api/v3/rate_limit:
@@ -94,10 +112,17 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: OK
   /api/v3/repos/{owner}:
     post:
+      x-required-scope: "repo:write"
       summary: Create a repository
       security:
         - bearerAuth: []
@@ -114,12 +139,25 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateRepoRequest"
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Validation failed or repo already exists
   /api/v3/repos/{owner}/{repo}:
     get:
+      security:
+        - bearerAuth: []
+      x-required-scope: "repo:read"
       summary: Get a repository
       parameters:
         - name: owner
@@ -133,15 +171,26 @@ paths:
           schema:
             type: string
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: OK
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/v3/repos/{owner}/{repo}/issues:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     post:
+      x-required-scope: "repo:write"
       summary: File an issue (also creates an intent)
       security:
         - bearerAuth: []
@@ -152,18 +201,52 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateIssueRequest"
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Repository not found
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Validation failed
     get:
+      parameters:
+        - name: per_page
+          in: query
+          schema: { type: integer, maximum: 100, default: 30 }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+      security:
+        - bearerAuth: []
+      x-required-scope: "repo:read"
       summary: List issues
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: OK
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Repository not found
   /api/v3/repos/{owner}/{repo}/issues/{number}:
     parameters:
@@ -175,13 +258,27 @@ paths:
         schema:
           type: integer
     get:
+      security:
+        - bearerAuth: []
+      x-required-scope: "repo:read"
       summary: Get an issue
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: OK
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
     patch:
+      x-required-scope: "repo:write"
       summary: Update an issue (title, body, or state — open/closed)
       security:
         - bearerAuth: []
@@ -191,11 +288,25 @@ paths:
             schema:
               $ref: "#/components/schemas/UpdateIssueRequest"
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: OK
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Validation failed
   /api/v3/repos/{owner}/{repo}/issues/{number}/comments:
     parameters:
@@ -207,6 +318,7 @@ paths:
         schema:
           type: integer
     post:
+      x-required-scope: "repo:write"
       summary: Comment on an issue
       security:
         - bearerAuth: []
@@ -217,24 +329,59 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateCommentRequest"
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Validation failed
     get:
+      parameters:
+        - name: per_page
+          in: query
+          schema: { type: integer, maximum: 100, default: 30 }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+      security:
+        - bearerAuth: []
+      x-required-scope: "repo:read"
       summary: List comments on an issue
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: OK
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/v3/repos/{owner}/{repo}/changes:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Record a typed change: an existing git commit plus intent and
         provenance, server-signed. No GitHub shape — native ADP metadata
@@ -249,11 +396,25 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateChangeRequest"
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Repository not found
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: git_sha is not a commit in this repo, or intent_id doesn't belong to it
   /api/v3/repos/{owner}/{repo}/changes/{id}:
     parameters:
@@ -266,17 +427,31 @@ paths:
           type: string
           format: uuid
     get:
+      security:
+        - bearerAuth: []
+      x-required-scope: "repo:read"
       summary: Get a signed change record
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: OK
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/v3/repos/{owner}/{repo}/pulls:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Open a proposal (PR-shaped). Numbered independently from issues —
         real GitHub shares one sequence across both; a known fidelity gap,
@@ -290,18 +465,52 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateProposalRequest"
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Repository not found
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: head/base branch not found, or change_id doesn't belong to this repo
     get:
+      parameters:
+        - name: per_page
+          in: query
+          schema: { type: integer, maximum: 100, default: 30 }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+      security:
+        - bearerAuth: []
+      x-required-scope: "repo:read"
       summary: List proposals
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: OK
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Repository not found
   /api/v3/repos/{owner}/{repo}/pulls/{number}:
     parameters:
@@ -309,13 +518,27 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/number"
     get:
+      security:
+        - bearerAuth: []
+      x-required-scope: "repo:read"
       summary: Get a proposal
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: OK
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
     patch:
+      x-required-scope: "repo:write"
       summary: Update a proposal (title, body, or state — open/closed)
       security:
         - bearerAuth: []
@@ -325,11 +548,25 @@ paths:
             schema:
               $ref: "#/components/schemas/UpdateProposalRequest"
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: OK
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Validation failed, or proposal is already merged
   /api/v3/repos/{owner}/{repo}/pulls/{number}/merge:
     parameters:
@@ -337,6 +574,7 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/number"
     put:
+      x-required-scope: "repo:write"
       summary: >
         Land a proposal, gated on evidence.
 
@@ -366,13 +604,31 @@ paths:
                   enum: [merge, squash, rebase]
                   default: merge
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Merged
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
         "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Base has diverged from head — not a fast-forward
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: >
             Land policy not satisfied (body carries `unmet`), already merged,
             the proposal is closed, or `merge_method: rebase`.
@@ -382,6 +638,7 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/number"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Submit a typed review (approved / changes_requested / commented) —
         not a GitHub-shaped emoji thread.
@@ -394,18 +651,52 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateReviewRequest"
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Validation failed
     get:
+      parameters:
+        - name: per_page
+          in: query
+          schema: { type: integer, maximum: 100, default: 30 }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+      security:
+        - bearerAuth: []
+      x-required-scope: "repo:read"
       summary: List reviews on a proposal
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: OK
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /metrics:
     get:
@@ -455,10 +746,17 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: API root
   /api/v3/user/repos:
     post:
+      x-required-scope: "repo:write"
       summary: Create a repository owned by the authenticated user (GitHub-shaped).
       security:
         - bearerAuth: []
@@ -469,9 +767,19 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateRepoRequest"
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Validation failed, or the repository already exists
   /api/v3/orgs/{org}/repos:
     parameters:
@@ -481,6 +789,7 @@ paths:
         schema:
           type: string
     post:
+      x-required-scope: "repo:write"
       summary: Create a repository owned by an org (GitHub-shaped).
       security:
         - bearerAuth: []
@@ -491,9 +800,19 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateRepoRequest"
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Validation failed, or the repository already exists
   /api/v3/repos/{owner}/{repo}/contents/{path}:
     parameters:
@@ -501,23 +820,41 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/path"
     get:
+      x-required-scope: "repo:read"
       summary: File or directory contents at a ref (`?ref=`), GitHub-shaped.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: A file object, or an array of entries for a directory
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/v3/repos/{owner}/{repo}/commits:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     get:
+      x-required-scope: "repo:read"
       summary: Commit list, newest first. `?sha=` selects the starting ref.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Commits
   /api/v3/repos/{owner}/{repo}/commits/{sha}:
@@ -526,13 +863,24 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/sha"
     get:
+      x-required-scope: "repo:read"
       summary: A single commit.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Commit
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/v3/repos/{owner}/{repo}/commits/{sha}/gates:
     parameters:
@@ -540,12 +888,19 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/sha"
     get:
+      x-required-scope: "repo:read"
       summary: >
         Gate results reported against a commit. This is the ADP equivalent an
         agent is pointed at when it asks a non-mirrored repo for Actions runs.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Gate results, most recent per gate name
   /api/v3/repos/{owner}/{repo}/compare/{path}:
@@ -554,13 +909,24 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/path"
     get:
+      x-required-scope: "repo:read"
       summary: Compare two refs (`{base}...{head}`), GitHub-shaped.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Comparison
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Either ref could not be resolved
   /api/v3/repos/{owner}/{repo}/pulls/{number}/files:
     parameters:
@@ -568,26 +934,45 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/number"
     get:
+      x-required-scope: "repo:read"
       summary: Files changed by a proposal.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Changed files
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/v3/repos/{owner}/{repo}/git/refs:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     get:
+      x-required-scope: "repo:read"
       summary: All refs. Paginated with `per_page`/`page`.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Refs
     post:
+      x-required-scope: "repo:write"
       summary: Create a ref.
       security:
         - bearerAuth: []
@@ -604,6 +989,12 @@ paths:
                 sha:
                   type: string
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
   /api/v3/repos/{owner}/{repo}/git/refs/{path}:
@@ -612,15 +1003,26 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/path"
     get:
+      x-required-scope: "repo:read"
       summary: >
         Refs matching a prefix — GitHub's own shape, so this returns an **array**
         even when the prefix names exactly one ref.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Matching refs
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: No ref matches the prefix
   /api/v3/repos/{owner}/{repo}/git/refs/heads/{branch}:
     parameters:
@@ -632,19 +1034,31 @@ paths:
         schema:
           type: string
     delete:
+      x-required-scope: "repo:write"
       summary: Delete a branch ref.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "204":
           description: Deleted
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/v3/repos/{owner}/{repo}/git/blobs:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     post:
+      x-required-scope: "repo:write"
       summary: Create a blob.
       security:
         - bearerAuth: []
@@ -662,6 +1076,12 @@ paths:
                   type: string
                   enum: [utf-8, base64]
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
   /api/v3/repos/{owner}/{repo}/git/blobs/{sha}:
@@ -670,19 +1090,31 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/sha"
     get:
+      x-required-scope: "repo:read"
       summary: Read a blob.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Blob
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/v3/repos/{owner}/{repo}/git/trees:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Create a tree. `base_tree` accepts any commit-ish, not only a tree sha —
         the server resolves it with `git ls-tree`.
@@ -703,6 +1135,12 @@ paths:
                   items:
                     type: object
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
   /api/v3/repos/{owner}/{repo}/git/trees/{sha}:
@@ -711,19 +1149,31 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/sha"
     get:
+      x-required-scope: "repo:read"
       summary: Read a tree.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Tree
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/v3/repos/{owner}/{repo}/git/commits:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     post:
+      x-required-scope: "repo:write"
       summary: Create a commit object.
       security:
         - bearerAuth: []
@@ -744,6 +1194,12 @@ paths:
                   items:
                     type: string
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
   /api/v3/repos/{owner}/{repo}/git/commits/{sha}:
@@ -752,19 +1208,31 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/sha"
     get:
+      x-required-scope: "repo:read"
       summary: Read a commit object.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Commit
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/v3/repos/{owner}/{repo}/gates:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Report a gate result against a commit. The server is the receiving and
         attestation end — it runs nothing. The response's `envelope` is a signed
@@ -779,15 +1247,26 @@ paths:
             schema:
               $ref: "#/components/schemas/ReportGateRequest"
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Recorded
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Validation failed
   /api/v3/repos/{owner}/{repo}/dependency-admission:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Admission verdict for a lockfile diff — three-way `admit`/`quarantine`/
         `block` per package, recorded as an ordinary gate result. `quarantine`
@@ -796,22 +1275,47 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Verdict recorded
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Validation failed
   /api/v3/repos/{owner}/{repo}/hooks:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     get:
+      parameters:
+        - name: per_page
+          in: query
+          schema: { type: integer, maximum: 100, default: 30 }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+      x-required-scope: "repo:read"
       summary: List outbound webhook subscriptions. The secret is never returned.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Hooks
     post:
+      x-required-scope: "repo:write"
       summary: >
         Subscribe to outbound events (`push`, `pull_request`, `gate_result`).
         Deliveries are HMAC-SHA256 signed with GitHub's `X-Hub-Signature-256`
@@ -843,9 +1347,19 @@ paths:
                     secret:
                       type: string
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Validation failed
   /api/v3/repos/{owner}/{repo}/hooks/{hookId}:
     parameters:
@@ -858,37 +1372,71 @@ paths:
           type: string
           format: uuid
     get:
+      x-required-scope: "repo:read"
       summary: A single webhook subscription.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Hook
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
     delete:
+      x-required-scope: "repo:write"
       summary: Delete a webhook subscription.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "204":
           description: Deleted
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/v3/repos/{owner}/{repo}/mirror:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     get:
+      x-required-scope: "repo:read"
       summary: The repository's mirror configuration and recent sync log.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Mirror
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not mirrored
     post:
+      x-required-scope: "admin"
       summary: >
         Configure mirroring against a GitHub remote. The credential and the
         inbound webhook secret are encrypted at rest; `webhook_secret` is
@@ -911,24 +1459,46 @@ paths:
                 credential:
                   type: string
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Validation failed, or the repository is already mirrored
     delete:
+      x-required-scope: "admin"
       summary: Stop mirroring.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "204":
           description: Deleted
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not mirrored
   /api/v3/repos/{owner}/{repo}/actions/runs:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     get:
+      x-required-scope: "repo:read"
       summary: >
         Relayed upstream for a mirrored repo — a passthrough, not an
         implementation. ADP never executes workflow YAML (§2.5). Non-mirrored
@@ -938,9 +1508,19 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Upstream response, relayed verbatim and never recorded
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not mirrored — body names the ADP equivalent
         "502":
           description: >
@@ -957,13 +1537,24 @@ paths:
         schema:
           type: string
     get:
+      x-required-scope: "repo:read"
       summary: A single upstream workflow run, relayed. See /actions/runs.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Upstream response
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not mirrored
         "502":
           description: Upstream failed
@@ -977,13 +1568,24 @@ paths:
         schema:
           type: string
     get:
+      x-required-scope: "repo:read"
       summary: Jobs for an upstream workflow run, relayed. See /actions/runs.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Upstream response
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not mirrored
         "502":
           description: Upstream failed
@@ -992,13 +1594,24 @@ paths:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     get:
+      x-required-scope: "repo:read"
       summary: Upstream workflow definitions, relayed. See /actions/runs.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Upstream response
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not mirrored
         "502":
           description: Upstream failed
@@ -1007,13 +1620,29 @@ paths:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     get:
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque keyset cursor from a previous page's ADP-Next-Cursor response header.
+          schema: { type: string }
+      x-required-scope: "repo:read"
       summary: List workspaces.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Workspaces
     post:
+      x-required-scope: "repo:write"
       summary: >
         Fork a workspace from a base ref. A workspace is deliberately just a
         branch `adp/ws/<id>` with lifecycle metadata — no new storage mechanism,
@@ -1033,9 +1662,19 @@ paths:
                 ttl_hours:
                   type: number
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Base ref not found
   /api/adp/repos/{owner}/{repo}/workspaces/{id}:
     parameters:
@@ -1043,21 +1682,33 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/id"
     delete:
+      x-required-scope: "repo:write"
       summary: >
         Destroy a workspace: deletes its branch and stamps `destroyedAt`. The
         row is kept so the operation log stays a complete history.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "204":
           description: Destroyed
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found, or already destroyed
   /api/adp/repos/{owner}/{repo}/operations:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     get:
+      x-required-scope: "repo:read"
       summary: >
         The append-only operation log — every mutation, written in the same
         transaction as the state change it describes. Filterable by `verb`,
@@ -1065,6 +1716,12 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Operations, newest first
   /api/adp/repos/{owner}/{repo}/operations/{id}:
@@ -1073,13 +1730,24 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/id"
     get:
+      x-required-scope: "repo:read"
       summary: A single operation.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Operation
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/adp/repos/{owner}/{repo}/operations/{id}/undo:
     parameters:
@@ -1087,18 +1755,30 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/id"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Undo an operation — operation-log undo with the causal record preserved,
         not revert-as-new-commit. The undo is itself an operation.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: The recorded undo operation
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: This operation is not undoable, or was already undone
   /api/adp/orgs:
     post:
+      x-required-scope: "admin"
       summary: >
         #91: provision an organization, explicitly and audited. Until this
         route, orgs came into being as a side effect of naming an unseen
@@ -1119,6 +1799,12 @@ paths:
                 name:
                   type: string
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: The provisioned organization
           content:
@@ -1126,10 +1812,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/OrgSummary"
         "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Requires the `admin` scope
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Invalid name, or an org by this name already exists
     get:
+      x-required-scope: "repo:read"
       summary: >
         M4-7: the organizations this token can see — at most one. Access is
         granted by the token being scoped to an org (auth/plugin.ts's
@@ -1139,6 +1834,12 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Organizations visible to this token
           content:
@@ -1151,6 +1852,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/orgId"
     get:
+      x-required-scope: "repo:read"
       summary: >
         M4-7: an org's policy posture in one read — the floor it contributes
         and where that floor came from, the instance floor it sits on top of,
@@ -1158,6 +1860,12 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Organization detail
           content:
@@ -1165,19 +1873,33 @@ paths:
               schema:
                 $ref: "#/components/schemas/OrgDetail"
         "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Token is not scoped to this org, or not a member
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: No such organization
     patch:
+      x-required-scope: "admin"
       summary: >
-        M4-7: set the org kill switch, which refuses every land attempt for
-        every repo in the org while it is on (core/land-policy.ts). Requires
-        the `admin` scope, not `repo:write` — this is not something the ability
-        to push code should carry with it. Recorded in the operation log as
-        `org.kill_switch`, in the same transaction, like every other change.
-        The org's land floor is deliberately NOT editable here: it is a
-        `policy.yaml` in the org's policy repo, changed by landing a change to
-        it, so that policy travels the same signed, reviewable path as code.
+        M4-7 + #97: org administration, audited. The kill switch refuses
+        every land attempt for every repo in the org while it is on
+        (core/land-policy.ts); the three quota ceilings bound repos, live
+        workspaces, and concurrently-running gate jobs (null clears one —
+        "unlimited"); policy_repo_id points at the repo whose policy.yaml is
+        the org's land floor, and must name a repo in this org. Requires the
+        `admin` scope, not `repo:write` — none of this is something the
+        ability to push code should carry. Every change is recorded in the
+        operation log in the same transaction (`org.kill_switch`,
+        `org.quota_update`, `org.policy_repo_set`), carrying the org so the
+        audit-log export includes it. The org's land floor is deliberately
+        NOT editable here: it is a `policy.yaml` changed by landing a change,
+        so policy travels the same signed, reviewable path as code.
       security:
         - bearerAuth: []
       requestBody:
@@ -1186,10 +1908,19 @@ paths:
           application/json:
             schema:
               type: object
-              required: [kill_switch]
               properties:
                 kill_switch: { type: boolean }
+                max_repos: { type: integer, nullable: true, minimum: 0 }
+                max_concurrent_workspaces: { type: integer, nullable: true, minimum: 0 }
+                max_concurrent_gate_jobs: { type: integer, nullable: true, minimum: 0 }
+                policy_repo_id: { type: string, format: uuid, nullable: true }
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: The updated organization
           content:
@@ -1197,15 +1928,28 @@ paths:
               schema:
                 $ref: "#/components/schemas/OrgSummary"
         "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Requires the admin scope, or the token is not scoped to this org
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: No such organization
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Validation failed
   /api/adp/orgs/{orgId}/repos:
     parameters:
       - $ref: "#/components/parameters/orgId"
     get:
+      x-required-scope: "repo:read"
       summary: >
         M4-7: every repo in the org with the land requirements that actually
         resolve for it right now (instance ∪ org ∪ repo, the union
@@ -1216,6 +1960,12 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Repos in the org with their resolved land policy
           content:
@@ -1225,15 +1975,28 @@ paths:
                 items:
                   $ref: "#/components/schemas/OrgRepoPolicy"
         "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Token is not scoped to this org, or not a member
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: No such organization
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Validation failed
   /api/adp/orgs/{orgId}/audit-log:
     parameters:
       - $ref: "#/components/parameters/orgId"
     get:
+      x-required-scope: "repo:read"
       summary: >
         M4-3: the operation log across every repo in an org — a projection of
         `operations`, not a second system. Filterable by `verb`, `actor`,
@@ -1243,6 +2006,12 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: >
             The org's operations, newest first. One `AuditLogEntry` per line
@@ -1256,6 +2025,10 @@ paths:
               schema:
                 type: string
         "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Token is not scoped to this org, or not a member
   /api/adp/repos/{owner}/{repo}/evidence/{sha}:
     parameters:
@@ -1263,6 +2036,7 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/sha"
     get:
+      x-required-scope: "repo:read"
       summary: >
         The consolidated evidence bundle for a commit: its signed change plus
         every gate result's DSSE envelope. One read answers "what landed, who
@@ -1270,6 +2044,12 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Evidence bundle
   /api/adp/repos/{owner}/{repo}/gate-jobs:
@@ -1277,10 +2057,25 @@ paths:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     get:
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque keyset cursor from a previous page's ADP-Next-Cursor response header.
+          schema: { type: string }
+      x-required-scope: "repo:read"
       summary: List gate jobs for this repo, newest first.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Gate jobs
           content:
@@ -1293,6 +2088,7 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/GateJob" }
     post:
+      x-required-scope: "repo:write"
       summary: >
         M4-9a: enqueue an isolated gate run. Queue only — no runner executes
         anything here yet (M4-9b); a runner instance-wide polls
@@ -1321,6 +2117,12 @@ paths:
                   type: integer
                   default: 300000
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Queued
           content:
@@ -1328,9 +2130,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/GateJob"
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Repository not found
   /api/adp/tokens:
     post:
+      x-required-scope: "admin"
       summary: >
         Mint a token for a principal (found or created; created identities
         default to kind "agent"). Requires the `admin` scope. The scope set
@@ -1367,6 +2174,12 @@ paths:
                   type: string
                   format: date-time
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: >
             The minted token — returned once, in this response only; the
@@ -1376,11 +2189,20 @@ paths:
               schema:
                 $ref: "#/components/schemas/MintedToken"
         "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Requires the `admin` scope
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Validation failed (unknown scope, empty scope set, bad expiry)
   /api/adp/gate-jobs/claim:
     post:
+      x-required-scope: "runner"
       summary: >
         Instance-wide: claim the oldest queued gate job, atomically (`FOR
         UPDATE SKIP LOCKED`), regardless of which repo it belongs to. Requires
@@ -1401,6 +2223,12 @@ paths:
                   type: string
                   description: Opaque runner identifier (hostname, pid, etc.) — never branched on.
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: A job was claimed and is now `running`
           content:
@@ -1413,6 +2241,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/id"
     get:
+      x-required-scope: "runner"
       summary: >
         M4-9c: a tarball (`git archive --format=tar`) of the job's own
         repo/sha — "materializes a checkout" (pragmatic_mvp.md's gate-runner
@@ -1426,6 +2255,12 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: A tar archive of the tree at the job's git_sha
           content:
@@ -1434,15 +2269,28 @@ paths:
                 type: string
                 format: binary
         "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: The job is held by a different runner identity's claim
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Gate job not found
         "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Gate job is not `running` — not currently claimed
   /api/adp/gate-jobs/{id}/complete:
     parameters:
       - $ref: "#/components/parameters/id"
     post:
+      x-required-scope: "runner"
       summary: >
         Report the result of a claimed gate job. Requires the `runner` scope.
         Only a job currently `running` can be completed, and only by the
@@ -1466,6 +2314,12 @@ paths:
                 logs:
                   type: string
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Recorded
           content:
@@ -1473,23 +2327,51 @@ paths:
               schema:
                 $ref: "#/components/schemas/GateJob"
         "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: The job is held by a different runner identity's claim
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Gate job not found
         "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Gate job is not `running` — was never claimed, or was already completed
   /api/adp/repos/{owner}/{repo}/candidate-sets:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     get:
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque keyset cursor from a previous page's ADP-Next-Cursor response header.
+          schema: { type: string }
+      x-required-scope: "repo:read"
       summary: List candidate sets, newest first.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Candidate sets
     post:
+      x-required-scope: "repo:write"
       summary: >
         Open a candidate set against one intent — N proposals fanned out, one
         selected. The MVP feature GitHub structurally cannot express (§2.2).
@@ -1512,9 +2394,19 @@ paths:
                   enum: [manual, first_green, best_score]
                   default: manual
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Intent not found in this repository
   /api/adp/repos/{owner}/{repo}/candidate-sets/{id}:
     parameters:
@@ -1522,15 +2414,26 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/id"
     get:
+      x-required-scope: "repo:read"
       summary: >
         A candidate set with every candidate's head sha, score, and gate
         verdicts — the comparison view's read model.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Candidate set
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/adp/repos/{owner}/{repo}/candidate-sets/{id}/select:
     parameters:
@@ -1538,6 +2441,7 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/id"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Record which candidate won. This only records the choice — /resolve is
         what acts on it.
@@ -1555,9 +2459,19 @@ paths:
                   type: string
                   format: uuid
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Updated
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not a candidate in this set
   /api/adp/repos/{owner}/{repo}/candidate-sets/{id}/resolve:
     parameters:
@@ -1565,6 +2479,7 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/id"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Finish a fan-out: pick the winner by the set's selection policy, land it
         (squash — one landed change per set) through the ordinary land path, and
@@ -1585,11 +2500,25 @@ paths:
                   format: uuid
                   description: Resolve this candidate regardless of policy. Required for an unselected `manual` set.
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Resolved — the landed proposal and what was reclaimed
         "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: The base moved during the land; retry
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: >
             No winner under the policy, the set is already resolved, or the
             winner failed land policy (the set stays open).
@@ -1598,6 +2527,7 @@ paths:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Start a session — a unit of agent work that outlives any one harness.
         `harness` is an opaque identifier ADP never branches on; that is what
@@ -1627,11 +2557,25 @@ paths:
                     The orchestrator run this session belongs to. The session
                     inherits the run's intent.
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
         "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: The run is closed or abandoned
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Intent, workspace, or run not found in this repository
   /api/adp/repos/{owner}/{repo}/sessions/{id}:
     parameters:
@@ -1639,6 +2583,7 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/id"
     get:
+      x-required-scope: "repo:read"
       summary: >
         A session with its checkpoints and its full resume lineage — the chain
         back to the session that started the work, however many harnesses it
@@ -1646,9 +2591,19 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Session, lineage, and checkpoints
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/adp/repos/{owner}/{repo}/sessions/{id}/checkpoints:
     parameters:
@@ -1656,15 +2611,35 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/id"
     get:
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, maximum: 200, default: 50 }
+        - name: after_seq
+          in: query
+          description: Return checkpoints with seq greater than this — the natural cursor for a seq-ordered list.
+          schema: { type: integer, minimum: 0, default: 0 }
+      x-required-scope: "repo:read"
       summary: A session's checkpoints, in sequence order.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Checkpoints
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
     post:
+      x-required-scope: "repo:write"
       summary: >
         Checkpoint a session at a commit, with opaque harness state. The
         response's `envelope` is a signed DSSE statement binding the commit and
@@ -1688,11 +2663,25 @@ paths:
                   type: string
                 state: {}
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: Created
         "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: The session is closed
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: The commit could not be resolved in this repository
   /api/adp/repos/{owner}/{repo}/sessions/{id}/resume:
     parameters:
@@ -1700,6 +2689,7 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/id"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Resume a session under a (possibly different) harness. Verifies the
         checkpoint's DSSE signature **and** re-derives its state digest before
@@ -1725,11 +2715,25 @@ paths:
                   type: string
                   format: uuid
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: The new session, what it resumed from, and its workspace
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Session not found
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: >
             No checkpoint to resume from, or the checkpoint failed signature or
             state-digest verification.
@@ -1739,13 +2743,24 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/id"
     post:
+      x-required-scope: "repo:write"
       summary: Close a session. Idempotent.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Closed
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/adp/repos/{owner}/{repo}/sessions/{id}/events:
     parameters:
@@ -1753,6 +2768,7 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/id"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Append to a session's trajectory — every message, model call, tool
         execution, handoff, commit, and test result. Events are hash-chained
@@ -1834,6 +2850,12 @@ paths:
                     carry a producer_seq. Batch-level rather than per-event
                     because a chain has exactly one writer.
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: >
             Appended, with the new chain head, any duplicates that were skipped,
@@ -1864,10 +2886,15 @@ paths:
                       on a contiguity rejection, which is the case a spool needs
                       it for; absent when the session is simply closed.
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: >
             Validation failed, related_session_id is not in this repository, or
             producer_seq was set on some events of the batch but not all.
     get:
+      x-required-scope: "repo:read"
       summary: A session's trajectory in sequence order, with each event's chain hashes.
       security:
         - bearerAuth: []
@@ -1887,6 +2914,12 @@ paths:
           schema:
             type: integer
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Events
           content:
@@ -1894,12 +2927,17 @@ paths:
               schema:
                 $ref: "#/components/schemas/SessionTrajectory"
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/adp/repos/{owner}/{repo}/runs:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Open a run — an orchestrator's unit of assigned work, spanning the
         sessions it spawns to do it. `orchestrator` is opaque in the way
@@ -1946,15 +2984,30 @@ paths:
                     Ranking consumers read these rather than parsing
                     `external_ref`, whose format nothing enforces.
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Rejoined an open run with this external_ref
         "201":
           description: Created
         "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: A run with this external_ref is already closed or abandoned
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Intent not found in this repository
     get:
+      x-required-scope: "repo:read"
       summary: Runs in this repository, newest first.
       security:
         - bearerAuth: []
@@ -1974,13 +3027,30 @@ paths:
           schema:
             type: integer
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Runs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runs]
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Run"
   /api/adp/repos/{owner}/{repo}/runs/compare:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     get:
+      x-required-scope: "repo:read"
       summary: >
         N runs against one intent, each pairing its attested eval outcome with
         what the trajectory cost to produce it — the table eval-based
@@ -2004,6 +3074,12 @@ paths:
           schema:
             type: integer
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: >
             One row per run, carrying its `labels`, the single latest `eval`,
@@ -2011,19 +3087,41 @@ paths:
             several axes has several results, and a consumer ranking per axis
             reads `evals`; `eval` alone would show whichever score was recorded
             last.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [intent_id, runs]
+                properties:
+                  intent_id: { type: string, format: uuid, nullable: true }
+                  runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RunComparison"
   /api/adp/repos/{owner}/{repo}/runs/{runId}:
     parameters:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/runId"
     get:
+      x-required-scope: "repo:read"
       summary: A run with its sessions, their chain heads, and its evals.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Run
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/adp/repos/{owner}/{repo}/runs/{runId}/close:
     parameters:
@@ -2031,6 +3129,7 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/runId"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Close a run against the commit it produced, signing a DSSE attestation
         that binds that sha to every session's trajectory chain head. Any
@@ -2051,13 +3150,31 @@ paths:
                 final_git_sha:
                   type: string
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Closed, with the signed attestation
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
         "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Already closed against a different sha, or abandoned
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: The commit could not be resolved in this repository
   /api/adp/repos/{owner}/{repo}/runs/{runId}/abandon:
     parameters:
@@ -2065,6 +3182,7 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/runId"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Abandon a run that produced no commit. The trajectory is kept — the
         discarded attempts staying queryable is the point — and the run's
@@ -2080,11 +3198,25 @@ paths:
                 reason:
                   type: string
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Abandoned
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
         "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Cannot abandon a closed run
   /api/adp/repos/{owner}/{repo}/runs/{runId}/trajectory:
     parameters:
@@ -2092,6 +3224,7 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/runId"
     get:
+      x-required-scope: "repo:read"
       summary: >
         The run's whole trajectory, merged across its sessions in the order
         things actually happened.
@@ -2111,9 +3244,19 @@ paths:
           schema:
             type: integer
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Events
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/adp/repos/{owner}/{repo}/runs/{runId}/stats:
     parameters:
@@ -2121,6 +3264,7 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/runId"
     get:
+      x-required-scope: "repo:read"
       summary: >
         What the run cost and what it spent it on: counts and tokens by event
         kind, per-tool call and failure counts, per-model spend, the handoff
@@ -2128,9 +3272,19 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Stats
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/adp/repos/{owner}/{repo}/runs/{runId}/verify:
     parameters:
@@ -2138,6 +3292,7 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/runId"
     get:
+      x-required-scope: "repo:read"
       summary: >
         Recompute every session's hash chain from the stored rows and check the
         run attestation against them. Tamper-evidence nobody can check is
@@ -2146,6 +3301,12 @@ paths:
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: >
             Verification result. `chains_ok` says the events ADP holds were not
@@ -2156,7 +3317,15 @@ paths:
             either fails, or if the attestation does not check out. `evals`
             carries each score's `reporter_principal` and
             `separately_authorized`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunVerifyResult"
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
   /api/adp/repos/{owner}/{repo}/runs/{runId}/evals:
     parameters:
@@ -2164,6 +3333,7 @@ paths:
       - $ref: "#/components/parameters/repo"
       - $ref: "#/components/parameters/runId"
     post:
+      x-required-scope: "repo:write"
       summary: >
         Attach a deterministic eval result to a run, as gate evidence. The eval
         *is* a gate result — same signing, same table, same land policy and `gh
@@ -2204,6 +3374,12 @@ paths:
                   type: object
                   additionalProperties: true
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "201":
           description: >
             Recorded, with the gate result it was reported as, plus
@@ -2211,19 +3387,44 @@ paths:
             when the identity reporting the score is not the one that opened the
             run, i.e. the score is not a self-report.
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Run not found
         "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: The run has no final_git_sha and no git_sha was supplied
     get:
+      x-required-scope: "repo:read"
       summary: >
         The evals recorded against this run, newest first, each carrying
         `reporter_principal` and `separately_authorized`.
       security:
         - bearerAuth: []
       responses:
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
         "200":
           description: Evals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EvalResult"
         "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
           description: Not found
 components:
   parameters:
@@ -2387,6 +3588,16 @@ components:
     OrgSummary:
       type: object
       required: [id, name, kill_switch]
+      description: >
+        #97, the org identifier contract: an organization has exactly two
+        identifiers, permanently mapped. `id` (uuid) is what every
+        `/api/adp/orgs/{orgId}` route takes. `name` is the org's immutable
+        URL slug — the `{owner}` path segment of every repo it holds, on
+        both planes. They are the same org seen from the native and compat
+        planes respectively; `GET /api/adp/orgs` is the translation (it
+        returns both). gh fidelity requires owner-shaped URLs, so the slug
+        cannot change: org rename is unsupported pre-1.0, by design rather
+        than omission.
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -2486,6 +3697,143 @@ components:
         after: {}
         parent_op: { type: string, format: uuid, nullable: true }
         created_at: { type: string, format: date-time }
+    Run:
+      type: object
+      required: [id, intent_id, orchestrator, external_ref, labels, status, final_git_sha, trajectory_digest, envelope, created_at, closed_at]
+      properties:
+        id: { type: string, format: uuid }
+        intent_id: { type: string, format: uuid }
+        orchestrator: { type: string }
+        external_ref: { type: string, nullable: true }
+        labels:
+          type: object
+          additionalProperties: { type: string }
+        status: { type: string, enum: [open, closed, abandoned] }
+        final_git_sha: { type: string, nullable: true }
+        trajectory_digest: { type: string, nullable: true }
+        envelope: { nullable: true, description: "DSSE envelope; null until the run closes." }
+        created_at: { type: string, format: date-time }
+        closed_at: { type: string, format: date-time, nullable: true }
+    EvalResult:
+      type: object
+      required: [id, run_id, name, git_sha, spec_digest, score, passed, gate_result_id, trajectory_digest, reporter_principal, separately_authorized, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        run_id: { type: string, format: uuid }
+        name: { type: string }
+        git_sha: { type: string, nullable: true }
+        spec_digest: { type: string }
+        score: { type: number, nullable: true }
+        passed: { type: boolean }
+        gate_result_id: { type: string, format: uuid, nullable: true }
+        trajectory_digest: { type: string, nullable: true }
+        reporter_principal: { type: string }
+        separately_authorized: { type: boolean }
+        created_at: { type: string, format: date-time }
+    ComparisonEval:
+      type: object
+      required: [name, score, passed, specDigest, gateStatus]
+      properties:
+        name: { type: string }
+        score: { type: number, nullable: true }
+        passed: { type: boolean }
+        specDigest: { type: string }
+        gateStatus: { type: string }
+    RunComparison:
+      type: object
+      required: [runId, externalRef, orchestrator, status, labels, finalGitSha, trajectoryDigest, eval, evals, events, tokensIn, tokensOut, costMicroUsd, durationMs, toolCalls, toolFailures, createdAt, closedAt]
+      properties:
+        runId: { type: string, format: uuid }
+        externalRef: { type: string, nullable: true }
+        orchestrator: { type: string }
+        status: { type: string }
+        labels:
+          type: object
+          additionalProperties: { type: string }
+        finalGitSha: { type: string, nullable: true }
+        trajectoryDigest: { type: string, nullable: true }
+        eval:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/ComparisonEval" }]
+        evals:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/ComparisonEval"
+              - type: object
+                required: [createdAt]
+                properties:
+                  createdAt: { type: string, format: date-time }
+        events: { type: integer }
+        tokensIn: { type: integer }
+        tokensOut: { type: integer }
+        costMicroUsd: { type: integer }
+        durationMs: { type: integer }
+        toolCalls: { type: integer }
+        toolFailures: { type: integer }
+        createdAt: { type: string, format: date-time }
+        closedAt: { type: string, format: date-time, nullable: true }
+    RunVerifySession:
+      type: object
+      required: [session_id, ok, event_count, head, broke_at_seq, reason, emitter_tracked, emitter_complete, emitter_first_gap]
+      properties:
+        session_id: { type: string, format: uuid }
+        ok: { type: boolean }
+        event_count: { type: integer }
+        head: { type: string, nullable: true }
+        broke_at_seq: { type: integer, nullable: true }
+        reason: { type: string, nullable: true }
+        emitter_tracked: { type: boolean }
+        emitter_complete: { type: boolean }
+        emitter_first_gap: { type: integer, nullable: true }
+    RunVerifyResult:
+      type: object
+      required: [run_id, ok, chains_ok, emitters_ok, envelope_verified, trajectory_digest_matches, recomputed_trajectory_digest, attested_trajectory_digest, final_git_sha, attested_subject_sha, sessions]
+      properties:
+        run_id: { type: string, format: uuid }
+        ok:
+          type: boolean
+          description: The single answer — false whenever any component check below is false.
+        chains_ok: { type: boolean }
+        emitters_ok: { type: boolean }
+        envelope_verified: { type: boolean, nullable: true }
+        trajectory_digest_matches: { type: boolean, nullable: true }
+        recomputed_trajectory_digest: { type: string }
+        attested_trajectory_digest: { type: string, nullable: true }
+        final_git_sha: { type: string, nullable: true }
+        attested_subject_sha: { type: string, nullable: true }
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/RunVerifySession"
+    Error:
+      type: object
+      required: [message]
+      description: >
+        #97: the one error shape every 4xx carries. `errors` appears on
+        validation failures (422) and is a deliberate projection of the
+        server's internal validator output — path, message, and a stable
+        code — never the validator's raw issue objects, whose shape belongs
+        to a library this contract must outlive.
+      properties:
+        message:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            required: [path, message, code]
+            properties:
+              path:
+                type: array
+                items:
+                  oneOf:
+                    - type: string
+                    - type: integer
+              message:
+                type: string
+              code:
+                type: string
     MintedToken:
       type: object
       required: [token, identity_id, principal, scopes, org_id, expires_at]

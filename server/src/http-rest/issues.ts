@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, eq, sql } from "drizzle-orm";
+import { PerPageQuery } from "./pagination.js";
+import { validationErrors } from "./validation-errors.js";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { issues, issueComments, intents } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
@@ -50,7 +52,7 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
       const { owner, repo: repoName } = req.params as { owner: string; repo: string };
       const parsed = CreateIssueBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
 
@@ -118,7 +120,16 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
       return;
     }
 
-    const rows = await db.select().from(issues).where(eq(issues.repoId, repo.id));
+    // #97: bounded, GitHub's way (per_page<=100, page offsets) — gh and
+    // Octokit already send exactly these.
+    const { per_page, page } = PerPageQuery.parse(req.query ?? {});
+    const rows = await db
+      .select()
+      .from(issues)
+      .where(eq(issues.repoId, repo.id))
+      .orderBy(desc(issues.number))
+      .limit(per_page)
+      .offset((page - 1) * per_page);
     reply.send(rows.map((issue) => serializeIssue(issue, owner, repoName, "")));
   });
 
@@ -156,7 +167,7 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
       };
       const parsed = UpdateIssueBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
 
@@ -218,7 +229,7 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
       };
       const parsed = CreateCommentBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
 
@@ -288,7 +299,14 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
       return;
     }
 
-    const rows = await db.select().from(issueComments).where(eq(issueComments.issueId, issue.id));
+    const { per_page, page } = PerPageQuery.parse(req.query ?? {});
+    const rows = await db
+      .select()
+      .from(issueComments)
+      .where(eq(issueComments.issueId, issue.id))
+      .orderBy(asc(issueComments.createdAt))
+      .limit(per_page)
+      .offset((page - 1) * per_page);
     reply.send(
       rows.map((comment) => ({
         id: comment.id,

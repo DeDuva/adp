@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
+import { validationErrors } from "./validation-errors.js";
 import { desc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { identities, mirrors, mirrorSyncLog } from "../db/schema.js";
@@ -47,7 +48,7 @@ export function registerMirrorRoutes(app: FastifyInstance, db: Db, credentialKey
 
     const parsed = CreateMirrorBody.safeParse(req.body);
     if (!parsed.success) {
-      reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+      reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
       return;
     }
     const { remote_url, direction, credential, webhook_secret } = parsed.data;

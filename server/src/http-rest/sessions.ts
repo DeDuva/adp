@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { validationErrors } from "./validation-errors.js";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
 import type { Signer } from "../core/signing.js";
@@ -132,7 +133,7 @@ export function registerSessionRoutes(
       const { owner, repo: repoName } = req.params as { owner: string; repo: string };
       const parsed = StartSessionBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
       const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
@@ -196,7 +197,7 @@ export function registerSessionRoutes(
       const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
       const parsed = CheckpointBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
       const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
@@ -238,7 +239,17 @@ export function registerSessionRoutes(
         reply.code(404).send({ message: "Not Found" });
         return;
       }
-      reply.send((await listCheckpoints(db, id)).map(serializeCheckpoint));
+      // #97: bounded. Checkpoints are ordered by seq, so the "cursor" is
+      // simply the last seq seen — exposed as plain query params rather than
+      // the opaque created_at cursor other native lists use.
+      const { limit, after_seq } = z
+        .object({
+          limit: z.coerce.number().int().positive().max(200).default(50),
+          after_seq: z.coerce.number().int().nonnegative().default(0),
+        })
+        .parse(req.query ?? {});
+      const checkpointRows = (await listCheckpoints(db, id)).filter((c) => c.seq > after_seq).slice(0, limit);
+      reply.send(checkpointRows.map(serializeCheckpoint));
     },
   );
 
@@ -249,7 +260,7 @@ export function registerSessionRoutes(
       const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
       const parsed = ResumeBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
       const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
@@ -313,7 +324,7 @@ export function registerSessionRoutes(
       const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
       const parsed = AppendEventsBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
       const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);

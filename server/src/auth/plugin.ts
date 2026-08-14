@@ -65,8 +65,10 @@ export function hasScope(scopes: string[], required: "repo:read" | "repo:write" 
   return required === "repo:read" && scopes.includes("repo:write");
 }
 
-export function requireScope(scope: "repo:read" | "repo:write" | "admin" | "runner") {
-  return function (req: FastifyRequest, reply: FastifyReply, done: () => void) {
+export type RequiredScope = "repo:read" | "repo:write" | "admin" | "runner";
+
+export function requireScope(scope: RequiredScope) {
+  const handler = function (req: FastifyRequest, reply: FastifyReply, done: () => void) {
     if (!req.identity) {
       reply.code(401).header("WWW-Authenticate", "Basic realm=adp").send({ message: "Requires authentication" });
       return;
@@ -77,6 +79,13 @@ export function requireScope(scope: "repo:read" | "repo:write" | "admin" | "runn
     }
     done();
   };
+  // #97: the scope a route demands is part of the CONTRACT, so it must be
+  // introspectable — spec-coverage.test.ts walks the real route table and
+  // asserts each operation's `x-required-scope` in spec/openapi.yaml
+  // matches the scope its preHandler actually enforces. A closure the test
+  // can't see into is how the spec and prose drifted to begin with.
+  handler.requiredScope = scope;
+  return handler;
 }
 
 // M4-1: org-scoped routes call this *alongside* requireScope, not instead of

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { validationErrors } from "./validation-errors.js";
 import type { Db } from "../db/client.js";
 import type { GitBackend, TreeEntry, CommitInfo } from "../core/git-backend.js";
 import { requireScope } from "../auth/plugin.js";
@@ -190,7 +191,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const parsed = CreateRefBody.safeParse(req.body);
     if (!parsed.success) {
-      reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+      reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
       return;
     }
     const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
@@ -222,7 +223,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const parsed = CreateBlobBody.safeParse(req.body);
     if (!parsed.success) {
-      reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+      reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
       return;
     }
     const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
@@ -262,7 +263,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const parsed = CreateTreeBody.safeParse(req.body);
     if (!parsed.success) {
-      reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+      reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
       return;
     }
     const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
@@ -315,7 +316,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const parsed = CreateCommitBody.safeParse(req.body);
     if (!parsed.success) {
-      reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+      reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
       return;
     }
     const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { validationErrors } from "./validation-errors.js";
 import { and, count, eq, isNull } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
@@ -36,8 +37,19 @@ import { loadRepoPolicy, resolveLandRequirements, type LandRequirement } from ".
 // thrown by hand-writing SQL against production is not a shipped safety
 // feature.
 
+// #97: the quota ceilings and the policy-repo pointer get an audited REST
+// write path. Until 0.3.0 the only way to set orgs.max_repos,
+// max_concurrent_workspaces, max_concurrent_gate_jobs, or policy_repo_id
+// was an unaudited psql UPDATE against production — enforcement everywhere,
+// administration nowhere, and no operation row for the audit export. All
+// optional; `null` clears a quota ("unlimited", the M4-3 convention) or
+// detaches the policy repo.
 const PatchOrgBody = z.object({
-  kill_switch: z.boolean(),
+  kill_switch: z.boolean().optional(),
+  max_repos: z.number().int().nonnegative().nullable().optional(),
+  max_concurrent_workspaces: z.number().int().nonnegative().nullable().optional(),
+  max_concurrent_gate_jobs: z.number().int().nonnegative().nullable().optional(),
+  policy_repo_id: z.string().uuid().nullable().optional(),
 });
 
 const OrgReposQuery = z.object({
@@ -123,6 +135,7 @@ export function registerOrgRoutes(
       await tx.insert(orgMemberships).values({ orgId: org.id, identityId: req.identity!.identityId, role: "admin" });
       await recordOperation(tx, {
         repoId: null,
+        orgId: org.id,
         actorId: req.identity!.identityId,
         verb: "org.create",
         target: name,
@@ -206,7 +219,7 @@ export function registerOrgRoutes(
       const { orgId } = req.params as { orgId: string };
       const parsed = OrgReposQuery.safeParse(req.query);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
 
@@ -268,7 +281,7 @@ export function registerOrgRoutes(
       const { orgId } = req.params as { orgId: string };
       const parsed = PatchOrgBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
 
@@ -278,32 +291,98 @@ export function registerOrgRoutes(
         return;
       }
 
+      // The policy repo must belong to THIS org: it is read with the org's
+      // authority (core/org-policy.ts), so pointing it at another org's
+      // repo would be a cross-tenant read dressed up as configuration.
+      if (parsed.data.policy_repo_id != null) {
+        const [policyRepo] = await db.select().from(repos).where(eq(repos.id, parsed.data.policy_repo_id));
+        if (!policyRepo || policyRepo.orgId !== orgId) {
+          reply.code(422).send({ message: "policy_repo_id must name a repository in this organization" });
+          return;
+        }
+      }
+
       const updated = await db.transaction(async (tx) => {
+        const patch = parsed.data;
         const [row] = await tx
           .update(orgs)
-          .set({ killSwitch: parsed.data.kill_switch })
+          .set({
+            ...(patch.kill_switch !== undefined ? { killSwitch: patch.kill_switch } : {}),
+            ...(patch.max_repos !== undefined ? { maxRepos: patch.max_repos } : {}),
+            ...(patch.max_concurrent_workspaces !== undefined
+              ? { maxConcurrentWorkspaces: patch.max_concurrent_workspaces }
+              : {}),
+            ...(patch.max_concurrent_gate_jobs !== undefined
+              ? { maxConcurrentGateJobs: patch.max_concurrent_gate_jobs }
+              : {}),
+            ...(patch.policy_repo_id !== undefined ? { policyRepoId: patch.policy_repo_id } : {}),
+          })
           .where(eq(orgs.id, orgId))
           .returning();
 
-        // CLAUDE.md's standing invariant — the operation log is written in the
-        // same transaction as the change. `repoId` is null because this change
-        // is not about one repo; it is about every repo in the org at once,
-        // which is exactly what makes it worth recording. core/operations.ts
-        // anticipated this case ("pass null explicitly for the currently
-        // nonexistent genuinely global verb"); this is the first one.
-        await recordOperation(tx, {
-          repoId: null,
-          actorId: req.identity!.identityId,
-          verb: "org.kill_switch",
-          target: existing.name,
-          before: { kill_switch: existing.killSwitch },
-          after: { kill_switch: row!.killSwitch },
-        });
+        // CLAUDE.md's standing invariant — the operation log is written in
+        // the same transaction as the change. One op per concern, each
+        // carrying `orgId` (#97): an org-level op used to be repoId:null
+        // and orgId:nothing, which made it invisible to the very audit-log
+        // export a kill switch most needs to appear in.
+        if (patch.kill_switch !== undefined && patch.kill_switch !== existing.killSwitch) {
+          await recordOperation(tx, {
+            repoId: null,
+            orgId,
+            actorId: req.identity!.identityId,
+            verb: "org.kill_switch",
+            target: existing.name,
+            before: { kill_switch: existing.killSwitch },
+            after: { kill_switch: row!.killSwitch },
+          });
+        }
+        if (
+          patch.max_repos !== undefined ||
+          patch.max_concurrent_workspaces !== undefined ||
+          patch.max_concurrent_gate_jobs !== undefined
+        ) {
+          await recordOperation(tx, {
+            repoId: null,
+            orgId,
+            actorId: req.identity!.identityId,
+            verb: "org.quota_update",
+            target: existing.name,
+            before: {
+              max_repos: existing.maxRepos,
+              max_concurrent_workspaces: existing.maxConcurrentWorkspaces,
+              max_concurrent_gate_jobs: existing.maxConcurrentGateJobs,
+            },
+            after: {
+              max_repos: row!.maxRepos,
+              max_concurrent_workspaces: row!.maxConcurrentWorkspaces,
+              max_concurrent_gate_jobs: row!.maxConcurrentGateJobs,
+            },
+          });
+        }
+        if (patch.policy_repo_id !== undefined) {
+          await recordOperation(tx, {
+            repoId: null,
+            orgId,
+            actorId: req.identity!.identityId,
+            verb: "org.policy_repo_set",
+            target: existing.name,
+            before: { policy_repo_id: existing.policyRepoId },
+            after: { policy_repo_id: row!.policyRepoId },
+          });
+        }
 
         return row!;
       });
 
-      reply.send({ id: updated.id, name: updated.name, kill_switch: updated.killSwitch });
+      reply.send({
+        id: updated.id,
+        name: updated.name,
+        kill_switch: updated.killSwitch,
+        max_repos: updated.maxRepos,
+        max_concurrent_workspaces: updated.maxConcurrentWorkspaces,
+        max_concurrent_gate_jobs: updated.maxConcurrentGateJobs,
+        policy_repo_id: updated.policyRepoId,
+      });
     },
   );
 }

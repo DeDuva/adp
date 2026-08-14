@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { validationErrors } from "./validation-errors.js";
 import type { Db } from "../db/client.js";
 import type { Signer } from "../core/signing.js";
 import { gateResults } from "../db/schema.js";
@@ -35,7 +36,7 @@ export function registerDependencyAdmissionRoutes(app: FastifyInstance, db: Db, 
       const { owner, repo: repoName } = req.params as { owner: string; repo: string };
       const parsed = DependencyAdmissionBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
 

@@ -3,6 +3,12 @@ import { operations } from "../db/schema.js";
 
 export interface OperationEntry {
   repoId: string | null;
+  // #97: required alongside repoId for an org-LEVEL verb (org.kill_switch,
+  // org.create, org.quota_update, org-scoped token.mint) — an op with both
+  // repoId and orgId null is invisible to the org audit-log export, which
+  // is how the kill switch went unexported. Repo-scoped verbs omit it; the
+  // repo already carries the org.
+  orgId?: string | null;
   actorId: string;
   verb: string;
   target: string;
@@ -20,6 +26,7 @@ export interface OperationEntry {
 export async function recordOperation(tx: Pick<Db, "insert">, entry: OperationEntry): Promise<void> {
   await tx.insert(operations).values({
     repoId: entry.repoId,
+    orgId: entry.orgId ?? null,
     actorId: entry.actorId,
     verb: entry.verb,
     target: entry.target,
