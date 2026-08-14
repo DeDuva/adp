@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { API_VERSION, API_VERSION_HEADER } from "./api-version.js";
 import type { Db } from "./db/client.js";
 import type { GitBackend } from "./core/git-backend.js";
-import type { Signer } from "./core/signing.js";
+import { KeyRegistry, type Signer } from "./core/signing.js";
 import type { LandRequirement } from "./core/repo-policy.js";
 import { registerRepoRoutes } from "./http-rest/repos.js";
 import { registerIdentityRoutes } from "./http-rest/identity.js";
@@ -39,6 +39,9 @@ export interface RouteDeps {
   db: Db;
   gitBackend: GitBackend;
   signer: Signer;
+  // #102: resolves envelope keyids, active + retired. Optional: harnesses
+  // and tests that pass only a signer get single-key verification.
+  keyRegistry?: KeyRegistry;
   publicUrl: string;
   credentialKey: string;
   instanceFloor: LandRequirement[];
@@ -59,6 +62,7 @@ export interface RouteDeps {
 // the mirror poller.
 export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { db, gitBackend, signer, publicUrl, credentialKey, instanceFloor } = deps;
+  const keyRegistry = deps.keyRegistry ?? new KeyRegistry(signer);
 
   // Served on every response, including 401s and 404s. A client pins the
   // contract before it can authenticate, so gating this behind a successful
@@ -91,8 +95,8 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   registerTokenRoutes(app, db);
   registerWorkspaceRoutes(app, db, gitBackend);
   registerEvidenceRoutes(app, db);
-  registerSessionRoutes(app, db, gitBackend, signer, publicUrl);
-  registerRunRoutes(app, db, gitBackend, signer, publicUrl);
+  registerSessionRoutes(app, db, gitBackend, signer, publicUrl, keyRegistry);
+  registerRunRoutes(app, db, gitBackend, signer, publicUrl, keyRegistry);
   registerMirrorRoutes(app, db, credentialKey);
   registerMirrorWebhookRoutes(app, db, gitBackend, signer, credentialKey, publicUrl);
   registerActionsRoutes(app, db, credentialKey);

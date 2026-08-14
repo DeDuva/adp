@@ -6,7 +6,7 @@ import fastifyStatic from "@fastify/static";
 import { loadConfig } from "./config.js";
 import { createDb } from "./db/client.js";
 import { GitBackend } from "./core/git-backend.js";
-import { Signer } from "./core/signing.js";
+import { KeyRegistry, Signer } from "./core/signing.js";
 import { authPlugin } from "./auth/plugin.js";
 import { registerMirrorWebhookRawBodyParser } from "./http-rest/mirror-webhook.js";
 import { registerApiRoutes } from "./routes.js";
@@ -91,6 +91,7 @@ async function main() {
     db,
     gitBackend,
     signer,
+    keyRegistry: new KeyRegistry(signer, (config.RETIRED_SIGNING_PUBLIC_KEYS ?? "").split(",")),
     publicUrl: config.PUBLIC_URL,
     credentialKey: config.MIRROR_CREDENTIAL_KEY,
     instanceFloor,

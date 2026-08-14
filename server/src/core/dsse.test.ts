@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Signer } from "./signing.js";
+import { KeyRegistry, Signer } from "./signing.js";
 import { signStatement, verifyEnvelope, decodeStatement, type InTotoStatement } from "./dsse.js";
 
 describe("DSSE envelopes", () => {
@@ -49,5 +49,39 @@ describe("DSSE envelopes", () => {
     const envelope = signStatement(signer, statement());
     const retyped = { ...envelope, payloadType: "application/json" };
     expect(verifyEnvelope(signer, retyped)).toBe(false);
+  });
+
+  // #102: the rotation scenario keyid was written into envelopes to
+  // survive, finally exercised. Old evidence verifies through a registry
+  // that knows the retired key's PUBLIC half; the same evidence fails
+  // against the new signer alone (which is the pre-#102 behavior and the
+  // bug); an unknown keyid never falls through to the active key.
+  it("evidence signed before a key rotation verifies through the registry, and only through it", () => {
+    const oldSigner = new Signer("the-rotated-out-key");
+    const newSigner = new Signer("the-key-after-rotation");
+    const oldEvidence = signStatement(oldSigner, statement());
+
+    const registry = new KeyRegistry(newSigner, [oldSigner.publicKeyHex]);
+    expect(verifyEnvelope(registry, oldEvidence)).toBe(true);
+    expect(verifyEnvelope(newSigner, oldEvidence)).toBe(false);
+
+    // New evidence verifies too — the registry serves both generations.
+    expect(verifyEnvelope(registry, signStatement(newSigner, statement()))).toBe(true);
+  });
+
+  it("an unknown keyid is a verification failure, never a fall-through to the active key", () => {
+    const registry = new KeyRegistry(signer);
+    const envelope = signStatement(signer, statement());
+    const foreign = { ...envelope, signatures: [{ ...envelope.signatures[0]!, keyid: "f".repeat(64) }] };
+    expect(verifyEnvelope(registry, foreign)).toBe(false);
+  });
+
+  it("a tampered payload fails even under the key that signed the original, registry or not", () => {
+    const oldSigner = new Signer("the-rotated-out-key");
+    const registry = new KeyRegistry(signer, [oldSigner.publicKeyHex]);
+    const envelope = signStatement(oldSigner, statement());
+    const tamperedStatement = { ...statement(), predicate: { gate: "tests", status: "failure" } };
+    const tampered = { ...envelope, payload: Buffer.from(JSON.stringify(tamperedStatement)).toString("base64") };
+    expect(verifyEnvelope(registry, tampered)).toBe(false);
   });
 });

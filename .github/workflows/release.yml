@@ -57,12 +57,13 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        # Notes assembled in a file, not an inline quoted string — a
+        # multi-line --notes argument is exactly the shape that silently
+        # breaks the YAML block scalar (it did, on this workflow's first
+        # run: the unindented continuation lines ended the block).
         run: |
-          notes=$(awk "/^## ${GITHUB_REF_NAME}/{flag=1;next}/^## v/{flag=0}flag" CHANGELOG.md)
-          digest="${{ steps.push.outputs.digest }}"
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
-            --notes "$notes
-
-**Image:** \`ghcr.io/deduva/adp:${GITHUB_REF_NAME}\`
-**Digest:** \`${digest}\` — pin with \`ADP_IMAGE=ghcr.io/deduva/adp@${digest}\`"
+          awk "/^## ${GITHUB_REF_NAME}/{flag=1;next}/^## v/{flag=0}flag" CHANGELOG.md > /tmp/notes.md
+          printf '\n**Image:** `ghcr.io/deduva/adp:%s`\n' "$GITHUB_REF_NAME" >> /tmp/notes.md
+          printf '**Digest:** `%s` — pin with `ADP_IMAGE=ghcr.io/deduva/adp@%s`\n' "$DIGEST" "$DIGEST" >> /tmp/notes.md
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file /tmp/notes.md

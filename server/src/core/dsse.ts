@@ -1,4 +1,4 @@
-import type { Signer } from "./signing.js";
+import { KeyRegistry, type Signer } from "./signing.js";
 
 // DSSE (Dead Simple Signing Envelope, https://github.com/secure-systems-lab/dsse)
 // wrapping an in-toto v1 attestation Statement. Chosen now per
@@ -47,12 +47,18 @@ export function signStatement(signer: Signer, statement: InTotoStatement): DsseE
   };
 }
 
-export function verifyEnvelope(signer: Signer, envelope: DsseEnvelope): boolean {
+// #102: `keyid` is finally read. A bare Signer keeps working (the
+// single-key deployment), and a KeyRegistry resolves retired keys too — so
+// evidence signed before a rotation verifies after it. An unknown keyid is
+// a failure, never a fall-through to the active key.
+export function verifyEnvelope(verifier: Signer | KeyRegistry, envelope: DsseEnvelope): boolean {
+  const registry = verifier instanceof KeyRegistry ? verifier : new KeyRegistry(verifier);
   const payload = Buffer.from(envelope.payload, "base64");
   const message = pae(envelope.payloadType, payload);
-  return envelope.signatures.some(
-    (s) => s.keyid === signer.publicKeyHex && signer.verifyRaw(message, Buffer.from(s.sig, "base64")),
-  );
+  return envelope.signatures.some((s) => {
+    const resolved = registry.resolve(s.keyid);
+    return resolved !== null && resolved.verifyRaw(message, Buffer.from(s.sig, "base64"));
+  });
 }
 
 export function decodeStatement(envelope: DsseEnvelope): InTotoStatement {

@@ -9,6 +9,7 @@ import { requireScope } from "../auth/plugin.js";
 import { findRepoAuthorized } from "../core/repos-lookup.js";
 import { runs, sessions } from "../db/schema.js";
 import { verifyEnvelope, decodeStatement, type DsseEnvelope } from "../core/dsse.js";
+import { KeyRegistry } from "../core/signing.js";
 import {
   openRun,
   closeRun,
@@ -74,6 +75,9 @@ export function registerRunRoutes(
   gitBackend: GitBackend,
   signer: Signer,
   publicUrl: string,
+  // #102: verify resolves envelope keyids through the registry, so runs
+  // attested before a key rotation still verify after it.
+  keyRegistry: KeyRegistry = new KeyRegistry(signer),
 ) {
   async function repoOr404(
     req: { params: unknown; identity?: import("../auth/tokens.js").AuthenticatedIdentity },
@@ -329,7 +333,7 @@ export function registerRunRoutes(
       let subjectSha: string | null = null;
       if (run.envelope) {
         const envelope = run.envelope as DsseEnvelope;
-        envelopeVerified = verifyEnvelope(signer, envelope);
+        envelopeVerified = verifyEnvelope(keyRegistry, envelope);
         const statement = decodeStatement(envelope);
         const predicate = statement.predicate as { trajectoryDigest?: string };
         digestMatches = predicate.trajectoryDigest === recomputedDigest;
