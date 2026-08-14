@@ -8,11 +8,22 @@ import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepo } from "../core/repos-lookup.js";
 import { findOrCreateOrg } from "../core/org-lookup.js";
+import { isSafeRepoSegment } from "../core/git-backend.js";
 
 const CreateRepoBody = z.object({
   name: z.string().min(1).regex(/^[a-zA-Z0-9._-]+$/),
   default_branch: z.string().min(1).default("main"),
 });
+
+// The Postgres error code for a unique-constraint violation. Depending on
+// where in the driver/ORM stack it surfaces, the pg DatabaseError may be the
+// thrown error itself or sit behind one or more `cause` links — walk them.
+function isUniqueViolation(err: unknown): boolean {
+  for (let e = err; e instanceof Error; e = e.cause as Error | undefined) {
+    if ((e as { code?: unknown }).code === "23505") return true;
+  }
+  return false;
+}
 
 async function createRepo(
   db: Db,
@@ -22,6 +33,17 @@ async function createRepo(
   defaultBranch: string,
   actorId: string,
 ) {
+  // The owner comes from a route path param (or the token's principal), not
+  // the zod-validated body — and find-my-way %2F-decodes params, so without
+  // this check "..%2F..%2Ftmp%2Fx" reaches path.join in git-backend.ts as a
+  // traversal AND becomes the name of a real orgs row (#89, audit §P0-5).
+  if (!isSafeRepoSegment(owner)) {
+    return { status: "invalid-owner" as const };
+  }
+
+  // Fast path only — the authority on uniqueness is the repos_owner_name_idx
+  // unique index, enforced inside the insert transaction below. This check
+  // just spares the common duplicate-create the git-init side effects.
   if (await findRepo(db, owner, name)) {
     return { status: "conflict" as const };
   }
@@ -43,19 +65,33 @@ async function createRepo(
   // infrastructure), but the repo row and its op-log entry are atomic.
   await gitBackend.initBareRepo(owner, name, defaultBranch);
 
-  const repo = await db.transaction(async (tx) => {
-    const [repo] = await tx.insert(repos).values({ owner, name, defaultBranch, orgId }).returning();
+  // Two concurrent creates can both pass the fast-path check above; the
+  // unique index turns the loser's insert into a 23505 here, which is the
+  // same "already exists" answer the fast path gives (#89, audit §P0-6).
+  // The loser's initBareRepo re-ran `git init` on the winner's (still
+  // empty) repo, which is harmless — git init on an existing repo touches
+  // nothing that exists.
+  let repo: typeof repos.$inferSelect;
+  try {
+    repo = await db.transaction(async (tx) => {
+      const [repo] = await tx.insert(repos).values({ owner, name, defaultBranch, orgId }).returning();
 
-    await recordOperation(tx, {
-      repoId: repo!.id,
-      actorId,
-      verb: "repo.create",
-      target: `${owner}/${name}`,
-      after: { id: repo!.id, owner, name, defaultBranch, orgId },
+      await recordOperation(tx, {
+        repoId: repo!.id,
+        actorId,
+        verb: "repo.create",
+        target: `${owner}/${name}`,
+        after: { id: repo!.id, owner, name, defaultBranch, orgId },
+      });
+
+      return repo!;
     });
-
-    return repo!;
-  });
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return { status: "conflict" as const };
+    }
+    throw err;
+  }
 
   return { status: "created" as const, repo };
 }
@@ -95,6 +131,10 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     const { name, default_branch } = parsed.data;
 
     const result = await createRepo(db, gitBackend, owner, name, default_branch, req.identity!.identityId);
+    if (result.status === "invalid-owner") {
+      reply.code(422).send({ message: `Validation failed: owner '${owner}' is not a valid repository owner` });
+      return;
+    }
     if (result.status === "conflict") {
       reply.code(422).send({ message: `Repository ${owner}/${name} already exists` });
       return;
@@ -119,6 +159,13 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     const { name, default_branch } = parsed.data;
 
     const result = await createRepo(db, gitBackend, owner, name, default_branch, req.identity!.identityId);
+    if (result.status === "invalid-owner") {
+      // The owner here is the token's own principal — minted by an operator,
+      // not typed by the caller — so a rejection means the principal itself
+      // is not usable as a path/org segment. Fail closed and say so.
+      reply.code(422).send({ message: `Validation failed: principal '${owner}' is not a valid repository owner` });
+      return;
+    }
     if (result.status === "conflict") {
       reply.code(422).send({ message: `Repository ${owner}/${name} already exists` });
       return;
@@ -140,6 +187,10 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
     const { name, default_branch } = parsed.data;
 
     const result = await createRepo(db, gitBackend, org, name, default_branch, req.identity!.identityId);
+    if (result.status === "invalid-owner") {
+      reply.code(422).send({ message: `Validation failed: org '${org}' is not a valid repository owner` });
+      return;
+    }
     if (result.status === "conflict") {
       reply.code(422).send({ message: `Repository ${org}/${name} already exists` });
       return;

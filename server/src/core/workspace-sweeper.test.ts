@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { createDb, type Db } from "../db/client.js";
 import { identities, repos, workspaces } from "../db/schema.js";
 import { GitBackend } from "./git-backend.js";
+import { findOrCreateOrg } from "./org-lookup.js";
 import { sweepExpiredWorkspaces } from "./workspace-sweeper.js";
 
 const execFileAsync = promisify(execFile);
@@ -50,7 +51,8 @@ describe.skipIf(!process.env.DATABASE_URL)("sweepExpiredWorkspaces", () => {
 
     const [identity] = await db.insert(identities).values({ kind: "human", principal: `sweeper-${Date.now()}` }).returning();
     actorId = identity!.id;
-    const [repo] = await db.insert(repos).values({ owner, name: "repo", defaultBranch: "main" }).returning();
+    const orgId = await findOrCreateOrg(db, owner);
+    const [repo] = await db.insert(repos).values({ owner, name: "repo", defaultBranch: "main", orgId }).returning();
     repoId = repo!.id;
   });
 

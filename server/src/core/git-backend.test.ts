@@ -4,9 +4,35 @@ import { promisify } from "node:util";
 import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { GitBackend } from "./git-backend.js";
+import { GitBackend, isSafeRepoSegment } from "./git-backend.js";
 
 const execFileAsync = promisify(execFile);
+
+// #89 (audit §P0-5): route params are %2F-decoded before they reach
+// repoPath's path.join, so an owner like "../../tmp/x" would name a
+// directory outside gitRoot. repoPath is the chokepoint every filesystem
+// touch goes through; these prove it refuses, whatever the route forgot.
+describe("isSafeRepoSegment / repoPath traversal guard", () => {
+  it.each(["acme", "a-b_c.d", "runner-gates-owner-123", "UPPER"])("accepts %j", (segment) => {
+    expect(isSafeRepoSegment(segment)).toBe(true);
+  });
+
+  it.each(["..", ".", "../../tmp/x", "a/b", "a\\b", "", "a b", "a\0b"])("rejects %j", (segment) => {
+    expect(isSafeRepoSegment(segment)).toBe(false);
+  });
+
+  it("repoPath throws rather than join an unsafe owner, and exists() reads that as absent", async () => {
+    const gitRoot = await mkdtemp(path.join(tmpdir(), "adp-git-backend-traversal-"));
+    try {
+      const backend = new GitBackend(gitRoot);
+      expect(() => backend.repoPath("../../tmp/x", "hello")).toThrow(/Unsafe repo path segment/);
+      expect(() => backend.repoPath("acme", "..")).toThrow(/Unsafe repo path segment/);
+      expect(await backend.exists("../../tmp/x", "hello")).toBe(false);
+    } finally {
+      await rm(gitRoot, { recursive: true, force: true });
+    }
+  });
+});
 
 // Exercises the real `git` binary against a scratch directory. No Postgres
 // required — this is the piece that must never break (docs/pragmatic_mvp.md
