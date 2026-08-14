@@ -2,7 +2,7 @@ import { GraphQLError } from "graphql";
 import { and, eq, sql } from "drizzle-orm";
 import { hasScope } from "../auth/plugin.js";
 import { identities, issueComments, issues, proposals, repos, reviews, intents } from "../db/schema.js";
-import { findRepo } from "../core/repos-lookup.js";
+import { findRepoAuthorized, mayAccessOrg } from "../core/repos-lookup.js";
 import { recordOperation } from "../core/operations.js";
 import type { LandRequirement } from "../core/repo-policy.js";
 import { type MergeMethod } from "../core/merge.js";
@@ -45,9 +45,15 @@ function requireIdentity(ctx: GqlContext) {
   return ctx.identity;
 }
 
-async function loadRepoById(db: GqlContext["db"], repoId: string): Promise<Repo> {
-  const [repo] = await db.select().from(repos).where(eq(repos.id, repoId));
-  if (!repo) throw new GraphQLError("Repository not found", { extensions: { code: "NOT_FOUND" } });
+// #91: every by-id load authorizes against the caller's org — mutation
+// inputs carry caller-supplied global ids, so "the id decoded" proves
+// nothing about the right to touch it. Absent and forbidden are one answer
+// (NOT_FOUND), same no-oracle rule as core/repos-lookup.ts.
+async function loadRepoById(ctx: GqlContext, repoId: string): Promise<Repo> {
+  const [repo] = await ctx.db.select().from(repos).where(eq(repos.id, repoId));
+  if (!repo || !ctx.identity || !(await mayAccessOrg(ctx.db, ctx.identity, repo.orgId))) {
+    throw new GraphQLError("Repository not found", { extensions: { code: "NOT_FOUND" } });
+  }
   return repo;
 }
 
@@ -59,19 +65,19 @@ function decodeIdOrThrow(globalId: string, expectedTypeName: string): string {
   return decoded.internalId;
 }
 
-async function loadIssueOrThrow(db: GqlContext["db"], issueGlobalId: string) {
+async function loadIssueOrThrow(ctx: GqlContext, issueGlobalId: string) {
   const issueId = decodeIdOrThrow(issueGlobalId, "Issue");
-  const [issue] = await db.select().from(issues).where(eq(issues.id, issueId));
+  const [issue] = await ctx.db.select().from(issues).where(eq(issues.id, issueId));
   if (!issue) throw new GraphQLError("Issue not found", { extensions: { code: "NOT_FOUND" } });
-  const repo = await loadRepoById(db, issue.repoId);
+  const repo = await loadRepoById(ctx, issue.repoId);
   return { issue, repo };
 }
 
-async function loadProposalOrThrow(db: GqlContext["db"], pullRequestGlobalId: string) {
+async function loadProposalOrThrow(ctx: GqlContext, pullRequestGlobalId: string) {
   const proposalId = decodeIdOrThrow(pullRequestGlobalId, "PullRequest");
-  const [proposal] = await db.select().from(proposals).where(eq(proposals.id, proposalId));
+  const [proposal] = await ctx.db.select().from(proposals).where(eq(proposals.id, proposalId));
   if (!proposal) throw new GraphQLError("Pull request not found", { extensions: { code: "NOT_FOUND" } });
-  const repo = await loadRepoById(db, proposal.repoId);
+  const repo = await loadRepoById(ctx, proposal.repoId);
   return { proposal, repo };
 }
 
@@ -269,7 +275,8 @@ export function createResolvers(
   return {
     Query: {
       repository: async (_root, args: { owner: string; name: string }, ctx: GqlContext) => {
-        const repo = await findRepo(ctx.db, args.owner, args.name);
+        if (!ctx.identity) return null;
+        const repo = await findRepoAuthorized(ctx.db, ctx.identity, args.owner, args.name);
         return repo ? shapeRepository(repo) : null;
       },
       viewer: (_root, _args, ctx: GqlContext) => {
@@ -278,24 +285,33 @@ export function createResolvers(
         }
         return { __typename: "User", id: toGlobalId("User", ctx.identity.identityId), login: ctx.identity.principal };
       },
+      // Global ids are caller-supplied and enumerable in principle, so every
+      // branch authorizes the resolved repo's org (#91) — an org-B node is
+      // null to an org-A token, exactly as if it did not exist.
       node: async (_root, args: { id: string }, ctx: GqlContext) => {
         const decoded = fromGlobalId(args.id);
-        if (!decoded) return null;
+        if (!decoded || !ctx.identity) return null;
+
+        const visible = async (repo: Repo | undefined): Promise<Repo | null> =>
+          repo && (await mayAccessOrg(ctx.db, ctx.identity!, repo.orgId)) ? repo : null;
 
         if (decoded.typeName === "Repository") {
-          const [repo] = await ctx.db.select().from(repos).where(eq(repos.id, decoded.internalId));
+          const [row] = await ctx.db.select().from(repos).where(eq(repos.id, decoded.internalId));
+          const repo = await visible(row);
           return repo ? shapeRepository(repo) : null;
         }
         if (decoded.typeName === "Issue") {
           const [issue] = await ctx.db.select().from(issues).where(eq(issues.id, decoded.internalId));
           if (!issue) return null;
-          const [repo] = await ctx.db.select().from(repos).where(eq(repos.id, issue.repoId));
+          const [row] = await ctx.db.select().from(repos).where(eq(repos.id, issue.repoId));
+          const repo = await visible(row);
           return repo ? shapeIssue(issue, repo) : null;
         }
         if (decoded.typeName === "PullRequest") {
           const [proposal] = await ctx.db.select().from(proposals).where(eq(proposals.id, decoded.internalId));
           if (!proposal) return null;
-          const [repo] = await ctx.db.select().from(repos).where(eq(repos.id, proposal.repoId));
+          const [row] = await ctx.db.select().from(repos).where(eq(repos.id, proposal.repoId));
+          const repo = await visible(row);
           return repo ? shapePullRequest(proposal, repo) : null;
         }
         return null;
@@ -466,7 +482,7 @@ export function createResolvers(
     StatusCheckRollup: {
       contexts: async (parent: { __repoId: string; __oid: string }, args: ConnectionArgs, ctx: GqlContext) => {
         const latest = await latestGateResults(ctx.db, parent.__repoId, parent.__oid);
-        const repo = await loadRepoById(ctx.db, parent.__repoId);
+        const repo = await loadRepoById(ctx, parent.__repoId);
 
         const items = [...latest.values()]
           .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
@@ -519,7 +535,7 @@ export function createResolvers(
         ctx: GqlContext,
       ) => {
         const identity = requireIdentity(ctx);
-        const repo = await loadRepoById(ctx.db, decodeIdOrThrow(args.input.repositoryId, "Repository"));
+        const repo = await loadRepoById(ctx, decodeIdOrThrow(args.input.repositoryId, "Repository"));
         const title = args.input.title;
         const body = args.input.body ?? "";
 
@@ -564,7 +580,7 @@ export function createResolvers(
 
       closeIssue: async (_root, args: { input: { issueId: string } }, ctx: GqlContext) => {
         const identity = requireIdentity(ctx);
-        const { issue: existing, repo } = await loadIssueOrThrow(ctx.db, args.input.issueId);
+        const { issue: existing, repo } = await loadIssueOrThrow(ctx, args.input.issueId);
 
         const updated = await ctx.db.transaction(async (tx) => {
           const [updated] = await tx
@@ -603,7 +619,7 @@ export function createResolvers(
             extensions: { code: "BAD_USER_INPUT" },
           });
         }
-        const { issue, repo } = await loadIssueOrThrow(ctx.db, args.input.subjectId);
+        const { issue, repo } = await loadIssueOrThrow(ctx, args.input.subjectId);
 
         const comment = await ctx.db.transaction(async (tx) => {
           const [comment] = await tx
@@ -645,7 +661,7 @@ export function createResolvers(
         ctx: GqlContext,
       ) => {
         const identity = requireIdentity(ctx);
-        const repo = await loadRepoById(ctx.db, decodeIdOrThrow(args.input.repositoryId, "Repository"));
+        const repo = await loadRepoById(ctx, decodeIdOrThrow(args.input.repositoryId, "Repository"));
         const { title, baseRefName, headRefName } = args.input;
         const body = args.input.body ?? "";
 
@@ -709,7 +725,7 @@ export function createResolvers(
 
       closePullRequest: async (_root, args: { input: { pullRequestId: string } }, ctx: GqlContext) => {
         const identity = requireIdentity(ctx);
-        const { proposal: existing, repo } = await loadProposalOrThrow(ctx.db, args.input.pullRequestId);
+        const { proposal: existing, repo } = await loadProposalOrThrow(ctx, args.input.pullRequestId);
         if (existing.state === "merged") {
           throw new GraphQLError("Cannot close a merged pull request", { extensions: { code: "BAD_USER_INPUT" } });
         }
@@ -738,7 +754,7 @@ export function createResolvers(
 
       reopenPullRequest: async (_root, args: { input: { pullRequestId: string } }, ctx: GqlContext) => {
         const identity = requireIdentity(ctx);
-        const { proposal: existing, repo } = await loadProposalOrThrow(ctx.db, args.input.pullRequestId);
+        const { proposal: existing, repo } = await loadProposalOrThrow(ctx, args.input.pullRequestId);
         if (existing.state === "merged") {
           throw new GraphQLError("Cannot reopen a merged pull request", { extensions: { code: "BAD_USER_INPUT" } });
         }
@@ -775,7 +791,7 @@ export function createResolvers(
         ctx: GqlContext,
       ) => {
         const identity = requireIdentity(ctx);
-        const { proposal, repo } = await loadProposalOrThrow(ctx.db, args.input.pullRequestId);
+        const { proposal, repo } = await loadProposalOrThrow(ctx, args.input.pullRequestId);
 
         await ctx.db.transaction(async (tx) => {
           await recordOperation(tx, {
@@ -802,7 +818,7 @@ export function createResolvers(
         ctx: GqlContext,
       ) => {
         const identity = requireIdentity(ctx);
-        const { proposal, repo } = await loadProposalOrThrow(ctx.db, args.input.pullRequestId);
+        const { proposal, repo } = await loadProposalOrThrow(ctx, args.input.pullRequestId);
 
         if (proposal.state === "merged") {
           throw new GraphQLError("Already merged", { extensions: { code: "BAD_USER_INPUT" } });
@@ -871,7 +887,7 @@ export function createResolvers(
         ctx: GqlContext,
       ) => {
         const identity = requireIdentity(ctx);
-        const { proposal, repo } = await loadProposalOrThrow(ctx.db, args.input.pullRequestId);
+        const { proposal, repo } = await loadProposalOrThrow(ctx, args.input.pullRequestId);
         const state = REVIEW_EVENT_TO_STATE[args.input.event ?? "COMMENT"];
         if (!state) {
           throw new GraphQLError(`Unsupported review event '${args.input.event}'`, {

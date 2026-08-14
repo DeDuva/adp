@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { webhooks } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
-import { findRepo } from "../core/repos-lookup.js";
+import { findRepoAuthorized } from "../core/repos-lookup.js";
 import type { WebhookEventType } from "../core/webhooks.js";
 import { encryptCredential } from "../core/mirror-crypto.js";
 import { recordOperation } from "../core/operations.js";
@@ -45,7 +45,7 @@ export function registerWebhookRoutes(app: FastifyInstance, db: Db, credentialKe
       reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
       return;
     }
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -84,7 +84,7 @@ export function registerWebhookRoutes(app: FastifyInstance, db: Db, credentialKe
 
   app.get("/api/v3/repos/:owner/:repo/hooks", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -98,7 +98,7 @@ export function registerWebhookRoutes(app: FastifyInstance, db: Db, credentialKe
     { preHandler: requireScope("repo:read") },
     async (req, reply) => {
       const { owner, repo: repoName, hookId } = req.params as { owner: string; repo: string; hookId: string };
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -120,7 +120,7 @@ export function registerWebhookRoutes(app: FastifyInstance, db: Db, credentialKe
     { preHandler: requireScope("repo:write") },
     async (req, reply) => {
       const { owner, repo: repoName, hookId } = req.params as { owner: string; repo: string; hookId: string };
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;

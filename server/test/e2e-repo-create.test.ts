@@ -10,10 +10,12 @@ import { and, count, eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities, orgs, repos } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 
 // #89 (docs/m4-postmortem-audit.md §P0-5/§P0-6): the two negative cases the
 // audit named as this fix's proof — concurrent creates of one owner/name
@@ -27,6 +29,7 @@ describe.skipIf(skipWithoutDb)("#89: repo create — uniqueness under race, owne
   let gitRoot: string;
   let port: number;
   let writeToken: string;
+  let writerId: string;
 
   async function api(pathAndQuery: string, init: RequestInit = {}) {
     const res = await fetch(`http://127.0.0.1:${port}${pathAndQuery}`, {
@@ -54,13 +57,14 @@ describe.skipIf(skipWithoutDb)("#89: repo create — uniqueness under race, owne
     app = Fastify({ logger: false });
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
     port = typeof address === "object" && address ? address.port : 0;
 
     const [writer] = await db.insert(identities).values({ kind: "human", principal: `rc-writer-${Date.now()}` }).returning();
+    writerId = writer!.id;
     writeToken = await mintToken(db, writer!.id, ["repo:write"]);
   });
 
@@ -71,9 +75,11 @@ describe.skipIf(skipWithoutDb)("#89: repo create — uniqueness under race, owne
   });
 
   it("concurrent creates of one owner/name yield exactly one row, one org, one 201", async () => {
-    // A fresh owner on purpose: the same burst also races findOrCreateOrg's
-    // select-then-insert, which used to hand the loser an unhandled 23505.
+    // The org is provisioned first (#91 refuses creation under an
+    // unprovisioned owner); what races here is the repo insert itself, and
+    // the repos_owner_name_idx unique index is what keeps it to one row.
     const owner = `rc-race-${Date.now()}`;
+    await grantOwner(db, writerId, owner);
     const results = await Promise.all(
       Array.from({ length: 8 }, () =>
         api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: "target" }) }),

@@ -8,6 +8,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
@@ -58,6 +59,7 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
 
     const [writer] = await db.insert(identities).values({ kind: "human", principal: `gj-writer-${Date.now()}` }).returning();
     writeToken = await mintToken(db, writer!.id, ["repo:write"]);
+    await grantOwner(db, writer!.id, owner);
 
     const [runner] = await db.insert(identities).values({ kind: "agent", principal: `gj-runner-${Date.now()}` }).returning();
     runnerToken = await mintToken(db, runner!.id, ["runner"]);

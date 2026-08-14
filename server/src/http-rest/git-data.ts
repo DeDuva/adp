@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Db } from "../db/client.js";
 import type { GitBackend, TreeEntry, CommitInfo } from "../core/git-backend.js";
 import { requireScope } from "../auth/plugin.js";
-import { findRepo } from "../core/repos-lookup.js";
+import { findRepoAuthorized } from "../core/repos-lookup.js";
 
 function serializeCommit(commit: CommitInfo, owner: string, repoName: string) {
   return {
@@ -36,7 +36,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const filePath = (req.params as { "*": string })["*"] ?? "";
     const { ref } = req.query as { ref?: string };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -77,7 +77,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
   app.get("/api/v3/repos/:owner/:repo/commits", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const { sha, per_page } = req.query as { sha?: string; per_page?: string };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -89,7 +89,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
 
   app.get("/api/v3/repos/:owner/:repo/commits/:sha", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, sha } = req.params as { owner: string; repo: string; sha: string };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -116,7 +116,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     const base = basehead.slice(0, sep);
     const head = basehead.slice(sep + 3);
 
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -159,7 +159,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
   app.get("/api/v3/repos/:owner/:repo/git/refs/*", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
     const refTail = (req.params as { "*": string })["*"] ?? "";
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -175,7 +175,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
 
   app.get("/api/v3/repos/:owner/:repo/git/refs", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -193,7 +193,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
       reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
       return;
     }
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -207,7 +207,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
     { preHandler: requireScope("repo:write") },
     async (req, reply) => {
       const { owner, repo: repoName, branch } = req.params as { owner: string; repo: string; branch: string };
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -225,7 +225,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
       reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
       return;
     }
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -237,7 +237,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
 
   app.get("/api/v3/repos/:owner/:repo/git/blobs/:sha", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, sha } = req.params as { owner: string; repo: string; sha: string };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -265,7 +265,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
       reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
       return;
     }
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -293,7 +293,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
 
   app.get("/api/v3/repos/:owner/:repo/git/trees/:sha", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, sha } = req.params as { owner: string; repo: string; sha: string };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -318,7 +318,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
       reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
       return;
     }
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -343,7 +343,7 @@ export function registerGitDataRoutes(app: FastifyInstance, db: Db, gitBackend: 
 
   app.get("/api/v3/repos/:owner/:repo/git/commits/:sha", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, sha } = req.params as { owner: string; repo: string; sha: string };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;

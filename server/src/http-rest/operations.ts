@@ -5,7 +5,7 @@ import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
 import { operations } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
-import { findRepo } from "../core/repos-lookup.js";
+import { findRepoAuthorized } from "../core/repos-lookup.js";
 import { undoOperation } from "../core/undo.js";
 
 const ListQuery = z.object({
@@ -59,7 +59,7 @@ export function registerOperationRoutes(app: FastifyInstance, db: Db, gitBackend
         reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
         return;
       }
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -102,7 +102,7 @@ export function registerOperationRoutes(app: FastifyInstance, db: Db, gitBackend
     { preHandler: requireScope("repo:read") },
     async (req, reply) => {
       const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -125,7 +125,7 @@ export function registerOperationRoutes(app: FastifyInstance, db: Db, gitBackend
     { preHandler: requireScope("repo:write") },
     async (req, reply) => {
       const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;

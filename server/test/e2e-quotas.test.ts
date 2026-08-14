@@ -11,11 +11,13 @@ import { eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities, orgs, repos } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerWorkspaceRoutes } from "../src/http-rest/workspaces.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -31,6 +33,7 @@ describe.skipIf(skipWithoutDb)("M4-3: org quotas", () => {
   let gitBackend: GitBackend;
   let port: number;
   let token: string;
+  let identityId: string;
 
   async function api(pathAndQuery: string, init: RequestInit = {}) {
     const res = await fetch(`http://127.0.0.1:${port}${pathAndQuery}`, {
@@ -63,13 +66,14 @@ describe.skipIf(skipWithoutDb)("M4-3: org quotas", () => {
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerWorkspaceRoutes(app, db, gitBackend);
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
     port = typeof address === "object" && address ? address.port : 0;
 
     const [identity] = await db.insert(identities).values({ kind: "human", principal: `quotas-e2e-${Date.now()}` }).returning();
+    identityId = identity!.id;
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
   });
 
@@ -79,17 +83,24 @@ describe.skipIf(skipWithoutDb)("M4-3: org quotas", () => {
     await rm(gitRoot, { recursive: true, force: true });
   });
 
-  it("assigns every new repo to a found-or-created org named after its owner", async () => {
+  // Inverted by #91 (audit §P0-2): this used to assert repos get a
+  // found-or-CREATED org — the exact side effect that let anyone escape the
+  // per-org quotas by naming a fresh owner. Now creation under an
+  // unprovisioned owner is refused outright, and once the org is
+  // provisioned, every repo attaches to that same org.
+  it("refuses a repo under an unprovisioned owner; assigns to the provisioned org after", async () => {
     const owner = `quota-org-assign-${Date.now()}`;
+    const refused = await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: "a" }) });
+    expect(refused.status).toBe(404);
+    expect(await db.select().from(orgs).where(eq(orgs.name, owner))).toHaveLength(0);
+
+    const orgId = await grantOwner(db, identityId, owner);
     await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: "a" }) });
     await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: "b" }) });
 
-    const [orgRow] = await db.select().from(orgs).where(eq(orgs.name, owner));
-    expect(orgRow).toBeDefined();
-
     const repoRows = await db.select().from(repos).where(eq(repos.owner, owner));
     expect(repoRows).toHaveLength(2);
-    expect(repoRows.every((r) => r.orgId === orgRow!.id)).toBe(true);
+    expect(repoRows.every((r) => r.orgId === orgId)).toBe(true);
   });
 
   it("refuses to create a repo past the org's maxRepos, with a 403 naming the limit", async () => {

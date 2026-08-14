@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities, repos, gateJobs } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
@@ -71,6 +72,7 @@ describe.skipIf(skipWithoutDb)("M2: API-traffic telemetry", () => {
       .returning();
     actorId = identity!.id;
     token = await mintToken(db, actorId, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, actorId, owner);
   });
 
   afterAll(async () => {

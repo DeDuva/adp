@@ -37,22 +37,19 @@ deliberate breaking fixes into one coordinated 0.3.0 release — see the ledger 
 | M2 — adoption + trust ramp | complete 2026-08-03 | Mirror mode, outbound webhooks, `adp` CLI, telemetry, scanner-as-gate adapters, dependency admission v0, SBOM per land, Actions read-only passthrough. Verified scope: [`docs/m2-readiness-review.md`](docs/m2-readiness-review.md) |
 | Runs / trajectories / eval-gated close *(capability slice)* | complete 2026-08-05 | PRs #58–#61 — took the wire contract 0.1.0 → 0.2.0. Driven by downstream consumers, not M3 scope. Detail: [`docs/trajectory-eval-slice.md`](docs/trajectory-eval-slice.md) |
 | M3 — fleet + differentiation | complete 2026-08-10 | M3-0 … M3-6 landed (sequenced by [`docs/m3-readiness-review.md`](docs/m3-readiness-review.md)). All three benchmark arms published: [`bench/report/merge-contention.md`](bench/report/merge-contention.md) (arm 1, deterministic), [`bench/report/three-way-cost.md`](bench/report/three-way-cost.md) (arm 2, pilot scale), squad's duva-bench track (arm 3 — [squad PR #119](https://github.com/DeDuva/squad/pull/119)) |
-| M4 — multi-tenant hosted preview | in progress · **P0 remediation outstanding** | Work plan (M4-0 … M4-12) in [`docs/m4-readiness-review.md`](docs/m4-readiness-review.md). Track A code landed: M4-0…M4-4 (org schema, org-scoped tokens, org policy plane, quotas/GC, audit-log export), M4-9a…d (gate-job queue, `runner/` package, adp.yaml + gate_results, per-org caps), M4-11 (observability), M4-7 (org policy console). **The [`docs/m4-postmortem-audit.md`](docs/m4-postmortem-audit.md) (2026-08-13) found the code landed but the milestone not met:** org isolation is enforced on 4 of ~98 operations, so it is not enforced (P0-1); the gate-job queue has no lease/requeue and no runner-scoped token can be minted (P0-3/P0-4, so M4-9 is **not** done as shipped); repo-create silently creates orgs and escapes quota (P0-2). None of this is visible from a green `make check` because no test asserts the negative. M4 stays open until the P0 fixes land with the isolation-matrix test that is exit criterion #1. M4-12 (self-host artifacts) unblocked but should describe the post-remediation shape |
+| M4 — multi-tenant hosted preview | in progress · **P0 remediation complete 2026-08-14 · P1a + 0.3.0 outstanding** | Work plan (M4-0 … M4-12) in [`docs/m4-readiness-review.md`](docs/m4-readiness-review.md). Track A code landed: M4-0…M4-4 (org schema, org-scoped tokens, org policy plane, quotas/GC, audit-log export), M4-9a…d (gate-job queue, `runner/` package, adp.yaml + gate_results, per-org caps), M4-11 (observability), M4-7 (org policy console). **The [`docs/m4-postmortem-audit.md`](docs/m4-postmortem-audit.md) (2026-08-13) found the code landed but the milestone not met.** All four P0 fixes have since landed, each with its negative-case proof: #88 gate-job checkout/complete ownership, #89 `repos(owner,name)` unique + `owner` validated + `org_id` NOT NULL/indexed, #90 bounded token minting + `admin ⊉ runner`, #91 org isolation on every plane — repo access authorizes against the caller's org everywhere (REST, git http, GraphQL, `/api/adp`), org provisioning is explicit and audited, and the **org-isolation matrix** (exit criterion #1, `server/test/e2e-org-isolation.test.ts`) now exists and passes. M4 stays open for the P1a queue-reliability fixes (#92–#96) and the 0.3.0 batch. M4-12 (self-host artifacts) unblocked and should describe the post-remediation shape |
 | 0.3.0 — contract breaking batch | not started | Tracking: one coordinated wire-contract release taking the breaking fixes now, while the only tokens in existence are hand-minted. Bump the version (guarding against the C-1 vacuous pass), add an `Error` schema, declare auth/scopes in the spec, bound every list endpoint, add audited write paths for quota/policy-repo changes, and type the 4 responses squad-lab reads. **Keeps `{owner}/{repo}` URLs** (gh fidelity requires them). Detail: [`docs/m4-postmortem-audit.md`](docs/m4-postmortem-audit.md) §"0.3.0 breaking batch" |
 | M5 — substrate hardening | not started | Evidence-gated: every item requires a written justification citing M3/M4 telemetry |
 
 ## Now / Next / Later
 
-- **Now:** **M4 P0 remediation** ([`docs/m4-postmortem-audit.md`](docs/m4-postmortem-audit.md),
-  2026-08-13). The M4 Track A + M4-9/M4-11/M4-7 *code* has landed, but the audit found the
-  tenancy boundary the milestone exists to create is enforced on 4 of ~98 operations, the
-  gate-job queue cannot recover a job whose runner died, and the runner's least-privileged token
-  can only be minted as `admin`. The P0 sequence, each a PR carrying a negative-case test as its
-  proof: (1) gate-job ownership on checkout/complete; (2) `repos(owner,name)` unique index +
-  `owner` validation + `org_id` index; (3) a runner-scoped token mint path + drop `admin ⊇
-  runner`; (4) `requireOrgAccess` on every repo-scoped route + the org-isolation matrix test
-  (exit criterion #1). Then the P1a queue-reliability fixes (lease/requeue, `of: gateJobs`,
-  atomic completion+evidence, sweeper leader guard).
+- **Now:** **M4 P1a queue reliability** — the P0 sequence from the
+  [`docs/m4-postmortem-audit.md`](docs/m4-postmortem-audit.md) completed 2026-08-14 (#88 gate-job
+  ownership, #89 repos uniqueness/validation, #90 bounded token minting, #91 org isolation with
+  the exit-criterion-#1 matrix test), each landed as its own PR carrying the audit's named
+  negative-case test as proof. What remains before M4 can close: the P1a queue-reliability fixes
+  (#92 lease/requeue + claim op, #93 `of: gateJobs`, #94 quota TOCTOU, #95 atomic
+  completion+evidence, #96 sweeper leader guard).
 - **Next:** the **0.3.0 breaking batch** (one coordinated release — see the ledger row and the
   audit's contract section), then M4-5 (Google OIDC — decision 1 resolved below), then M4-12
   (self-host artifacts, describing the post-remediation shape), then the rest of Track B behind
