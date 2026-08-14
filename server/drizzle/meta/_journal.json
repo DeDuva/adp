@@ -169,6 +169,13 @@
       "when": 1786475055856,
       "tag": "0023_m4_9d_gate_job_org_quota",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786664331330,
+      "tag": "0024_fix_88_gate_job_claimed_by_identity",
+      "breakpoints": true
     }
   ]
 }

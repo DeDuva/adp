@@ -691,6 +691,13 @@ export const gateJobs = pgTable(
     // runner supplies (hostname, pid, whatever it wants), never branched on.
     // Null until claimed.
     claimedBy: text("claimed_by"),
+    // The *authenticated* identity that claimed the job — the ownership check
+    // http-rest/gate-jobs.ts's checkout/complete enforce (#88). claimedBy
+    // above can't serve that purpose: it's client-supplied, so any runner
+    // token could send another runner's string. Null until claimed; a
+    // `running` row with this still null (claimed before the column existed)
+    // fails the ownership check closed rather than open.
+    claimedByIdentityId: uuid("claimed_by_identity_id").references(() => identities.id),
     exitCode: integer("exit_code"),
     // Inline, bounded (truncated by http-rest/gate-jobs.ts's complete
     // handler) rather than a pointer into an object store — there isn't one

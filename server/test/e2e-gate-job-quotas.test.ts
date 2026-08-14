@@ -93,8 +93,14 @@ describe.skipIf(skipWithoutDb)("M4-9d: gate-job org concurrency quota", () => {
     return (res.body as { id: string }).id;
   }
 
-  async function complete(id: string) {
-    await api(`/api/adp/gate-jobs/${id}/complete`, { method: "POST", body: JSON.stringify({ status: "succeeded" }) }, runnerToken);
+  // Directly in the DB, not through /complete: since #88 that route only
+  // serves the identity that claimed the job, and "whoever's claim polling
+  // got there first" is exactly who holds jobs in this shared-queue suite —
+  // possibly another file's identity. This test only needs the org's
+  // capacity slot freed (the cap counts `running` rows); the complete
+  // route's own semantics are e2e-gate-jobs.test.ts's business.
+  async function forceComplete(id: string) {
+    await db.update(gateJobs).set({ status: "succeeded", finishedAt: new Date() }).where(eq(gateJobs.id, id));
   }
 
   async function jobStatus(id: string): Promise<string> {
@@ -173,10 +179,9 @@ describe.skipIf(skipWithoutDb)("M4-9d: gate-job org concurrency quota", () => {
     await driveUntilClaimed(b1);
     expect(await jobStatus(b1)).not.toBe("queued");
 
-    // Whoever claimed a1, /complete doesn't check claimer identity (only
-    // that the job is currently `running`) — so this test can free org A's
-    // slot itself regardless of who holds it.
-    await complete(a1);
+    // Whoever claimed a1 (possibly another file's identity), free org A's
+    // slot so a2 becomes claimable.
+    await forceComplete(a1);
     await driveUntilClaimed(a2);
     expect(await jobStatus(a2)).not.toBe("queued");
   });

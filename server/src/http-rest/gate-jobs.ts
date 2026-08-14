@@ -75,9 +75,12 @@ function toGateResultStatus(status: "succeeded" | "failed" | "timed_out" | "erro
 // process serves the whole instance, not one repo, and must not be handed
 // repo:write just to pull work. This is also what keeps a compromised
 // runner host's blast radius bounded: it can claim/complete/checkout gate
-// jobs, never touch Postgres directly, and — per the checkout route below —
-// only ever read the one repo/sha of a job it has actually claimed, not
-// browse the instance.
+// jobs, never touch Postgres directly, and — per the ownership check the
+// checkout and complete routes below share — only ever read the one
+// repo/sha of a job *its own identity* claimed, and only ever complete
+// those same jobs, not any org's. (Until #88 that check didn't exist:
+// status === "running" was the only guard, so any runner token could
+// checkout or complete any org's claimed job.)
 export function registerGateJobRoutes(
   app: FastifyInstance,
   db: Db,
@@ -153,7 +156,7 @@ export function registerGateJobRoutes(
       return;
     }
 
-    const claimed = await claimGateJob(db, parsed.data.claimed_by);
+    const claimed = await claimGateJob(db, parsed.data.claimed_by, req.identity!.identityId);
 
     if (!claimed) {
       reply.code(204).send();
@@ -162,11 +165,24 @@ export function registerGateJobRoutes(
     reply.code(200).send(serializeGateJob(claimed));
   });
 
+  // The ownership check checkout and complete share (#88): the caller must
+  // be the identity that claimed the job. `claimedBy` deliberately can't
+  // serve here — it's a client-supplied label any runner token could echo —
+  // so the comparison is against claimed_by_identity_id, which claimGateJob
+  // recorded from the *authenticated* claim request. A running row where
+  // it's null (claimed before the column existed) fails closed: without it
+  // there is no way to know the owner, and guessing open is how this was a
+  // cross-tenant land-policy bypass.
+  function claimHeldByCaller(job: typeof gateJobs.$inferSelect, callerIdentityId: string): boolean {
+    return job.claimedByIdentityId !== null && job.claimedByIdentityId === callerIdentityId;
+  }
+
   // A tarball of the job's own repo/sha — nothing else. Bounded to jobs
-  // currently `running` (i.e. actively claimed): an unclaimed or already-
-  // completed job's code is not fetchable here, so the window in which the
-  // "runner" scope grants any read access to a repo's contents at all is the
-  // same narrow window a legitimate runner is actively working the job in.
+  // currently `running` *and claimed by the calling identity*: an unclaimed
+  // or already-completed job's code is not fetchable here, and neither is
+  // another runner's claimed job, so the window in which the "runner" scope
+  // grants any read access to a repo's contents at all is the same narrow
+  // window the caller itself is actively working that job in.
   app.get("/api/adp/gate-jobs/:id/checkout", { preHandler: requireScope("runner") }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const [job] = await db.select().from(gateJobs).where(eq(gateJobs.id, id));
@@ -176,6 +192,10 @@ export function registerGateJobRoutes(
     }
     if (job.status !== "running") {
       reply.code(409).send({ message: `Gate job ${id} is '${job.status}', not currently claimed` });
+      return;
+    }
+    if (!claimHeldByCaller(job, req.identity!.identityId)) {
+      reply.code(403).send({ message: `Gate job ${id} was claimed by a different runner` });
       return;
     }
 
@@ -202,12 +222,19 @@ export function registerGateJobRoutes(
       reply.code(404).send({ message: `Gate job ${id} not found` });
       return;
     }
-    // Only a job this runner actually claimed can be completed — a job still
-    // "queued" was never claimed, and a job already terminal was already
-    // completed once (by this runner or another). Neither should silently
-    // re-write history.
+    // Two distinct refusals: a job that isn't running has no claimant to
+    // complete it (still "queued" means never claimed; already terminal
+    // means completed once, and neither should silently re-write history),
+    // and a running job may only be completed by the identity that claimed
+    // it — completion writes signed gate evidence that land policy trusts,
+    // so any other runner token "completing" it would be a land-policy
+    // bypass (#88).
     if (existing.status !== "running") {
       reply.code(409).send({ message: `Gate job ${id} is '${existing.status}', not claimable for completion` });
+      return;
+    }
+    if (!claimHeldByCaller(existing, req.identity!.identityId)) {
+      reply.code(403).send({ message: `Gate job ${id} was claimed by a different runner` });
       return;
     }
 
