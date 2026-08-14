@@ -7,7 +7,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { desc, eq, isNull, and } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
-import { identities, orgs, operations } from "../src/db/schema.js";
+import { identities, orgs, operations, gateJobs } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
@@ -116,6 +116,7 @@ describe.skipIf(skipWithoutDb)("#90: token minting and the runner scope boundary
     expect(minted.status).toBe(201);
     expect(minted.body).toMatchObject({ scopes: ["runner"], org_id: null });
     const runnerToken = minted.body!.token as string;
+    const runnerIdentityId = minted.body!.identity_id as string;
 
     // The minted token actually works the queue: enqueue a job and drive
     // claim with it until it holds this job (another e2e file's polling can
@@ -129,14 +130,38 @@ describe.skipIf(skipWithoutDb)("#90: token minting and the runner scope boundary
     expect(enqueued.status).toBe(201);
     const jobId = enqueued.body!.id as string;
 
+    // The shared-queue hunt etiquette every gate-job e2e file uses (see
+    // e2e-gate-jobs.test.ts's claimJobId for the reasoning): force-requeue
+    // our own target out of a foreign claimant's hands, hold what our
+    // claims pop, hand the held jobs back — conditionally — when done.
     let claimed: Record<string, unknown> | null = null;
-    for (let i = 0; i < 40 && !claimed; i++) {
-      const res = await api("/api/adp/gate-jobs/claim", runnerToken, {
-        method: "POST",
-        body: JSON.stringify({ claimed_by: "rest-minted-runner" }),
-      });
-      if (res.status === 200 && res.body!.id === jobId) claimed = res.body;
-      else await new Promise((resolve) => setTimeout(resolve, 25));
+    const held: string[] = [];
+    try {
+      for (let i = 0; i < 100 && !claimed; i++) {
+        const [target] = await db.select().from(gateJobs).where(eq(gateJobs.id, jobId));
+        if (target!.status === "running" && target!.claimedByIdentityId !== runnerIdentityId) {
+          await db
+            .update(gateJobs)
+            .set({ status: "queued", claimedBy: null, claimedByIdentityId: null, startedAt: null, leaseExpiresAt: null })
+            .where(and(eq(gateJobs.id, jobId), eq(gateJobs.status, "running")));
+        }
+        const res = await api("/api/adp/gate-jobs/claim", runnerToken, {
+          method: "POST",
+          body: JSON.stringify({ claimed_by: "rest-minted-runner" }),
+        });
+        if (res.status === 200 && res.body!.id === jobId) claimed = res.body;
+        else if (res.status === 200) held.push(res.body!.id as string);
+        else await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    } finally {
+      for (const heldId of held) {
+        await db
+          .update(gateJobs)
+          .set({ status: "queued", claimedBy: null, claimedByIdentityId: null, startedAt: null, leaseExpiresAt: null })
+          .where(
+            and(eq(gateJobs.id, heldId), eq(gateJobs.status, "running"), eq(gateJobs.claimedByIdentityId, runnerIdentityId)),
+          );
+      }
     }
     expect(claimed).not.toBeNull();
 
