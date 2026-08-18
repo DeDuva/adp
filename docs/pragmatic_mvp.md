@@ -184,6 +184,27 @@ ranked by cost-of-retrofit:
   (`POST /api/v3/repos/:owner` vs GitHub's `POST /user/repos` · `POST /orgs/{org}/repos`);
   GraphQL actors always resolve as `User`, never `Bot`, even for agent identities.
 
+## 1.6 Addendum (2026-08-17) — serial is the base case; fan-out is a mode
+
+The brief's A16 question ("wide fan-out vs. long serial sessions") has enough market evidence to
+reweight the narrative, and the public materials (`docs/html/`, `README.md`, brief A16/A17 update
+blocks) now lead with the serial pattern: one capable agent iterating against CI until it believes
+the work is done, then merging — with fan-out as the mode fleets enter for hard problems and mass
+remediation, not the characteristic workload. The evidence and sources live in the brief's A16
+update (2026-08-17); the short version: autonomous merges are still a rounding error at merge-queue
+scale, vendors themselves reserve ensembles for hard problems, and the serial loop's binding risk
+is self-graded evidence (reward hacking), not merge contention.
+
+Nothing in Parts 2–3 changes retroactively — the MVP already bet this way (serial land shipped;
+speculative batching cut; candidate sets kept at one-table cost). What the reweighting *adds* to
+the forward view, in priority order: policy that can require approval and evidence independent of
+the author (today `one_approval` accepts the author approving itself — tracked as a repo issue);
+undo that survives a moved branch (compensating revert, not only CAS rollback); cross-harness
+checkpoint/resume as a flagship demo rather than a hedge; and actually running the still-open
+fan-out-vs-serial bench arm. Candidate sets are repositioned, not retired: they are the fan-out
+mode's primitive (N remediation attempts against one vulnerability intent, model ensembles on hard
+problems) and squad-lab's A/B shape.
+
 ---
 
 # Part 2 — The MVP
