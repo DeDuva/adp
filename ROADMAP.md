@@ -75,6 +75,13 @@ write paths, and typed responses for the four operations squad-lab reads.
 - **Issue #64 — native-plane response schemas.** The recording hot path is typed
   (PR #67); the remaining operations are frozen as guarded debt behind the
   `server/src/spec-coverage.test.ts` opt-out list, which must only shrink.
+- **Narrative reweighting (2026-08-17): serial is the base case; fan-out is a mode.** The public
+  materials (`docs/html/`, `README.md`, brief A16/A17 updates, `docs/pragmatic_mvp.md` §1.6) now
+  lead with one agent iterating to green and merging, with fan-out as the hard-problem/remediation
+  mode. Forward consequences, evidence-gated like everything else: author-independent approval
+  (self-approval is currently accepted — tracked as an issue), compensating-revert undo, the
+  cross-harness resume demo, and the still-unrun fan-out-vs-serial bench arm. M5's
+  speculative-batching gate stays closed absent conflict-rate telemetry (brief A17 update).
 
 ## Plan documents
 
