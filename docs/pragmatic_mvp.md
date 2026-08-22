@@ -2,7 +2,7 @@
 
 ## Context
 
-`docs/agent-native-vcs-brief-v5.md` argues for a neutral, open, agent-native substrate for version
+`docs/agent-native-vcs-brief.md` argues for a neutral, open, agent-native substrate for version
 control and CI/CD (ADP). `docs/adp-prototype-implementation-plan.md` proposes a 24-week, 6-engineer
 prototype. When this plan was first written the repo held two documents and no code; implementation
 is now underway against it — see the status ledger in Part 3 and the dated addendum in §1.5.
@@ -160,7 +160,7 @@ ranked by cost-of-retrofit:
 4. **Scanner integrations are gate adapters, dependency admission is a gate** (M2): SARIF/JSON in,
    evidence attestations out, `wizcli` as the reference adapter; lockfile-diff admission checks
    against OSV + the OpenSSF malicious-packages feed with cooldown windows. Neither is a scanner
-   we build — no first-party SAST/SCA, ever (brief v5 A13 names what would change that).
+   we build — no first-party SAST/SCA, ever (the brief's Appendix C names what would change that).
 5. Everything else in §f (org policy console, SSO/SCIM, audit export surface, fleet kill switch as
    product UX) stays M4.
 
@@ -384,7 +384,7 @@ adp_candidates_open / adp_candidates_select    # N solutions, one intent
 | Actions / workflow engine | Gates are `image + commands` in `adp.yaml`. An Actions clone is a multi-year trap. **And mirror mode means it is not a gap:** the repo stays on GitHub, GitHub runs the workflows, and the results land in ADP as evidence via webhook ingest — better fidelity than any reimplementation, since it *is* GitHub. The read API proxies upstream for mirrored repos at M2. What is genuinely cut is ADP *executing* workflow YAML, which nothing in the loop needs. |
 | Orgs, teams, per-path ACLs, SSO/SCIM | Token-scoped auth covers MVP. Enterprise identity is an M4 conversation with a real customer. |
 | Releases, packages, wikis, projects, discussions, gists, notifications | Not on the loop. |
-| Code scanning / Dependabot as *GitHub API emulation* | The capabilities ship natively instead — push protection at the receive path (M1c), dependency admission gates and scanner-as-gate adapters (M2) — per the trust plane (§1.5, brief v5 §f). First-party scanners are never built; the bundled secret engine is the only in-tree detector. |
+| Code scanning / Dependabot as *GitHub API emulation* | The capabilities ship natively instead — push protection at the receive path (M1c), dependency admission gates and scanner-as-gate adapters (M2) — per the trust plane (§1.5, the brief's §f). First-party scanners are never built; the bundled secret engine is the only in-tree detector. |
 | Inline positional review comments (`position`/`line`/`side`) | GitHub's diff-position model is notoriously painful. MVP reviews carry body + file/line annotations; positional projection is best-effort. |
 | SSH transport | Token-over-HTTPS is what agents already do. |
 | gRPC | HTTP/JSON + MCP covers every MVP consumer. Add when a perf-sensitive second implementer exists. |
@@ -1224,7 +1224,7 @@ In order of authority:
 4. Scope gravity toward the brief's full architecture. *Mitigation: §2.5 is the contract; M5 items
    each require written justification citing telemetry.*
 5. Trust-plane scope gravity — the §f procurement checklist balloons into building scanners or a
-   GRC product. *Mitigation: adapters only (brief v5 A13/A15); the bundled secret engine is the
+   GRC product. *Mitigation: adapters only (the brief's Appendix C); the bundled secret engine is the
    only first-party detector; compliance output is attestations, and report-rendering belongs to
    partners.*
 

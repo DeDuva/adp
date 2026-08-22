@@ -2,8 +2,9 @@
 
 *2026-08-01 · Written between M1 completion and M2 kickoff. Companion to
 [`pragmatic_mvp.md`](pragmatic_mvp.md) (the plan of record, amended by this review) and
-[`agent-native-vcs-brief-v5.md`](agent-native-vcs-brief-v5.md) (appendix items A16–A18 added by
-this review).*
+[`agent-native-vcs-brief.md`](agent-native-vcs-brief.md) (appendix items A16–A18 added by
+this review; the brief's v6 revision resolved all three and retired the A-numbering — they are now
+in its Appendix B, "Settled, and what settled them").*
 
 M1 is complete and green in CI. Before starting M2, this review answers three questions: how the
 original assumptions are holding up — in particular, what ways agents may evolve the product
