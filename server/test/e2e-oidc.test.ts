@@ -91,6 +91,12 @@ describe.skipIf(skipWithoutDb)("M4-5: OIDC login", () => {
 
   let currentNonce = "";
 
+  // `Response.json()` is `unknown` under the test tsconfig (which typechecks
+  // this file; tsconfig.build.json does not). One typed reader beats four
+  // casts, and it keeps the assertions reading as assertions.
+  const jsonBody = async (res: Response): Promise<Record<string, any>> =>
+    (await res.json()) as Record<string, any>;
+
   // The link's key is (issuer, subject), and this fake IdP's issuer carries a
   // random port — so a lookup by subject alone matches rows left by previous
   // runs against the same database and reads as a duplicate that is not one.
@@ -324,7 +330,7 @@ describe.skipIf(skipWithoutDb)("M4-5: OIDC login", () => {
       redirect: "manual",
     });
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toMatch(/no valid login is in progress/);
+    expect((await jsonBody(res)).message).toMatch(/no valid login is in progress/);
   });
 
   it("refuses a flow cookie whose contents were edited", async () => {
@@ -343,7 +349,7 @@ describe.skipIf(skipWithoutDb)("M4-5: OIDC login", () => {
       redirect: "manual",
     });
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toMatch(/no valid login is in progress/);
+    expect((await jsonBody(res)).message).toMatch(/no valid login is in progress/);
   });
 
   it("surfaces a provider-reported error rather than a generic failure", async () => {
@@ -354,7 +360,7 @@ describe.skipIf(skipWithoutDb)("M4-5: OIDC login", () => {
       redirect: "manual",
     });
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toMatch(/access_denied/);
+    expect((await jsonBody(res)).message).toMatch(/access_denied/);
   });
 
   it("refuses an id token whose nonce belongs to a different flow", async () => {
@@ -372,7 +378,7 @@ describe.skipIf(skipWithoutDb)("M4-5: OIDC login", () => {
       { headers: { cookie }, redirect: "manual" },
     );
     expect(res.status).toBe(403);
-    expect((await res.json()).message).toMatch(/nonce/);
+    expect((await jsonBody(res)).message).toMatch(/nonce/);
   });
 
   it("does not let one flow cookie complete two logins", async () => {
