@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ADP API
-  version: 0.4.0
+  version: 0.5.0
   description: >
     Native and compat-plane HTTP surface for ADP — see docs/pragmatic_mvp.md
     §2.4 for what is in scope and §2.5 for what is deliberately cut.
@@ -1913,6 +1913,7 @@ paths:
                 max_repos: { type: integer, nullable: true, minimum: 0 }
                 max_concurrent_workspaces: { type: integer, nullable: true, minimum: 0 }
                 max_concurrent_gate_jobs: { type: integer, nullable: true, minimum: 0 }
+                max_storage_bytes: { type: integer, nullable: true, minimum: 0 }
                 policy_repo_id: { type: string, format: uuid, nullable: true }
       responses:
         "401":
@@ -3702,6 +3703,23 @@ components:
       properties:
         limit: { type: integer, nullable: true }
         used: { type: integer }
+    OrgStorageQuota:
+      type: object
+      required: [limit, used, measured_at]
+      description: >
+        M4-3's byte ceiling. Same `limit: null` convention as OrgQuota, but
+        `used` is a measurement rather than a count, which changes two things
+        a client has to handle. It is nullable: null means the org has never
+        been metered, which is not the same as zero and is why enforcement
+        treats an unmeasured org as under quota rather than refusing its
+        writes. And it is stale by up to one meter interval, which is what
+        `measured_at` is for — an org can exceed `limit` by whatever it wrote
+        since that timestamp, and a client showing `used` without it is
+        showing a number whose age it does not know.
+      properties:
+        limit: { type: integer, nullable: true }
+        used: { type: integer, nullable: true }
+        measured_at: { type: string, format: date-time, nullable: true }
     OrgDetail:
       type: object
       required: [id, name, kill_switch, policy_repo, org_floor, instance_floor, quotas]
@@ -3738,11 +3756,12 @@ components:
           items: { type: string, enum: [gates_green, one_approval] }
         quotas:
           type: object
-          required: [max_repos, max_concurrent_workspaces, max_concurrent_gate_jobs]
+          required: [max_repos, max_concurrent_workspaces, max_concurrent_gate_jobs, max_storage_bytes]
           properties:
             max_repos: { $ref: "#/components/schemas/OrgQuota" }
             max_concurrent_workspaces: { $ref: "#/components/schemas/OrgQuota" }
             max_concurrent_gate_jobs: { $ref: "#/components/schemas/OrgQuota" }
+            max_storage_bytes: { $ref: "#/components/schemas/OrgStorageQuota" }
     OrgRepoPolicy:
       type: object
       required: [id, owner, name, default_branch, is_policy_repo, repo_requirements, resolved]

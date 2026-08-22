@@ -279,6 +279,31 @@ export class GitBackend {
     }
   }
 
+  // M4-3: the on-disk half of an org's storage meter. `count-objects -v`
+  // rather than a recursive stat walk — git already knows, it reports both
+  // loose and packed bytes, and it does not walk the whole object store to
+  // answer. `size`/`size-pack` are in KiB (git's own unit here), so the
+  // conversion is part of the contract of this method, not the caller's
+  // problem.
+  //
+  // Returns 0 for a repo whose directory is missing rather than throwing: a
+  // meter is not the right place to discover that a repo row has lost its
+  // directory, and a sweep that dies on one bad repo stops metering every
+  // org after it — the same failure mode workspace-sweeper.ts documents.
+  async diskUsageBytes(owner: string, name: string): Promise<number> {
+    try {
+      const { stdout } = await run(["count-objects", "-v"], this.repoPath(owner, name));
+      let kib = 0;
+      for (const line of stdout.split("\n")) {
+        const [key, value] = line.split(":");
+        if (key === "size" || key === "size-pack") kib += Number(value?.trim() ?? 0) || 0;
+      }
+      return kib * 1024;
+    } catch {
+      return 0;
+    }
+  }
+
   async readBlob(owner: string, name: string, sha: string): Promise<Buffer> {
     const { stdoutBuf } = await run(["cat-file", "-p", sha], this.repoPath(owner, name));
     return stdoutBuf;

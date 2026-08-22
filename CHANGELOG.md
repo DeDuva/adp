@@ -8,6 +8,44 @@ promises is defined in [`docs/api-compatibility.md`](docs/api-compatibility.md);
 whether the operation set moved with the version is enforced by
 `spec/operations.snapshot.json` and its spec-coverage guard.
 
+## v0.5.0 — unreleased
+
+**M4-3: the per-org storage quota.** `orgs.max_storage_bytes` — the last of
+the four org quotas, and the one the milestone never built. It was deferred to
+M4-8 ("it needs the object store to meter against") while M4-8's own sizing was
+deferred to it ("depends on M4-3's storage-quota shape existing to bound it"),
+a deadlock that held for the whole milestone with nothing bounding how much one
+org could write. It is broken from this side: the meter counts the bytes that
+exist today — an org's rows in Postgres plus its git repos on disk — and gains
+the object store as a third term the day there is one, without the ceiling's
+shape changing.
+
+Additive: `max_storage_bytes` joins the `PATCH /api/adp/orgs/{orgId}` body and
+the `quotas` object on org detail. The latter is a wider shape than the three
+counting quotas (`OrgStorageQuota`), because a measured `used` can be null and
+carries the `measured_at` that says how stale it is.
+
+Three behaviors worth knowing before setting a ceiling. **The meter is
+sampled, not synchronous** — a ten-minute tick
+(`STORAGE_METER_INTERVAL_MS`), because measuring is a full scan of the org's
+rows in ten tables and cannot live on the trajectory hot path; that interval is
+exactly the overshoot an org can achieve past its ceiling. **An org that has
+never been metered is under quota, not over** — `storage_bytes_used` is null
+until the first tick, and failing closed on null would refuse every write on
+every instance for one interval after every restart. And **gate-job completion
+is never refused**: the gate has already run, so refusing would wedge the job
+until the reaper and leave its signed evidence unwritten, blocking any commit
+under a `gates_green` policy — a storage quota turning into a land outage.
+Instead the completion lands and its logs are dropped, with the drop recorded
+on the operation so the empty `logs` reads as a decision rather than data loss.
+
+Reads are never refused. An org at its ceiling can still clone what it already
+has, because a quota that takes the data hostage is a lockout, not a ceiling.
+
+New gauge: `adp_storage_bytes{org}`, the first storage metric this server has
+had. `docs/observability.md` §5 amends its own "no per-org labels" position to
+say why this one is the exception.
+
 ## v0.4.0 — unreleased
 
 **M4-5: OIDC login (#103).** The standard authorization-code flow with PKCE,

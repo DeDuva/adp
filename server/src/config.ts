@@ -47,6 +47,15 @@ const EnvSchema = z.object({
   // runner's job stays wedged past its lease — fast enough that a requeue
   // beats any human noticing, coarse enough to cost nothing.
   GATE_JOB_REAPER_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
+  // M4-3: how often every org's storage is re-measured
+  // (core/storage-usage.ts). Ten minutes, the longest interval of the four,
+  // because this is the only one of them that full-scans an org's rows in
+  // ten tables — and because the number it produces is a ceiling check, not
+  // a control loop: this interval is exactly the overshoot an org can
+  // achieve past its quota, and ten minutes of writes is a rounding error
+  // against a ceiling measured in gigabytes. Lower it on an instance where
+  // it is not.
+  STORAGE_METER_INTERVAL_MS: z.coerce.number().int().positive().default(600_000),
 
   // M4-5: OIDC login. Every field is optional and the routes only mount when
   // both client credentials are present, because an instance that has not

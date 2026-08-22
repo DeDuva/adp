@@ -18,6 +18,7 @@ import { findOrCreateSystemIdentity } from "./core/system-identity.js";
 import { LandRequirement } from "./core/repo-policy.js";
 import { recordHttpRequest, renderMetrics } from "./core/telemetry.js";
 import { startGateJobMetricsSampler } from "./core/gate-job-metrics.js";
+import { startStorageMeter } from "./core/storage-usage.js";
 import { registerVersionRoute, resolveBuildInfo } from "./core/version.js";
 
 async function main() {
@@ -151,6 +152,13 @@ async function main() {
   // identity and no recordOperation — unlike the sweeper this changes
   // nothing, it only reads.
   startGateJobMetricsSampler(db, config.GATE_JOB_METRICS_INTERVAL_MS);
+
+  // M4-3: the storage meter every org's byte ceiling is enforced against,
+  // and the source of the adp_storage_bytes gauge. Like the sampler it takes
+  // no actor identity — it writes only its own reading back onto the org row
+  // and records no operation, because a measurement is not a change to the
+  // thing measured.
+  startStorageMeter(db, gitBackend, config.STORAGE_METER_INTERVAL_MS);
 }
 
 main().catch((err) => {

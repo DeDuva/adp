@@ -51,6 +51,11 @@ export const METRIC_FAMILIES: readonly MetricFamily[] = [
     help: "Age of the oldest gate job still running, in seconds. Zero when nothing is running. A wedged running job (#92) climbs here even though the queued-age gauge stays flat.",
   },
   {
+    name: "adp_storage_bytes",
+    type: "gauge",
+    help: "Bytes an organization has stored (Postgres rows plus on-disk git), as of the last storage meter tick. The number M4-3's per-org storage quota is enforced against.",
+  },
+  {
     name: "adp_gate_job_completions_total",
     type: "counter",
     help: "Total gate jobs reported complete by a runner, by terminal status.",
@@ -72,6 +77,15 @@ let gateJobGauge: {
   oldestQueuedAgeSeconds: number;
   oldestRunningAgeSeconds: number;
 } | null = null;
+
+// M4-3, set wholesale by core/storage-usage.ts's meter for the same reason
+// the gate-job gauge is: an org's size is a property of the database, not of
+// this process. Null until the first tick — and the distinction matters more
+// here than it does above, because "this org stores zero bytes" and "nobody
+// has measured this org yet" are the two states enforcement itself treats
+// differently, and a gauge that reported them identically would hide exactly
+// the condition (a meter that has stopped running) an operator needs to see.
+let storageGauge: { org: string; bytes: number }[] | null = null;
 
 // NUL, because it is the one byte that cannot appear in any of the label
 // values these keys are assembled from (a Fastify route pattern, a GraphQL
@@ -105,6 +119,10 @@ export function recordGraphqlOperation(operationType: string, fieldName: string,
 // runner could not run the gate at all (docs/observability.md).
 export function recordGateJobCompletion(status: string): void {
   bump(gateJobCompletions, status);
+}
+
+export function setStorageGauges(samples: { org: string; bytes: number }[]): void {
+  storageGauge = samples;
 }
 
 export function setGateJobGauges(sample: {
@@ -174,6 +192,13 @@ export function renderMetrics(): string {
     lines.push(`adp_gate_job_oldest_running_age_seconds ${gateJobGauge.oldestRunningAgeSeconds}`);
   }
 
+  familyHeader(lines, "adp_storage_bytes");
+  if (storageGauge) {
+    for (const { org, bytes } of storageGauge) {
+      lines.push(`adp_storage_bytes{org="${escapeLabel(org)}"} ${bytes}`);
+    }
+  }
+
   familyHeader(lines, "adp_gate_job_completions_total");
   for (const [status, count] of gateJobCompletions) {
     lines.push(`adp_gate_job_completions_total{status="${escapeLabel(status)}"} ${count}`);
@@ -190,4 +215,5 @@ export function resetMetricsForTest(): void {
   graphqlCounts.clear();
   gateJobCompletions.clear();
   gateJobGauge = null;
+  storageGauge = null;
 }

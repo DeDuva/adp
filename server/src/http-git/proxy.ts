@@ -12,6 +12,14 @@ import type { AuthenticatedIdentity } from "../auth/tokens.js";
 // Postgres-free.
 export type RepoAccessCheck = (identity: AuthenticatedIdentity, owner: string, name: string) => Promise<boolean>;
 
+// M4-3: "is this repo's org under its storage ceiling?", supplied the same
+// way and for the same reason as RepoAccessCheck — a callback, so the
+// wire-fidelity suite stays Postgres-free. Git objects on disk are the
+// largest single thing an org can grow here, so a byte ceiling that did not
+// cover push would be a ceiling on the small half of the problem. Defaults to
+// unlimited, which is what an instance with no orgs configured means.
+export type PushQuotaCheck = (owner: string, name: string) => Promise<{ ok: true } | { ok: false; message: string }>;
+
 // receive-pack (push) needs repo:write; upload-pack (clone/fetch) only needs
 // repo:read — both the `/info/refs?service=` negotiation GET and the
 // `/git-<service>-pack` POST carry this in the URL.
@@ -189,6 +197,7 @@ export function registerGitHttpRoutes(
   authorizeRepo: RepoAccessCheck,
   gitBackend: GitBackend,
   maxBytes = 500 * 1024 * 1024,
+  checkPushQuota: PushQuotaCheck = async () => ({ ok: true }),
 ) {
   app.route({
     method: ["GET", "POST"],
@@ -225,10 +234,24 @@ export function registerGitHttpRoutes(
 
       const wildcard = (req.params as Record<string, string>)["*"] ?? "";
       const url = new URL(req.url, "http://internal");
-      const requiredScope = isWriteRequest(wildcard, url.search) ? "repo:write" : "repo:read";
+      const isWrite = isWriteRequest(wildcard, url.search);
+      const requiredScope = isWrite ? "repo:write" : "repo:read";
       if (!hasScope(req.identity.scopes, requiredScope)) {
         reply.code(403).send({ message: `Requires scope '${requiredScope}'` });
         return;
+      }
+
+      // Refused on the `?service=git-receive-pack` negotiation too, not only
+      // on the pack POST: the client learns it is over quota before it spends
+      // the upload, and `git push` surfaces the message either way. Reads are
+      // never refused — an org that has hit its ceiling must still be able to
+      // clone what it already has, or a quota becomes a lockout.
+      if (isWrite) {
+        const quota = await checkPushQuota(owner, repo);
+        if (!quota.ok) {
+          reply.code(403).send({ message: quota.message });
+          return;
+        }
       }
 
       await streamHttpBackend(

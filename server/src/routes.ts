@@ -31,6 +31,7 @@ import { registerCandidateSetRoutes } from "./http-rest/candidate-sets.js";
 import { registerWebhookRoutes } from "./http-rest/webhooks.js";
 import { registerGitHttpRoutes } from "./http-git/proxy.js";
 import { repoAccessCheck } from "./core/repos-lookup.js";
+import { pushQuotaCheck } from "./core/storage-usage.js";
 import { loadGitHubSchema } from "./http-gql/schema.js";
 import { attachResolvers } from "./http-gql/attach-resolvers.js";
 import { createResolvers } from "./http-gql/resolvers.js";
@@ -118,5 +119,5 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   attachResolvers(gqlSchema, createResolvers(gitBackend, credentialKey, instanceFloor, { signer, publicUrl }));
   registerGraphQLRoute(app, gqlSchema, db);
 
-  registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend, deps.gitMaxPackBytes);
+  registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend, deps.gitMaxPackBytes, pushQuotaCheck(db));
 }
