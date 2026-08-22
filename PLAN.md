@@ -10,7 +10,7 @@ Three documents, three jobs, no overlap:
 |---|---|---|
 | [`ROADMAP.md`](ROADMAP.md) | Where the project *is* — milestone status, contract version, blockers | Say how the next piece gets built |
 | **`PLAN.md`** (this file) | What is *left*, in what order, and why | Argue the thesis or record history |
-| [`docs/agent-native-vcs-brief-v5.md`](docs/agent-native-vcs-brief-v5.md) | Why any of it is worth building | Track work |
+| [`docs/agent-native-vcs-brief.md`](docs/agent-native-vcs-brief.md) | Why any of it is worth building | Track work |
 
 **The rule that keeps this file honest:** every item names its tracking issue or PR, and
 `scripts/check-docs.sh` fails the build when a `#NNN` here disagrees with its real state on
