@@ -1,0 +1,32 @@
+apiVersion: v2
+name: adp
+description: >-
+  ADP — a version control and CI/CD server that speaks GitHub's protocols over a
+  domain model where every change is a signed transaction binding intent, diff,
+  evidence and provenance.
+type: application
+
+# The chart's own version, bumped when the chart changes.
+version: 0.1.0
+
+# The ADP release this chart defaults to deploying. Tracks the API contract
+# version served as ADP-API-Version (server/src/api-version.ts) rather than
+# inventing a second numbering for the same thing.
+appVersion: "0.2.0"
+
+home: https://github.com/DeDuva/adp
+sources:
+  - https://github.com/DeDuva/adp
+keywords:
+  - version-control
+  - ci
+  - provenance
+  - supply-chain
+
+# No dependencies, deliberately. The obvious one would be a Postgres subchart,
+# and taking it would mean this chart could not be rendered or installed
+# without reaching a chart repository first — which is exactly the property
+# `docs/m4-readiness-review.md` §5's "self-host actually works from nothing"
+# is asking about. The optional bundled Postgres in templates/postgres.yaml is
+# a plain StatefulSet for evaluation; a real deployment points
+# `externalDatabase.url` at a real one.

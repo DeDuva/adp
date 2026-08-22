@@ -1,0 +1,22 @@
+{{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "adp.fullname" . }}-git
+  labels:
+    {{- include "adp.labels" . | nindent 4 }}
+  annotations:
+    # Bare git repositories are the instance's primary data. Deleting the
+    # release should not delete them; deleting them should be a decision
+    # someone makes on purpose.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ .Values.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass }}
+  {{- end }}
+{{- end }}

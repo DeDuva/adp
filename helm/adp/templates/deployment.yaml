@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "adp.fullname" . }}
+  labels:
+    {{- include "adp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  replicas: {{ .Values.server.replicas }}
+  # Recreate, not RollingUpdate: the git volume is ReadWriteOnce and a rolling
+  # update would ask for two pods holding it at once. On most storage classes
+  # that means the new pod hangs unschedulable while the old one keeps serving,
+  # which looks like a stuck deploy rather than the conflict it is.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "adp.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "adp.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Roll the pod when configuration changes, not only when the image tag
+        # does — otherwise a changed land-policy floor sits in a ConfigMap
+        # nothing has read.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.server.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "adp.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.server.podSecurityContext | nindent 8 }}
+      initContainers:
+        # Migrations run once per rollout, before the server starts, rather
+        # than from the server's own entrypoint. With replicas pinned to 1 the
+        # difference is small today; it stops mattering by accident the moment
+        # anyone raises it.
+        - name: migrate
+          image: {{ include "adp.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "dist/db/migrate.js"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "adp.fullname" . }}
+            - secretRef:
+                name: {{ include "adp.secretName" . }}
+          securityContext:
+            {{- toYaml .Values.server.securityContext | nindent 12 }}
+      containers:
+        - name: server
+          image: {{ include "adp.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "dist/main.js"]
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: {{ include "adp.fullname" . }}
+            - secretRef:
+                name: {{ include "adp.secretName" . }}
+          # /healthz is process liveness; /readyz queries Postgres. Using the
+          # right one for each probe is what stops a database blip from
+          # restarting a perfectly healthy server in a loop.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: git-data
+              mountPath: /data/git
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.server.securityContext | nindent 12 }}
+      volumes:
+        - name: git-data
+        {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (printf "%s-git" (include "adp.fullname" .)) }}
+        {{- else }}
+          # Every repository this instance hosts, on a disk that disappears
+          # with the pod. Only ever right for a throwaway evaluation.
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.server.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

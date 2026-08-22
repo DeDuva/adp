@@ -50,7 +50,7 @@ new plan is worth writing if the same drift can happen to it.
 |---|---|---|---|
 | 0-12 | PR #82 (public-site status fix) | superseded — close it | Its ROADMAP half describes M4-9d as in flight; its `index.html` half is done by 0-9 |
 | 0-13 | PR #85 (test-harness port races) | ready to merge, 10 days old | Merges cleanly. Needs a merge decision, not work |
-| 0-14 | PR #86 (M4-12 self-host artifacts) | needs rebase | 23 files, including a helm chart and a self-hosting guide; conflicts after 17 commits. See 1-2 |
+| 0-14 | PR #86 (M4-12 self-host artifacts) | done | main merged in, both conflicts resolved: its ROADMAP hunk dropped (superseded), its Dockerfile fix superseded by #119's — which independently found the same bug — with M4-12's `npm ci` argument folded in |
 
 ---
 
@@ -64,12 +64,13 @@ row along with M4-8 and M4-10. What remains is engineering, and none of it is bu
 | # | Item | Tracking | State |
 |---|---|---|---|
 | 1-1 | M4-5 — Google OIDC login | #103 | not started. Decision 1 resolved 2026-08-13; the work was never begun |
-| 1-2 | M4-12 — self-host artifacts (helm + compose, from nothing) | PR #86 | written, needs rebase. Exit criterion 6 |
+| 1-2 | M4-12 — self-host artifacts (helm + compose, from nothing) | PR #86 | **done** — a Helm chart that refuses to render on six under-specified inputs, a runner image, `docs/self-hosting.md`, and a `helm` CI job under `ADP_REQUIRE_HELM=1`. Verified by installing on a throwaway cluster and pushing a real commit through it. Satisfies exit criterion 6 |
 | 1-3 | M4-3 — the storage quota that was never built | — | not started. `grep maxStorage server/src` finds nothing; it was deferred to M4-8, which is itself sized by this quota's shape. That circular dependency is broken by doing this half first |
 | 1-4 | Exit criterion 4 — reconcile an audit export against the op log for the same filter | — | partial. Row counts are asserted; the criterion's own wording is not |
 | 1-5 | Exit criterion 5 — ratify runner isolation as met | — | substantially met, unratified. Real-daemon negative proofs exist for cap-drop, pids-limit, `--network none` and timeout kill; no document records the criterion as satisfied |
 
-**Re-scoped exit criteria for M4.** Met when 1-2 … 1-5 land: org isolation is real (already
+**Re-scoped exit criteria for M4.** Criterion 6 (self-host from nothing, helm and compose) is met by
+1-2. The rest are met when 1-3 … 1-5 land: org isolation is real (already
 met, `server/test/e2e-org-isolation.test.ts`), the runner isolates as designed, an audit export
 reconciles with the op log, and self-host works from nothing on both helm and compose.
 
