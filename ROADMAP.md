@@ -23,9 +23,14 @@ The dependency map and what-breaks-what live in [`docs/ecosystem.md`](docs/ecosy
 
 ## Milestone ledger
 
-**API contract version: `0.2.0`** (`server/src/api-version.ts`, served as
+**API contract version: `0.3.0`** (`server/src/api-version.ts`, served as
 `ADP-API-Version` on every response). What a bump promises:
-[`docs/api-compatibility.md`](docs/api-compatibility.md).
+[`docs/api-compatibility.md`](docs/api-compatibility.md). The debt the audit called out — eleven
+operations landed additively during M4 under an unmoved 0.2.0 — was settled 2026-08-14 by the
+coordinated 0.3.0 release (#97): version bumped WITH an operation-set snapshot guard so it can
+never silently drift again, a shared Error schema, auth + per-operation scopes declared in the
+spec and asserted against the code, every list endpoint bounded, audited org-administration
+write paths, and typed responses for the four operations squad-lab reads.
 
 | Milestone | Status | Evidence / detail |
 |---|---|---|
@@ -34,56 +39,64 @@ The dependency map and what-breaks-what live in [`docs/ecosystem.md`](docs/ecosy
 | M2 — adoption + trust ramp | complete 2026-08-03 | Mirror mode, outbound webhooks, `adp` CLI, telemetry, scanner-as-gate adapters, dependency admission v0, SBOM per land, Actions read-only passthrough. Verified scope: [`docs/m2-readiness-review.md`](docs/m2-readiness-review.md) |
 | Runs / trajectories / eval-gated close *(capability slice)* | complete 2026-08-05 | PRs #58–#61 — took the wire contract 0.1.0 → 0.2.0. Driven by downstream consumers, not M3 scope. Detail: [`docs/trajectory-eval-slice.md`](docs/trajectory-eval-slice.md) |
 | M3 — fleet + differentiation | complete 2026-08-10 | M3-0 … M3-6 landed (sequenced by [`docs/m3-readiness-review.md`](docs/m3-readiness-review.md)). All three benchmark arms published: [`bench/report/merge-contention.md`](bench/report/merge-contention.md) (arm 1, deterministic), [`bench/report/three-way-cost.md`](bench/report/three-way-cost.md) (arm 2, pilot scale), squad's duva-bench track (arm 3 — [squad PR #119](https://github.com/DeDuva/squad/pull/119)) |
-| M4 — multi-tenant hosted preview | in progress | Work plan (M4-0 … M4-12) in [`docs/m4-readiness-review.md`](docs/m4-readiness-review.md). Track A underway: M4-0…M4-4 (org schema, org-scoped tokens, org policy plane, quotas/GC, audit-log export) landed. M4-9 (runner) complete, sliced queue-first: M4-9a (gate-job queue), M4-9b (`runner/` package — isolated Docker executor), M4-9c (adp.yaml parsing + gate_results wiring), M4-9d (per-org concurrency caps). M4-11 (observability — Cloud Monitoring dashboard + 5 alert policies over `/metrics`, plus the queue telemetry M4-9 shipped without: [`docs/observability.md`](docs/observability.md)) landed. M4-7 (org policy console — the org REST surface M4-2 deferred, plus the supervision UI view over it) landed. M4-12 (self-host artifacts — `helm/adp`, a runner image, and the Compose path, verified by a real install on a throwaway cluster: [`docs/self-hosting.md`](docs/self-hosting.md)) landed. **Every unblocked item is done**; the rest of M4 waits on three author decisions — see Blockers |
+| M4 — multi-tenant foundations *(re-scoped 2026-08-22)* | in progress | **Re-scoped to what can be finished without a spend decision**; the provisioned-infrastructure slice moved to its own row below. Landed: M4-0…M4-4 (org schema, org-scoped tokens, org policy plane, quotas/GC, audit-log export), M4-7 (org policy console), M4-9a…d (gate-job queue, `runner/` package, adp.yaml + gate_results, per-org caps), M4-11 (observability). The [`docs/m4-postmortem-audit.md`](docs/m4-postmortem-audit.md) (2026-08-13) found the code landed but the milestone not met; all four P0 fixes (#88–#91) landed with their negative-case proofs, including the **org-isolation matrix** (`server/test/e2e-org-isolation.test.ts`), as did the five P1a queue-reliability fixes (#92–#96) and all five P2 hygiene items (#98–#102, PRs #116–#120, closed 2026-08-14). M4-12 (self-host artifacts, PR #86) has since landed, satisfying exit criterion 6. Remaining, none of it budget-gated: M4-5 (OIDC, #103), M4-3's unbuilt storage quota, and the audit-reconciliation test exit criterion 4 names. Work plan: [`PLAN.md`](PLAN.md) |
+| Hosted preview *(budget-gated slice, split out of M4 2026-08-22)* | blocked | M4-8 (managed Postgres + object store) and M4-10 (backup/PITR with an **executed** restore drill), plus the two M4 exit criteria that need a provisioned instance: signup-to-workload, and the executed drill. Blocked on decision 2 (budget) and decision 3 (drill timing) below — engineering is not the constraint, a dollar number is. Split out so M4 can close on what it delivered rather than stay open for a purchase order |
+| 0.3.0 — contract breaking batch | complete 2026-08-14 | Shipped as one coordinated wire-contract release (#97 / PR #115, commit `5eb471d`, tag `v0.3.0`) while the only tokens in existence were hand-minted: version bumped with an operation-set snapshot guard against the C-1 vacuous pass, a shared `Error` schema, auth/scopes declared in the spec and asserted against the code, every list endpoint bounded, audited write paths for quota/policy-repo changes, and typed responses for the 4 operations squad-lab reads. **Kept `{owner}/{repo}` URLs** (gh fidelity requires them). Detail: [`docs/m4-postmortem-audit.md`](docs/m4-postmortem-audit.md) §"0.3.0 breaking batch" |
 | M5 — substrate hardening | not started | Evidence-gated: every item requires a written justification citing M3/M4 telemetry |
 
 ## Now / Next / Later
 
-- **Now:** M4 Track A in progress (`docs/m4-readiness-review.md`) — M4-0…M4-4 landed
-  (org schema, tokens, policy plane, quotas/GC, audit export). M4-9 (runner) is complete
-  across all four slices: M4-9a (gate-job queue), M4-9b (the `runner/` package — a
-  pure-HTTP-client Docker executor with network-deny, no host mounts, no ambient secrets,
-  CPU/memory/wall-clock caps), M4-9c (adp.yaml's `runner.gates` auto-enqueues a job on
-  push; a checkout tarball — `git archive`, `docker cp`, never a bind mount — lets the
-  executor build/test the pushed sha; completion produces real, signed `gate_results`
-  evidence), and M4-9d (per-org concurrency caps, scoped at claim time so one org's backlog
-  never starves another's queue). M4-11 (observability) landed: a Cloud Monitoring dashboard
-  and five alert policies over `/metrics` (`infra/dev/monitoring.tf`), the queue telemetry
-  M4-9 shipped without, and a coverage test that fails when a dashboard or alert names a
-  metric the server does not export — [`docs/observability.md`](docs/observability.md).
-  M4-7 (org policy console) landed: `GET /api/adp/orgs`, org detail, per-repo resolved
-  policy, and a kill-switch `PATCH` — the org REST surface M4-2 explicitly deferred to this
-  item — under an Organization view in the supervision UI that shows what each repo actually
-  requires to land and which of the three layers (instance ∪ org ∪ repo) imposed it. The
-  floor stays uneditable from the console by design: it is a `policy.yaml` in a repo, so it
-  changes by landing a change to that file. M4-12 (self-host artifacts) landed and closes
-  every item M4 can reach without a decision: a Helm chart (`helm/adp`) that refuses to guess
-  a signing key, a database, or which node runs untrusted gate code; a runner image; and the
-  Compose path. Verified by installing it on a throwaway cluster and pushing a real commit
-  through it, not by rendering it — the deploy image had also never built the supervision UI,
-  so every self-hosted instance including the GCP dev box was serving no `/ui/` at all
-  ([`docs/self-hosting.md`](docs/self-hosting.md)).
-- **Next:** the three M4 decisions below. Nothing else in M4 can start without them — M4-5
-  and M4-6 need an IdP named, M4-8 needs a budget number, and M4-10 needs M4-8 provisioned.
-  Exit criteria 2 (signup-to-workload against a real IdP) and 3 (an executed restore drill)
-  are gated the same way. The self-host chart's object-store configuration is the one piece
-  of landed work that stays provisional until decision 2 unblocks M4-8.
-- **Later:** M5 if and only if telemetry justifies each item.
+- **Now:** the v6 reset (2026-08-22) — brief, plan and doc set rebuilt on the research in
+  [`PLAN.md`](PLAN.md) Phase 0, which restores this ledger's accuracy and puts the freshness
+  claims behind a gate (`scripts/check-docs.sh`) rather than behind habit. M4 remediation is
+  complete through the 0.3.0 batch: all four P0s (#88–#91, with the exit-criterion-#1 isolation
+  matrix), all five P1a queue-reliability fixes (#92–#96), the coordinated 0.3.0 contract release
+  (#97), and all five P2 hygiene items (#98–#102) — each landed as its own PR carrying the
+  audit's named negative-case test as proof.
+- **Next:** the re-scoped M4's remaining work, none of it budget-gated — M4-5 Google OIDC (#103),
+  M4-3's unbuilt storage quota, and the audit-reconciliation test exit criterion 4 names. Then the serial-base-case forward work: author-independent
+  approval (#121), compensating-revert undo, and the cross-harness resume demo. SCIM (M4-6)
+  remains explicitly deferred.
+- **Later:** the hosted-preview slice once decisions 2/3 are answered; M5 if and only if
+  telemetry justifies each item.
 
 ## Blockers and open decisions
 
-- **M4 decision 1 — identity provider.** OIDC login and SCIM (M4-5, M4-6) need one named IdP to
-  build and test against; nothing here settles it. Blocks two work items, not the rest of M4.
+- **M4 decision 1 — identity provider. RESOLVED 2026-08-13: Google OIDC**, whose identities this
+  project's users already have. The *decision* is made; **M4-5 is not built** — there is no OIDC
+  code in the tree and #103 is open. (This row previously claimed the work was "built and
+  acceptance-tested against real Google"; it never was, and the claim had propagated to two other
+  documents. Corrected 2026-08-22.) **SCIM (M4-6) is deferred**, not merely blocked — parked until
+  a procurement conversation demands it, since SCIM against a real IdP is significant work with no
+  current consumer.
 - **M4 decision 2 — budget for managed Postgres + object store.** GCP Cloud SQL + GCS, following
   the already-settled cloud provider (`docs/environments-plan.md` §5) — this is a dollar number,
   not a provider choice. Blocks M4-8, and transitively M4-10 (the restore drill needs M4-8
-  provisioned first).
+  provisioned first). **Since 2026-08-22 it blocks only the hosted-preview row**, not M4: the
+  milestone was re-scoped so this decision can be taken on its own timetable. It also gates the
+  object-store split in the storage work, which is why the cheap in-Postgres fixes come first.
 - **M4 decision 3 — restore-drill timing.** Whether the backup/PITR drill runs against a real
-  provisioned preview instance as soon as M4-8 lands, or is deferred until closer to the rest of
-  M4 completing. Affects when M4-8's cost is incurred, not whether it is.
+  provisioned preview instance as soon as M4-8 lands, or is deferred. Affects when M4-8's cost is
+  incurred, not whether it is.
 - **Issue #64 — native-plane response schemas.** The recording hot path is typed
   (PR #67); the remaining operations are frozen as guarded debt behind the
   `server/src/spec-coverage.test.ts` opt-out list, which must only shrink.
+- **Narrative reweighting (2026-08-17, sharpened 2026-08-22): small-N concurrent is the base case;
+  wide fan-out is a mode.** The public materials lead with one agent iterating to green and
+  merging, with fan-out as the hard-problem/remediation mode. Two corrections landed with the v6
+  reset. First, **the fan-out-vs-serial arm did run** — 2026-08-10, pre-registered, 20/20 trials
+  verified, digest `cfebbb7d…`: fan-out cost 3.6× the tokens and wall clock and 2.8× the tool
+  calls for acceptance scores inside the noise floor (`bench/README.md` arm 3). This row and the
+  brief both previously said it had not, which understated the position; the real caveat is the
+  one the arm's own report states — both tasks were single-pass-solvable, so it is a weak test of
+  the case fan-out exists for. Second, **"serial" was too strong a word**: 79.4% of agent PRs are
+  temporally co-active with another agent PR, with 19.8% intra-agent and 41.7% cross-agent
+  conflict rates ([arXiv:2607.04697](https://arxiv.org/abs/2607.04697), 33,596 PRs), so the claim
+  is small-N concurrency with one integrator and conventional CI, not serialism. Forward
+  consequences, evidence-gated like everything else: author-independent approval (#121),
+  compensating-revert undo, and the cross-harness resume demo. M5's speculative-batching gate
+  stays closed — now because merge-queue batching adoption sits at 6%, not because conflicts are
+  rare, which the co-activity data denies.
 
 ## Plan documents
 
@@ -95,10 +108,11 @@ The dependency map and what-breaks-what live in [`docs/ecosystem.md`](docs/ecosy
   [`docs/m3-readiness-review.md`](docs/m3-readiness-review.md) ·
   [`docs/m4-readiness-review.md`](docs/m4-readiness-review.md) — what was actually
   verified entering each milestone; M3's and M4's carry the executable work plan.
+- [`docs/m4-postmortem-audit.md`](docs/m4-postmortem-audit.md) — what was actually *delivered*
+  when M4's code landed: the P0/P1/P2 findings, the 0.3.0 batch, and the four decisions of
+  2026-08-13 (no hosted staging, `{owner}/{repo}` kept, Google OIDC, SCIM deferred).
 - [`docs/trajectory-eval-slice.md`](docs/trajectory-eval-slice.md) — the 0.2.0
   capability slice.
 - [`docs/observability.md`](docs/observability.md) — M4-11: what is measured, what pages,
   and what to do when it does.
-- [`docs/self-hosting.md`](docs/self-hosting.md) — M4-12: running your own instance, and
-  what the chart deliberately refuses to decide for you.
 - [`docs/ecosystem.md`](docs/ecosystem.md) — the cross-repo dependency map.

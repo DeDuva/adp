@@ -10,10 +10,12 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerChangeRoutes } from "../src/http-rest/changes.js";
 import { registerGateRoutes } from "../src/http-rest/gates.js";
@@ -75,7 +77,7 @@ describe.skipIf(skipWithoutDb)("M1c: workspaces + evidence bundle", () => {
     registerGateRoutes(app, db, signer, "https://adp.example.com", "e2e-test-credential-key");
     registerWorkspaceRoutes(app, db, gitBackend);
     registerEvidenceRoutes(app, db);
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -86,6 +88,7 @@ describe.skipIf(skipWithoutDb)("M1c: workspaces + evidence bundle", () => {
       .values({ kind: "human", principal: `native-e2e-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
 
     await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: repoName }) });
 

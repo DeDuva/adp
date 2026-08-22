@@ -7,9 +7,11 @@ import { promisify } from "node:util";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq } from "drizzle-orm";
 import { createDb, type Db } from "../db/client.js";
+import { skipWithoutDb } from "../../test/require-db.js";
 import { identities, mirrors, mirrorSyncLog, repos } from "../db/schema.js";
 import { GitBackend } from "./git-backend.js";
 import { encryptCredential } from "./mirror-crypto.js";
+import { findOrCreateOrg } from "./org-lookup.js";
 import { pollOnce } from "./mirror-poller.js";
 
 const execFileAsync = promisify(execFile);
@@ -18,7 +20,7 @@ const CREDENTIAL_KEY = "test-mirror-credential-key";
 // M2 mirror mode's outbox poller: drains mirror_sync_log rows against real
 // Postgres + two real local bare repos (the second stands in for GitHub —
 // see git-backend.test.ts's mirror describe block for why file:// is fine).
-describe.skipIf(!process.env.DATABASE_URL)("mirror-poller", () => {
+describe.skipIf(skipWithoutDb)("mirror-poller", () => {
   let db: Db;
   let pool: import("pg").Pool;
   let gitRoot: string;
@@ -57,7 +59,8 @@ describe.skipIf(!process.env.DATABASE_URL)("mirror-poller", () => {
     await rm(cloneDir, { recursive: true, force: true });
 
     const [identity] = await db.insert(identities).values({ kind: "human", principal: `poller-${Date.now()}` }).returning();
-    const [repo] = await db.insert(repos).values({ owner, name: "repo", defaultBranch: "main" }).returning();
+    const orgId = await findOrCreateOrg(db, owner);
+    const [repo] = await db.insert(repos).values({ owner, name: "repo", defaultBranch: "main", orgId }).returning();
     repoId = repo!.id;
     void identity;
 

@@ -11,11 +11,19 @@ binary for all plumbing.
 
 - **`ROADMAP.md`** — the single status ledger: milestone states, API contract version,
   blockers, open decisions. A PR that changes milestone status updates it in the same PR.
+- **`PLAN.md`** — the single executable backlog: every open work item, phased, each naming
+  its tracking issue. If work is not in this file it is not planned. A PR that finishes an
+  item updates it in the same PR.
 - **`docs/pragmatic_mvp.md`** — the plan of record; it decides scope. (It superseded
   `docs/adp-prototype-implementation-plan.md`, the original 24-week prototype proposal,
   which is kept as history.)
 - The readiness reviews (`docs/m2-readiness-review.md`, `docs/m3-readiness-review.md`)
   record what was actually verified at each milestone; `README.md` is orientation.
+
+**Status lives in exactly one of these, never two.** The 2026-08-22 audit found sixteen
+contradictions across the doc set — three critical, all in `ROADMAP.md` — every one of them
+a fact with an owner elsewhere that had been copied into prose and then left behind when the
+owner moved. `scripts/check-docs.sh` now fails the build on the mechanical cases.
 
 ## Process
 
@@ -24,7 +32,8 @@ changes. Commit messages and PR bodies carry no AI attribution.
 
 **Do not regenerate this file with `/init`.** Most of what follows was learned by getting
 it wrong, and a codebase scan cannot see any of it. Edit it by hand; `make check` fails if
-a path named here stops existing.
+a path named here stops existing — and, since 2026-08-22, if a link in any tracked document
+dangles or a `#NNN` in `ROADMAP.md`/`PLAN.md` disagrees with its real state on GitHub.
 
 ## Layout
 
@@ -53,13 +62,13 @@ The Makefile is the entry point — `make help` lists everything. The loop is:
 ```bash
 make doctor     # preflight: toolchain, docker, ports, stale containers
 make up         # throwaway Postgres on a random port, writes .env.test
-make check      # the gate: everything CI runs, plus this file's paths
+make check      # the gate: everything CI runs, plus the doc checks
 make down       # tear down AND assert nothing leaked
 ```
 
 **`make check` is the gate in every repo in this line of work** — reach for it first and
 don't go hunting for the per-repo incantation. Here it is `make test-all` (build, full
-suite, web, cli, adapters, conformance, acceptance) preceded by the CLAUDE.md path check.
+suite, web, cli, adapters, conformance, acceptance) preceded by `make check-docs`.
 
 `make test-unit` runs the unit + integration tiers with no database. `make test` is the
 full suite with e2e enforced. `make down-all` and `bash scripts/dev/verify-clean.sh --fix`
@@ -85,13 +94,24 @@ overrides belong in `.claude/settings.local.json`, which is ignored.
   `server/src/spec-coverage.test.ts` fails when the server serves a route the spec does
   not describe — it *had* drifted silently before. adp-replay generates its client from
   this spec, so changing a response shape breaks a downstream consumer.
-- **The `gh pr checks` gap is asserted deliberately.** `statusCheckRollup.state` is real
-  but `contexts` is an empty connection, so `gh` reports "no checks reported".
-  `server/acceptance/run.sh` asserts *both* that the rollup is SUCCESS and that `gh`
-  still fails this way, so implementing per-context detail breaks the test on purpose and
-  forces the docs to be corrected with it.
+- **`gh pr checks` is green, and the acceptance suite pins what an agent sees.** This was
+  the last §2.1 gap: `statusCheckRollup.state` was real but `contexts` was a deliberately
+  empty connection, so `gh` reported "no checks reported" and exited non-zero on a green
+  rollup. PR #53 closed it (2026-08-03) — each gate result projects to a `StatusContext`.
+  `server/acceptance/run.sh` now asserts the rollup is SUCCESS *and* that `gh pr checks`
+  names the gate, reports it passing, and links the DSSE evidence bundle behind the
+  verdict. The design intent survives inverted: the assertion is what an agent actually
+  sees, so regressing the projection breaks the test on purpose.
 - **The operation log is written in the same database transaction as the change.** Don't
   add a write path that records a change without it.
+- **The gate-job queue is bespoke, and that is a decision — not an omission.** The plan
+  named `pg-boss`; the queue and sweeper that shipped are our own, built directly on
+  `gate_jobs` with `FOR UPDATE SKIP LOCKED`, claim leases, a reaper, and advisory tick
+  locks (#92–#96). Keeping it was the audit's P1-7 call: it is small, the reliability
+  fixes were cheap, and it enqueues transactionally alongside the change record. Don't
+  "restore" `pg-boss` on the strength of an old doc. Revisit only if a fleet-scale runner
+  pool needs `LISTEN/NOTIFY` and real retry backoff — and revisit with the poll-load
+  numbers the queue telemetry now produces, not on principle.
 
 ## Gotchas
 
@@ -101,6 +121,15 @@ overrides belong in `.claude/settings.local.json`, which is ignored.
   particular serves a separately-built stale image on port 3000, which makes routes that
   provably exist return 404. `make up` uses `deploy/docker-compose.test.yml` instead —
   Postgres only, tmpfs, no restart policy, ephemeral port, per-run project name.
+- **Test-harness ports come from `scripts/dev/ports.sh`, below the kernel's ephemeral
+  floor.** `conformance/run.sh` and `acceptance/run.sh` used to pick random ports in
+  ranges that overlapped `/proc/sys/net/ipv4/ip_local_port_range` — the TLS proxy's
+  range sat inside it completely — so `listen()` periodically lost a race to an
+  unrelated outbound socket. That cost three full runs before it was chased: the proxy
+  died at startup and the run failed minutes later as an unexplained `connection
+  refused`. Pick with `adp_pick_port`, and wait for a backgrounded process with
+  `adp_wait_for_log_line` (its own readiness line) rather than a port probe, which a
+  squatter also satisfies.
 - **`tools/win/Run-CleanTest.ps1` is a local validation tool, not a gate.** It answers
   "does this work from nothing?" on demand, needs a Windows host, and takes ~16 minutes.
   Do not wire it into CI; `clean-room.yml` already catches most of that class per push.

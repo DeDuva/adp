@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities, repos, gateJobs } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
@@ -71,6 +72,7 @@ describe.skipIf(skipWithoutDb)("M2: API-traffic telemetry", () => {
       .returning();
     actorId = identity!.id;
     token = await mintToken(db, actorId, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, actorId, owner);
   });
 
   afterAll(async () => {
@@ -149,6 +151,22 @@ describe.skipIf(skipWithoutDb)("M2: API-traffic telemetry", () => {
       const body = await metricsRes.text();
       expect(body).toMatch(/^adp_gate_jobs\{status="queued"\} \d+$/m);
       expect(body).toMatch(/^adp_gate_job_oldest_queued_age_seconds \d+$/m);
+      expect(body).toMatch(/^adp_gate_job_oldest_running_age_seconds \d+$/m);
+
+      // #92: the running-age gauge exists and sees a running job. The gauge
+      // is a table-wide max over a database every e2e file shares, so the
+      // only bound this test may assert is the one its own row guarantees —
+      // at least the 300s this job has "been running". (That it anchors on
+      // started_at rather than created_at is pinned by the SQL's CASE per
+      // status; a tighter upper-bound assertion here would really be
+      // asserting that no other test file has a running job, which is not
+      // this test's to promise.)
+      await db
+        .update(gateJobs)
+        .set({ status: "running", startedAt: new Date(Date.now() - 300_000) })
+        .where(eq(gateJobs.id, job!.id));
+      const runningSample = await sampleGateJobMetrics(db);
+      expect(runningSample.oldestRunningAgeSeconds).toBeGreaterThanOrEqual(300);
     } finally {
       await db.delete(gateJobs).where(eq(gateJobs.id, job!.id));
     }

@@ -74,18 +74,37 @@ export const orgMemberships = pgTable(
   (table) => [unique().on(table.orgId, table.identityId)],
 );
 
-export const repos = pgTable("repos", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  owner: text("owner").notNull(),
-  name: text("name").notNull(),
-  defaultBranch: text("default_branch").notNull().default("main"),
-  // Nullable on purpose (M4-0): a pre-M4 repo keeps working with no org until
-  // the backfill migration assigns one per its `owner` string — `owner` stays
-  // the compat-plane URL identifier either way (`/api/v3/repos/{owner}/...`),
-  // this is the new relational backing underneath it, not a replacement for it.
-  orgId: uuid("org_id").references(() => orgs.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const repos = pgTable(
+  "repos",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    owner: text("owner").notNull(),
+    name: text("name").notNull(),
+    defaultBranch: text("default_branch").notNull().default("main"),
+    // NOT NULL since #89: M4-0's backfill synthesized an org per distinct
+    // `owner` string and every create path since assigns one, so "a repo
+    // with no org" stopped being a real state — and org isolation (#91)
+    // needs to key every repo-scoped check off this column, which it can
+    // only do if the column is always there. `owner` stays the compat-plane
+    // URL identifier (`/api/v3/repos/{owner}/...`); this is the relational
+    // backing underneath it, not a replacement for it.
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // The tenancy key and the hottest lookup in the server (findRepo). The
+    // uniqueness is the authority the create path's insert relies on (#89):
+    // the pre-insert existence check is a fast path, not the guard, so two
+    // concurrent creates of one owner/name can never make two rows for one
+    // on-disk repo.
+    uniqueIndex("repos_owner_name_idx").on(table.owner, table.name),
+    // A Postgres FK creates no index of its own; org_id is in the gate-job
+    // claim hot path, the audit export, and all three quota counts.
+    index("repos_org_id_idx").on(table.orgId),
+  ],
+);
 
 export const identities = pgTable("identities", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -645,6 +664,12 @@ export const operations = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     repoId: uuid("repo_id").references(() => repos.id),
+    // #97: the org an org-LEVEL operation belongs to (org.kill_switch,
+    // org.create, org.quota_update, an org-scoped token.mint). Repo-scoped
+    // ops leave it null — their org is reachable through the repo — but an
+    // op with repoId null and orgId null is invisible to the org audit-log
+    // export, which is exactly what happened to the kill switch.
+    orgId: uuid("org_id").references(() => orgs.id),
     actorId: uuid("actor_id").notNull().references(() => identities.id),
     verb: text("verb").notNull(),
     target: text("target").notNull(),
@@ -691,6 +716,23 @@ export const gateJobs = pgTable(
     // runner supplies (hostname, pid, whatever it wants), never branched on.
     // Null until claimed.
     claimedBy: text("claimed_by"),
+    // The *authenticated* identity that claimed the job — the ownership check
+    // http-rest/gate-jobs.ts's checkout/complete enforce (#88). claimedBy
+    // above can't serve that purpose: it's client-supplied, so any runner
+    // token could send another runner's string. Null until claimed; a
+    // `running` row with this still null (claimed before the column existed)
+    // fails the ownership check closed rather than open.
+    claimedByIdentityId: uuid("claimed_by_identity_id").references(() => identities.id),
+    // #92: the claim is a LEASE, not a permanent grant. Set at claim time to
+    // now + timeout_ms + a fixed grace; the reaper (core/gate-job-reaper.ts)
+    // requeues a `running` job whose lease has expired — a runner that died
+    // used to leave the job `running` forever, blocking that commit's land
+    // and holding an org concurrency slot with no recovery short of psql.
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    // How many times this job has been claimed. Bounded by the reaper's
+    // retry cap: a job that keeps expiring stops being requeued and is
+    // marked `error` instead of looping forever.
+    attempts: integer("attempts").notNull().default(0),
     exitCode: integer("exit_code"),
     // Inline, bounded (truncated by http-rest/gate-jobs.ts's complete
     // handler) rather than a pointer into an object store — there isn't one

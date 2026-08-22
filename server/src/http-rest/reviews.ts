@@ -1,11 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { PerPageQuery } from "./pagination.js";
+import { validationErrors } from "./validation-errors.js";
+import { and, asc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { proposals, reviews } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
-import { findRepo } from "../core/repos-lookup.js";
+import { findRepoAuthorized } from "../core/repos-lookup.js";
 
 const CreateReviewBody = z.object({
   state: z.enum(["approved", "changes_requested", "commented"]),
@@ -37,11 +39,11 @@ export function registerReviewRoutes(app: FastifyInstance, db: Db) {
       const { owner, repo: repoName, number } = req.params as { owner: string; repo: string; number: string };
       const parsed = CreateReviewBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
 
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -85,7 +87,7 @@ export function registerReviewRoutes(app: FastifyInstance, db: Db) {
 
   app.get("/api/v3/repos/:owner/:repo/pulls/:number/reviews", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName, number } = req.params as { owner: string; repo: string; number: string };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -100,7 +102,14 @@ export function registerReviewRoutes(app: FastifyInstance, db: Db) {
       return;
     }
 
-    const rows = await db.select().from(reviews).where(eq(reviews.proposalId, proposal.id));
+    const { per_page, page } = PerPageQuery.parse(req.query ?? {});
+    const rows = await db
+      .select()
+      .from(reviews)
+      .where(eq(reviews.proposalId, proposal.id))
+      .orderBy(asc(reviews.createdAt))
+      .limit(per_page)
+      .offset((page - 1) * per_page);
     reply.send(rows.map(serializeReview));
   });
 }

@@ -11,11 +11,13 @@ import { eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities, operations } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
 import { findRepo } from "../src/core/repos-lookup.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerProposalRoutes } from "../src/http-rest/proposals.js";
 import { registerGateRoutes } from "../src/http-rest/gates.js";
@@ -76,7 +78,7 @@ describe.skipIf(skipWithoutDb)("M3: statistical land criteria (A8)", () => {
     registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerProposalRoutes(app, db, gitBackend, "e2e-stats-credential-key", []);
     registerGateRoutes(app, db, new Signer("e2e-stats-signing-key"), "https://adp.example.com", "e2e-stats-credential-key");
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -87,6 +89,7 @@ describe.skipIf(skipWithoutDb)("M3: statistical land criteria (A8)", () => {
       .values({ kind: "human", principal: `stats-e2e-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
   });
 
   afterAll(async () => {

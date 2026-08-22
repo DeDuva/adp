@@ -4,6 +4,12 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
   GIT_ROOT: z.string().min(1),
   SIGNING_KEY: z.string().min(1),
+  // #102: retired signing keys' PUBLIC halves, comma-separated hex, so
+  // evidence signed before a key rotation keeps verifying after it (the
+  // KeyRegistry core/signing.ts builds from this). Public keys only — the
+  // rotated-out private key should not survive anywhere, this env var
+  // included.
+  RETIRED_SIGNING_PUBLIC_KEYS: z.string().optional(),
   PUBLIC_URL: z.string().url(),
   PORT: z.coerce.number().int().positive().default(3000),
   // Real repos push real-sized packs; Fastify's 1 MiB default 413s those.
@@ -36,6 +42,11 @@ const EnvSchema = z.object({
   // how stale `adp_gate_job_oldest_queued_age_seconds` can be when the alert
   // on it evaluates.
   GATE_JOB_METRICS_INTERVAL_MS: z.coerce.number().int().positive().default(15_000),
+  // #92: how often expired gate-job leases are reaped
+  // (core/gate-job-reaper.ts). Half a minute bounds how long a dead
+  // runner's job stays wedged past its lease — fast enough that a requeue
+  // beats any human noticing, coarse enough to cost nothing.
+  GATE_JOB_REAPER_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
 });
 
 export type Config = z.infer<typeof EnvSchema>;

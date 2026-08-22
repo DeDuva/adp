@@ -11,12 +11,14 @@ import { and, eq, sql } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities, operations, sessionEvents } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
 import { verifyEnvelope, decodeStatement, type DsseEnvelope } from "../src/core/dsse.js";
 import { eventHash } from "../src/core/trajectory.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerIssueRoutes } from "../src/http-rest/issues.js";
 import { registerWorkspaceRoutes } from "../src/http-rest/workspaces.js";
@@ -124,7 +126,7 @@ describe.skipIf(skipWithoutDb)("run trajectory and eval-gated close", () => {
     registerRunRoutes(app, db, gitBackend, signer, PUBLIC_URL);
     registerGateRoutes(app, db, signer, PUBLIC_URL, CREDENTIAL_KEY);
     registerEvidenceRoutes(app, db);
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -137,6 +139,7 @@ describe.skipIf(skipWithoutDb)("run trajectory and eval-gated close", () => {
       .values({ kind: "agent", principal: actorPrincipal })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
 
     await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: repoName }) });
 
@@ -902,6 +905,8 @@ describe.skipIf(skipWithoutDb)("run trajectory and eval-gated close", () => {
       .values({ kind: "agent", principal: reporterPrincipal })
       .returning();
     const reporterToken = await mintToken(db, reporter!.id, ["repo:read", "repo:write"]);
+    await grantOwner(db, reporter!.id, owner);
+    await grantOwner(db, reporter!.id, owner);
 
     const recorded = await api(`/api/adp/repos/${owner}/${repoName}/runs/${runId}/evals`, {
       method: "POST",

@@ -74,6 +74,12 @@ jobs:
         run: npm run typecheck
       - working-directory: server/web
         run: npm run build
+      # #98: web/ built in CI but never ran a test, which is how api.ts's
+      # hand-copied server enum drifted (gates_confident missing) and the
+      # org console rendered a requirement as a blank label. The suite is
+      # tiny and DB-free; its job is binding those copies to their sources.
+      - working-directory: server/web
+        run: npm test
 
       - name: Cache pinned gh release
         uses: actions/cache@v4
@@ -146,6 +152,53 @@ jobs:
       # actually running a container, not by asserting on an argument list.
       - run: ADP_REQUIRE_DOCKER=1 npm test
 
+  # #99: the §2.1 definition-of-done walkthrough. This is the only thing
+  # asserting the `gh pr checks` gap is closed the way the docs promise, and
+  # until now it ran only when a human typed `make check` — a headline exit
+  # criterion protected by muscle memory. The script is self-contained
+  # (migrates, boots its own server on random ports, pins its own gh); it
+  # needs Postgres, egress (D16/D17 hit live scanners), and the cli/adapters
+  # workspaces it drives.
+  acceptance:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: adp
+          POSTGRES_PASSWORD: adp
+          POSTGRES_DB: adp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U adp -d adp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://adp:adp@localhost:5432/adp
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - working-directory: cli
+        run: npm ci
+      - working-directory: adapters
+        run: npm ci
+      - name: Cache pinned gh release
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/adp-conformance-gh
+          key: gh-conformance-${{ hashFiles('server/conformance/run.sh') }}
+      - run: bash acceptance/run.sh
+
   bench:
     runs-on: ubuntu-latest
     defaults:
@@ -168,12 +221,24 @@ jobs:
       - run: npm run report
       - run: git diff --exit-code report/
 
-  # CLAUDE.md names the file that carries each invariant. A rename turns that from
-  # guidance into a wrong map without anything failing, so this asserts the paths still
-  # resolve. Deliberately its own job: it costs seconds and should report independently
-  # of whether the suite is red.
+  # Documents that have quietly stopped being true. CLAUDE.md names the file carrying
+  # each invariant, so a rename turns guidance into a wrong map without anything
+  # failing; ROADMAP.md and PLAN.md make status claims that the issue tracker can
+  # settle. The 2026-08-22 audit found sixteen contradictions of exactly these shapes,
+  # three of them critical, none catchable by the path-only check this replaces.
+  #
+  # ADP_REQUIRE_GH turns the issue-state half from a skip into a failure — the same
+  # bargain as ADP_REQUIRE_DB and ADP_REQUIRE_NETWORK, and set here for the same
+  # reason: that half is the one that catches stale status, so CI must not pass
+  # without it. GITHUB_TOKEN authenticates gh for the issue lookups.
+  #
+  # Deliberately its own job: it costs seconds and should report independently of
+  # whether the suite is red.
   docs:
     runs-on: ubuntu-latest
+    env:
+      ADP_REQUIRE_GH: "1"
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - run: make check-docs

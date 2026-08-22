@@ -11,10 +11,12 @@ import { createDb, type Db } from "../src/db/client.js";
 import { changes, identities, operations } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerHookRoutes } from "../src/http-git/hooks.js";
 import { registerOperationRoutes } from "../src/http-rest/operations.js";
@@ -58,7 +60,7 @@ describe.skipIf(skipWithoutDb)("M1c: receive-path hooks", () => {
     registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerHookRoutes(app, db, gitBackend, signer, "e2e-test-credential-key");
     registerOperationRoutes(app, db, gitBackend);
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -72,6 +74,7 @@ describe.skipIf(skipWithoutDb)("M1c: receive-path hooks", () => {
       .returning();
     identityId = identity!.id;
     token = await mintToken(db, identityId, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identityId, owner);
   });
 
   afterAll(async () => {

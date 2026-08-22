@@ -11,10 +11,12 @@ import { eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities, gateJobs } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerHookRoutes } from "../src/http-git/hooks.js";
 import { registerGateJobRoutes } from "../src/http-rest/gate-jobs.js";
@@ -39,6 +41,7 @@ describe.skipIf(skipWithoutDb)("M4-9c: adp.yaml-driven gate jobs", () => {
   let port: number;
   let writeToken: string;
   let runnerToken: string;
+  let runnerIdentityId: string;
   const owner = `runner-gates-owner-${Date.now()}`;
 
   async function api(pathAndQuery: string, token: string, init: RequestInit = {}) {
@@ -75,7 +78,7 @@ describe.skipIf(skipWithoutDb)("M4-9c: adp.yaml-driven gate jobs", () => {
     registerHookRoutes(app, db, gitBackend, signer, "e2e-test-credential-key");
     registerGateJobRoutes(app, db, gitBackend, signer, "https://adp.example.com", "e2e-test-credential-key");
     registerGateRoutes(app, db, signer, "https://adp.example.com", "e2e-test-credential-key");
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -84,8 +87,10 @@ describe.skipIf(skipWithoutDb)("M4-9c: adp.yaml-driven gate jobs", () => {
 
     const [writer] = await db.insert(identities).values({ kind: "human", principal: `rg-writer-${Date.now()}` }).returning();
     writeToken = await mintToken(db, writer!.id, ["repo:read", "repo:write"]);
+    await grantOwner(db, writer!.id, owner);
 
     const [runner] = await db.insert(identities).values({ kind: "agent", principal: `rg-runner-${Date.now()}` }).returning();
+    runnerIdentityId = runner!.id;
     runnerToken = await mintToken(db, runner!.id, ["runner"]);
   });
 
@@ -134,16 +139,28 @@ describe.skipIf(skipWithoutDb)("M4-9c: adp.yaml-driven gate jobs", () => {
     expect(job).toMatchObject({ image: "busybox:1", command: "echo setting-up && cat marker.txt" });
     const jobId = job!.id;
 
-    // /checkout and /complete don't check *who* claimed a job, only that it
-    // currently is one (http-rest/gate-jobs.ts) — so rather than asserting
-    // this test's own claim() call is what claims jobId (which a
-    // concurrently-running file's own claim polling could just as easily
-    // do first), this drives claim() itself to make progress, racing
-    // against everyone else like a real second runner would, while polling
-    // jobId's own DB status directly until it's no longer `queued`.
+    // Since #88, /checkout and /complete only serve the identity that
+    // claimed the job — so this test must end up holding jobId's claim
+    // *itself*, not merely observe that someone claimed it. Claim is still
+    // instance-wide and raced by every other e2e file polling this same
+    // shared database. The #92 reaper would eventually recover a job another
+    // file's identity claimed, but only after a full lease (the job's
+    // timeout + grace — minutes), so when that happens, requeue the row
+    // directly in the DB (the reaper's own move, taken immediately, on a job
+    // this test itself enqueued and owns) and keep claiming until our own
+    // identity wins it.
     for (let i = 0; i < 40; i++) {
-      const [row] = await db.select({ status: gateJobs.status }).from(gateJobs).where(eq(gateJobs.id, jobId));
-      if (row!.status !== "queued") break;
+      const [row] = await db
+        .select({ status: gateJobs.status, claimedByIdentityId: gateJobs.claimedByIdentityId })
+        .from(gateJobs)
+        .where(eq(gateJobs.id, jobId));
+      if (row!.status === "running" && row!.claimedByIdentityId === runnerIdentityId) break;
+      if (row!.status === "running") {
+        await db
+          .update(gateJobs)
+          .set({ status: "queued", claimedBy: null, claimedByIdentityId: null, startedAt: null })
+          .where(eq(gateJobs.id, jobId));
+      }
       await api("/api/adp/gate-jobs/claim", runnerToken, { method: "POST", body: JSON.stringify({ claimed_by: "stub-runner-1" }) });
       await new Promise((resolve) => setTimeout(resolve, 25));
     }

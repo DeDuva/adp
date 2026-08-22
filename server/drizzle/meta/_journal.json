@@ -169,6 +169,34 @@
       "when": 1786475055856,
       "tag": "0023_m4_9d_gate_job_org_quota",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786664331330,
+      "tag": "0024_fix_88_gate_job_claimed_by_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786668431881,
+      "tag": "0025_fix_89_repos_unique_owner_name_org_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786672236186,
+      "tag": "0026_fix_92_gate_job_lease",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1786677055845,
+      "tag": "0027_fix_97_operations_org_id",
+      "breakpoints": true
     }
   ]
 }

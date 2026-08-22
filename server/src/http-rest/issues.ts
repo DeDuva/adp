@@ -1,11 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, eq, sql } from "drizzle-orm";
+import { PerPageQuery } from "./pagination.js";
+import { validationErrors } from "./validation-errors.js";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { issues, issueComments, intents } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
-import { findRepo } from "../core/repos-lookup.js";
+import { findRepoAuthorized } from "../core/repos-lookup.js";
 
 const CreateIssueBody = z.object({
   title: z.string().min(1),
@@ -50,11 +52,11 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
       const { owner, repo: repoName } = req.params as { owner: string; repo: string };
       const parsed = CreateIssueBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
 
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -112,13 +114,22 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
 
   app.get("/api/v3/repos/:owner/:repo/issues", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const { owner, repo: repoName } = req.params as { owner: string; repo: string };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
     }
 
-    const rows = await db.select().from(issues).where(eq(issues.repoId, repo.id));
+    // #97: bounded, GitHub's way (per_page<=100, page offsets) — gh and
+    // Octokit already send exactly these.
+    const { per_page, page } = PerPageQuery.parse(req.query ?? {});
+    const rows = await db
+      .select()
+      .from(issues)
+      .where(eq(issues.repoId, repo.id))
+      .orderBy(desc(issues.number))
+      .limit(per_page)
+      .offset((page - 1) * per_page);
     reply.send(rows.map((issue) => serializeIssue(issue, owner, repoName, "")));
   });
 
@@ -128,7 +139,7 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
       repo: string;
       number: string;
     };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -156,11 +167,11 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
       };
       const parsed = UpdateIssueBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
 
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -218,11 +229,11 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
       };
       const parsed = CreateCommentBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
 
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -273,7 +284,7 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
       repo: string;
       number: string;
     };
-    const repo = await findRepo(db, owner, repoName);
+    const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
     if (!repo) {
       reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
       return;
@@ -288,7 +299,14 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
       return;
     }
 
-    const rows = await db.select().from(issueComments).where(eq(issueComments.issueId, issue.id));
+    const { per_page, page } = PerPageQuery.parse(req.query ?? {});
+    const rows = await db
+      .select()
+      .from(issueComments)
+      .where(eq(issueComments.issueId, issue.id))
+      .orderBy(asc(issueComments.createdAt))
+      .limit(per_page)
+      .offset((page - 1) * per_page);
     reply.send(
       rows.map((comment) => ({
         id: comment.id,

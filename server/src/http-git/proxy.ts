@@ -4,6 +4,13 @@ import type { Readable } from "node:stream";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { GitBackend } from "../core/git-backend.js";
 import { hasScope } from "../auth/plugin.js";
+import type { AuthenticatedIdentity } from "../auth/tokens.js";
+
+// #91: answers "may this identity touch owner/name at all" — built from the
+// DB by core/repos-lookup.ts's repoAccessCheck in production. A callback
+// rather than a Db so the wire-fidelity suite can stub it open and stay
+// Postgres-free.
+export type RepoAccessCheck = (identity: AuthenticatedIdentity, owner: string, name: string) => Promise<boolean>;
 
 // receive-pack (push) needs repo:write; upload-pack (clone/fetch) only needs
 // repo:read — both the `/info/refs?service=` negotiation GET and the
@@ -177,7 +184,12 @@ function streamHttpBackend(
   });
 }
 
-export function registerGitHttpRoutes(app: FastifyInstance, gitBackend: GitBackend, maxBytes = 500 * 1024 * 1024) {
+export function registerGitHttpRoutes(
+  app: FastifyInstance,
+  authorizeRepo: RepoAccessCheck,
+  gitBackend: GitBackend,
+  maxBytes = 500 * 1024 * 1024,
+) {
   app.route({
     method: ["GET", "POST"],
     url: "/:owner/:repo.git/*",
@@ -188,6 +200,14 @@ export function registerGitHttpRoutes(app: FastifyInstance, gitBackend: GitBacke
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
       const { owner, repo } = req.params as { owner: string; repo: string };
 
+      // The on-disk check keeps 404ing what was never created, but it no
+      // longer stands alone: this route used to resolve the repo off the
+      // filesystem only, which meant it never saw an org_id and the tenancy
+      // boundary simply did not exist for clone/push (#91, audit §P0-1).
+      // The identity check runs before the DB row is consulted so an
+      // unauthenticated probe still gets 401 (git clients need that to
+      // prompt for credentials), and after that, absent and forbidden are
+      // both 404 — same no-oracle rule as findRepoAuthorized.
       if (!(await gitBackend.exists(owner, repo))) {
         reply.code(404).send({ message: `Repository ${owner}/${repo} not found` });
         return;
@@ -195,6 +215,11 @@ export function registerGitHttpRoutes(app: FastifyInstance, gitBackend: GitBacke
 
       if (!req.identity) {
         reply.code(401).header("WWW-Authenticate", "Basic realm=adp").send();
+        return;
+      }
+
+      if (!(await authorizeRepo(req.identity, owner, repo))) {
+        reply.code(404).send({ message: `Repository ${owner}/${repo} not found` });
         return;
       }
 

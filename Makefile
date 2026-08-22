@@ -91,9 +91,10 @@ browser: ## Download the pinned Chromium build Playwright drives
 browser-deps: ## Install Chromium's system libraries (needs root)
 	npx --prefix server playwright install-deps chromium
 
-web: ## Typecheck and build the supervision UI
+web: ## Typecheck, build, and test the supervision UI
 	npm run typecheck --prefix server/web
 	npm run build --prefix server/web
+	npm test --prefix server/web
 
 cli: ## Typecheck, build, and test the adp CLI (no database needed)
 	npm run typecheck --prefix cli
@@ -103,10 +104,17 @@ cli: ## Typecheck, build, and test the adp CLI (no database needed)
 adapters: ## Test the scanner-as-gate adapters (no database needed)
 	npm test --prefix adapters
 
-runner: ## Typecheck, build, and test the gate runner (no database needed, real docker if reachable)
+runner: ## Typecheck, build, and test the gate runner (no database, REAL docker required)
 	npm run typecheck --prefix runner
 	npm run build --prefix runner
-	npm test --prefix runner
+	# ADP_REQUIRE_DOCKER=1 (#99): without it, a machine where the docker
+	# daemon is down runs this target green while silently skipping the
+	# real-container isolation tier — the exact skip-looks-like-a-pass
+	# failure CLAUDE.md's standing invariant exists to prevent, on the one
+	# package whose entire job is container isolation. This box runs the
+	# distro docker.io daemon; if this fails with "docker unreachable",
+	# start it, don't unset the flag.
+	ADP_REQUIRE_DOCKER=1 npm test --prefix runner
 
 helm: ## Lint and render the self-host chart (skipped if helm is absent; ADP_REQUIRE_HELM=1 makes that fatal)
 	@bash scripts/dev/helm-check.sh
@@ -131,8 +139,8 @@ test-all: ## Everything CI runs: build, full suite, web, cli, adapters, runner, 
 	@$(LOAD_ENV) bash server/conformance/run.sh
 	@$(LOAD_ENV) bash server/acceptance/run.sh
 
-check-docs: ## Assert CLAUDE.md still points at paths that exist
-	@bash scripts/check-claude-md.sh
+check-docs: ## Assert tracked docs still point at real paths, links and issue states
+	@bash scripts/check-docs.sh
 
 check: ## The gate. Same target name in every repo in this line of work.
 	@$(MAKE) check-docs

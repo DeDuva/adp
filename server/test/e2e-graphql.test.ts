@@ -10,9 +10,11 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerIssueRoutes } from "../src/http-rest/issues.js";
 import { registerProposalRoutes } from "../src/http-rest/proposals.js";
@@ -81,7 +83,7 @@ describe.skipIf(skipWithoutDb)("M1b GraphQL: read path", () => {
     attachResolvers(schema, createResolvers(gitBackend, "e2e-test-credential-key"));
     registerGraphQLRoute(app, schema, db);
 
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -92,6 +94,7 @@ describe.skipIf(skipWithoutDb)("M1b GraphQL: read path", () => {
       .values({ kind: "human", principal: `gql-e2e-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
 
     const createRepoRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
       method: "POST",
@@ -289,7 +292,7 @@ describe.skipIf(skipWithoutDb)("M1b′ GraphQL: mutations", () => {
     );
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     const schema = loadGitHubSchema();
     attachResolvers(schema, createResolvers(gitBackend, "e2e-test-credential-key"));
@@ -304,12 +307,14 @@ describe.skipIf(skipWithoutDb)("M1b′ GraphQL: mutations", () => {
       .values({ kind: "human", principal: `gql-mut-e2e-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
 
     const [agentIdentity] = await db
       .insert(identities)
       .values({ kind: "agent", principal: `gql-mut-agent-${Date.now()}` })
       .returning();
     agentToken = await mintToken(db, agentIdentity!.id, ["repo:read", "repo:write"]);
+    await grantOwner(db, agentIdentity!.id, owner);
 
     const createRepoRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
       method: "POST",

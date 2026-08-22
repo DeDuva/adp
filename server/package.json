@@ -13,6 +13,7 @@
     "migrate": "tsx src/db/migrate.ts",
     "mcp": "tsx src/mcp/server.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "spec:snapshot": "node scripts/generate-operations-snapshot.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

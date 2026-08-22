@@ -11,6 +11,7 @@ import { and, eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities, operations, checkpoints as checkpointsTable, sessionEvents } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
@@ -18,6 +19,7 @@ import { findRepo } from "../src/core/repos-lookup.js";
 import { verifyChain } from "../src/core/trajectory.js";
 import { verifyEnvelope, decodeStatement, type DsseEnvelope } from "../src/core/dsse.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerIssueRoutes } from "../src/http-rest/issues.js";
 import { registerWorkspaceRoutes } from "../src/http-rest/workspaces.js";
@@ -87,7 +89,7 @@ describe.skipIf(skipWithoutDb)("M3: cross-harness checkpoint and resume (D2)", (
     registerWorkspaceRoutes(app, db, gitBackend);
     registerOperationRoutes(app, db, gitBackend);
     registerSessionRoutes(app, db, gitBackend, signer, PUBLIC_URL);
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -99,6 +101,7 @@ describe.skipIf(skipWithoutDb)("M3: cross-harness checkpoint and resume (D2)", (
       .values({ kind: "agent", principal: `sessions-e2e-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
 
     await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: repoName }) });
 

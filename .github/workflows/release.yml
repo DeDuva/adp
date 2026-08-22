@@ -1,0 +1,69 @@
+# #101: release identity. Until this existed the repo had zero tags, zero
+# releases, no CHANGELOG, and no published image — a consumer could pin only
+# a raw SHA, and since there is deliberately no hosted staging rung
+# (docs/environments-plan.md), the pinnable artifact IS the separation
+# between active development and what stakeholders depend on.
+#
+# Trigger is a version tag, pushed by a human after the release PR merges.
+# The rule the tag carries: the git tag and the served ADP-API-Version move
+# together — vX.Y.Z tags a commit whose server/src/api-version.ts says X.Y.Z
+# (asserted below, so a mismatched tag fails loudly instead of publishing a
+# lie).
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag matches the served contract version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version=$(grep -oP 'export const API_VERSION = "\K[^"]+' server/src/api-version.ts)
+          if [ "$tag" != "$version" ]; then
+            echo "tag v$tag but api-version.ts serves $version — these move together (#101)"; exit 1
+          fi
+
+      - name: Log in to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/deduva/adp:${{ github.ref_name }}
+            ghcr.io/deduva/adp:latest
+          build-args: |
+            ADP_GIT_SHA=${{ github.sha }}
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        # Notes assembled in a file, not an inline quoted string — a
+        # multi-line --notes argument is exactly the shape that silently
+        # breaks the YAML block scalar (it did, on this workflow's first
+        # run: the unindented continuation lines ended the block).
+        run: |
+          awk "/^## ${GITHUB_REF_NAME}/{flag=1;next}/^## v/{flag=0}flag" CHANGELOG.md > /tmp/notes.md
+          printf '\n**Image:** `ghcr.io/deduva/adp:%s`\n' "$GITHUB_REF_NAME" >> /tmp/notes.md
+          printf '**Digest:** `%s` — pin with `ADP_IMAGE=ghcr.io/deduva/adp@%s`\n' "$DIGEST" "$DIGEST" >> /tmp/notes.md
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file /tmp/notes.md

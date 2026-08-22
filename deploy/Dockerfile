@@ -7,19 +7,22 @@ RUN npm install
 COPY server/ ./
 RUN npm run build
 
-# The supervision UI, built in the same stage. main.ts serves ../web/dist
-# relative to its own dist/, and falls back to a *log line* when that directory
-# is missing — which is right for a fresh checkout running `npm run dev` and
-# wrong here: until M4-12 this image never built the UI at all, so every
-# self-hosted instance, the GCP dev box included, quietly served no /ui/* while
-# looking entirely healthy. `docs/pragmatic_mvp.md` §4.6 counts the UI as part
-# of the product, and M4-7 just put the org policy console behind it.
+# #101: the supervision UI ships in the production image. main.ts serves
+# /ui/* only when web/dist exists beside dist/ — without this stage the
+# published image silently served no UI at all, the same skip-looks-like-
+# working failure the rest of the suite guards against. M4-12 found the same
+# bug independently while verifying the Helm chart: the GCP dev box had been
+# serving no /ui/* at all, with M4-7's org policy console behind it.
 #
-# `npm ci` rather than `npm install`: web/ has its own lockfile, and a
+# Its own stage, so the UI's node_modules and sources never reach the server
+# build stage — only the built assets are copied forward.
+#
+# `npm ci` rather than `npm install` (M4-12): web/ has its own lockfile, and a
 # self-hosting image should build the versions that were tested, not the
 # versions that resolve today.
-WORKDIR /app/server/web
-COPY server/web/package.json server/web/package-lock.json* ./
+FROM node:22-slim AS webbuild
+WORKDIR /app/web
+COPY server/web/package.json server/web/package-lock.json ./
 RUN npm ci
 COPY server/web/ ./
 RUN npm run build
@@ -31,12 +34,15 @@ WORKDIR /app/server
 COPY server/package.json server/package-lock.json* ./
 RUN npm install --omit=dev
 COPY --from=build /app/server/dist ./dist
-# Static assets only — the UI's node_modules and sources stay in the build
-# stage. Path matters: main.ts resolves it as dist/../web/dist.
-COPY --from=build /app/server/web/dist ./web/dist
+# Path matters: main.ts resolves it as dist/../web/dist.
+COPY --from=webbuild /app/web/dist ./web/dist
 COPY server/drizzle ./drizzle
 # schema.ts resolves this relative to the repo root at runtime (three levels
 # up from dist/http-gql/), so it has to land at the same relative depth here.
 COPY spec/graphql /app/spec/graphql
+# Deploy-time build stamp for GET /version (#101) — the release workflow
+# passes the commit it built; compose's runtime env can still override.
+ARG ADP_GIT_SHA=""
+ENV ADP_GIT_SHA=$ADP_GIT_SHA
 EXPOSE 3000
 CMD ["node", "dist/main.js"]

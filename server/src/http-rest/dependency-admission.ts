@@ -1,11 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { validationErrors } from "./validation-errors.js";
 import type { Db } from "../db/client.js";
 import type { Signer } from "../core/signing.js";
 import { gateResults } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
-import { findRepo } from "../core/repos-lookup.js";
+import { findRepoAuthorized } from "../core/repos-lookup.js";
 import { signStatement, type InTotoStatement } from "../core/dsse.js";
 import { evaluateDependencies } from "../core/dependency-admission.js";
 
@@ -35,11 +36,11 @@ export function registerDependencyAdmissionRoutes(app: FastifyInstance, db: Db, 
       const { owner, repo: repoName } = req.params as { owner: string; repo: string };
       const parsed = DependencyAdmissionBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
 
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;

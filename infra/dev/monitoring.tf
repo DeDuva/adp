@@ -41,6 +41,7 @@ locals {
   prometheus_target = "resource.type=\"prometheus_target\""
   http_requests     = "metric.type=\"prometheus.googleapis.com/adp_http_requests_total/counter\""
   gate_job_age      = "metric.type=\"prometheus.googleapis.com/adp_gate_job_oldest_queued_age_seconds/gauge\""
+  gate_running_age  = "metric.type=\"prometheus.googleapis.com/adp_gate_job_oldest_running_age_seconds/gauge\""
   gate_completions  = "metric.type=\"prometheus.googleapis.com/adp_gate_job_completions_total/counter\""
 }
 
@@ -353,6 +354,57 @@ resource "google_monitoring_alert_policy" "gate_job_errors" {
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "300s"
+
+      trigger {
+        count = 1
+      }
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.email.id]
+}
+
+# 6. A running gate job is wedged past what the reaper should allow.
+resource "google_monitoring_alert_policy" "gate_job_wedged" {
+  project      = var.project_id
+  display_name = "ADP dev — running gate job older than 45 minutes"
+  combiner     = "OR"
+
+  documentation {
+    content   = <<-EOT
+      The oldest *running* gate job has been running for more than 45 minutes.
+      Job timeouts cap at 30 minutes and the #92 reaper requeues an expired
+      lease within about a minute of it lapsing, so a running job this old
+      means the reaper itself is not doing its job: the server process that
+      hosts it is down or wedged, its ticks are failing (look for "gate-job
+      reaper tick failed" in the server log), or clocks have gone wrong
+      enough that leases never look expired.
+
+      This is the failure the queued-age alert (4) structurally cannot see —
+      a dead runner's job is precisely NOT queued — and before the reaper
+      existed it was the audit's §P1-1: a job wedged `running` forever,
+      blocking its commit's land and holding an org concurrency slot.
+
+      docs/observability.md — alert 6.
+    EOT
+    mime_type = "text/markdown"
+  }
+
+  conditions {
+    display_name = "oldest running gate job older than 45 minutes"
+
+    condition_threshold {
+      filter = "${local.gate_running_age} ${local.prometheus_target}"
+
+      aggregations {
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_MEAN"
+        cross_series_reducer = "REDUCE_MAX"
+      }
+
+      comparison      = "COMPARISON_GT"
+      threshold_value = 2700
+      duration        = "600s"
 
       trigger {
         count = 1

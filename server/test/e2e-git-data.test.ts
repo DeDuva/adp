@@ -10,9 +10,11 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerProposalRoutes } from "../src/http-rest/proposals.js";
 import { registerGitDataRoutes } from "../src/http-rest/git-data.js";
@@ -65,7 +67,7 @@ describe.skipIf(skipWithoutDb)("M1b′ REST: Tier-2 tail", () => {
     registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key");
     registerGitDataRoutes(app, db, gitBackend);
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -76,6 +78,12 @@ describe.skipIf(skipWithoutDb)("M1b′ REST: Tier-2 tail", () => {
       .values({ kind: "human", principal: `tail-e2e-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
+    // The GitHub-standard create paths (POST /user/repos, /orgs/:org/repos)
+    // resolve their owner from the principal / the :org param — both need a
+    // provisioned org since #91.
+    await grantOwner(db, identity!.id, identity!.principal);
+    await grantOwner(db, identity!.id, `${owner}-org`);
 
     await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
       method: "POST",

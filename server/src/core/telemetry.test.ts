@@ -67,22 +67,25 @@ describe("telemetry", () => {
         ["running", 1],
       ]),
       oldestQueuedAgeSeconds: 42,
+      oldestRunningAgeSeconds: 17,
     });
 
     const body = renderMetrics();
     expect(body).toContain('adp_gate_jobs{status="queued"} 3');
     expect(body).toContain('adp_gate_jobs{status="running"} 1');
     expect(body).toContain("adp_gate_job_oldest_queued_age_seconds 42");
+    expect(body).toContain("adp_gate_job_oldest_running_age_seconds 17");
   });
 
   it("replaces the previous gauge sample rather than accumulating it", () => {
-    setGateJobGauges({ byStatus: new Map([["queued", 5]]), oldestQueuedAgeSeconds: 99 });
-    setGateJobGauges({ byStatus: new Map([["queued", 0]]), oldestQueuedAgeSeconds: 0 });
+    setGateJobGauges({ byStatus: new Map([["queued", 5]]), oldestQueuedAgeSeconds: 99, oldestRunningAgeSeconds: 7 });
+    setGateJobGauges({ byStatus: new Map([["queued", 0]]), oldestQueuedAgeSeconds: 0, oldestRunningAgeSeconds: 0 });
 
     const body = renderMetrics();
     expect(body).toContain('adp_gate_jobs{status="queued"} 0');
     expect(body).not.toContain('adp_gate_jobs{status="queued"} 5');
     expect(body).toContain("adp_gate_job_oldest_queued_age_seconds 0");
+    expect(body).toContain("adp_gate_job_oldest_running_age_seconds 0");
   });
 
   // A confident zero before the first sample would be a lie the alert on
@@ -92,6 +95,7 @@ describe("telemetry", () => {
     expect(body).toContain("# TYPE adp_gate_jobs gauge");
     expect(body).not.toContain("adp_gate_jobs{");
     expect(body).not.toMatch(/^adp_gate_job_oldest_queued_age_seconds /m);
+    expect(body).not.toMatch(/^adp_gate_job_oldest_running_age_seconds /m);
   });
 
   it("counts gate-job completions by terminal status", () => {

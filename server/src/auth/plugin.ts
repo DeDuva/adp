@@ -46,17 +46,29 @@ export function requireAuth(req: FastifyRequest, reply: FastifyReply, done: () =
 
 // Scopes are minted (auth/tokens.ts mintToken) but were never checked
 // anywhere before this — any authenticated token could do anything.
-// "admin" satisfies every check; "repo:write" also satisfies "repo:read"
-// (a write token can obviously read), matching GitHub's own scope nesting.
+// "admin" satisfies the CRUD scopes; "repo:write" also satisfies
+// "repo:read" (a write token can obviously read), matching GitHub's own
+// scope nesting.
+//
+// "runner" is deliberately OUTSIDE admin's umbrella (#90, audit §P0-4):
+// it is not a privilege level, it is a *plane* — the token type handed to
+// the host that executes untrusted code. When admin satisfied runner, the
+// path of least resistance for a deployment was to hand the runner its
+// bootstrap admin token and watch it work; refusing admin here makes that
+// lazy path fail closed, so the only token that can work the gate queue
+// is one minted to hold nothing else (http-rest/tokens.ts).
 export function hasScope(scopes: string[], required: "repo:read" | "repo:write" | "admin" | "runner"): boolean {
+  if (required === "runner") return scopes.includes("runner");
   if (scopes.includes("admin")) return true;
   if (required === "admin") return false; // only an actual "admin" scope satisfies "admin" (checked above)
   if (scopes.includes(required)) return true;
   return required === "repo:read" && scopes.includes("repo:write");
 }
 
-export function requireScope(scope: "repo:read" | "repo:write" | "admin" | "runner") {
-  return function (req: FastifyRequest, reply: FastifyReply, done: () => void) {
+export type RequiredScope = "repo:read" | "repo:write" | "admin" | "runner";
+
+export function requireScope(scope: RequiredScope) {
+  const handler = function (req: FastifyRequest, reply: FastifyReply, done: () => void) {
     if (!req.identity) {
       reply.code(401).header("WWW-Authenticate", "Basic realm=adp").send({ message: "Requires authentication" });
       return;
@@ -67,6 +79,13 @@ export function requireScope(scope: "repo:read" | "repo:write" | "admin" | "runn
     }
     done();
   };
+  // #97: the scope a route demands is part of the CONTRACT, so it must be
+  // introspectable — spec-coverage.test.ts walks the real route table and
+  // asserts each operation's `x-required-scope` in spec/openapi.yaml
+  // matches the scope its preHandler actually enforces. A closure the test
+  // can't see into is how the spec and prose drifted to begin with.
+  handler.requiredScope = scope;
+  return handler;
 }
 
 // M4-1: org-scoped routes call this *alongside* requireScope, not instead of

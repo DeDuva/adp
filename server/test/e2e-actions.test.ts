@@ -7,8 +7,10 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq, and } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
+import { skipWithoutDb } from "./require-db.js";
 import { gateResults, identities, mirrors, operations, repos } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
@@ -33,7 +35,7 @@ const PUBLIC_URL = "https://adp.example.com";
 // The exit criterion this file exists to prove is "exactly one evidence row
 // per completed upstream run" — so redelivery, which GitHub does routinely,
 // gets its own case.
-describe.skipIf(!process.env.DATABASE_URL)("M2: Actions ingest + passthrough", () => {
+describe.skipIf(skipWithoutDb)("M2: Actions ingest + passthrough", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;
@@ -83,6 +85,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M2: Actions ingest + passthrough", (
       .values({ kind: "human", principal: `actions-e2e-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
   });
 
   afterAll(async () => {

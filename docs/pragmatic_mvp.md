@@ -184,6 +184,27 @@ ranked by cost-of-retrofit:
   (`POST /api/v3/repos/:owner` vs GitHub's `POST /user/repos` · `POST /orgs/{org}/repos`);
   GraphQL actors always resolve as `User`, never `Bot`, even for agent identities.
 
+## 1.6 Addendum (2026-08-17) — serial is the base case; fan-out is a mode
+
+The brief's A16 question ("wide fan-out vs. long serial sessions") has enough market evidence to
+reweight the narrative, and the public materials (`docs/html/`, `README.md`, brief A16/A17 update
+blocks) now lead with the serial pattern: one capable agent iterating against CI until it believes
+the work is done, then merging — with fan-out as the mode fleets enter for hard problems and mass
+remediation, not the characteristic workload. The evidence and sources live in the brief's A16
+update (2026-08-17); the short version: autonomous merges are still a rounding error at merge-queue
+scale, vendors themselves reserve ensembles for hard problems, and the serial loop's binding risk
+is self-graded evidence (reward hacking), not merge contention.
+
+Nothing in Parts 2–3 changes retroactively — the MVP already bet this way (serial land shipped;
+speculative batching cut; candidate sets kept at one-table cost). What the reweighting *adds* to
+the forward view, in priority order: policy that can require approval and evidence independent of
+the author (today `one_approval` accepts the author approving itself — tracked as a repo issue);
+undo that survives a moved branch (compensating revert, not only CAS rollback); cross-harness
+checkpoint/resume as a flagship demo rather than a hedge; and actually running the still-open
+fan-out-vs-serial bench arm. Candidate sets are repositioned, not retired: they are the fan-out
+mode's primitive (N remediation attempts against one vulnerability intent, model ensembles on hard
+problems) and squad-lab's A/B shape.
+
 ---
 
 # Part 2 — The MVP
@@ -916,6 +937,32 @@ Backup/PITR with an **executed** restore drill. Runner pool isolation. Observabi
 Docs, quickstart, self-host artifacts (image + compose + helm).
 **Exit:** external users can sign up and run a real workload; restore drill completed.
 
+*Amended 2026-08-13 by [`m4-postmortem-audit.md`](m4-postmortem-audit.md), after the M4 code
+landed.* The audit found the code present but the milestone not met, and made four scope
+decisions that this plan of record now carries:
+
+1. **M4-9 (runner pool isolation) is not done as shipped.** The container executor is real and
+   well-tested, but org isolation is enforced on 4 of ~98 operations, the queue cannot recover a
+   job whose runner died, and no runner-scoped token can be minted (the runner is handed an
+   `admin` token). These are P0 fixes that gate the milestone, not follow-ups. The org-isolation
+   matrix test is exit criterion #1 and does not exist yet.
+2. **A 0.3.0 breaking batch, taken now.** Eleven operations landed additively without a version
+   bump; the audit bundles that correction with the breaking contract fixes worth making while
+   the only tokens in existence are hand-minted — an `Error` schema, auth/scopes declared in the
+   spec, bounded list endpoints, audited write paths for quota and policy-repo changes. **It keeps
+   `{owner}/{repo}` URLs** (the owner string becomes the org's immutable URL slug; org rename
+   stays unsupported pre-1.0), because `gh` fidelity requires owner-shaped URLs. One coordinated
+   release so downstream consumers regenerate once.
+3. **Google OIDC for M4-5; SCIM (M4-6) deferred.** This resolves the readiness review's decision 1:
+   OIDC login is built and acceptance-tested against real Google. SCIM is parked until a
+   procurement conversation demands it — it is not blocked, it is out of scope until there is a
+   consumer.
+4. **No hosted staging rung yet.** Downstream consumers get a *pinnable artifact* — a git tag, a
+   GitHub release, and a published, versioned server image — rather than a shared always-on
+   instance; each consumer keeps running its own pinned instance. The separation of active
+   development from what stakeholders depend on is source-level, not a second box. See
+   [`environments-plan.md`](environments-plan.md) §"No hosted staging yet".
+
 ### M5 — Substrate hardening (evidence-gated, open-ended)
 Only if measurement demands: jj-derived change engine with first-class conflicts; VFS lazy
 materialization; speculative merge batching; pluggable storage backends (Lore evaluation, A3);
@@ -961,7 +1008,7 @@ Boundaries preserve the option to split; a service mesh at week 3 does not.
 | **Git storage** | Bare repos on one volume; all plumbing by invoking the real `git` binary as a subprocess | 100% fidelity, free. No isomorphic-git/nodegit edge cases. Behind a `GitBackend` interface for later |
 | **Git transport** | `git http-backend` (CGI) proxied behind auth middleware | The reference implementation of the wire protocol, already installed |
 | **Database** | PostgreSQL 16, Drizzle (migrations + typed queries) | Transactional spine |
-| **Job queue** | `pg-boss` (Postgres-backed) | No Redis. One stateful dependency is enough, and gate jobs want transactional enqueue alongside the change record |
+| **Job queue** | bespoke, on `gate_jobs` (Postgres-backed) | No Redis. One stateful dependency is enough, and gate jobs want transactional enqueue alongside the change record. `pg-boss` was named here originally; what shipped is our own claim/lease/reaper loop on `FOR UPDATE SKIP LOCKED`, kept deliberately (audit P1-7) |
 | **Object store** | S3-compatible: MinIO self-hosted, Cloud Storage hosted (its XML API keeps the same client). Content-addressed keys `sha256/<hash>` | Gate logs, junit XML, evidence payloads, trajectories. Content addressing gives dedup and makes A9 sealed payloads natural later. Staying S3-compatible rather than adopting a GCS-native client is what keeps the self-host path real |
 | **Gate runner** | Separate process, Docker/Podman. Reads `adp.yaml` (`image`, `setup`, `gates:[{name,run,weight}]`), materializes a checkout, runs commands, uploads logs+junit, posts a check-run | Not a workflow engine. No matrix, no marketplace, no DAG |
 | **MCP** | Official TS SDK, streamable-HTTP, bearer auth, same process | MCP is a projection of the same domain layer, not a second system |
@@ -1162,7 +1209,7 @@ In order of authority:
 |---|---|---|
 | Primary success test | Unmodified agent, zero config | Compat plane became tier-1; MVP grew from ~7 to ~11 weeks; native MCP surface shrank from 16 tools to 8 (only what GitHub can't express); TLS + real hostname became a week-1 requirement |
 | `gh` CLI compatibility | In the MVP | ~14 GraphQL operations added; "load GitHub's real SDL, partial resolvers" chosen to avoid the partial-shim failure mode; record-replay suite became the M1b exit gate; M1 explicitly sequenced so `gh` risk surfaces in week 8 with a fallback intact |
-| Stack | TypeScript + Node | Fastify / Drizzle / graphql-js / pg-boss / MCP TS SDK; git via subprocess; supersedes the docs' Rust + gRPC + jj-lib + gitoxide |
+| Stack | TypeScript + Node | Fastify / Drizzle / graphql-js / a bespoke Postgres job queue / MCP TS SDK; git via subprocess; supersedes the docs' Rust + gRPC + jj-lib + gitoxide |
 | Build vs fork | Greenfield over plain git | Confirmed by research: forking Gitea/Forgejo would not have delivered `gh` compat (no GraphQL) while importing a human-workflow data model |
 
 **Residual risks to watch, in order:**

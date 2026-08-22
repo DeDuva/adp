@@ -129,6 +129,31 @@ Production-shaped by then means: managed Postgres with PITR, object storage, git
 snapshots, and gate runners on a **separate** pool — §4.5's own M4 posture, on the grounds that
 runners execute untrusted code and must never share a host with the API.
 
+### No hosted staging yet — the separation is source-level *(decided 2026-08-13)*
+
+By M4's landing, ADP had downstream consumers (`adp-replay`, `squad-lab`, `duva-bench`) but nothing
+stable to point at: zero git tags, zero releases, no published image, and a dev box that hard-resets
+to `origin/main` on every boot (`infra/dev/startup.sh`). The tech-lead audit
+([`m4-postmortem-audit.md`](m4-postmortem-audit.md)) posed the separation question — active
+development vs. what stakeholders depend on — and the answer taken was **not** to provision a shared
+staging box now, but to make the *artifact* pinnable:
+
+- **A git tag + GitHub release + a published, versioned server image** (to the already-provisioned
+  but unused Artifact Registry `adp` / `ghcr.io/deduva/adp`, via the already-provisioned CI OIDC
+  federation), tagged with the version **and** digest. The tag and the served `ADP-API-Version` move
+  together from 0.3.0 on.
+- **Each consumer keeps running its own pinned instance** (`adp-replay` already builds from a pinned
+  `ADP_REF`; `squad-lab`/`duva-bench` run a local stack). Now they can pin a real release + digest
+  rather than a raw SHA, which is what `docs/api-compatibility.md` already advises and could not
+  deliver.
+
+This keeps the dev box honestly disposable (it stays contractually pinned to `main`, and
+`make env-status` keeps treating drift from `main` as a FAIL) and avoids the trap this document
+already names: the moment a shared instance acquires data a stakeholder minds losing, it has become
+staging without the care staging deserves. A real staging rung is still sequenced to M4-8/M4-10 (the
+managed-Postgres budget and the executed restore drill); it is simply not on the critical path for
+letting stakeholders pin something today.
+
 ### What does not need an environment
 
 M3 (fleet fan-out, benchmarks, statistical land criteria) is measurement work. It wants a big
@@ -158,6 +183,26 @@ gates: a gate that can read it can forge evidence, which defeats the provenance 
 completely than losing the key would. Whatever answer this question gets must therefore survive the
 runner/API split, not just satisfy a single-box deployment. Today no executor exists, so nothing is
 currently exposed.
+
+*Updated 2026-08-13:* **the executor now exists** — M4-9 shipped the `runner/` package and its
+container gate execution. The "nothing is currently exposed" clause above is therefore no longer
+true for any deployment that actually runs a runner alongside the API and the key, which the dev box
+does. The co-residency is presently benign only because the dev box mints its runner token by hand
+(the runner has no separate host and, per the audit's P0-4, no minted `runner`-scoped token yet) —
+but the rule now has a live subject rather than a hypothetical one. Splitting the runner host and
+giving it a bounded, non-`admin` token are P0 items in
+[`m4-postmortem-audit.md`](m4-postmortem-audit.md), and no production rung may co-locate the two.
+
+*Updated 2026-08-14 (#102):* the tooling half of that rule now exists, so the rule is enforceable
+rather than aspirational. A runner host gets a bounded `runner`-scoped token from
+`POST /api/adp/tokens` (#90; `admin` no longer satisfies `runner`), so it holds neither
+`SIGNING_KEY` nor `DATABASE_URL` — `runner/src/config.test.ts` asserts the absence. And key
+rotation is survivable: `verifyEnvelope` resolves each envelope's `keyid` through a
+`KeyRegistry` (active signer + `RETIRED_SIGNING_PUBLIC_KEYS`, public halves only), so rotating
+`SIGNING_KEY` no longer invalidates every already-signed piece of evidence. **The standing rule,
+restated as deployment policy: a production rung runs the runner on its own host with only its
+runner token; the signing key lives only with the API; a rotated-out key's public half goes into
+`RETIRED_SIGNING_PUBLIC_KEYS` and its private half is destroyed.**
 
 **Auth from CI.** GitHub Actions → GCP should use OIDC workload identity federation, not a
 long-lived service-account key. It is a strictly better default and awkward to retrofit once a key

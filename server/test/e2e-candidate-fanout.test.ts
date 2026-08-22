@@ -11,11 +11,13 @@ import { and, eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities, operations, proposals, workspaces, candidateSets } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
 import { findRepo } from "../src/core/repos-lookup.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerIssueRoutes } from "../src/http-rest/issues.js";
 import { registerChangeRoutes } from "../src/http-rest/changes.js";
@@ -92,7 +94,7 @@ describe.skipIf(skipWithoutDb)("M3: candidate-set fan-out, resolution, and recla
     registerGateRoutes(app, db, signer, PUBLIC_URL, CREDENTIAL_KEY);
     registerWorkspaceRoutes(app, db, gitBackend);
     registerCandidateSetRoutes(app, db, gitBackend, []);
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -104,6 +106,7 @@ describe.skipIf(skipWithoutDb)("M3: candidate-set fan-out, resolution, and recla
       .values({ kind: "agent", principal: `fanout-e2e-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
 
     await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: repoName }) });
 

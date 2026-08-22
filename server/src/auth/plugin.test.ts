@@ -3,8 +3,37 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../db/client.js";
 import { identities, orgs, orgMemberships } from "../db/schema.js";
 import { isOrgMember, type AuthenticatedIdentity } from "./tokens.js";
-import { requireOrgAccess } from "./plugin.js";
+import { hasScope, requireOrgAccess } from "./plugin.js";
 import { skipWithoutDb } from "../../test/require-db.js";
+
+// No database needed — hasScope is pure. The full nesting table, pinned:
+// the interesting rows are the two directions of #90 (audit §P0-4) — admin
+// no longer satisfies runner, and runner satisfies nothing else.
+describe("hasScope", () => {
+  it("admin satisfies the CRUD scopes and itself", () => {
+    expect(hasScope(["admin"], "repo:read")).toBe(true);
+    expect(hasScope(["admin"], "repo:write")).toBe(true);
+    expect(hasScope(["admin"], "admin")).toBe(true);
+  });
+
+  it("admin does NOT satisfy runner — the untrusted-host plane is not a privilege level (#90)", () => {
+    expect(hasScope(["admin"], "runner")).toBe(false);
+    expect(hasScope(["repo:read", "repo:write", "admin"], "runner")).toBe(false);
+  });
+
+  it("runner satisfies runner and nothing else", () => {
+    expect(hasScope(["runner"], "runner")).toBe(true);
+    expect(hasScope(["runner"], "repo:read")).toBe(false);
+    expect(hasScope(["runner"], "repo:write")).toBe(false);
+    expect(hasScope(["runner"], "admin")).toBe(false);
+  });
+
+  it("repo:write satisfies repo:read; nothing but admin satisfies admin", () => {
+    expect(hasScope(["repo:write"], "repo:read")).toBe(true);
+    expect(hasScope(["repo:read"], "repo:write")).toBe(false);
+    expect(hasScope(["repo:read", "repo:write", "runner"], "admin")).toBe(false);
+  });
+});
 
 function identity(overrides: Partial<AuthenticatedIdentity>): AuthenticatedIdentity {
   return {

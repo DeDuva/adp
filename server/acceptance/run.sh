@@ -18,8 +18,20 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 GH_VERSION="${GH_VERSION:-2.63.0}"
-PORT="${ADP_ACCEPTANCE_PORT:-$((20000 + RANDOM % 20000))}"
-TLS_PORT="${ADP_ACCEPTANCE_TLS_PORT:-$((40000 + RANDOM % 20000))}"
+# Port helpers — see scripts/dev/ports.sh. Picked BELOW the kernel's ephemeral
+# floor: the old ranges (20000-39999 and 40000-59999) overlapped the pool every
+# outbound connection on the machine draws from, the TLS proxy's completely, so
+# `listen()` lost races to unrelated sockets often enough to cost three full
+# runs across two pull requests.
+# shellcheck source=../scripts/dev/ports.sh
+. ../scripts/dev/ports.sh
+
+PORT="${ADP_ACCEPTANCE_PORT:-$(adp_pick_port 20000)}"
+TLS_PORT="${ADP_ACCEPTANCE_TLS_PORT:-$(adp_pick_port 20000)}"
+# Plain echo rather than this script's own `fail()`, which is not defined until
+# further down. An empty port would otherwise reach `--port ''` and fail as
+# something else entirely.
+[ -n "$PORT" ] && [ -n "$TLS_PORT" ] || { echo "ACCEPTANCE FAIL: could not find free ports" >&2; exit 1; }
 WORKDIR="$(mktemp -d -t adp-acceptance-XXXXXX)"
 GH_HOST="localhost:${TLS_PORT}"
 ARTIFACTS="${ADP_ACCEPTANCE_ARTIFACTS:-$(cd .. && pwd)/.adp-test/acceptance}"
@@ -129,6 +141,20 @@ openssl req -x509 -newkey rsa:2048 -keyout "$WORKDIR/key.pem" -out "$WORKDIR/cer
 node conformance/tls-proxy.mjs "$WORKDIR/cert.pem" "$WORKDIR/key.pem" "$TLS_PORT" "$PORT" \
   > "$WORKDIR/tls-proxy.log" 2>&1 &
 PROXY_PID=$!
+# This `pass` used to be printed the instant the process was backgrounded,
+# which reported success for something nothing had checked — the same shape as
+# CLAUDE.md's "a skipped test must never look like a passing one", one layer
+# down in the harness itself. A proxy that died on EADDRINUSE was announced as
+# ok here and then surfaced minutes later as an unexplained `connection
+# refused`. Now the line means what it says.
+#
+# The proxy's own startup log line, not a port probe: the line is printed from
+# its listen callback, so it proves this process is serving rather than that
+# the port answers (which a squatter would also satisfy).
+adp_wait_for_log_line "$WORKDIR/tls-proxy.log" '^tls-proxy: ' "$PROXY_PID" || {
+  cat "$WORKDIR/tls-proxy.log"
+  fail "TLS proxy never came up on :$TLS_PORT"
+}
 pass "TLS proxy on :$TLS_PORT"
 
 OWNER="acceptance-$$"
@@ -388,7 +414,8 @@ pass "D14 adp CLI (pr list) shows the same PR gh and curl already saw"
 # D15 — outbound webhooks: register a hook, then trigger a real signed
 # delivery against a real local listener (not a mock of core/webhooks.ts).
 WEBHOOK_SECRET="acceptance-webhook-$(openssl rand -hex 8)"
-WEBHOOK_PORT=$((30000 + RANDOM % 10000))
+WEBHOOK_PORT=$(adp_pick_port 20000)
+[ -n "$WEBHOOK_PORT" ] || fail "D15: could not find a free port for the webhook listener"
 WEBHOOK_RECEIVED="$WORKDIR/webhook-received.json"
 node -e '
 const http = require("node:http");
@@ -404,7 +431,10 @@ http.createServer((req, res) => {
 }).listen(Number(port));
 ' "$WEBHOOK_PORT" "$WEBHOOK_RECEIVED" &
 WEBHOOK_LISTENER_PID=$!
-sleep 0.3
+# Was `sleep 0.3` — long enough on a quiet laptop, a guess everywhere else, and
+# silent either way if the listener never bound. This webhook port was the one
+# that took down a run at 33198, squarely inside the ephemeral range.
+adp_wait_for_port "$WEBHOOK_PORT" || fail "D15: webhook listener never bound :$WEBHOOK_PORT"
 
 api POST "/api/v3/repos/${OWNER}/${REPO}/hooks" \
   -d "{\"config\":{\"url\":\"http://127.0.0.1:${WEBHOOK_PORT}/\",\"secret\":\"${WEBHOOK_SECRET}\"},\"events\":[\"push\"]}" \

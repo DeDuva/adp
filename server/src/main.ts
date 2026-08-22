@@ -6,12 +6,13 @@ import fastifyStatic from "@fastify/static";
 import { loadConfig } from "./config.js";
 import { createDb } from "./db/client.js";
 import { GitBackend } from "./core/git-backend.js";
-import { Signer } from "./core/signing.js";
+import { KeyRegistry, Signer } from "./core/signing.js";
 import { authPlugin } from "./auth/plugin.js";
 import { registerMirrorWebhookRawBodyParser } from "./http-rest/mirror-webhook.js";
 import { registerApiRoutes } from "./routes.js";
 import { startMirrorPoller } from "./core/mirror-poller.js";
 import { startWorkspaceSweeper } from "./core/workspace-sweeper.js";
+import { startGateJobReaper } from "./core/gate-job-reaper.js";
 import { findOrCreateSystemIdentity } from "./core/system-identity.js";
 import { LandRequirement } from "./core/repo-policy.js";
 import { recordHttpRequest, renderMetrics } from "./core/telemetry.js";
@@ -90,6 +91,7 @@ async function main() {
     db,
     gitBackend,
     signer,
+    keyRegistry: new KeyRegistry(signer, (config.RETIRED_SIGNING_PUBLIC_KEYS ?? "").split(",")),
     publicUrl: config.PUBLIC_URL,
     credentialKey: config.MIRROR_CREDENTIAL_KEY,
     instanceFloor,
@@ -117,6 +119,11 @@ async function main() {
 
   const sweeperActorId = await findOrCreateSystemIdentity(db, "system:workspace-sweeper");
   startWorkspaceSweeper(db, gitBackend, sweeperActorId, config.WORKSPACE_SWEEP_INTERVAL_MS);
+
+  // #92: requeues (or, past the retry cap, errors) running gate jobs whose
+  // lease expired — the recovery path for a runner that died mid-job.
+  const reaperActorId = await findOrCreateSystemIdentity(db, "system:gate-job-reaper");
+  startGateJobReaper(db, reaperActorId, config.GATE_JOB_REAPER_INTERVAL_MS);
 
   // M4-11: keeps the gate-job queue gauges on /metrics current. No actor
   // identity and no recordOperation — unlike the sweeper this changes

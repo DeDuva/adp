@@ -12,6 +12,7 @@ import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerAuditLogRoutes } from "../src/http-rest/audit-log.js";
+import { registerOrgRoutes } from "../src/http-rest/orgs.js";
 
 // M4-3 (docs/m4-readiness-review.md §4): the audit-log export, proven
 // through the real REST route — the first real consumer of requireOrgAccess
@@ -47,6 +48,7 @@ describe.skipIf(skipWithoutDb)("M4-3: audit-log export", () => {
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerAuditLogRoutes(app, db);
+    registerOrgRoutes(app, db, gitBackend, []);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -120,5 +122,50 @@ describe.skipIf(skipWithoutDb)("M4-3: audit-log export", () => {
     const exported = res.text.trim().split("\n").map((l) => JSON.parse(l) as { id: string; target: string });
     expect(exported).toHaveLength(2);
     expect(new Set(exported.map((e) => e.target))).toEqual(new Set([`${orgName}/repo-a`, `${orgName}/repo-b`]));
+  });
+
+  // #97: org administration writes are audited AND exported. The quota
+  // ceilings used to be settable only through an unaudited psql UPDATE, and
+  // the kill-switch op — repoId null, org nothing — was invisible to this
+  // very export. Both halves in one flow: PATCH through the real route,
+  // then read the same org's export and find the org-level rows.
+  it("PATCHed org quotas and kill switch appear in the org's own audit export", async () => {
+    const [orgAdmin] = await db
+      .insert(identities)
+      .values({ kind: "human", principal: `audit-org-admin-${Date.now()}` })
+      .returning();
+    await db.insert(orgMemberships).values({ orgId, identityId: orgAdmin!.id, role: "admin" });
+    const orgAdminToken = await mintToken(db, orgAdmin!.id, ["admin"], { orgId });
+
+    const patched = await fetch(`http://127.0.0.1:${port}/api/adp/orgs/${orgId}`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${orgAdminToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ kill_switch: true, max_repos: 7, max_concurrent_gate_jobs: 2 }),
+    });
+    expect(patched.status).toBe(200);
+    const body = (await patched.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ kill_switch: true, max_repos: 7, max_concurrent_gate_jobs: 2 });
+
+    const exportRes = await api(`/api/adp/orgs/${orgId}/audit-log`, orgToken);
+    const verbs = exportRes.text
+      .trim()
+      .split("\n")
+      .map((l) => (JSON.parse(l) as { verb: string }).verb);
+    expect(verbs).toContain("org.kill_switch");
+    expect(verbs).toContain("org.quota_update");
+
+    const quotaRow = exportRes.text
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as { verb: string; after?: { max_repos?: number } })
+      .find((r) => r.verb === "org.quota_update");
+    expect(quotaRow?.after?.max_repos).toBe(7);
+
+    // Leave the org usable for any test after us.
+    await fetch(`http://127.0.0.1:${port}/api/adp/orgs/${orgId}`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${orgAdminToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ kill_switch: false, max_repos: null, max_concurrent_gate_jobs: null }),
+    });
   });
 });

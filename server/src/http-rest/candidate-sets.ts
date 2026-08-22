@@ -1,10 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
+import { validationErrors } from "./validation-errors.js";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { KeysetQuery, decodeCursor, encodeCursor, NEXT_CURSOR_HEADER } from "./pagination.js";
 import type { Db } from "../db/client.js";
 import { candidateSets, proposals } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
-import { findRepo } from "../core/repos-lookup.js";
+import { findRepoAuthorized } from "../core/repos-lookup.js";
 import {
   openCandidateSet,
   selectCandidate,
@@ -70,10 +72,10 @@ export function registerCandidateSetRoutes(
       const { owner, repo: repoName } = req.params as { owner: string; repo: string };
       const parsed = OpenCandidateSetBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -99,7 +101,7 @@ export function registerCandidateSetRoutes(
     { preHandler: requireScope("repo:read") },
     async (req, reply) => {
       const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -144,16 +146,31 @@ export function registerCandidateSetRoutes(
     { preHandler: requireScope("repo:read") },
     async (req, reply) => {
       const { owner, repo: repoName } = req.params as { owner: string; repo: string };
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
       }
+      // #97: bounded — limit + keyset cursor in the ADP-Next-Cursor header.
+      const { limit, cursor } = KeysetQuery.parse(req.query ?? {});
+      const pos = decodeCursor(cursor);
       const rows = await db
         .select()
         .from(candidateSets)
-        .where(eq(candidateSets.repoId, repo.id))
-        .orderBy(desc(candidateSets.createdAt));
+        .where(
+          and(
+            eq(candidateSets.repoId, repo.id),
+            pos ? sql`(${candidateSets.createdAt}, ${candidateSets.id}) < (${pos.createdAt}, ${pos.id})` : undefined,
+          ),
+        )
+        .orderBy(desc(candidateSets.createdAt), desc(candidateSets.id))
+        .limit(limit);
+      if (rows.length === limit) {
+        reply.header(
+          NEXT_CURSOR_HEADER,
+          encodeCursor({ createdAt: rows[rows.length - 1]!.createdAt, id: rows[rows.length - 1]!.id }),
+        );
+      }
 
       reply.send(
         await Promise.all(
@@ -173,10 +190,10 @@ export function registerCandidateSetRoutes(
       const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
       const parsed = SelectCandidateBody.safeParse(req.body);
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
@@ -208,10 +225,10 @@ export function registerCandidateSetRoutes(
       const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
       const parsed = ResolveCandidateSetBody.safeParse(req.body ?? {});
       if (!parsed.success) {
-        reply.code(422).send({ message: "Validation failed", errors: parsed.error.issues });
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
         return;
       }
-      const repo = await findRepo(db, owner, repoName);
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;

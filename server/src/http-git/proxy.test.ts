@@ -44,7 +44,10 @@ describe("git smart-HTTP proxy", () => {
         sessionId: null,
       };
     });
-    registerGitHttpRoutes(app, backend);
+    // Access check stubbed open — org authorization is a DB concern and this
+    // suite is deliberately Postgres-free; the real repoAccessCheck(db) is
+    // what every e2e clone/push and the isolation matrix run through.
+    registerGitHttpRoutes(app, async () => true, backend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -140,7 +143,7 @@ describe("git smart-HTTP proxy bodyLimit", () => {
       };
     });
     // A tiny limit — small enough that even a trivial commit's pack exceeds it.
-    registerGitHttpRoutes(app, backend, 100);
+    registerGitHttpRoutes(app, async () => true, backend, 100);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();

@@ -14,6 +14,7 @@ import { mintToken } from "../src/auth/tokens.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerOrgRoutes } from "../src/http-rest/orgs.js";
 
@@ -98,7 +99,7 @@ describe.skipIf(skipWithoutDb)("M4-7: org policy console", () => {
     );
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
     registerOrgRoutes(app, db, gitBackend, ["gates_green"]);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
@@ -114,14 +115,24 @@ describe.skipIf(skipWithoutDb)("M4-7: org policy console", () => {
       .returning();
     adminIdentityId = admin!.id;
     const bootstrapToken = await mintToken(db, adminIdentityId, ["admin"]);
+    // #91: the org is provisioned explicitly (through the real route — the
+    // console's org is born the same way a real instance's now is), then the
+    // first repo is created inside it.
+    const orgRes = await fetch(`http://127.0.0.1:${port}/api/adp/orgs`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${bootstrapToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: owner }),
+    });
+    orgId = ((await orgRes.json()) as { id: string }).id;
     await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: "seed" }) }, bootstrapToken);
     const [seed] = await db.select().from(repos).where(and(eq(repos.owner, owner), eq(repos.name, "seed")));
-    orgId = seed!.orgId!;
+    if (seed!.orgId !== orgId) throw new Error("seed repo did not attach to the provisioned org");
 
     const [other] = await db.insert(orgs).values({ name: `org-console-other-${Date.now()}` }).returning();
     otherOrgId = other!.id;
 
-    await db.insert(orgMemberships).values({ orgId, identityId: adminIdentityId, role: "admin" });
+    // POST /api/adp/orgs already seeded adminIdentityId's membership in
+    // `orgId`; only the second org's membership needs inserting by hand.
     await db.insert(orgMemberships).values({ orgId: otherOrgId, identityId: adminIdentityId, role: "member" });
 
     orgToken = await mintToken(db, adminIdentityId, ["repo:read"], { orgId });
@@ -211,7 +222,11 @@ describe.skipIf(skipWithoutDb)("M4-7: org policy console", () => {
     ]);
 
     expect(items.find((r) => r.name === "policy")!.is_policy_repo).toBe(true);
-  });
+    // 40s, not the 20s default: this test's setup is two real repos, real
+    // pushes, and per-repo git reads for the console payload — ~13s on a
+    // quiet run, and the suite runs 50+ files of git subprocess traffic
+    // concurrently against one machine.
+  }, 40_000);
 
   it("distinguishes a fail-closed floor from a deliberate one", async () => {
     // A policy.yaml that does not parse is failed closed to every known
@@ -224,6 +239,14 @@ describe.skipIf(skipWithoutDb)("M4-7: org policy console", () => {
       .values({ kind: "human", principal: `org-console-broken-${Date.now()}` })
       .returning();
     const brokenBootstrap = await mintToken(db, brokenIdentity!.id, ["admin"]);
+    // #91: provision the org first (this also seeds brokenIdentity's
+    // membership), then create the policy repo inside it.
+    const brokenOrgRes = await fetch(`http://127.0.0.1:${port}/api/adp/orgs`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${brokenBootstrap}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: brokenOwner }),
+    });
+    const brokenOrgId = ((await brokenOrgRes.json()) as { id: string }).id;
     await fetch(`http://127.0.0.1:${port}/api/v3/repos/${brokenOwner}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${brokenBootstrap}`, "Content-Type": "application/json" },
@@ -233,7 +256,6 @@ describe.skipIf(skipWithoutDb)("M4-7: org policy console", () => {
       .select()
       .from(repos)
       .where(and(eq(repos.owner, brokenOwner), eq(repos.name, "policy")));
-    const brokenOrgId = brokenRepo!.orgId!;
 
     const cloneDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-org-console-broken-"));
     const cloneUrl = `http://x-access-token:${brokenBootstrap}@127.0.0.1:${port}/${brokenOwner}/policy.git`;
@@ -250,7 +272,6 @@ describe.skipIf(skipWithoutDb)("M4-7: org policy console", () => {
     await rm(cloneDir, { recursive: true, force: true });
 
     await db.update(orgs).set({ policyRepoId: brokenRepo!.id }).where(eq(orgs.id, brokenOrgId));
-    await db.insert(orgMemberships).values({ orgId: brokenOrgId, identityId: brokenIdentity!.id });
     const brokenToken = await mintToken(db, brokenIdentity!.id, ["repo:read"], { orgId: brokenOrgId });
 
     const res = await api(`/api/adp/orgs/${brokenOrgId}`, {}, brokenToken);

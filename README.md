@@ -14,19 +14,27 @@ Apache-2.0 · TypeScript · Fastify · PostgreSQL · the real `git` binary for a
 
 ## Why
 
-Software development is moving from one human on one branch to fleets of agents running concurrent,
-speculative attempts against a shared codebase. Git was designed for none of that: its unit of work
-is the line-based patch, its conflicts halt automation, and it records *what* changed while
-discarding *why* and *whether it was checked*.
+Software development is moving from one human on one branch to agents writing most new code. The
+dominant working pattern is serial, not a swarm: one capable agent iterates against CI until it
+believes the work is done, then submits and merges — with fan-out reserved for hard problems and
+fleet-wide remediation. Git was designed for neither: its unit of work is the line-based patch, its
+conflicts halt automation, and it records *what* changed while discarding *why* and *whether it was
+checked*.
 
-Meanwhile every agent harness is privately reinventing the same primitives — checkpoint/rewind,
-session persistence, multi-workspace orchestration — each invisible to the repository's history and
+The serial pattern has a failure mode of its own, and it is the important one: when the author
+decides when it's done, the only oversight surface is a test suite the author can see — and often
+touch. An agent's belief that the work is done is not evidence. And when a change lands wrong,
+everything that follows — rolling it back, validating it, continuing the work with a different
+model or harness — needs a record that today exists only as a transcript in one vendor's format,
+because every agent harness privately reinvents the same primitives: checkpoint/rewind, session
+persistence, multi-workspace orchestration, each invisible to the repository's history and
 incompatible with every other harness.
 
 ADP's bet is that the durable primitive is not storage and not the change model, but **binding
 context to verification evidence at merge time**: capturing intent and proof-of-verification in one
 signed record, and gating the merge on it. Plenty of systems capture provenance. The point here is
-to make it enforceable.
+to make it enforceable — to convert the agent's belief into evidence someone else can check,
+revert, or build on.
 
 Git compatibility is preserved throughout — `git clone` keeps working.
 

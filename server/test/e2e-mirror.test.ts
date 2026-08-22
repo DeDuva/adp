@@ -9,13 +9,16 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq, and } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
+import { skipWithoutDb } from "./require-db.js";
 import { changes, identities, mirrors, mirrorSyncLog, operations, repos } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
 import { pollOnce } from "../src/core/mirror-poller.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerHookRoutes } from "../src/http-git/hooks.js";
 import { registerMirrorRoutes } from "../src/http-rest/mirrors.js";
@@ -31,7 +34,7 @@ const CREDENTIAL_KEY = "e2e-mirror-credential-key";
 // GitHub's, triggers a fetch back into ADP with auto-record), divergence
 // (neither side force-moves a ref it can't fast-forward), and a bad
 // signature (rejected before any DB write).
-describe.skipIf(!process.env.DATABASE_URL)("M2: mirror mode", () => {
+describe.skipIf(skipWithoutDb)("M2: mirror mode", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;
@@ -68,7 +71,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M2: mirror mode", () => {
     registerHookRoutes(app, db, gitBackend, signer, CREDENTIAL_KEY);
     registerMirrorRoutes(app, db, CREDENTIAL_KEY);
     registerMirrorWebhookRoutes(app, db, gitBackend, signer, CREDENTIAL_KEY, "https://adp.example.com");
-    registerGitHttpRoutes(app, gitBackend);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -80,6 +83,7 @@ describe.skipIf(!process.env.DATABASE_URL)("M2: mirror mode", () => {
       .values({ kind: "human", principal: `mirror-e2e-${Date.now()}` })
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
 
     await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
       method: "POST",

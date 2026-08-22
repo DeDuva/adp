@@ -18,11 +18,28 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 GH_VERSION="${GH_VERSION:-2.63.0}"
+# Port helpers, sourced early because the picks below are the first thing this
+# script does. Functions only, nothing named `fail` — see the file's own header.
+#
+# Not guarded with `[ -f ... ] &&` the way config.sh is below: that guard is
+# there because config.sh supplies a *default* this script can live without,
+# whereas a harness that cannot choose a port has nothing to fall back to. A
+# missing file should say so on line one rather than three minutes in.
+# shellcheck source=../scripts/dev/ports.sh
+. ../scripts/dev/ports.sh
+
 # Randomized rather than fixed: avoids colliding with a leftover process from
 # a prior interrupted run (each CI job gets a fresh container, so this only
 # matters for repeated local runs during development).
-PORT="${ADP_CONFORMANCE_PORT:-$((20000 + RANDOM % 20000))}"
-TLS_PORT="${ADP_CONFORMANCE_TLS_PORT:-$((40000 + RANDOM % 20000))}"
+#
+# Picked BELOW the kernel's ephemeral floor as of the port-race fix. The old
+# ranges (20000-39999 and 40000-59999) overlapped the pool every outbound
+# connection draws from — the TLS proxy's completely — so `listen()` lost a
+# race to an unrelated socket often enough to cost three full runs. See
+# scripts/dev/ports.sh.
+PORT="${ADP_CONFORMANCE_PORT:-$(adp_pick_port 20000)}"
+TLS_PORT="${ADP_CONFORMANCE_TLS_PORT:-$(adp_pick_port 20000)}"
+[ -n "$PORT" ] && [ -n "$TLS_PORT" ] || { echo "CONFORMANCE FAIL: could not find free ports" >&2; exit 1; }
 WORKDIR="$(mktemp -d)"
 GH_HOST="localhost:${TLS_PORT}"
 
@@ -89,6 +106,20 @@ node conformance/tls-proxy.mjs "$WORKDIR/cert.pem" "$WORKDIR/key.pem" "$TLS_PORT
   > "$WORKDIR/tls-proxy.log" 2>&1 &
 PROXY_PID=$!
 
+# Wait for it, the same way the server below is waited for. Without this, a
+# proxy that died at startup was only discovered when `gh` failed to connect
+# several minutes later, reported as `connection refused` against a port whose
+# owner had never existed — a symptom that names neither the process that
+# failed nor the reason.
+#
+# Its own startup log line rather than a port probe: the line comes from the
+# listen callback, so it proves this proxy is serving rather than that
+# something is (see scripts/dev/ports.sh).
+adp_wait_for_log_line "$WORKDIR/tls-proxy.log" '^tls-proxy: ' "$PROXY_PID" || {
+  cat "$WORKDIR/tls-proxy.log"
+  fail "TLS proxy never came up on :$TLS_PORT"
+}
+
 # --- ADP server -------------------------------------------------------------
 # One canonical local DSN, shared with scripts/dev/* — these had drifted apart
 # (docs/test-environment-automation.md, finding 5). config.sh, not lib.sh:
@@ -118,7 +149,7 @@ curl -sf "http://localhost:${PORT}/healthz" >/dev/null || { cat "$WORKDIR/server
 
 # --- fixture repo -----------------------------------------------------------
 OWNER="conformance-$$"
-TOKEN=$(npx tsx src/bootstrap.ts "conformance-actor-$$" 2>&1 | grep '^Token:' | awk '{print $2}')
+TOKEN=$(npx tsx src/bootstrap.ts "conformance-actor-$$" --org "$OWNER" 2>&1 | grep '^Token:' | awk '{print $2}')
 [ -n "$TOKEN" ] || fail "bootstrap didn't mint a token"
 
 curl -sf -X POST "http://localhost:${PORT}/api/v3/repos/${OWNER}" \

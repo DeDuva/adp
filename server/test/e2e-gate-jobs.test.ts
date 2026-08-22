@@ -6,13 +6,16 @@ import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
-import { identities } from "../src/db/schema.js";
+import { and, eq } from "drizzle-orm";
+import { identities, gateJobs, repos } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerGateJobRoutes } from "../src/http-rest/gate-jobs.js";
+import { selectClaimCandidate } from "../src/core/gate-jobs.js";
 
 // M4-9a (docs/m4-readiness-review.md §4): the gate-job queue mechanism,
 // proven end-to-end over real HTTP acting as a stub runner — no `runner/`
@@ -25,6 +28,8 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
   let port: number;
   let writeToken: string;
   let runnerToken: string;
+  let runnerIdentityId: string;
+  let writerId: string;
   const owner = `gj-owner-${Date.now()}`;
   const repoName = "target";
   const gitSha = "a".repeat(40);
@@ -57,9 +62,12 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
     port = typeof address === "object" && address ? address.port : 0;
 
     const [writer] = await db.insert(identities).values({ kind: "human", principal: `gj-writer-${Date.now()}` }).returning();
+    writerId = writer!.id;
     writeToken = await mintToken(db, writer!.id, ["repo:write"]);
+    await grantOwner(db, writer!.id, owner);
 
     const [runner] = await db.insert(identities).values({ kind: "agent", principal: `gj-runner-${Date.now()}` }).returning();
+    runnerIdentityId = runner!.id;
     runnerToken = await mintToken(db, runner!.id, ["runner"]);
 
     await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
@@ -121,24 +129,57 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
     }
   });
 
+  // Reclaim our own target (any holder, never a terminal row) vs release a
+  // foreign job we popped (only while we still hold it — its owner may have
+  // force-reclaimed it mid-hunt, and an unconditional requeue would yank it
+  // back out of their claim mid-test). Same pair as e2e-gate-job-lease.
+  async function reclaimTarget(id: string) {
+    await db
+      .update(gateJobs)
+      .set({ status: "queued", claimedBy: null, claimedByIdentityId: null, startedAt: null, leaseExpiresAt: null })
+      .where(and(eq(gateJobs.id, id), eq(gateJobs.status, "running")));
+  }
+
+  async function releaseHeld(id: string) {
+    await db
+      .update(gateJobs)
+      .set({ status: "queued", claimedBy: null, claimedByIdentityId: null, startedAt: null, leaseExpiresAt: null })
+      .where(and(eq(gateJobs.id, id), eq(gateJobs.status, "running"), eq(gateJobs.claimedByIdentityId, runnerIdentityId)));
+  }
+
   // Claim is instance-wide and this database is shared with every other e2e
   // file vitest runs concurrently — another file's own claim polling (or,
   // starting with M4-9d, a test that deliberately holds jobs claimed for a
   // measurable window while it proves an org's concurrency cap) can
   // legitimately claim this test's just-enqueued job before this test's own
-  // next claim call runs. Loop past anything that isn't `targetJobId`
-  // instead of assuming the very next claim is it — and never complete a
-  // job that isn't ours; that would corrupt whichever test actually owns it.
-  async function claimJobId(targetJobId: string, claimedBy: string, maxAttempts = 40): Promise<Record<string, unknown>> {
-    for (let i = 0; i < maxAttempts; i++) {
-      const res = await api("/api/adp/gate-jobs/claim", runnerToken, {
-        method: "POST",
-        body: JSON.stringify({ claimed_by: claimedBy }),
-      });
-      if (res.status === 200 && res.body!.id === targetJobId) return res.body!;
-      await new Promise((resolve) => setTimeout(resolve, 25));
+  // next claim call runs. Loop toward `targetJobId` instead of assuming the
+  // very next claim is it, force-requeueing our own target out of a foreign
+  // claimant's hands (legitimate: this test enqueued and owns it). Never
+  // complete a foreign job — and don't requeue one mid-hunt either: claim
+  // serves oldest-first, so an immediately-requeued old job is what the
+  // next claim pops again, forever. Hold what the hunt pops, hand it all
+  // back in finally — see e2e-gate-job-lease.test.ts's claimOurs for the
+  // livelock this exact shape avoids.
+  async function claimJobId(targetJobId: string, claimedBy: string, maxAttempts = 100): Promise<Record<string, unknown>> {
+    const held: string[] = [];
+    try {
+      for (let i = 0; i < maxAttempts; i++) {
+        const [target] = await db.select().from(gateJobs).where(eq(gateJobs.id, targetJobId));
+        if (target!.status === "running" && target!.claimedByIdentityId !== runnerIdentityId) {
+          await reclaimTarget(targetJobId);
+        }
+        const res = await api("/api/adp/gate-jobs/claim", runnerToken, {
+          method: "POST",
+          body: JSON.stringify({ claimed_by: claimedBy }),
+        });
+        if (res.status === 200 && res.body!.id === targetJobId) return res.body!;
+        if (res.status === 200) held.push(res.body!.id as string);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      throw new Error(`claimJobId: ${targetJobId} was never claimed after ${maxAttempts} attempts`);
+    } finally {
+      for (const id of held) await releaseHeld(id);
     }
-    throw new Error(`claimJobId: ${targetJobId} was never claimed after ${maxAttempts} attempts`);
   }
 
   it("runs the full enqueue -> claim -> complete lifecycle", async () => {
@@ -177,6 +218,115 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
     expect(completed.status).toBe(200);
     expect(completed.body).toMatchObject({ id: jobId, status: "succeeded", exit_code: 0, logs: "ok\n" });
     expect(completed.body!.finished_at).toBeTruthy();
+  });
+
+  // #88's proof (docs/m4-postmortem-audit.md §P0-3): before the ownership
+  // check, ANY runner-scope token could tarball any org's source and
+  // "complete" any org's job with `succeeded`, writing signed gate evidence
+  // land policy trusts — a cross-tenant land-policy bypass from the
+  // least-privileged token type. Ownership binds to the authenticated
+  // identity that claimed the job, not the client-supplied `claimed_by`
+  // string — which the intruder here deliberately echoes verbatim to prove
+  // that forging it doesn't help.
+  it("refuses checkout and complete from a runner identity that didn't claim the job", async () => {
+    const enqueued = await api(`/api/adp/repos/${owner}/${repoName}/gate-jobs`, writeToken, {
+      method: "POST",
+      body: JSON.stringify({ git_sha: gitSha, name: "ownership", image: "node:22", command: "npm test" }),
+    });
+    expect(enqueued.status).toBe(201);
+    const jobId = enqueued.body!.id as string;
+    await claimJobId(jobId, "victim-runner-1");
+
+    const [intruder] = await db
+      .insert(identities)
+      .values({ kind: "agent", principal: `gj-intruder-${Date.now()}` })
+      .returning();
+    const intruderToken = await mintToken(db, intruder!.id, ["runner"]);
+
+    const checkoutRes = await api(`/api/adp/gate-jobs/${jobId}/checkout`, intruderToken);
+    expect(checkoutRes.status).toBe(403);
+
+    const completeRes = await api(`/api/adp/gate-jobs/${jobId}/complete`, intruderToken, {
+      method: "POST",
+      body: JSON.stringify({ status: "succeeded", exit_code: 0, logs: "claimed_by was victim-runner-1, honest\n" }),
+    });
+    expect(completeRes.status).toBe(403);
+
+    // The refusals changed nothing: the job is still running, still held by
+    // its claimant, and that claimant can still complete it.
+    const ownerComplete = await api(`/api/adp/gate-jobs/${jobId}/complete`, runnerToken, {
+      method: "POST",
+      body: JSON.stringify({ status: "succeeded", exit_code: 0 }),
+    });
+    expect(ownerComplete.status).toBe(200);
+    expect(ownerComplete.body).toMatchObject({ id: jobId, status: "succeeded" });
+  });
+
+  // #93 (audit §P1-2): the claim lock is FOR UPDATE OF gate_jobs, not a bare
+  // FOR UPDATE over the join. Issue/proposal number assignment holds
+  // `select id from repos ... for update` while it computes a number; under
+  // the bare form, SKIP LOCKED treated a candidate whose (joined) repos row
+  // was locked as locked itself and skipped it — creating an issue starved
+  // that repo's gate queue for the duration of every numbering transaction.
+  //
+  // Proven at the candidate-select layer on purpose. The full claim cannot
+  // demonstrate it black-box: since #92, the claim transaction writes a
+  // gate_job.claim operation whose repo_id FK takes KEY SHARE on the repos
+  // row, so against a *held* lock a fixed claim parks there until release —
+  // a bounded wait in production (numbering commits in milliseconds), but
+  // in a test it just measures the release, not the lock granularity. The
+  // exported selectClaimCandidate is exactly the statement whose OF clause
+  // is the fix, and its answer while the lock is held is the whole story:
+  // with OF it returns the locked repo's job; bare, SKIP LOCKED skips it.
+  it("the claim candidate select does not skip a job whose repos row is locked", async () => {
+    const [repo] = await db.select().from(repos).where(and(eq(repos.owner, owner), eq(repos.name, repoName)));
+
+    // The job must be the oldest queued row in the shared table so the
+    // LIMIT 1 answer is deterministic — backdate it well past anything the
+    // concurrently-running files enqueue. That also makes it prime theft
+    // material for their claim loops, hence the retry.
+    for (let attempt = 0; ; attempt++) {
+      const [job] = await db
+        .insert(gateJobs)
+        .values({
+          repoId: repo!.id,
+          gitSha,
+          name: `lock-skip-${attempt}`,
+          image: "node:22",
+          command: "true",
+          timeoutMs: 60_000,
+          actorId: writerId,
+          createdAt: new Date(Date.now() - 3_600_000),
+        })
+        .returning();
+
+      const client = await pool.connect();
+      let won = false;
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT id FROM repos WHERE owner = $1 AND name = $2 FOR UPDATE", [owner, repoName]);
+
+        const candidate = await db.transaction(async (tx) => {
+          const c = await selectClaimCandidate(tx);
+          // Roll back: this test asserts on the selection, it does not claim.
+          throw Object.assign(new Error("rollback"), { candidate: c });
+        }).catch((err: Error & { candidate?: { id: string } | null }) => err.candidate);
+
+        won = candidate?.id === job!.id;
+      } finally {
+        await client.query("ROLLBACK").catch(() => {});
+        client.release();
+        await db.delete(gateJobs).where(eq(gateJobs.id, job!.id));
+      }
+
+      if (won) return; // the property held — done
+
+      // A concurrent file's claim loop got to the row first (it was the
+      // oldest job in the queue, after all) — that attempt's row is already
+      // retired above; try again with a fresh one.
+      if (attempt >= 9) throw new Error("candidate select never returned the locked repo's job in 10 attempts");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
   });
 
   it("refuses to complete a job that isn't running (already terminal)", async () => {

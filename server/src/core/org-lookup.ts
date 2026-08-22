@@ -11,8 +11,14 @@ import type { OrgLandContext } from "./land-policy.js";
 export async function findOrCreateOrg(db: Pick<Db, "select" | "insert">, name: string) {
   const [existing] = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.name, name));
   if (existing) return existing.id;
-  const [created] = await db.insert(orgs).values({ name }).returning({ id: orgs.id });
-  return created!.id;
+  // Two concurrent creates under one fresh owner both reach this insert;
+  // orgs.name is unique, so without the conflict clause the loser is an
+  // unhandled 23505. DO NOTHING returns no row to the loser — re-select and
+  // use the winner's org, which is the same org this caller wanted.
+  const [created] = await db.insert(orgs).values({ name }).onConflictDoNothing().returning({ id: orgs.id });
+  if (created) return created.id;
+  const [raced] = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.name, name));
+  return raced!.id;
 }
 
 // `orgId` is a repo's own `repos.orgId` — null for every pre-M4 repo, which
