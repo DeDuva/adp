@@ -1,5 +1,5 @@
 {
-  "version": "0.4.0",
+  "version": "0.5.0",
   "operations": [
     "DELETE /api/adp/repos/{owner}/{repo}/workspaces/{id}",
     "DELETE /api/v3/repos/{owner}/{repo}/git/refs/heads/{branch}",

@@ -65,12 +65,12 @@ row along with M4-8 and M4-10. What remains is engineering, and none of it is bu
 |---|---|---|---|
 | 1-1 | M4-5 — Google OIDC login | #103 | **done** — authorization-code flow with PKCE and a nonce, `external_identities` keyed on `(issuer, subject)`, auto-provisioning off by default, a login that cannot mint `admin`, and the whole flow tested against a real OpenID provider. Took the contract to 0.4.0, additively |
 | 1-2 | M4-12 — self-host artifacts (helm + compose, from nothing) | PR #86 | **done** — a Helm chart that refuses to render on six under-specified inputs, a runner image, `docs/self-hosting.md`, and a `helm` CI job under `ADP_REQUIRE_HELM=1`. Verified by installing on a throwaway cluster and pushing a real commit through it. Satisfies exit criterion 6 |
-| 1-3 | M4-3 — the storage quota that was never built | — | not started. `grep maxStorage server/src` finds nothing; it was deferred to M4-8, which is itself sized by this quota's shape. That circular dependency is broken by doing this half first |
+| 1-3 | M4-3 — the storage quota that was never built | PR #126 | **done** — `orgs.max_storage_bytes`, metered per org against what exists today (Postgres rows plus on-disk git) rather than against the object store that does not. The deadlock is broken from this side: M4-8 now has the shape it was waiting for. Enforced on trajectory append, checkpoint create and git push; deliberately *not* on gate-job completion, which drops its logs instead, so a storage quota can never become a land outage. Took the contract to 0.5.0, additively |
 | 1-4 | Exit criterion 4 — reconcile an audit export against the op log for the same filter | — | partial. Row counts are asserted; the criterion's own wording is not |
 | 1-5 | Exit criterion 5 — ratify runner isolation as met | — | substantially met, unratified. Real-daemon negative proofs exist for cap-drop, pids-limit, `--network none` and timeout kill; no document records the criterion as satisfied |
 
 **Re-scoped exit criteria for M4.** Criterion 6 (self-host from nothing, helm and compose) is met by
-1-2. The rest are met when 1-3 … 1-5 land: org isolation is real (already
+1-2. The rest are met when 1-4 and 1-5 land: org isolation is real (already
 met, `server/test/e2e-org-isolation.test.ts`), the runner isolates as designed, an audit export
 reconciles with the op log, and self-host works from nothing on both helm and compose.
 

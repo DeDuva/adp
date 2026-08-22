@@ -21,6 +21,7 @@ import type { Db } from "../db/client.js";
 export const TICK_LOCKS = {
   workspaceSweep: 0x41445001,
   gateJobReap: 0x41445002,
+  storageMeter: 0x41445003,
 } as const;
 
 // Runs `fn` while holding the advisory lock, or — when another instance

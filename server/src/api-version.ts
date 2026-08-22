@@ -35,6 +35,17 @@
 // keeps working untouched. They are in the spec regardless of whether a given
 // instance mounts them, because the contract describes the protocol, not one
 // deployment's configuration.
-export const API_VERSION = "0.4.0";
+// 0.5.0 — additive: M4-3 completes the org quota set with a byte ceiling.
+// `max_storage_bytes` joins the PATCH body (optional, `null` clears it) and
+// `quotas` on the org detail — the latter as `OrgStorageQuota`, a wider shape
+// than the three counting quotas because a measured `used` can be null (never
+// metered) and carries the `measured_at` that says how stale it is. Additive:
+// no existing field changes shape or meaning, and a client generated against
+// 0.4.0 keeps working. What DOES change for an operator is behavior, not
+// contract: once a ceiling is set, four write paths can refuse with 403 that
+// previously could not — trajectory append, checkpoint create, git push — and
+// gate-job completion drops its logs rather than refusing, so that a storage
+// quota can never become a land outage.
+export const API_VERSION = "0.5.0";
 
 export const API_VERSION_HEADER = "ADP-API-Version";

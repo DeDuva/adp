@@ -13,6 +13,7 @@ import { findRepoAuthorized, findRepoById } from "../core/repos-lookup.js";
 import { enqueueGateJob, claimGateJob } from "../core/gate-jobs.js";
 import { recordGateResultIn, emitGateResultWebhook, type RecordGateResultParams } from "../core/gate-results.js";
 import { recordGateJobCompletion } from "../core/telemetry.js";
+import { checkStorageQuota } from "../core/storage-usage.js";
 
 const EnqueueBody = z.object({
   git_sha: z.string().regex(/^[0-9a-f]{40}$/),
@@ -258,6 +259,22 @@ export function registerGateJobRoutes(
       return;
     }
 
+    // M4-3: the one growth path that must NOT be refused when the org is over
+    // its storage ceiling. The gate has already run; refusing the completion
+    // would leave the job `running` until the reaper (#92) times it out, the
+    // signed evidence would never be written, and a `gates_green` land policy
+    // would block that commit permanently — a storage quota turning into a
+    // land outage. So the completion always lands, and it is the *logs* that
+    // are dropped: up to 1 MB of inline text (schema.ts's own comment calls
+    // this out as waiting on M4-8), against a few hundred bytes for the
+    // status and the evidence that land policy actually reads. Dropping is
+    // recorded on the operation, so "why are this job's logs empty" is
+    // answerable from the op log and the audit export rather than a mystery.
+    const jobRepo = await findRepoById(db, existing.repoId);
+    const logsQuota = await checkStorageQuota(db, jobRepo?.orgId ?? null);
+    const logs = logsQuota.ok ? (parsed.data.logs ?? null) : null;
+    const logsDropped = !logsQuota.ok && (parsed.data.logs ?? null) !== null;
+
     // #95 (audit §P1-4): the status flip, its operation, AND the signed
     // evidence commit or roll back together. The evidence used to be a
     // second transaction after this one — a crash between the two left a
@@ -275,7 +292,7 @@ export function registerGateJobRoutes(
         .set({
           status: parsed.data.status,
           exitCode: parsed.data.exit_code ?? null,
-          logs: parsed.data.logs ?? null,
+          logs,
           finishedAt: new Date(),
         })
         .where(eq(gateJobs.id, id))
@@ -286,7 +303,7 @@ export function registerGateJobRoutes(
         actorId: req.identity!.identityId,
         verb: "gate_job.complete",
         target: `${row!.repoId}@${row!.gitSha}#${row!.name}`,
-        after: { status: parsed.data.status },
+        after: { status: parsed.data.status, ...(logsDropped ? { logs_dropped: "org storage quota" } : {}) },
       });
 
       const [repo] = await tx.select().from(repos).where(eq(repos.id, row!.repoId));

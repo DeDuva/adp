@@ -43,8 +43,7 @@ export const orgs = pgTable("orgs", {
   killSwitch: boolean("kill_switch").notNull().default(false),
   // M4-3: null means unlimited — the default for every org until an operator
   // sets one, same "absence is not a limit" convention `workspaces.expiresAt`
-  // already uses. Storage quota is deliberately not here yet: it needs M4-8's
-  // object store to meter against (docs/m4-readiness-review.md §4).
+  // already uses.
   maxRepos: integer("max_repos"),
   maxConcurrentWorkspaces: integer("max_concurrent_workspaces"),
   // M4-9d: same "null is unlimited" convention as the two quotas above,
@@ -54,6 +53,32 @@ export const orgs = pgTable("orgs", {
   // executes at once, which is what actually costs CPU/memory on the runner
   // fleet.
   maxConcurrentGateJobs: integer("max_concurrent_gate_jobs"),
+  // M4-3, the half that was never built. This column waited on M4-8's object
+  // store "to meter against" while M4-8's own sizing waited on this quota's
+  // shape existing to bound it (docs/m4-readiness-review.md §4 vs its M4-8
+  // paragraph) — a deadlock that held for the whole milestone while nothing
+  // bounded how much one org could write. It is broken here by refusing to
+  // wait: the meter counts the bytes that exist *today* — Postgres rows and
+  // on-disk git — and gains the CAS as a third term when there is one. The
+  // shape (a byte ceiling per org, null = unlimited) is what M4-8 needs, and
+  // it does not change when the thing being counted grows a fourth source.
+  //
+  // bigint, not integer: 2 GiB is a plausible ceiling for one org and would
+  // overflow int4 as a *byte* count.
+  maxStorageBytes: bigint("max_storage_bytes", { mode: "number" }),
+  // The meter's last reading, not a running total. Storage is measured on a
+  // tick (core/storage-usage.ts) and enforcement reads this column, because
+  // the alternative — counting bytes synchronously on every append — would
+  // put a full scan of session_events in the trajectory hot path. The cost of
+  // that choice is stated rather than hidden: an org can overshoot its ceiling
+  // by at most one measurement interval's worth of writes, and
+  // `storageMeasuredAt` is served alongside `used` so an operator can see how
+  // stale the number they are looking at is. Null means never measured, which
+  // is not zero: enforcement treats an unmeasured org as under quota, since
+  // refusing writes on the basis of a measurement that has not happened would
+  // fail closed on a cold start of every instance.
+  storageBytesUsed: bigint("storage_bytes_used", { mode: "number" }),
+  storageMeasuredAt: timestamp("storage_measured_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

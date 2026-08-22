@@ -6,6 +6,7 @@ import type { GitBackend } from "../core/git-backend.js";
 import { KeyRegistry, type Signer } from "../core/signing.js";
 import { requireScope } from "../auth/plugin.js";
 import { findRepoAuthorized } from "../core/repos-lookup.js";
+import { checkStorageQuota, storageQuotaMessage } from "../core/storage-usage.js";
 import {
   appendEvents,
   listEvents,
@@ -208,6 +209,14 @@ export function registerSessionRoutes(
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
       }
+      // M4-3: `state` is `z.unknown()` and checkpoints are the largest single
+      // row this schema writes, so this is one of the two paths the storage
+      // ceiling exists for.
+      const cpQuota = await checkStorageQuota(db, repo.orgId);
+      if (!cpQuota.ok) {
+        reply.code(403).send({ message: storageQuotaMessage(cpQuota) });
+        return;
+      }
 
       const result = await createCheckpoint(
         db,
@@ -334,6 +343,17 @@ export function registerSessionRoutes(
       const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
+        return;
+      }
+      // M4-3: the dominant source of growth the storage analysis measured, and
+      // therefore the path a byte ceiling has to cover or it covers nothing.
+      // Refused before the append rather than after, so a batch that would
+      // cross the ceiling leaves the chain untouched — a partially-appended
+      // batch is exactly what appendEvents' own all-or-nothing rule exists to
+      // prevent.
+      const eventQuota = await checkStorageQuota(db, repo.orgId);
+      if (!eventQuota.ok) {
+        reply.code(403).send({ message: storageQuotaMessage(eventQuota) });
         return;
       }
 

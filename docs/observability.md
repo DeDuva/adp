@@ -30,6 +30,7 @@ by three families, all of them about the queue, and nothing else:
 | `adp_gate_jobs` | gauge | `status` | How much work is queued and how much is executing |
 | `adp_gate_job_oldest_queued_age_seconds` | gauge | — | How long the oldest unclaimed job has waited |
 | `adp_gate_job_completions_total` | counter | `status` | Gate outcomes: `succeeded`, `failed`, `timed_out`, `error` |
+| `adp_storage_bytes` | gauge | `org` | M4-3. Bytes an org has stored — Postgres rows plus on-disk git — as of the last meter tick |
 
 **Age, not depth, is the queue's health signal.** A hundred jobs draining in seconds and one job
 stuck for an hour are both "the queue is non-empty"; only one of them means the runner fleet is
@@ -42,6 +43,14 @@ claim and response), and an in-process running total would drift from the table 
 notice the drift. The sample is deliberately *not* taken inside the `/metrics` handler: that route
 is unauthenticated, and a database query behind an unauthenticated endpoint is a way to make the
 box do work on request.
+
+**The storage gauge is stale by design, and its staleness is the point.**
+`server/src/core/storage-usage.ts` re-measures every org on a ten-minute tick, because the
+measurement is a full scan of that org's rows in ten tables — it cannot live on a request path.
+That interval is also exactly the overshoot an org can achieve past its byte ceiling, which is why
+it is a configured value (`STORAGE_METER_INTERVAL_MS`) and not a constant. An org whose
+measurement threw is *dropped from the gauge* rather than carried forward at its last value: a
+series that stops is visible on a dashboard, and a stale number that keeps being reported is not.
 
 **Zero and absent are different.** Every non-terminal state is zero-filled rather than omitted, and
 every declared family emits its `# HELP`/`# TYPE` header even with no samples — so a dashboard can
@@ -172,10 +181,22 @@ neither works, it is the server, and alert 1 should already have said so.
   not already answer better — `operations` is a durable, signed record of every state change,
   which is a strictly stronger artifact than a sampled trace for the questions this system gets
   asked. Revisit when there is a latency problem no one can explain, not before.
-- **Per-org metric labels.** Tempting, given M4's multi-tenancy, and deliberately skipped: org id
-  is unbounded cardinality, and Cloud Monitoring bills by series. The per-org question ("is this
-  org over its quota?") is answerable exactly and cheaply from the database, which is where quotas
-  live anyway (M4-3, M4-9d).
+- **Per-org labels on the traffic and queue families.** Tempting, given M4's multi-tenancy, and
+  deliberately skipped: those families are already labelled by route, field or status, so adding
+  org multiplies an existing series count rather than adding one, and Cloud Monitoring bills by
+  series. The per-org question those families would answer ("is this org over its quota right
+  now?") is answerable exactly and cheaply from the database, which is where quotas live anyway
+  (M4-3, M4-9d).
+
+  **`adp_storage_bytes` is the deliberate exception**, added by M4-3, and the distinction is worth
+  stating because the bullet above used to be written as a flat "no per-org labels". Three things
+  make storage different. It is one series per org, not a multiplier on an existing label set.
+  Orgs are provisioned by an admin rather than created by traffic, so the cardinality is bounded
+  by a number an operator chose. And the question it answers is not the point-in-time one the
+  database answers better — it is *the trend*: an org's bytes over the last month is what tells
+  you whether a ceiling will be hit next week, and the database holds only the latest reading. If
+  an instance ever has enough orgs for this to cost real money, the fix is to drop the label and
+  keep the family, not to stop measuring.
 - **Log-based alerting.** The logs are shipped to Cloud Logging by the same agent and are
   searchable; no alert reads them. A log line that matters enough to page for should be a metric.
 - **A staging or production rung.** This is the dev rung's monitoring. `environments-plan.md` §3

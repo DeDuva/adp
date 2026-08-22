@@ -184,6 +184,37 @@
       {
         "xPos": 0,
         "yPos": 12,
+        "width": 12,
+        "height": 4,
+        "widget": {
+          "title": "Storage by org (M4-3 quota meter)",
+          "xyChart": {
+            "chartOptions": { "mode": "COLOR" },
+            "yAxis": { "label": "bytes", "scale": "LINEAR" },
+            "dataSets": [
+              {
+                "plotType": "STACKED_AREA",
+                "targetAxis": "Y1",
+                "legendTemplate": "${metric.labels.org}",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"prometheus.googleapis.com/adp_storage_bytes/gauge\" resource.type=\"prometheus_target\"",
+                    "aggregation": {
+                      "alignmentPeriod": "600s",
+                      "perSeriesAligner": "ALIGN_MEAN",
+                      "crossSeriesReducer": "REDUCE_MAX",
+                      "groupByFields": ["metric.label.org"]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "xPos": 0,
+        "yPos": 16,
         "width": 6,
         "height": 3,
         "widget": {
@@ -214,7 +245,7 @@
       },
       {
         "xPos": 6,
-        "yPos": 12,
+        "yPos": 16,
         "width": 6,
         "height": 3,
         "widget": {

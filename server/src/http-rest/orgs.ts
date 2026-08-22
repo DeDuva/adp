@@ -49,6 +49,10 @@ const PatchOrgBody = z.object({
   max_repos: z.number().int().nonnegative().nullable().optional(),
   max_concurrent_workspaces: z.number().int().nonnegative().nullable().optional(),
   max_concurrent_gate_jobs: z.number().int().nonnegative().nullable().optional(),
+  // M4-3. `int()` still holds — a byte count above Number.MAX_SAFE_INTEGER is
+  // not a quota anyone means — but the column is bigint, not int4, because
+  // a couple of gigabytes is an ordinary ceiling and would overflow int4.
+  max_storage_bytes: z.number().int().nonnegative().nullable().optional(),
   policy_repo_id: z.string().uuid().nullable().optional(),
 });
 
@@ -203,6 +207,19 @@ export function registerOrgRoutes(
           max_repos: { limit: org.maxRepos, used: counts.repos },
           max_concurrent_workspaces: { limit: org.maxConcurrentWorkspaces, used: counts.workspaces },
           max_concurrent_gate_jobs: { limit: org.maxConcurrentGateJobs, used: counts.gateJobs },
+          // M4-3. The other three counts are recomputed here to mirror what
+          // enforcement queries; this one IS the column enforcement reads, so
+          // console and refusal cannot disagree by construction. The cost of
+          // that is staleness rather than drift, which is why `measured_at`
+          // is served with it — and why `used` is null, not 0, before the
+          // first measurement: an org nobody has metered yet has an unknown
+          // size, and reporting a confident zero would be a lie the operator
+          // would act on.
+          max_storage_bytes: {
+            limit: org.maxStorageBytes,
+            used: org.storageBytesUsed,
+            measured_at: org.storageMeasuredAt?.toISOString() ?? null,
+          },
         },
       });
     },
@@ -315,6 +332,7 @@ export function registerOrgRoutes(
             ...(patch.max_concurrent_gate_jobs !== undefined
               ? { maxConcurrentGateJobs: patch.max_concurrent_gate_jobs }
               : {}),
+            ...(patch.max_storage_bytes !== undefined ? { maxStorageBytes: patch.max_storage_bytes } : {}),
             ...(patch.policy_repo_id !== undefined ? { policyRepoId: patch.policy_repo_id } : {}),
           })
           .where(eq(orgs.id, orgId))
@@ -339,7 +357,8 @@ export function registerOrgRoutes(
         if (
           patch.max_repos !== undefined ||
           patch.max_concurrent_workspaces !== undefined ||
-          patch.max_concurrent_gate_jobs !== undefined
+          patch.max_concurrent_gate_jobs !== undefined ||
+          patch.max_storage_bytes !== undefined
         ) {
           await recordOperation(tx, {
             repoId: null,
@@ -351,11 +370,13 @@ export function registerOrgRoutes(
               max_repos: existing.maxRepos,
               max_concurrent_workspaces: existing.maxConcurrentWorkspaces,
               max_concurrent_gate_jobs: existing.maxConcurrentGateJobs,
+              max_storage_bytes: existing.maxStorageBytes,
             },
             after: {
               max_repos: row!.maxRepos,
               max_concurrent_workspaces: row!.maxConcurrentWorkspaces,
               max_concurrent_gate_jobs: row!.maxConcurrentGateJobs,
+              max_storage_bytes: row!.maxStorageBytes,
             },
           });
         }
@@ -381,6 +402,7 @@ export function registerOrgRoutes(
         max_repos: updated.maxRepos,
         max_concurrent_workspaces: updated.maxConcurrentWorkspaces,
         max_concurrent_gate_jobs: updated.maxConcurrentGateJobs,
+        max_storage_bytes: updated.maxStorageBytes,
         policy_repo_id: updated.policyRepoId,
       });
     },
