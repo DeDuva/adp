@@ -135,8 +135,8 @@ test-all: ## Everything CI runs: build, full suite, web, cli, adapters, runner, 
 	@$(LOAD_ENV) bash server/conformance/run.sh
 	@$(LOAD_ENV) bash server/acceptance/run.sh
 
-check-docs: ## Assert CLAUDE.md still points at paths that exist
-	@bash scripts/check-claude-md.sh
+check-docs: ## Assert tracked docs still point at real paths, links and issue states
+	@bash scripts/check-docs.sh
 
 check: ## The gate. Same target name in every repo in this line of work.
 	@$(MAKE) check-docs

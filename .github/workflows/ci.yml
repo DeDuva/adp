@@ -221,12 +221,24 @@ jobs:
       - run: npm run report
       - run: git diff --exit-code report/
 
-  # CLAUDE.md names the file that carries each invariant. A rename turns that from
-  # guidance into a wrong map without anything failing, so this asserts the paths still
-  # resolve. Deliberately its own job: it costs seconds and should report independently
-  # of whether the suite is red.
+  # Documents that have quietly stopped being true. CLAUDE.md names the file carrying
+  # each invariant, so a rename turns guidance into a wrong map without anything
+  # failing; ROADMAP.md and PLAN.md make status claims that the issue tracker can
+  # settle. The 2026-08-22 audit found sixteen contradictions of exactly these shapes,
+  # three of them critical, none catchable by the path-only check this replaces.
+  #
+  # ADP_REQUIRE_GH turns the issue-state half from a skip into a failure — the same
+  # bargain as ADP_REQUIRE_DB and ADP_REQUIRE_NETWORK, and set here for the same
+  # reason: that half is the one that catches stale status, so CI must not pass
+  # without it. GITHUB_TOKEN authenticates gh for the issue lookups.
+  #
+  # Deliberately its own job: it costs seconds and should report independently of
+  # whether the suite is red.
   docs:
     runs-on: ubuntu-latest
+    env:
+      ADP_REQUIRE_GH: "1"
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - run: make check-docs
