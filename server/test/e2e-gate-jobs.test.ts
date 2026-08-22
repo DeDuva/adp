@@ -7,7 +7,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
 import { and, eq } from "drizzle-orm";
-import { identities, gateJobs, repos } from "../src/db/schema.js";
+import { identities, gateJobs, gateResults, operations, repos } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
@@ -349,4 +349,90 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
     const jobs = (res.body as { gate_jobs: { name: string }[] }).gate_jobs;
     expect(jobs.length).toBeGreaterThanOrEqual(2);
   });
+  // ── M4 exit criterion 5, the "and the refusal is itself recorded" clause ──
+  //
+  // The isolation proofs live in runner/src/docker.test.ts, against a real
+  // daemon: cap-drop, pids-limit, --network none, timeout kill, and no host
+  // mount or Docker socket. Each of those ends with the runner reporting a
+  // NON-succeeded status here. This is the other half — that such a report
+  // lands as signed evidence land policy will refuse, rather than as a status
+  // flip nobody reads.
+  //
+  // The failure mode being excluded is specific and quiet. If a killed gate
+  // wrote no gate_results row, `gates_green` would see no failing gate and a
+  // commit whose gate was killed mid-run would land as though nothing had
+  // happened — "a skipped check must never look like a passing one"
+  // (CLAUDE.md), applied to the thing doing the checking. toGateResultStatus
+  // maps every non-succeeded status to `failure` for exactly this reason;
+  // nothing proved it end to end until here.
+  it.each(["timed_out", "error"] as const)(
+    "records a '%s' gate as signed FAILURE evidence, not merely as a status flip",
+    async (terminal) => {
+      const enqueued = await api(`/api/adp/repos/${owner}/${repoName}/gate-jobs`, writeToken, {
+        method: "POST",
+        body: JSON.stringify({
+          git_sha: gitSha,
+          name: `isolation-${terminal}`,
+          image: "node:22",
+          command: "sleep 999",
+          timeout_ms: 60000,
+        }),
+      });
+      expect(enqueued.status).toBe(201);
+      const jobId = enqueued.body!.id as string;
+
+      // Claimed directly rather than through /claim: the queue is shared with
+      // every other e2e file running against this database, so polling for
+      // this specific job both races and steals. What is under test is what
+      // /complete writes, not how the job was claimed.
+      const now = new Date();
+      await db
+        .update(gateJobs)
+        .set({
+          status: "running",
+          claimedBy: "isolation-runner",
+          claimedByIdentityId: runnerIdentityId,
+          startedAt: now,
+          leaseExpiresAt: new Date(now.getTime() + 600_000),
+        })
+        .where(eq(gateJobs.id, jobId));
+
+      const completed = await api(`/api/adp/gate-jobs/${jobId}/complete`, runnerToken, {
+        method: "POST",
+        body: JSON.stringify({ status: terminal, logs: "killed by the runner\n" }),
+      });
+      expect(completed.status).toBe(200);
+      expect(completed.body!.status).toBe(terminal);
+
+      // 1. Signed evidence exists, and its verdict is failure — the value
+      //    land policy's gates_green reads. `success` here would mean a
+      //    killed gate counts as a passing one.
+      const [evidence] = await db
+        .select()
+        .from(gateResults)
+        .where(eq(gateResults.externalId, `gate_job:${jobId}`));
+      expect(evidence, `no gate_results row for a ${terminal} job`).toBeDefined();
+      expect(evidence!.status).toBe("failure");
+      expect(evidence!.name).toBe(`isolation-${terminal}`);
+      expect(evidence!.gitSha).toBe(gitSha);
+      // Signed, not just written: the bundle land policy trusts is a DSSE
+      // envelope, and an unsigned row would be evidence in name only.
+      expect(evidence!.envelope).toBeTruthy();
+
+      // 2. And the refusal is in the operation log, in the same transaction
+      //    as the status flip (CLAUDE.md's standing invariant).
+      const [repo] = await db.select().from(repos).where(and(eq(repos.owner, owner), eq(repos.name, repoName)));
+      const [op] = await db
+        .select()
+        .from(operations)
+        .where(
+          and(
+            eq(operations.verb, "gate_job.complete"),
+            eq(operations.target, `${repo!.id}@${gitSha}#isolation-${terminal}`),
+          ),
+        );
+      expect(op, `no gate_job.complete operation for a ${terminal} job`).toBeDefined();
+      expect((op!.after as Record<string, unknown>).status).toBe(terminal);
+    },
+  );
 });

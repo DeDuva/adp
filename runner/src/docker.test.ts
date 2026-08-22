@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { skipWithoutDocker } from "../test/require-docker.js";
@@ -184,6 +184,58 @@ describe.skipIf(skipWithoutDocker)("runGateJob (real docker)", () => {
     expect(result.status).toBe("succeeded");
     expect(result.logs).toContain("/workspace");
     expect(result.logs).toContain("checked-out-content");
+  }, 30000);
+
+  // Exit criterion 5's first attack shape ("a gate script that attempts a
+  // host-mount ... is refused"), proved against the daemon rather than
+  // against the argument list.
+  //
+  // buildCreateArgs already asserts no -v/--volume is passed, but that is a
+  // unit test on a string array — the same gap this describe block exists to
+  // close for --network none. What a gate script can actually reach is a
+  // property of the running container, so this asks the container.
+  //
+  // Two absences, and the second is the one with teeth. A host file at a
+  // known absolute path is invisible, so no bind mount is in play. And
+  // /var/run/docker.sock does not exist — pragmatic_mvp.md's stated reason
+  // for putting the runner on its own host is that "a mounted Docker socket
+  // is root on the host", and a socket mounted into a gate container would
+  // hand every gate script exactly that, silently, while every other
+  // isolation test on this file kept passing.
+  it("cannot see the host filesystem or the Docker socket — no bind mount, no socket, proved from inside", async () => {
+    const hostMarker = path.join(await emptyCheckout(), "..", `adp-host-only-${Date.now()}.txt`);
+    const hostPath = path.resolve(hostMarker);
+    await writeFile(hostPath, "host-only-content");
+
+    try {
+      const result = await runGateJob(
+        {
+          id: `t-${Date.now()}-h`,
+          image: "busybox:1",
+          // Prints a marker for each thing it FAILED to reach. A gate script
+          // that could read either would print neither and fail the test.
+          // Always exits 0, so a leak fails on the specific missing marker
+          // below rather than on the job's exit status — the assertion then
+          // names which of the two absences stopped holding.
+          command:
+            `([ ! -e ${hostPath} ] && echo NO_HOST_FILE); ` +
+            `([ ! -S /var/run/docker.sock ] && echo NO_DOCKER_SOCK); ` +
+            `true`,
+          timeoutMs: 15000,
+        },
+        limits,
+        await emptyCheckout(),
+      );
+
+      expect(result.status).toBe("succeeded");
+      expect(result.logs).toContain("NO_HOST_FILE");
+      expect(result.logs).toContain("NO_DOCKER_SOCK");
+      // The host file really did exist while the container ran — otherwise
+      // NO_HOST_FILE proves nothing but that the path was wrong.
+      expect(await readFile(hostPath, "utf8")).toBe("host-only-content");
+    } finally {
+      await rm(hostPath, { force: true });
+    }
   }, 30000);
 
   it("cleans up a created container even when docker cp fails, rather than leaking it", async () => {
