@@ -450,12 +450,17 @@ transaction as every mutation, with undo and history query by actor, verb, date 
 executes in isolated containers (network-deny, dropped capabilities, no host mounts, no ambient
 secrets, resource caps) and holds no database credential. **Mirror mode**, so ADP can be additive
 before it is authoritative. Multi-tenant orgs with an isolation matrix enforced on every plane, a
-two-level policy plane with an org console, quotas, audit-log export, and a published wire contract
-at version 0.3.0 that a downstream consumer generates its client from.
+two-level policy plane with an org console, per-org quotas including a storage ceiling, audit-log
+export reconciled row-for-row against the operation log, OpenID Connect login mapped onto
+identities, a Helm chart and Compose path verified by installing on a throwaway cluster, and a
+published wire contract at version 0.5.0 that a downstream consumer generates its client from.
 
-**Not yet built, stated plainly.** SSO/SCIM. Dependency admission beyond npm. The
-storage architecture in §g beyond its cheapest fixes. A hosted preview, which is blocked on a
-budget decision rather than on engineering. And the three experiments named below.
+**Not yet built, stated plainly.** SCIM provisioning — OIDC login ships, but SCIM is deferred by
+decision rather than blocked, parked until a procurement conversation demands it. Dependency
+admission beyond npm. The storage architecture in §g beyond its cheapest fixes — the per-org
+storage *quota* ships, so growth is now bounded and measured, but the four-plane split is still a
+position rather than a build. A hosted preview, which is blocked on a budget decision rather than
+on engineering. And the three experiments named below.
 
 **Measured, not asserted.** Three benchmark arms are published. Merge contention under concurrent
 land is deterministic and runs in CI. The three-way cost comparison found our native plane 1.7×
