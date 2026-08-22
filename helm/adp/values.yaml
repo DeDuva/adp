@@ -1,0 +1,165 @@
+# Defaults are chosen so `helm install adp ./helm/adp --set secrets.signingKey=... \
+#   --set secrets.mirrorCredentialKey=...` stands up a working instance on an
+# empty cluster. Everything beyond that pair is optional.
+#
+# Read docs/self-hosting.md before running this anywhere that matters. Two
+# constraints in particular are properties of the product, not of the chart:
+# the server keeps bare git repositories on a filesystem (so it is a single
+# writer), and the gate runner needs a container daemon (so it belongs on its
+# own node).
+
+image:
+  repository: ghcr.io/deduva/adp
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+server:
+  # Deliberately not configurable, and not a placeholder for a future value.
+  # GIT_ROOT is a directory of bare repositories on a ReadWriteOnce volume and
+  # `git receive-pack` is the writer; a second replica would be a second writer
+  # against the same refs. Scaling this is a product change (an object store or
+  # a shared filesystem, M4-8), not a values.yaml change — so the chart states
+  # the constraint instead of offering a knob that silently corrupts data.
+  replicas: 1
+
+  # The instance-level land-policy floor: requirements no org and no repo can
+  # remove (server/src/core/repo-policy.ts). Empty string means no floor.
+  landPolicyFloor: "gates_green,one_approval"
+
+  # Bounds the git smart-HTTP request body. Real repositories push real-sized
+  # packs; the framework default 413s them.
+  gitMaxPackBytes: 524288000
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  podAnnotations: {}
+  podSecurityContext:
+    fsGroup: 1000
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+
+# Where bare git repositories live. This is the instance's actual data; losing
+# it loses every repository the instance hosts.
+persistence:
+  enabled: true
+  size: 20Gi
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  # Point at a volume that already exists instead of creating one.
+  existingClaim: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # The public origin clients reach this instance on. It is NOT cosmetic: the
+  # server signs evidence with it and hands it back in clone URLs, so changing
+  # it later changes URLs already recorded in landed provenance.
+  host: adp.example.com
+  tls:
+    enabled: false
+    secretName: ""
+
+# The two keys the server refuses to boot without. Supply them; the chart will
+# not invent them for you.
+#
+# This is the one place the chart is deliberately unfriendly, and
+# infra/bootstrap.sh already learned why: a generated-on-install secret is
+# regenerated on the next `helm upgrade` unless a lookup preserves it, and
+# rotating SIGNING_KEY silently orphans every signature the instance has ever
+# produced. A missing value should stop the install, not quietly change the
+# instance's identity.
+secrets:
+  # openssl rand -hex 32
+  signingKey: ""
+  # openssl rand -hex 32 — AES-256-GCM at-rest key for mirror credentials and
+  # webhook secrets.
+  mirrorCredentialKey: ""
+  # Use a Secret you manage yourself instead of the two values above. Must
+  # carry keys: SIGNING_KEY, MIRROR_CREDENTIAL_KEY, and DATABASE_URL when
+  # postgres.enabled is false.
+  existingSecret: ""
+
+# Bundled Postgres — for evaluation and for "does this work from nothing?".
+# It is a single StatefulSet with no backups, no PITR, no failover and no
+# connection pooling. docs/environments-plan.md §3 is explicit that the moment
+# an instance holds data anyone minds losing, it needs a managed database;
+# `externalDatabase.url` is how you say so.
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  user: adp
+  password: adp
+  database: adp
+  persistence:
+    size: 10Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+externalDatabase:
+  # postgres://user:password@host:5432/dbname — takes precedence over the
+  # bundled Postgres when set.
+  url: ""
+
+# The gate runner (M4-9). Off by default: enabling it is a deliberate decision
+# about where untrusted, repository-supplied code executes, and there is no
+# safe default the chart can pick on an operator's behalf.
+#
+# Read docs/self-hosting.md §4 before turning this on. In short: the runner
+# needs a container daemon, a mounted daemon socket is root on the node, and
+# the whole point of M4-9's design is that the node this lands on is not the
+# node holding the signing key. The chart enforces that you have at least named
+# a node — it cannot check that you named the right one.
+runner:
+  enabled: false
+  replicas: 1
+  image:
+    repository: ghcr.io/deduva/adp-runner
+    tag: ""
+    pullPolicy: IfNotPresent
+  # A token carrying ONLY the "runner" scope (server/src/auth/plugin.ts).
+  # Mint it with: tsx src/bootstrap.ts <principal> — then narrow the scopes.
+  token: ""
+  existingSecret: ""
+  pollIntervalMs: 2000
+  # Per-job ceilings passed to `docker run --memory/--cpus`.
+  jobMemory: 2g
+  jobCpus: "2"
+  # Required when enabled. There is no default: every default here would name
+  # someone else's node.
+  nodeSelector: {}
+  tolerations: []
+  dockerSocket: /var/run/docker.sock
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}

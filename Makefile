@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner
+.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner helm
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -116,12 +116,15 @@ runner: ## Typecheck, build, and test the gate runner (no database, REAL docker 
 	# start it, don't unset the flag.
 	ADP_REQUIRE_DOCKER=1 npm test --prefix runner
 
+helm: ## Lint and render the self-host chart (skipped if helm is absent; ADP_REQUIRE_HELM=1 makes that fatal)
+	@bash scripts/dev/helm-check.sh
+
 bench: ## Regenerate the benchmark report from bench/runs/ and assert it is unchanged
 	npm run report --prefix bench
 	@git diff --exit-code bench/report/ || { \
 		echo "bench/report/ is stale — commit the regenerated report"; exit 1; }
 
-test-all: ## Everything CI runs: build, full suite, web, cli, adapters, runner, conformance + acceptance
+test-all: ## Everything CI runs: build, full suite, web, cli, adapters, runner, chart, conformance + acceptance
 	$(REQUIRE_ENV)
 	@$(LOAD_ENV) npm run typecheck --prefix server
 	@$(LOAD_ENV) npm run build --prefix server
@@ -131,6 +134,7 @@ test-all: ## Everything CI runs: build, full suite, web, cli, adapters, runner, 
 	@$(MAKE) cli
 	@$(MAKE) adapters
 	@$(MAKE) runner
+	@$(MAKE) helm
 	@$(MAKE) bench
 	@$(LOAD_ENV) bash server/conformance/run.sh
 	@$(LOAD_ENV) bash server/acceptance/run.sh

@@ -1,0 +1,39 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "adp.fullname" . }}
+  labels:
+    {{- include "adp.labels" . | nindent 4 }}
+  annotations:
+    # git pushes carry pack files far larger than a default proxy body limit,
+    # and the failure mode is a 413 in the middle of `git push` rather than
+    # anything that mentions a proxy. Set for the two most common controllers;
+    # an unrecognized annotation is ignored, not an error.
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    haproxy.org/client-body-buffer-size: "0"
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ required "ingress.tls.secretName is required when ingress.tls.enabled is true" .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "adp.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

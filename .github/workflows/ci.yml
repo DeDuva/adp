@@ -242,3 +242,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: make check-docs
+
+  # M4-12. The chart is a published artifact — someone else's cluster runs it —
+  # so it gets the same treatment as spec/openapi.yaml: something has to fail
+  # when it stops being true. Lint plus a render of every combination that
+  # changes the output, because a chart is only ever wrong at render time.
+  #
+  # `make helm` is the same target a developer runs; ADP_REQUIRE_HELM turns its
+  # local "helm not installed, skipping" into a hard failure here, the way
+  # ADP_REQUIRE_DB and ADP_REQUIRE_NETWORK already do for the suites that can
+  # skip themselves.
+  helm:
+    runs-on: ubuntu-latest
+    env:
+      ADP_REQUIRE_HELM: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - run: make helm

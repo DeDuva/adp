@@ -266,6 +266,10 @@ server processes or temp directories. On Windows, `tools/win/Run-CleanTest.ps1` 
 inside a throwaway WSL distro and deletes it afterwards, so a full verification leaves nothing
 behind at all.
 
+**Self-hosting** is documented in [`docs/self-hosting.md`](docs/self-hosting.md): a Helm chart
+([`helm/adp`](helm/adp)) and the Docker Compose path in [`deploy/`](deploy), what the two decisions
+are that cannot be defaulted for you, and why the gate runner needs a node of its own.
+
 CI runs typecheck, build, migrations against a fresh Postgres, the full unit/integration/e2e suite —
 including a real clone → push → propose → review → merge cycle — and the `gh` conformance gate, on
 every pull request. A separate clean-room workflow provisions a bare container from scratch and runs
@@ -280,6 +284,7 @@ the same loop, so the "brand new machine" path stays verified rather than assume
 | [`ROADMAP.md`](ROADMAP.md) | The status ledger — current milestone states, API contract version, blockers, and open decisions. Updated in the same PR as any status change. Start here for "where is the project." |
 | [`docs/agent-native-vcs-brief.md`](docs/agent-native-vcs-brief.md) | The thesis: the case for a neutral agent-native substrate — the GitHub interface question, the competitive landscape, architectural tradeoffs, the agent-harness boundary, and enterprise/supply-chain controls. Its appendices carry the three open decisions, the nine questions our own code and measurements settled, and the positions we hold with the evidence that would change each. |
 | [`docs/pragmatic_mvp.md`](docs/pragmatic_mvp.md) | The plan of record: scope, the exact GitHub surface that ships, the cut list and why each cut is defensible, and the per-milestone narrative of what shipped and why. |
+| [`docs/self-hosting.md`](docs/self-hosting.md) | Running your own instance: the Helm chart, the Compose path, what the chart refuses to guess and why, and where the sharp edges are. |
 | [`docs/ecosystem.md`](docs/ecosystem.md) | Who depends on ADP and how — the four repositories, the dependency graph, and what a change here requires elsewhere. Read this before changing the wire contract. |
 | [`docs/server-stack-tutorial.md`](docs/server-stack-tutorial.md) | The server stack explained piece by piece, no prior familiarity assumed. |
 | [`docs/test-environment-automation.md`](docs/test-environment-automation.md) | How the test environment is brought up, run, and torn down reproducibly — the preflight and leak-detection tooling, the ephemeral dependency stack, and the bare-metal bootstrap. |

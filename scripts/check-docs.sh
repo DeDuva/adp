@@ -170,6 +170,15 @@ else
 			-q '.[] | "\(.number)\t\(.state)"'
 	} >"$tmpdir/states" 2>/dev/null || true
 
+	# The pull request this run is checking, if any: its own claims about itself
+	# are exempt (see the loop below). GITHUB_REF is refs/pull/N/merge on a PR
+	# build; locally, ask gh what PR the current branch belongs to.
+	self_pr=""
+	case "${GITHUB_REF:-}" in
+	refs/pull/*) self_pr=$(printf '%s' "$GITHUB_REF" | cut -d/ -f3) ;;
+	*) self_pr=$(gh pr view --json number -q .number 2>/dev/null || echo "") ;;
+	esac
+
 	claims_done='complete|completed|landed|shipped|closed|done|fixed|merged|resolved|settled'
 	# Deliberately excludes ambiguous words. "the remaining operations are frozen" sits
 	# one clause away from "(PR #67)" and means something else entirely; a guard that
@@ -188,6 +197,13 @@ else
 		)
 
 		for n in $nums; do
+			# A PR that finishes an item updates PLAN.md in the same PR — that is
+			# the documented convention. While CI runs, that PR is necessarily
+			# still open, so checking its own number against the tracker would
+			# fail every correctly-written PR and pass only the ones that forgot.
+			# Exempt self.
+			[ -n "$self_pr" ] && [ "$n" = "$self_pr" ] && continue
+
 			state=$(awk -F'\t' -v n="$n" '$1 == n { print $2; exit }' "$tmpdir/states")
 			[ -n "$state" ] || continue
 

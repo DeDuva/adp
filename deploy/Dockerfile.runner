@@ -1,0 +1,29 @@
+# The gate runner (M4-9b). A separate image from deploy/Dockerfile on purpose,
+# and not merely for size: this process is meant to run on a host that holds
+# neither DATABASE_URL nor SIGNING_KEY (docs/pragmatic_mvp.md §4.5/§4.7, "host
+# separation is not optional once adp.yaml becomes executable"). Two images
+# make that separation something you can see in a deployment manifest rather
+# than something a reader has to take on trust.
+#
+# It carries the docker CLI and nothing else it does not need: the runner
+# shells out to `docker` to create, copy into, start and kill the container a
+# gate actually runs in. It talks to a daemon it is *given* — the socket is
+# mounted by whoever deploys this, on a node dedicated to it. See
+# docs/self-hosting.md for why that node must not be the one running the API.
+FROM node:22-slim AS build
+WORKDIR /app/runner
+COPY runner/package.json runner/package-lock.json* ./
+RUN npm ci
+COPY runner/ ./
+RUN npm run build
+
+FROM node:22-slim
+RUN apt-get update && apt-get install -y --no-install-recommends docker.io ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app/runner
+COPY runner/package.json runner/package-lock.json* ./
+RUN npm ci --omit=dev
+COPY --from=build /app/runner/dist ./dist
+# No EXPOSE: the runner is a client. It polls the ADP server and listens for
+# nothing, which is the other half of why it is safe to give it a daemon.
+CMD ["node", "dist/main.js"]
