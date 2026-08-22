@@ -68,6 +68,21 @@ function collectRoutes(): { method: string; url: string; requiredScope?: string 
     publicUrl: "https://adp.example.com",
     credentialKey: "spec-coverage-test",
     instanceFloor: [],
+    // M4-5 mounts /auth/oidc/* only when an IdP is configured. Enumerating it
+    // here with a dummy config is deliberate: a route that exists on
+    // configured instances is part of the published contract, and leaving it
+    // out would mean the spec could never describe it — the reverse check
+    // below fails a documented path the server does not serve.
+    oidc: {
+      issuer: "https://accounts.google.com",
+      discoveryUrl: "https://accounts.google.com/.well-known/openid-configuration",
+      clientId: "spec-coverage-test",
+      clientSecret: "spec-coverage-test",
+      allowedDomains: [],
+      tokenTtlMinutes: 720,
+      publicUrl: "https://adp.example.com",
+      cookieKey: Buffer.alloc(32),
+    },
   });
 
   return routes;

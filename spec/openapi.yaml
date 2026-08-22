@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ADP API
-  version: 0.3.0
+  version: 0.4.0
   description: >
     Native and compat-plane HTTP surface for ADP — see docs/pragmatic_mvp.md
     §2.4 for what is in scope and §2.5 for what is deliberately cut.
@@ -2200,6 +2200,95 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
           description: Validation failed (unknown scope, empty scope set, bad expiry)
+  /auth/oidc/start:
+    get:
+      summary: >
+        Begin an OIDC authorization-code login. Mounted only on instances
+        configured with IdP credentials; absent entirely otherwise, rather
+        than present and refusing. Redirects to the provider's authorization
+        endpoint with PKCE (S256), `state`, and `nonce`, and sets a short-lived
+        HttpOnly cookie binding that flow to this browser. Unauthenticated by
+        design — this is where a person who has no token yet begins.
+      responses:
+        "302":
+          description: Redirect to the identity provider's authorization endpoint
+          headers:
+            Location:
+              schema:
+                type: string
+            Set-Cookie:
+              schema:
+                type: string
+              description: >
+                HttpOnly, SameSite=Lax, Path=/auth/oidc flow cookie carrying
+                the state, nonce and PKCE verifier under an HMAC.
+        "502":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: The identity provider's discovery document could not be fetched
+  /auth/oidc/callback:
+    get:
+      summary: >
+        Complete a login. Verifies `state` against the flow cookie, redeems
+        the authorization code with PKCE, verifies the ID token's signature
+        and claims (issuer, audience, expiry, nonce), then resolves the
+        verified subject to an identity and mints a token.
+
+        Admission fails closed: a subject with no existing
+        `external_identities` link is refused unless its verified email
+        domain is in the instance's configured allowlist, which is empty by
+        default. The minted token carries `repo:read` and `repo:write` only —
+        `admin` is not reachable from this route by any input.
+      parameters:
+        - in: query
+          name: code
+          schema:
+            type: string
+          description: Authorization code from the provider
+        - in: query
+          name: state
+          schema:
+            type: string
+          description: Must match the flow cookie set by /auth/oidc/start
+        - in: query
+          name: error
+          schema:
+            type: string
+          description: Set by the provider when the user declined or the request was rejected
+      responses:
+        "200":
+          description: >
+            The minted token — returned once, in this response only; the
+            server stores only its hash.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MintedToken"
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: >
+            No login in progress, a `state` mismatch, a missing code, or an
+            error reported by the provider
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: >
+            The ID token verified, but this person may not have a token here —
+            no linked identity and no permitted email domain, an unverified
+            email, or a failed claim check
+        "502":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: The provider could not be reached, or returned no id_token
   /api/adp/gate-jobs/claim:
     post:
       x-required-scope: "runner"

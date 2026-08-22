@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import { loadConfig } from "./config.js";
+import { createHash } from "node:crypto";
 import { createDb } from "./db/client.js";
 import { GitBackend } from "./core/git-backend.js";
 import { KeyRegistry, Signer } from "./core/signing.js";
@@ -96,6 +97,27 @@ async function main() {
     credentialKey: config.MIRROR_CREDENTIAL_KEY,
     instanceFloor,
     gitMaxPackBytes: config.GIT_MAX_PACK_BYTES,
+    // M4-5. Both credentials or nothing: half-configured OIDC would mount
+    // routes that cannot complete a flow, which is worse than not having them.
+    oidc:
+      config.OIDC_CLIENT_ID && config.OIDC_CLIENT_SECRET
+        ? {
+            issuer: config.OIDC_ISSUER,
+            discoveryUrl: config.OIDC_DISCOVERY_URL,
+            clientId: config.OIDC_CLIENT_ID,
+            clientSecret: config.OIDC_CLIENT_SECRET,
+            allowedDomains: config.OIDC_ALLOWED_DOMAINS,
+            tokenTtlMinutes: config.OIDC_TOKEN_TTL_MINUTES,
+            publicUrl: config.PUBLIC_URL,
+            // Domain-separated from the Ed25519 evidence key derived from the
+            // same env var (core/signing.ts): one secret, two independent
+            // keys, and no way for a login cookie to be mistaken for — or to
+            // help forge — a signature over evidence.
+            cookieKey: createHash("sha256")
+              .update(`adp-oidc-flow-cookie:${config.SIGNING_KEY}`)
+              .digest(),
+          }
+        : undefined,
   });
 
   // The read-only supervision UI (docs/pragmatic_mvp.md §4.6: "web/ served

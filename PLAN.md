@@ -63,7 +63,7 @@ row along with M4-8 and M4-10. What remains is engineering, and none of it is bu
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 1-1 | M4-5 — Google OIDC login | #103 | not started. Decision 1 resolved 2026-08-13; the work was never begun |
+| 1-1 | M4-5 — Google OIDC login | #103 | **done** — authorization-code flow with PKCE and a nonce, `external_identities` keyed on `(issuer, subject)`, auto-provisioning off by default, a login that cannot mint `admin`, and the whole flow tested against a real OpenID provider. Took the contract to 0.4.0, additively |
 | 1-2 | M4-12 — self-host artifacts (helm + compose, from nothing) | PR #86 | **done** — a Helm chart that refuses to render on six under-specified inputs, a runner image, `docs/self-hosting.md`, and a `helm` CI job under `ADP_REQUIRE_HELM=1`. Verified by installing on a throwaway cluster and pushing a real commit through it. Satisfies exit criterion 6 |
 | 1-3 | M4-3 — the storage quota that was never built | — | not started. `grep maxStorage server/src` finds nothing; it was deferred to M4-8, which is itself sized by this quota's shape. That circular dependency is broken by doing this half first |
 | 1-4 | Exit criterion 4 — reconcile an audit export against the op log for the same filter | — | partial. Row counts are asserted; the criterion's own wording is not |
