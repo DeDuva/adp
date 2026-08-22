@@ -120,6 +120,15 @@ overrides belong in `.claude/settings.local.json`, which is ignored.
   particular serves a separately-built stale image on port 3000, which makes routes that
   provably exist return 404. `make up` uses `deploy/docker-compose.test.yml` instead —
   Postgres only, tmpfs, no restart policy, ephemeral port, per-run project name.
+- **Test-harness ports come from `scripts/dev/ports.sh`, below the kernel's ephemeral
+  floor.** `conformance/run.sh` and `acceptance/run.sh` used to pick random ports in
+  ranges that overlapped `/proc/sys/net/ipv4/ip_local_port_range` — the TLS proxy's
+  range sat inside it completely — so `listen()` periodically lost a race to an
+  unrelated outbound socket. That cost three full runs before it was chased: the proxy
+  died at startup and the run failed minutes later as an unexplained `connection
+  refused`. Pick with `adp_pick_port`, and wait for a backgrounded process with
+  `adp_wait_for_log_line` (its own readiness line) rather than a port probe, which a
+  squatter also satisfies.
 - **`tools/win/Run-CleanTest.ps1` is a local validation tool, not a gate.** It answers
   "does this work from nothing?" on demand, needs a Windows host, and takes ~16 minutes.
   Do not wire it into CI; `clean-room.yml` already catches most of that class per push.
