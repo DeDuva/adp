@@ -179,6 +179,25 @@ else
 	*) self_pr=$(gh pr view --json number -q .number 2>/dev/null || echo "") ;;
 	esac
 
+	# ...and the issues this change closes. Finishing an item means closing its
+	# issue, and the issue is open until the merge — so without this, a PR that
+	# correctly marks item 1-1 done because it closes #103 fails on #103 being
+	# open. Exactly the inversion the self-exemption fixes, one hop further out.
+	#
+	# Two sources, because neither covers both situations. GitHub resolves the
+	# PR's closing references, which is authoritative but needs the PR to exist;
+	# the commit trailers work locally before one has been opened.
+	self_closes=""
+	if [ -n "$self_pr" ]; then
+		self_closes=$(gh pr view "$self_pr" --json closingIssuesReferences \
+			-q '.closingIssuesReferences[].number' 2>/dev/null || echo "")
+	fi
+	base_ref=$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || echo "origin/main")
+	commit_closes=$(git log --format=%B "${base_ref}..HEAD" 2>/dev/null |
+		grep -oiE '(clos(e|es|ed)|fix(es|ed)?|resolv(e|es|ed)) #[0-9]+' |
+		grep -oE '[0-9]+' || true)
+	exempt=$(printf '%s\n%s\n%s\n' "$self_pr" "$self_closes" "$commit_closes" | grep -E '^[0-9]+$' | sort -u || true)
+
 	claims_done='complete|completed|landed|shipped|closed|done|fixed|merged|resolved|settled'
 	# Deliberately excludes ambiguous words. "the remaining operations are frozen" sits
 	# one clause away from "(PR #67)" and means something else entirely; a guard that
@@ -197,12 +216,10 @@ else
 		)
 
 		for n in $nums; do
-			# A PR that finishes an item updates PLAN.md in the same PR — that is
-			# the documented convention. While CI runs, that PR is necessarily
-			# still open, so checking its own number against the tracker would
-			# fail every correctly-written PR and pass only the ones that forgot.
-			# Exempt self.
-			[ -n "$self_pr" ] && [ "$n" = "$self_pr" ] && continue
+			# This change's own number, and the issues it closes. See the note
+			# where `exempt` is built: without this, the check fails exactly the
+			# PRs that follow the convention.
+			if printf '%s\n' "$exempt" | grep -qxF "$n"; then continue; fi
 
 			state=$(awk -F'\t' -v n="$n" '$1 == n { print $2; exit }' "$tmpdir/states")
 			[ -n "$state" ] || continue

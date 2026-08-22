@@ -172,12 +172,78 @@ because refusing to would just push people into a worse improvisation.
 - **Backup/PITR as a supported procedure.** M4-10, and gated on M4-8. The exit criterion is an
   executed restore drill, not a documented one, so nothing is claimed here until that has been run.
 - **Horizontal scale.** One writer, per §1.
-- **OIDC/SSO.** M4-5 and M4-6, blocked on naming an identity provider. Tokens are minted with
-  `bootstrap.js` today.
+- **SSO enforcement and SCIM.** M4-6. OIDC *login* ships (§8); what is not built is an org-level
+  "everyone here must use SSO" rule, and directory provisioning/deprovisioning. SCIM is deferred by
+  decision rather than blocked — it is parked until a procurement conversation asks for it.
 
 ---
 
-## 7. Verifying a fresh install
+## 7. OIDC login
+
+Optional, and **off unless you configure it**: with no client credentials the `/auth/oidc` routes do
+not exist at all. Token auth is the identity story; this is additive to it.
+
+### Setting it up against Google
+
+1. In Google Cloud, create an **OAuth 2.0 Client ID** of type *Web application*.
+2. Add exactly one Authorized redirect URI: `$PUBLIC_URL/auth/oidc/callback`. It must match what the
+   server derives from `PUBLIC_URL`, including scheme and any trailing path — Google compares it
+   byte for byte.
+3. Set `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` (Helm: `oidc.clientId`, and
+   `oidc.clientSecretName` naming a secret with an `OIDC_CLIENT_SECRET` key).
+
+### The decision you actually have to make
+
+`OIDC_ALLOWED_DOMAINS` decides who may create an account by logging in, and **it is empty by
+default, which means nobody**. A verified Google account with no existing link is refused.
+
+| Setting | Who can log in |
+|---|---|
+| unset (default) | Only identities an operator has already linked. Fails closed |
+| `example.com` | Anyone with a verified `@example.com` Google account, provisioned on first login |
+| a broad or public domain | Anyone. This is an open door — do not |
+
+An existing link always wins over the allowlist, so narrowing the list later does not lock out
+people who already have accounts. That is deliberate: an allowlist is a provisioning rule, not a
+revocation mechanism. To actually remove someone, revoke their tokens and delete their
+`external_identities` row.
+
+A login mints a token with `repo:read` and `repo:write`, expiring after `OIDC_TOKEN_TTL_MINUTES`
+(default 12 hours). **`admin` is not reachable from this route by any input** — creating an admin
+stays a host-level `bootstrap.js` action, the same trust level the first admin needed anyway. The
+token is scoped to the person's org when they belong to exactly one, and to no org when they belong
+to none or to several: ambiguity resolves to no access rather than to a guess.
+
+Every login writes an `auth.login` operation carrying the issuer, the subject, and whether an
+identity was created — never the token. "Who logged in, when, via which provider" is a history
+query, like everything else here.
+
+### The real-Google acceptance check
+
+The automated suite (`server/test/e2e-oidc.test.ts`) runs the whole flow against a real OpenID
+provider on localhost — real RSA keys, real JWKS, real signatures — because what must not be faked
+is the protocol. What it cannot exercise is Google specifically. Run this once against the live
+provider after configuring an instance:
+
+```
+1. Open $PUBLIC_URL/auth/oidc/start in a browser.
+2. Expect Google's consent screen, and a URL carrying code_challenge_method=S256.
+3. Approve. Expect a JSON body with a token, your principal, and scopes
+   ["repo:read","repo:write"] — and NOT "admin".
+4. Use that token:  curl -H "Authorization: Bearer $TOKEN" $PUBLIC_URL/user
+5. Confirm the audit trail:
+   GET /api/adp/orgs/{org}/audit-log  → an auth.login entry naming
+   accounts.google.com and your subject, with no token in it.
+6. Negative: log in from an account outside OIDC_ALLOWED_DOMAINS. Expect 403,
+   and no new row in external_identities.
+```
+
+Step 6 is the one worth doing carefully. Steps 1–5 fail loudly when they fail; an allowlist that
+silently admits everyone does not.
+
+---
+
+## 8. Verifying a fresh install
 
 What was actually run against this chart, on a throwaway cluster, before it shipped:
 

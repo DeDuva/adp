@@ -72,6 +72,38 @@ refuses "no database of any kind" "ADP does not run without Postgres" "${BASE[@]
 refuses "a runner with no node named" "runner.nodeSelector is required" "${BASE[@]}" --set runner.enabled=true --set runner.token=t
 refuses "a runner with no token" "runner.token" "${BASE[@]}" --set runner.enabled=true --set runner.nodeSelector.dedicated=gates
 refuses "tls without a certificate" "ingress.tls.secretName is required" "${BASE[@]}" --set ingress.enabled=true --set ingress.tls.enabled=true
+# M4-5: an OIDC client id with no secret renders login routes that 502 on every
+# attempt. Refusing at install is where the message can still say what is missing.
+refuses "an oidc client with no secret" "oidc.clientSecret is required" "${BASE[@]}" --set oidc.clientId=abc.apps.googleusercontent.com
+
+# M4-5: configured OIDC reaches the container, and the client secret is in the
+# Secret rather than the ConfigMap. A credential in a ConfigMap is readable by
+# anything that can read the namespace's config, which is a wider audience than
+# anything that can read its secrets.
+oidc_render=$(helm template adp "$CHART" "${BASE[@]}" \
+	--set oidc.clientId=abc.apps.googleusercontent.com \
+	--set oidc.clientSecret=super-secret \
+	--set oidc.allowedDomains=example.com)
+grep -q "OIDC_CLIENT_ID: \"abc.apps.googleusercontent.com\"" <<<"$oidc_render" ||
+	fail "configured OIDC did not put OIDC_CLIENT_ID in the ConfigMap"
+grep -q "OIDC_ALLOWED_DOMAINS: \"example.com\"" <<<"$oidc_render" ||
+	fail "configured OIDC did not put OIDC_ALLOWED_DOMAINS in the ConfigMap"
+# if/then, per the note further down: a `grep -q ... && fail` that ends up last
+# in the file exits 1 while reporting nothing wrong.
+if awk '/^kind: ConfigMap/,/^---/' <<<"$oidc_render" | grep -q "super-secret"; then
+	fail "the OIDC client secret rendered into the ConfigMap"
+fi
+awk '/^kind: Secret/,/^---/' <<<"$oidc_render" | grep -q "OIDC_CLIENT_SECRET" ||
+	fail "the OIDC client secret did not render into the Secret"
+pass "oidc: settings reach the container, and the client secret is in the Secret"
+
+# The default must remain OFF. An instance that did not ask for login must not
+# get routes that accept one.
+default_render=$(helm template adp "$CHART" "${BASE[@]}")
+if grep -q "OIDC_CLIENT_ID" <<<"$default_render"; then
+	fail "OIDC is configured by default — it must be opt-in"
+fi
+pass "oidc: absent by default"
 
 # Assertions on what the default render actually contains. These are the
 # claims docs/self-hosting.md makes; if the chart stops making them true, the

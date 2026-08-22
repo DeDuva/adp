@@ -23,8 +23,9 @@ The dependency map and what-breaks-what live in [`docs/ecosystem.md`](docs/ecosy
 
 ## Milestone ledger
 
-**API contract version: `0.3.0`** (`server/src/api-version.ts`, served as
-`ADP-API-Version` on every response). What a bump promises:
+**API contract version: `0.4.0`** (`server/src/api-version.ts`, served as
+`ADP-API-Version` on every response). 0.4.0 is additive — M4-5's two OIDC login
+operations; a client generated against 0.3.0 is unaffected. What a bump promises:
 [`docs/api-compatibility.md`](docs/api-compatibility.md). The debt the audit called out — eleven
 operations landed additively during M4 under an unmoved 0.2.0 — was settled 2026-08-14 by the
 coordinated 0.3.0 release (#97): version bumped WITH an operation-set snapshot guard so it can
@@ -39,7 +40,7 @@ write paths, and typed responses for the four operations squad-lab reads.
 | M2 — adoption + trust ramp | complete 2026-08-03 | Mirror mode, outbound webhooks, `adp` CLI, telemetry, scanner-as-gate adapters, dependency admission v0, SBOM per land, Actions read-only passthrough. Verified scope: [`docs/m2-readiness-review.md`](docs/m2-readiness-review.md) |
 | Runs / trajectories / eval-gated close *(capability slice)* | complete 2026-08-05 | PRs #58–#61 — took the wire contract 0.1.0 → 0.2.0. Driven by downstream consumers, not M3 scope. Detail: [`docs/trajectory-eval-slice.md`](docs/trajectory-eval-slice.md) |
 | M3 — fleet + differentiation | complete 2026-08-10 | M3-0 … M3-6 landed (sequenced by [`docs/m3-readiness-review.md`](docs/m3-readiness-review.md)). All three benchmark arms published: [`bench/report/merge-contention.md`](bench/report/merge-contention.md) (arm 1, deterministic), [`bench/report/three-way-cost.md`](bench/report/three-way-cost.md) (arm 2, pilot scale), squad's duva-bench track (arm 3 — [squad PR #119](https://github.com/DeDuva/squad/pull/119)) |
-| M4 — multi-tenant foundations *(re-scoped 2026-08-22)* | in progress | **Re-scoped to what can be finished without a spend decision**; the provisioned-infrastructure slice moved to its own row below. Landed: M4-0…M4-4 (org schema, org-scoped tokens, org policy plane, quotas/GC, audit-log export), M4-7 (org policy console), M4-9a…d (gate-job queue, `runner/` package, adp.yaml + gate_results, per-org caps), M4-11 (observability). The [`docs/m4-postmortem-audit.md`](docs/m4-postmortem-audit.md) (2026-08-13) found the code landed but the milestone not met; all four P0 fixes (#88–#91) landed with their negative-case proofs, including the **org-isolation matrix** (`server/test/e2e-org-isolation.test.ts`), as did the five P1a queue-reliability fixes (#92–#96) and all five P2 hygiene items (#98–#102, PRs #116–#120, closed 2026-08-14). M4-12 (self-host artifacts, PR #86) has since landed, satisfying exit criterion 6. Remaining, none of it budget-gated: M4-5 (OIDC, #103), M4-3's unbuilt storage quota, and the audit-reconciliation test exit criterion 4 names. Work plan: [`PLAN.md`](PLAN.md) |
+| M4 — multi-tenant foundations *(re-scoped 2026-08-22)* | in progress | **Re-scoped to what can be finished without a spend decision**; the provisioned-infrastructure slice moved to its own row below. Landed: M4-0…M4-4 (org schema, org-scoped tokens, org policy plane, quotas/GC, audit-log export), M4-7 (org policy console), M4-9a…d (gate-job queue, `runner/` package, adp.yaml + gate_results, per-org caps), M4-11 (observability). The [`docs/m4-postmortem-audit.md`](docs/m4-postmortem-audit.md) (2026-08-13) found the code landed but the milestone not met; all four P0 fixes (#88–#91) landed with their negative-case proofs, including the **org-isolation matrix** (`server/test/e2e-org-isolation.test.ts`), as did the five P1a queue-reliability fixes (#92–#96) and all five P2 hygiene items (#98–#102, PRs #116–#120, closed 2026-08-14). M4-12 (self-host artifacts, PR #86) landed, satisfying exit criterion 6, and M4-5 (Google OIDC login, #103) landed with it. Remaining, none of it budget-gated: M4-3's unbuilt storage quota, and the audit-reconciliation test exit criterion 4 names. Work plan: [`PLAN.md`](PLAN.md) |
 | Hosted preview *(budget-gated slice, split out of M4 2026-08-22)* | blocked | M4-8 (managed Postgres + object store) and M4-10 (backup/PITR with an **executed** restore drill), plus the two M4 exit criteria that need a provisioned instance: signup-to-workload, and the executed drill. Blocked on decision 2 (budget) and decision 3 (drill timing) below — engineering is not the constraint, a dollar number is. Split out so M4 can close on what it delivered rather than stay open for a purchase order |
 | 0.3.0 — contract breaking batch | complete 2026-08-14 | Shipped as one coordinated wire-contract release (#97 / PR #115, commit `5eb471d`, tag `v0.3.0`) while the only tokens in existence were hand-minted: version bumped with an operation-set snapshot guard against the C-1 vacuous pass, a shared `Error` schema, auth/scopes declared in the spec and asserted against the code, every list endpoint bounded, audited write paths for quota/policy-repo changes, and typed responses for the 4 operations squad-lab reads. **Kept `{owner}/{repo}` URLs** (gh fidelity requires them). Detail: [`docs/m4-postmortem-audit.md`](docs/m4-postmortem-audit.md) §"0.3.0 breaking batch" |
 | M5 — substrate hardening | not started | Evidence-gated: every item requires a written justification citing M3/M4 telemetry |
@@ -53,8 +54,8 @@ write paths, and typed responses for the four operations squad-lab reads.
   matrix), all five P1a queue-reliability fixes (#92–#96), the coordinated 0.3.0 contract release
   (#97), and all five P2 hygiene items (#98–#102) — each landed as its own PR carrying the
   audit's named negative-case test as proof.
-- **Next:** the re-scoped M4's remaining work, none of it budget-gated — M4-5 Google OIDC (#103),
-  M4-3's unbuilt storage quota, and the audit-reconciliation test exit criterion 4 names. Then the serial-base-case forward work: author-independent
+- **Next:** the re-scoped M4's remaining work, none of it budget-gated — M4-3's unbuilt storage
+  quota, and the audit-reconciliation test exit criterion 4 names. Then the serial-base-case forward work: author-independent
   approval (#121), compensating-revert undo, and the cross-harness resume demo. SCIM (M4-6)
   remains explicitly deferred.
 - **Later:** the hosted-preview slice once decisions 2/3 are answered; M5 if and only if
@@ -63,10 +64,14 @@ write paths, and typed responses for the four operations squad-lab reads.
 ## Blockers and open decisions
 
 - **M4 decision 1 — identity provider. RESOLVED 2026-08-13: Google OIDC**, whose identities this
-  project's users already have. The *decision* is made; **M4-5 is not built** — there is no OIDC
-  code in the tree and #103 is open. (This row previously claimed the work was "built and
-  acceptance-tested against real Google"; it never was, and the claim had propagated to two other
-  documents. Corrected 2026-08-22.) **SCIM (M4-6) is deferred**, not merely blocked — parked until
+  project's users already have. **M4-5 landed 2026-08-22** (#103): authorization-code flow with
+  PKCE, an `external_identities` link keyed on `(issuer, subject)`, auto-provisioning off by
+  default, and a login that cannot mint `admin`. The real-Google acceptance procedure is in
+  [`docs/self-hosting.md`](docs/self-hosting.md) §7 — the automated suite runs the full protocol
+  against a real OpenID provider on localhost, which is what can be enforced per-push; Google
+  specifically is a once-per-instance check. (Between 2026-08-13 and 2026-08-22 this row wrongly
+  claimed the work was already "built and acceptance-tested against real Google"; it was not, and
+  the claim had propagated to two other documents.) **SCIM (M4-6) is deferred**, not merely blocked — parked until
   a procurement conversation demands it, since SCIM against a real IdP is significant work with no
   current consumer.
 - **M4 decision 2 — budget for managed Postgres + object store.** GCP Cloud SQL + GCS, following

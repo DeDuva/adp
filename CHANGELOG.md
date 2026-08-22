@@ -8,6 +8,30 @@ promises is defined in [`docs/api-compatibility.md`](docs/api-compatibility.md);
 whether the operation set moved with the version is enforced by
 `spec/operations.snapshot.json` and its spec-coverage guard.
 
+## v0.4.0 — unreleased
+
+**M4-5: OIDC login (#103).** The standard authorization-code flow with PKCE,
+mapped onto `identities` through a new `external_identities` table keyed on
+`(issuer, subject)` — not on email, because Google's `sub` is the stable
+identifier and an address that gets reassigned must not hand over an account.
+
+Additive: two new operations, `GET /auth/oidc/start` and
+`GET /auth/oidc/callback`. No existing operation changes shape, and both
+routes are absent entirely on an instance with no IdP configured, so a client
+generated against 0.3.0 keeps working untouched.
+
+Two things worth knowing before enabling it. **Auto-provisioning is off by
+default** — `OIDC_ALLOWED_DOMAINS` is empty, and empty means a verified
+account with no existing link is refused rather than welcomed. And a login
+mints `repo:read` + `repo:write` only; **`admin` is not reachable from the
+login route by any input**, the same bound `POST /api/adp/tokens` carries.
+
+ID tokens are verified against Node's own crypto rather than a JWT
+dependency, with an allowlist of exactly one algorithm. The negative cases —
+algorithm confusion, `alg: none`, unknown `kid`, tampered payload, wrong
+issuer, wrong audience, expired, replayed nonce — are each a test, because
+that is the only thing that makes the trade sound.
+
 ## v0.3.0 — 2026-08-14
 
 The coordinated breaking contract release (#97), plus the full M4

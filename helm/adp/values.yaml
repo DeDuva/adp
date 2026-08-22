@@ -101,6 +101,32 @@ secrets:
   # postgres.enabled is false.
   existingSecret: ""
 
+# M4-5: OIDC login. Off unless clientId is set, and off means the /auth/oidc
+# routes do not exist — not that they exist and refuse.
+#
+# The redirect URI to register with your provider is
+# `<server.publicUrl>/auth/oidc/callback`, matched byte for byte.
+oidc:
+  clientId: ""
+  # Required whenever clientId is set. With secrets.existingSecret, put it
+  # there under the key OIDC_CLIENT_SECRET instead.
+  clientSecret: ""
+  # Comma-separated email domains that may create an identity by logging in.
+  #
+  # EMPTY MEANS NOBODY, and that is the default. A verified account with no
+  # existing link is refused rather than provisioned. Set this to your own
+  # domain to let colleagues in; setting it broadly is an open door. An
+  # existing link always beats this list, so narrowing it later does not lock
+  # out people who already have accounts — it is a provisioning rule, not a
+  # revocation mechanism.
+  allowedDomains: ""
+  # Minutes. A login credential that never expires is a PAT with a worse
+  # provenance story.
+  tokenTtlMinutes: 720
+  # Only for a provider other than Google.
+  issuer: "https://accounts.google.com"
+  discoveryUrl: "https://accounts.google.com/.well-known/openid-configuration"
+
 # Bundled Postgres — for evaluation and for "does this work from nothing?".
 # It is a single StatefulSet with no backups, no PITR, no failover and no
 # connection pooling. docs/environments-plan.md §3 is explicit that the moment

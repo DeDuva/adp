@@ -19,6 +19,7 @@ import { registerOperationRoutes } from "./http-rest/operations.js";
 import { registerAuditLogRoutes } from "./http-rest/audit-log.js";
 import { registerOrgRoutes } from "./http-rest/orgs.js";
 import { registerTokenRoutes } from "./http-rest/tokens.js";
+import { registerOidcRoutes, type OidcConfig } from "./http-rest/oidc.js";
 import { registerWorkspaceRoutes } from "./http-rest/workspaces.js";
 import { registerEvidenceRoutes } from "./http-rest/evidence.js";
 import { registerSessionRoutes } from "./http-rest/sessions.js";
@@ -46,6 +47,11 @@ export interface RouteDeps {
   credentialKey: string;
   instanceFloor: LandRequirement[];
   gitMaxPackBytes?: number;
+  // M4-5: present only when the instance has been given IdP credentials.
+  // Absent is the normal case for a single-tenant instance and for every test
+  // that predates OIDC, and it means the two /auth/oidc routes do not exist —
+  // not that they exist and refuse.
+  oidc?: OidcConfig;
 }
 
 // Every HTTP surface this server exposes, in one place.
@@ -93,6 +99,11 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   registerAuditLogRoutes(app, db);
   registerOrgRoutes(app, db, gitBackend, instanceFloor);
   registerTokenRoutes(app, db);
+  // Conditional, and the only conditional registration in this function. The
+  // routes are absent rather than disabled when no IdP is configured, which
+  // is what keeps spec-coverage honest: a route that exists must be in the
+  // spec, and one that does not exist must not be reachable at all.
+  if (deps.oidc) registerOidcRoutes(app, db, deps.oidc);
   registerWorkspaceRoutes(app, db, gitBackend);
   registerEvidenceRoutes(app, db);
   registerSessionRoutes(app, db, gitBackend, signer, publicUrl, keyRegistry);

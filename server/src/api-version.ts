@@ -28,6 +28,13 @@
 // org for the audit export. URLs keep `{owner}/{repo}` — gh fidelity
 // requires owner-shaped URLs, so the owner string is the org's immutable
 // URL slug and org rename stays unsupported pre-1.0.
-export const API_VERSION = "0.3.0";
+// 0.4.0 — additive: M4-5 adds GET /auth/oidc/start and GET /auth/oidc/callback,
+// the OpenID Connect authorization-code login. Additive in the strict sense —
+// no existing operation changes shape, and both routes are absent entirely on
+// an instance with no IdP configured, so a client generated against 0.3.0
+// keeps working untouched. They are in the spec regardless of whether a given
+// instance mounts them, because the contract describes the protocol, not one
+// deployment's configuration.
+export const API_VERSION = "0.4.0";
 
 export const API_VERSION_HEADER = "ADP-API-Version";

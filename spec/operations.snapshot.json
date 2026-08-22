@@ -1,5 +1,5 @@
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "operations": [
     "DELETE /api/adp/repos/{owner}/{repo}/workspaces/{id}",
     "DELETE /api/v3/repos/{owner}/{repo}/git/refs/heads/{branch}",
@@ -57,6 +57,8 @@
     "GET /api/v3/repos/{owner}/{repo}/pulls/{number}/files",
     "GET /api/v3/repos/{owner}/{repo}/pulls/{number}/reviews",
     "GET /api/v3/user",
+    "GET /auth/oidc/callback",
+    "GET /auth/oidc/start",
     "GET /healthz",
     "GET /metrics",
     "GET /readyz",

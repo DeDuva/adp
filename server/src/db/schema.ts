@@ -74,6 +74,38 @@ export const orgMemberships = pgTable(
   (table) => [unique().on(table.orgId, table.identityId)],
 );
 
+// M4-5: an identity as some external issuer knows it. The readiness review
+// left the shape open — "a new `kind`, or a linked external-identity table" —
+// and this is the linked table, for one reason that decides it: Google's `sub`
+// is the stable identifier and the email is not. A person who changes their
+// email address is the same person, and a `principal` keyed on email would
+// either lock them out or, far worse, hand their account to whoever the
+// address gets reassigned to. So the link is keyed on (issuer, subject) and
+// `email` is carried alongside for display only, refreshed on each login and
+// never used to find the row.
+//
+// It also keeps `identities` unchanged: an identity is still a principal with
+// a kind, and how a human proved they are that principal is a separate fact
+// that can grow a second row later (a second provider) without touching it.
+export const externalIdentities = pgTable(
+  "external_identities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The OIDC issuer, exactly as it appears in the verified `iss` claim.
+    // Part of the key rather than assumed constant: `sub` is only unique
+    // within an issuer, so a single-provider deployment that later adds a
+    // second must not be able to collide two people onto one identity.
+    issuer: text("issuer").notNull(),
+    subject: text("subject").notNull(),
+    identityId: uuid("identity_id").notNull().references(() => identities.id),
+    // Display only. See the note above — never a lookup key.
+    email: text("email"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  },
+  (table) => [unique().on(table.issuer, table.subject)],
+);
+
 export const repos = pgTable(
   "repos",
   {
