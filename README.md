@@ -77,10 +77,11 @@ Two mechanisms run at the point where code enters the system, both as real git h
   and ships the text to the server, rather than shipping shas the server cannot yet resolve.
 - **`post-receive`** records a signed change per new commit, deduplicated by `(repo, sha)`.
 
-Landing is governed by a two-level land policy: an instance floor (`LAND_POLICY_FLOOR`, admin-owned)
-unioned with the repo's own `adp.yaml` — a repo can add requirements, never remove one. Both
-`gates_green` and `one_approval` are enforced identically on the REST and GraphQL merge paths, and a
-malformed `adp.yaml` fails closed. Merges are fast-forward only.
+Landing is governed by a three-level land policy: an instance floor (`LAND_POLICY_FLOOR`,
+admin-owned), unioned with the org's floor, unioned with the repo's own `adp.yaml` — each level can
+add requirements, never remove one. Both `gates_green` and `one_approval` are enforced identically
+on the REST and GraphQL merge paths, and a malformed `adp.yaml` fails closed. Merges are
+fast-forward only.
 
 ```yaml
 # adp.yaml, read off the base ref — as GitHub reads branch protection off the target branch
@@ -89,13 +90,31 @@ land:
   require: [gates_green, one_approval]
 ```
 
-### Evidence, not execution
+### Evidence, and who executes it
 
-ADP receives and attests gate results; it never executes them. `POST /api/v3/repos/{o}/{r}/gates`
-signs and stores a result, `GET .../commits/{sha}/gates` lists them, and they project onto the
-compatibility plane as `Commit.statusCheckRollup`. This is the same division of labor as GitHub's
-Checks API: external systems report, the forge records and gates. No first-party scanner is built,
-by design — the bundled secret engine is the only in-tree detector.
+**The server receives and attests gate results; it never executes them.**
+`POST /api/v3/repos/{o}/{r}/gates` signs and stores a result, `GET .../commits/{sha}/gates` lists
+them, and they project onto the compatibility plane as `Commit.statusCheckRollup`. This is the same
+division of labor as GitHub's Checks API: external systems report, the forge records and gates. No
+first-party scanner is built, by design — the bundled secret engine is the only in-tree detector.
+
+Execution is a separate process. The gate runner in [`runner/`](runner) polls
+`/api/adp/gate-jobs/claim`, executes the job in an isolated container, and reports through the same
+signed path any external reporter uses. It is a pure HTTP client — no server import, no database
+credential, no signing key — and it belongs on its own host, because a mounted Docker socket is
+root on that host. What the isolation actually guarantees, what proves it, and what it explicitly
+does not claim are in [`docs/m4-runner-isolation.md`](docs/m4-runner-isolation.md).
+
+### Organizations
+
+Repos live in orgs, and the org is the tenancy boundary: repo access authorizes against the
+caller's org on every plane — REST, git wire, GraphQL, and `/api/adp` alike — with the matrix that
+proves it in `server/test/e2e-org-isolation.test.ts`. An org carries its policy floor, a kill
+switch that refuses every land while set, per-org quotas (repos, concurrent workspaces, concurrent
+gate jobs, and a storage ceiling in bytes), and an audit-log export that is a projection of the
+operation log rather than a second system. Org administration is itself audited: quota and
+policy-repo changes write operations, and the policy floor is a file in a repo, so changing it
+travels the same signed, reviewable path as code.
 
 ---
 
@@ -164,7 +183,7 @@ from being worse than none, since `gh`'s queries validate against the real schem
 
 ### Native plane
 
-REST under `/api/adp`, and the same operations over MCP:
+REST under `/api/adp`, and the same operations over MCP — 17 tools:
 
 | Capability | REST | MCP tool |
 |---|---|---|
@@ -172,7 +191,10 @@ REST under `/api/adp`, and the same operations over MCP:
 | Undo | `POST .../operations/{id}/undo` | `adp_undo` |
 | Evidence bundle | `GET .../evidence/{sha}` | `adp_evidence_get` |
 | Workspaces | `GET/POST .../workspaces`, `DELETE .../workspaces/{id}` | `adp_workspace_create`, `adp_workspace_destroy` |
-| Candidate sets | `GET/POST .../candidate-sets`, `POST .../candidate-sets/{id}/select` | `adp_candidates_open`, `adp_candidates_select` |
+| Candidate sets | `GET/POST .../candidate-sets`, `POST .../candidate-sets/{id}/select` | `adp_candidates_open`, `adp_candidates_select`, `adp_candidates_resolve` |
+| Sessions and checkpoints | `POST .../sessions`, `.../sessions/{id}/checkpoints`, `.../sessions/{id}/resume` | `adp_session_start`, `adp_session_get`, `adp_checkpoint_create`, `adp_session_resume` |
+| Trajectories | `POST .../sessions/{id}/events`, `GET .../runs/{id}/trajectory` | `adp_trajectory_append`, `adp_run_trajectory` |
+| Runs and evals | `GET .../runs/{id}/stats`, `GET .../runs/compare` | `adp_run_stats`, `adp_runs_compare` |
 
 The operation log is filterable by actor, verb, date range, and file path — path filtering resolves
 the commit behind an operation and asks git which paths it touched. Undo currently covers reverting
@@ -234,6 +256,9 @@ would.
 | `PORT` | `3000` | listen port |
 | `GIT_MAX_PACK_BYTES` | `500 MB` | bounds the git smart-HTTP request body only |
 | `LAND_POLICY_FLOOR` | `gates_green,one_approval` | instance floor; empty string disables |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | — | OpenID Connect login. Both client values must be present or the routes do not mount at all |
+| `OIDC_ALLOWED_DOMAINS` | empty | empty means **no auto-provisioning**: a verified account with no existing link is refused, not welcomed |
+| `STORAGE_METER_INTERVAL_MS` | `600000` | how often each org's storage is re-measured; also the overshoot an org can achieve past its quota |
 
 Auth is bearer tokens with `repo:read` / `repo:write` / `admin` scopes, enforced on every REST
 route, the GraphQL endpoint, and the git route. Reads are private by default. Token lookup is by an
@@ -281,6 +306,7 @@ the same loop, so the "brand new machine" path stays verified rather than assume
 
 | Document | What it is |
 |---|---|
+| [`PLAN.md`](PLAN.md) | The executable backlog — every open work item, phased, each naming its tracking issue or PR. If work is not in this file it is not planned. Start here for "what is left." |
 | [`ROADMAP.md`](ROADMAP.md) | The status ledger — current milestone states, API contract version, blockers, and open decisions. Updated in the same PR as any status change. Start here for "where is the project." |
 | [`docs/agent-native-vcs-brief.md`](docs/agent-native-vcs-brief.md) | The thesis: the case for a neutral agent-native substrate — the GitHub interface question, the competitive landscape, architectural tradeoffs, the agent-harness boundary, and enterprise/supply-chain controls. Its appendices carry the three open decisions, the nine questions our own code and measurements settled, and the positions we hold with the evidence that would change each. |
 | [`docs/pragmatic_mvp.md`](docs/pragmatic_mvp.md) | The plan of record: scope, the exact GitHub surface that ships, the cut list and why each cut is defensible, and the per-milestone narrative of what shipped and why. |
