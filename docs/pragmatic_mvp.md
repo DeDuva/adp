@@ -1008,7 +1008,7 @@ Boundaries preserve the option to split; a service mesh at week 3 does not.
 | **Git storage** | Bare repos on one volume; all plumbing by invoking the real `git` binary as a subprocess | 100% fidelity, free. No isomorphic-git/nodegit edge cases. Behind a `GitBackend` interface for later |
 | **Git transport** | `git http-backend` (CGI) proxied behind auth middleware | The reference implementation of the wire protocol, already installed |
 | **Database** | PostgreSQL 16, Drizzle (migrations + typed queries) | Transactional spine |
-| **Job queue** | `pg-boss` (Postgres-backed) | No Redis. One stateful dependency is enough, and gate jobs want transactional enqueue alongside the change record |
+| **Job queue** | bespoke, on `gate_jobs` (Postgres-backed) | No Redis. One stateful dependency is enough, and gate jobs want transactional enqueue alongside the change record. `pg-boss` was named here originally; what shipped is our own claim/lease/reaper loop on `FOR UPDATE SKIP LOCKED`, kept deliberately (audit P1-7) |
 | **Object store** | S3-compatible: MinIO self-hosted, Cloud Storage hosted (its XML API keeps the same client). Content-addressed keys `sha256/<hash>` | Gate logs, junit XML, evidence payloads, trajectories. Content addressing gives dedup and makes A9 sealed payloads natural later. Staying S3-compatible rather than adopting a GCS-native client is what keeps the self-host path real |
 | **Gate runner** | Separate process, Docker/Podman. Reads `adp.yaml` (`image`, `setup`, `gates:[{name,run,weight}]`), materializes a checkout, runs commands, uploads logs+junit, posts a check-run | Not a workflow engine. No matrix, no marketplace, no DAG |
 | **MCP** | Official TS SDK, streamable-HTTP, bearer auth, same process | MCP is a projection of the same domain layer, not a second system |
@@ -1209,7 +1209,7 @@ In order of authority:
 |---|---|---|
 | Primary success test | Unmodified agent, zero config | Compat plane became tier-1; MVP grew from ~7 to ~11 weeks; native MCP surface shrank from 16 tools to 8 (only what GitHub can't express); TLS + real hostname became a week-1 requirement |
 | `gh` CLI compatibility | In the MVP | ~14 GraphQL operations added; "load GitHub's real SDL, partial resolvers" chosen to avoid the partial-shim failure mode; record-replay suite became the M1b exit gate; M1 explicitly sequenced so `gh` risk surfaces in week 8 with a fallback intact |
-| Stack | TypeScript + Node | Fastify / Drizzle / graphql-js / pg-boss / MCP TS SDK; git via subprocess; supersedes the docs' Rust + gRPC + jj-lib + gitoxide |
+| Stack | TypeScript + Node | Fastify / Drizzle / graphql-js / a bespoke Postgres job queue / MCP TS SDK; git via subprocess; supersedes the docs' Rust + gRPC + jj-lib + gitoxide |
 | Build vs fork | Greenfield over plain git | Confirmed by research: forking Gitea/Forgejo would not have delivered `gh` compat (no GraphQL) while importing a human-workflow data model |
 
 **Residual risks to watch, in order:**

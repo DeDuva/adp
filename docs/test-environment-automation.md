@@ -299,18 +299,27 @@ saying "ok" is not evidence that a merge was reverted.
 call that cannot be asserted. Five screenshots per run (`.adp-test/acceptance/`, uploaded as a CI
 artifact) reduce that call to a minute of looking rather than a full manual walkthrough.
 
-#### The one part of §2.1 that is not met
+#### The one part of §2.1 that was not met *(closed 2026-08-03 — see the correction below)*
 
-"Watches `gh pr checks` go green" **does not work today**, and the acceptance suite says so out
-loud. The rollup *state* is real and correct — `statusCheckRollup { state }` resolves to `SUCCESS`
-and the land policy gates on it — but `gh pr checks` enumerates `contexts`, which
-`http-gql/resolvers.ts` returns as a deliberately empty connection. So `gh` reports "no checks
-reported" and exits non-zero however green the rollup is. Confirmed against the real pinned `gh`
+> **Correction, 2026-08-22.** Everything in this subsection describes the state of the world when
+> this document was written, and **PR #53 closed the gap on 2026-08-03**: each gate result now
+> projects to a `StatusContext`, and `run.sh:251-266` asserts that `gh pr checks` *succeeds*,
+> names the gate, reports it passing, and links the evidence bundle. The prediction below came
+> true and was then ignored — the test was inverted, but `CLAUDE.md` and this document went on
+> describing a limitation that no longer existed for nineteen days. That is the failure mode
+> `scripts/check-docs.sh` now exists to catch. The original text is kept because the reasoning
+> is still the reason the assertion is shaped the way it is.
+
+"Watches `gh pr checks` go green" **did not work** when this was written, and the acceptance suite
+said so out loud. The rollup *state* was real and correct — `statusCheckRollup { state }` resolved
+to `SUCCESS` and the land policy gated on it — but `gh pr checks` enumerates `contexts`, which
+`http-gql/resolvers.ts` returned as a deliberately empty connection. So `gh` reported "no checks
+reported" and exited non-zero however green the rollup was. Confirmed against the real pinned `gh`
 binary, not inferred.
 
-`run.sh` asserts **both** halves: the rollup is `SUCCESS`, *and* `gh pr checks` still fails in
-exactly this way. The second assertion is the useful one — when per-context detail gets
-implemented, that test fails and demands the gap be closed in `manual-test-plan.md` and the
+`run.sh` asserted **both** halves: the rollup is `SUCCESS`, *and* `gh pr checks` still fails in
+exactly this way. The second assertion was the useful one — when per-context detail got
+implemented, that test would fail and demand the gap be closed in `manual-test-plan.md` and the
 README's `gh` table, instead of passing quietly and leaving three documents describing a
 limitation that no longer exists.
 
@@ -516,9 +525,10 @@ already has an engine, so bootstrap takes its already-reachable branch. That pat
 by `Run-CleanTest.ps1` on a real Windows machine, but that runs on demand rather than per push.
 A scheduled run would close the gap.
 
-**`gh pr checks` does not go green.** The §2.1 gap documented above: the rollup state is real,
-`contexts` is an empty connection. `acceptance/run.sh` asserts the current behavior so that
-implementing per-context detail forces the docs to be corrected.
+**~~`gh pr checks` does not go green.~~** *Closed 2026-08-03 by PR #53* — each gate result projects
+to a `StatusContext`, and `acceptance/run.sh` now asserts that `gh pr checks` succeeds, names the
+gate, reports it passing, and links the evidence bundle. Struck rather than deleted because this
+line is the one the correction above is about.
 
 **Screenshots are reviewed by a human or not at all.** Nothing asserts that the UI looks right,
 by design. The screenshots make that review cheap; they do not make it automatic.
