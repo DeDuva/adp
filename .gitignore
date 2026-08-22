@@ -10,8 +10,14 @@
 # WSL / Windows alternate-data-stream artifacts
 *:Zone.Identifier
 
-# Node
-node_modules/
+# Node.
+#
+# No trailing slash on node_modules, deliberately. `node_modules/` matches only
+# a directory, so a *symlink* named node_modules walks straight past it — which
+# is how two machine-specific absolute symlinks reached main in #128. Linking a
+# dependency tree into a worktree to avoid a second `npm ci` is a normal thing
+# to do; it should not be able to end up in a commit.
+node_modules
 dist/
 
 # Local env
