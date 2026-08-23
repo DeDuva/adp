@@ -1,14 +1,34 @@
-# ADP — Agent Development-state Protocol
+# ADP — the agent-native software forge
 
-A version control and CI/CD server that speaks GitHub's protocols, and records *why* every change
-was made and *how it was verified* as first-class, signed data.
+ADP is a self-hosted, GitHub-compatible forge for AI coding agents. Keep using `git`, `gh`, and
+existing CI integrations while ADP binds every change to its intent, agent provenance, approvals,
+and signed verification evidence.
 
-Point `git` and `gh` at it with two environment variables and they work unmodified. Behind that
-familiar surface, every change is a typed transaction carrying **intent → diff → evidence →
-provenance**, Ed25519-signed server-side, with an append-only operation log written in the same
-database transaction as the change itself.
+**Why ADP?** Agent transcripts are temporary, and an agent saying “tests pass” is not independent
+proof. ADP makes development context durable and enforces your evidence requirements at merge time.
+
+[Try ADP locally](#try-adp-locally) · [How it works](#how-it-works) ·
+[Self-hosting](docs/self-hosting.md)
 
 Apache-2.0 · TypeScript · Fastify · PostgreSQL · the real `git` binary for all plumbing.
+
+---
+
+## Try ADP locally
+
+The fastest supported evaluation path provisions the toolchain, starts ADP with an ephemeral
+PostgreSQL database, runs the complete test suite—including a real
+**clone → push → propose → review → merge** flow—and removes everything afterward:
+
+```bash
+bash scripts/dev/bootstrap.sh
+make up && make test-all && make down
+```
+
+This path is designed for a clean Linux machine with Docker. It verifies both the familiar GitHub
+compatibility surface and ADP's signed change and evidence model without requiring a cloud account.
+See [Running it](#running-it) for source setup and [`docs/self-hosting.md`](docs/self-hosting.md) for
+persistent Docker Compose and Helm deployments.
 
 ---
 
