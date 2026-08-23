@@ -7,12 +7,12 @@ description: >-
 type: application
 
 # The chart's own version, bumped when the chart changes.
-version: 0.1.0
+version: 0.2.0
 
 # The ADP release this chart defaults to deploying. Tracks the API contract
 # version served as ADP-API-Version (server/src/api-version.ts) rather than
 # inventing a second numbering for the same thing.
-appVersion: "0.2.0"
+appVersion: "0.5.0"
 
 home: https://github.com/DeDuva/adp
 sources:

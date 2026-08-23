@@ -140,4 +140,29 @@ if grep -q "SIGNING_KEY" "$RUNNER"; then fail "the runner's own manifests carry 
 if grep -q "DATABASE_URL" "$RUNNER"; then fail "the runner's own manifests carry DATABASE_URL — it must never hold a database credential"; fi
 pass "the runner holds a docker socket and a scoped token, and neither the signing key nor a database credential"
 
+# The default image tag has to be a tag that release.yml actually publishes. It was
+# not: the helper rendered the bare appVersion ("0.5.0") while the workflow pushes
+# ${github.ref_name} ("v0.5.0"), so a default `helm install` referenced an image that
+# has never existed at any version. Nothing caught it because every existing render
+# assertion asked whether the chart produced *a* manifest, not whether the manifest
+# pointed at anything real.
+#
+# scripts/dev/check-release.sh ties appVersion to the served contract version; this
+# ties the rendered tag to appVersion. Together they reach from api-version.ts to the
+# image an operator pulls.
+app_version=$(grep -oE '^appVersion: *"?[^"]+"?' "$CHART/Chart.yaml" | sed 's/^appVersion: *//; s/"//g')
+grep -qE "image: *\"?ghcr\.io/deduva/adp:v${app_version}\"?" /tmp/adp-helm-defaults.yaml ||
+	fail "default render does not pull ghcr.io/deduva/adp:v${app_version} — the tag release.yml publishes"
+grep -qE "image: *\"?ghcr\.io/deduva/adp-runner:v${app_version}\"?" "$RUNNER" ||
+	fail "runner render does not pull ghcr.io/deduva/adp-runner:v${app_version} — the tag release.yml publishes"
+pass "default image tags are v${app_version}, which is what the release workflow pushes"
+
+# An explicit tag must survive verbatim — an operator pinning one is naming a real
+# tag and must not have a "v" stapled onto it.
+helm template adp "$CHART" "${BASE[@]}" --set image.tag=sha-abc123 >/tmp/adp-helm-pinned.yaml 2>/dev/null ||
+	fail "could not render with an explicit image.tag"
+grep -qE "image: *\"?ghcr\.io/deduva/adp:sha-abc123\"?" /tmp/adp-helm-pinned.yaml ||
+	fail "an explicit image.tag was not used verbatim"
+pass "an explicit image.tag overrides the default untouched"
+
 printf '\033[32m== helm: chart lints, renders, and refuses what it should ==\033[0m\n'

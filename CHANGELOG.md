@@ -1,14 +1,28 @@
 # Changelog
 
 The rule a version carries: the git tag, the GitHub release, the published
-image (`ghcr.io/deduva/adp`), and the served `ADP-API-Version` all move
-together — `vX.Y.Z` tags a commit whose `server/src/api-version.ts` says
-`X.Y.Z`, and the release workflow refuses a tag that lies. What a bump
-promises is defined in [`docs/api-compatibility.md`](docs/api-compatibility.md);
-whether the operation set moved with the version is enforced by
-`spec/operations.snapshot.json` and its spec-coverage guard.
+image (`ghcr.io/deduva/adp`), the Helm chart's `appVersion`, the workspace
+package manifests, `spec/openapi.yaml`, the newest entry in this file, and the
+served `ADP-API-Version` all move together — `vX.Y.Z` tags a commit whose
+`server/src/api-version.ts` says `X.Y.Z`. `scripts/dev/check-release.sh`
+asserts every one of those on each push, and the release workflow re-runs it
+before publishing an image. What a bump promises is defined in
+[`docs/api-compatibility.md`](docs/api-compatibility.md); whether the operation
+set moved with the version is enforced by `spec/operations.snapshot.json` and
+its spec-coverage guard.
 
-## v0.5.0 — unreleased
+Until 2026-08-23 only one edge of that rule was enforced, and it was checked on
+the tag push — after publication. Two contract bumps slipped through it.
+
+## v0.5.0 — 2026-08-23
+
+Two contract moves reach a tag here. `0.4.0` was bumped in-tree when M4-5
+landed and never tagged, released, or published as an image, so no consumer
+could pin it; it ships inside this release rather than being retro-tagged, and
+its entry is kept below verbatim. Both moves are additive — a client generated
+against `0.3.0` is unaffected by either.
+
+### 0.5.0 — the org storage quota
 
 **M4-3: the per-org storage quota.** `orgs.max_storage_bytes` — the last of
 the four org quotas, and the one the milestone never built. It was deferred to
@@ -46,7 +60,7 @@ New gauge: `adp_storage_bytes{org}`, the first storage metric this server has
 had. `docs/observability.md` §5 amends its own "no per-org labels" position to
 say why this one is the exception.
 
-## v0.4.0 — unreleased
+### 0.4.0 — OIDC login (shipped here, never separately released)
 
 **M4-5: OIDC login (#103).** The standard authorization-code flow with PKCE,
 mapped onto `identities` through a new `external_identities` table keyed on

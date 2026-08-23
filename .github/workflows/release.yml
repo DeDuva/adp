@@ -34,6 +34,18 @@ jobs:
             echo "tag v$tag but api-version.ts serves $version — these move together (#101)"; exit 1
           fi
 
+      # The tag check above compares the pushed tag to api-version.ts and nothing
+      # else. Every other surface a consumer reads — the spec, the chart operators
+      # deploy, the package manifests, the CHANGELOG this workflow is about to
+      # publish as release notes — went unchecked, and drifted. This is the same
+      # guard CI runs per-push, re-run here because this is the last point before
+      # an image goes public.
+      - name: Every version surface agrees
+        env:
+          ADP_REQUIRE_GH: "1"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/dev/check-release.sh
+
       - name: Log in to ghcr
         uses: docker/login-action@v3
         with:
@@ -54,10 +66,27 @@ jobs:
           build-args: |
             ADP_GIT_SHA=${{ github.sha }}
 
+      # helm/adp/values.yaml has pointed the optional runner deployment at
+      # ghcr.io/deduva/adp-runner since M4-12, and nothing has ever built or pushed
+      # that image — deploy/Dockerfile.runner existed but no workflow used it. The
+      # runner is `enabled: false` by default, which is the only reason it went
+      # unnoticed: anyone who turned it on got a reference to nothing.
+      - name: Build and push the runner image
+        id: push-runner
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.runner
+          push: true
+          tags: |
+            ghcr.io/deduva/adp-runner:${{ github.ref_name }}
+            ghcr.io/deduva/adp-runner:latest
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DIGEST: ${{ steps.push.outputs.digest }}
+          RUNNER_DIGEST: ${{ steps.push-runner.outputs.digest }}
         # Notes assembled in a file, not an inline quoted string — a
         # multi-line --notes argument is exactly the shape that silently
         # breaks the YAML block scalar (it did, on this workflow's first
@@ -66,4 +95,6 @@ jobs:
           awk "/^## ${GITHUB_REF_NAME}/{flag=1;next}/^## v/{flag=0}flag" CHANGELOG.md > /tmp/notes.md
           printf '\n**Image:** `ghcr.io/deduva/adp:%s`\n' "$GITHUB_REF_NAME" >> /tmp/notes.md
           printf '**Digest:** `%s` — pin with `ADP_IMAGE=ghcr.io/deduva/adp@%s`\n' "$DIGEST" "$DIGEST" >> /tmp/notes.md
+          printf '\n**Runner image:** `ghcr.io/deduva/adp-runner:%s`\n' "$GITHUB_REF_NAME" >> /tmp/notes.md
+          printf '**Runner digest:** `%s`\n' "$RUNNER_DIGEST" >> /tmp/notes.md
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file /tmp/notes.md
