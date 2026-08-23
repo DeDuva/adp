@@ -7,7 +7,7 @@ proofs existed while nothing recorded that they added up to the criterion.
 > **The runner isolates as designed**, not as hoped: a gate script that attempts a host-mount, an
 > unbounded network call, or a resource-cap violation is refused or killed, and the refusal is
 > itself recorded — the same "a skipped check must never look like a passing one" standard
-> `CLAUDE.md` already holds the test suite to, applied to the thing the test suite is checking.
+> `AGENTS.md` already holds the test suite to, applied to the thing the test suite is checking.
 >
 > — [`docs/m4-readiness-review.md`](m4-readiness-review.md) §5, criterion 5
 

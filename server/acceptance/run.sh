@@ -143,7 +143,7 @@ node conformance/tls-proxy.mjs "$WORKDIR/cert.pem" "$WORKDIR/key.pem" "$TLS_PORT
 PROXY_PID=$!
 # This `pass` used to be printed the instant the process was backgrounded,
 # which reported success for something nothing had checked — the same shape as
-# CLAUDE.md's "a skipped test must never look like a passing one", one layer
+# AGENTS.md's "a skipped test must never look like a passing one", one layer
 # down in the harness itself. A proxy that died on EADDRINUSE was announced as
 # ok here and then surfaced minutes later as an unexplained `connection
 # refused`. Now the line means what it says.

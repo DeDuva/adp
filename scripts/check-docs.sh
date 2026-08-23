@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Fail when a tracked document has quietly stopped being true.
 #
-# This started as check-claude-md.sh, which asserted one thing about one file: every
-# repo-relative path in CLAUDE.md still exists. That guard worked and never fired. The
+# This started as a check over the project-instructions file alone, asserting one thing:
+# every repo-relative path in it still exists. That guard worked and never fired. The
 # 2026-08-22 documentation audit then found sixteen contradictions it could not have
 # caught, because none of them were about a path — they were about *claims*:
 #
@@ -13,7 +13,7 @@
 #     propagated to two other documents.
 #   - ROADMAP.md listed P2 items #98-#102 as still to come. All five closed on
 #     2026-08-14.
-#   - CLAUDE.md described the `gh pr checks` gap as deliberately asserted, nineteen days
+#   - AGENTS.md described the `gh pr checks` gap as deliberately asserted, nineteen days
 #     after PR #53 closed it and inverted the assertion — in a passage that had
 #     *predicted* exactly this failure and named the documents that would need fixing.
 #
@@ -25,7 +25,7 @@
 #   2. every relative markdown link resolves to a file that exists;
 #   3. every issue/PR number cited in the status documents agrees with its real state.
 #
-# (3) needs `gh` and the network. Per CLAUDE.md's standing invariant — a check that can
+# (3) needs `gh` and the network. Per AGENTS.md's standing invariant — a check that can
 # skip itself is a check that can silently stop running — it skips loudly when `gh` is
 # unavailable and becomes a hard failure when ADP_REQUIRE_GH=1, which CI sets.
 set -euo pipefail
@@ -47,7 +47,12 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 git ls-files >"$tmpdir/tracked"
 cut -d/ -f1 <"$tmpdir/tracked" | sort -u >"$tmpdir/toplevel"
-grep -E '\.md$' <"$tmpdir/tracked" >"$tmpdir/docs" || true
+# Symlinks are skipped: CLAUDE.md points at AGENTS.md so that an agent looking for the
+# older name finds the same text, and scanning both reports every finding twice under two
+# names. A guard whose output is half duplicates is one people stop reading.
+grep -E '\.md$' <"$tmpdir/tracked" | while IFS= read -r f; do
+	[ -L "$f" ] || printf '%s\n' "$f"
+done >"$tmpdir/docs" || true
 docs=$(cat "$tmpdir/docs")
 
 is_tracked() {

@@ -321,7 +321,7 @@ judgements:
    proven by a test rather than asserted by the description.
 5. **The runner isolates as designed**, not as hoped: a gate script that attempts a host-mount, an
    unbounded network call, or a resource-cap violation is refused or killed, and the refusal is itself
-   recorded — the same "a skipped check must never look like a passing one" standard `CLAUDE.md`
+   recorded — the same "a skipped check must never look like a passing one" standard `AGENTS.md`
    already holds the test suite to, applied to the thing the test suite is checking.
 6. **Self-host actually works from nothing** — the `helm/` chart and the compose path both stand up a
    working instance on infrastructure the author does not control, the same bar
