@@ -142,8 +142,12 @@ test-all: ## Everything CI runs: build, full suite, web, cli, adapters, runner, 
 check-docs: ## Assert tracked docs still point at real paths, links and issue states
 	@bash scripts/check-docs.sh
 
+check-release: ## Assert the version surfaces agree: spec, chart, packages, CHANGELOG, tag
+	@bash scripts/dev/check-release.sh
+
 check: ## The gate. Same target name in every repo in this line of work.
 	@$(MAKE) check-docs
+	@$(MAKE) check-release
 	@$(MAKE) test-all
 
 nuke: ## Full teardown: every stack, all generated files, deps and caches
