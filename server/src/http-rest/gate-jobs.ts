@@ -65,7 +65,7 @@ function toGateResultStatus(status: "succeeded" | "failed" | "timed_out" | "erro
   return status === "succeeded" ? "success" : "failure";
 }
 
-// M4-9a (docs/m4-readiness-review.md §4): the queue mechanism. M4-9c adds
+// M4-9a: the queue mechanism. M4-9c adds
 // the checkout endpoint (a real runner needs the code it's about to test)
 // and wires a completed job into a real, signed `gate_results` row — the
 // thing land policy actually reads — via core/gate-results.ts, the same

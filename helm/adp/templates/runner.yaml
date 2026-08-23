@@ -5,9 +5,8 @@
 
   The runner executes code out of a repository's adp.yaml. It does that inside
   a container it creates through a Docker daemon, and a mounted daemon socket
-  is root on the node holding it — `docs/pragmatic_mvp.md` §4.5 says so in
-  those words, and it is why the runner was built as a pure HTTP client with no
-  database credential and no signing key. That separation is worth nothing if
+  is root on the node holding it. That is why the runner was built as a pure
+  HTTP client with no database credential and no signing key. That separation is worth nothing if
   the pod lands on the node running the API server.
 
   Kubernetes cannot express "a different host" for us, so the chart requires

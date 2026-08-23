@@ -113,7 +113,7 @@ function serializeCheckpoint(row: CheckpointRow) {
   };
 }
 
-// M3 (D2, docs/m3-readiness-review.md M3-3): session state as a first-class ADP
+// M3 (D2): session state as a first-class ADP
 // object, so a task started under one harness can be resumed under another with
 // one continuous signed history.
 //

@@ -17,7 +17,7 @@ import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerTokenRoutes } from "../src/http-rest/tokens.js";
 import { registerGateJobRoutes } from "../src/http-rest/gate-jobs.js";
 
-// #90 (docs/m4-postmortem-audit.md §P0-4): the audit's named proof, both
+// #90: the audit's named proof, both
 // directions — an admin token is REFUSED on the gate-job routes (admin no
 // longer satisfies runner), and a runner token minted through the new REST
 // route is accepted on them. Plus the mint route's own boundaries: admin

@@ -1,8 +1,8 @@
 import { parseFlags, splitRepo } from "../args.js";
 import { apiRequest } from "../api.js";
 
-// Wraps POST /api/v3/repos/:owner/:repo/mirror (docs/pragmatic_mvp.md M2's
-// mirror mode) — configures ADP to sit alongside a repo that stays on
+// Wraps POST /api/v3/repos/:owner/:repo/mirror — configures ADP to sit
+// alongside a repo that stays on
 // GitHub. `--secret` verifies *inbound* GitHub webhook deliveries; it's
 // separate from any repo-level outbound webhook secret. `--credential` is
 // the credential ADP uses to push *out* to the remote (a PAT or deploy key) —

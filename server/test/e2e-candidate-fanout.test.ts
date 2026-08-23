@@ -31,7 +31,7 @@ const SIGNING_KEY = "e2e-fanout-signing-key";
 const CREDENTIAL_KEY = "e2e-fanout-credential-key";
 const PUBLIC_URL = "https://adp.example.com";
 
-// M3 / D1 (docs/adp-prototype-implementation-plan.md §5, docs/m3-readiness-review.md M3-2):
+// M3 / D1:
 // "fork 50 workspaces … dispatch the same task … land the winner with its
 // evidence bundle, GC the rest. The money shot is the history view: one landed
 // change, intent attached, 49 discarded attempts queryable but not polluting

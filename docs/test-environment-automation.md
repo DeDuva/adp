@@ -551,4 +551,4 @@ real infrastructure to buy, secure and maintain in exchange for catching a class
 
 The remaining coverage gap it leaves — nothing automatically exercises `apt-get install docker.io`
 — is real but small, and is better closed by the dev environment in
-[`environments-plan.md`](environments-plan.md) than by a Windows runner.
+the deployment plan than by a Windows runner.

@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 // Served as static assets by the server at /ui/* in production
-// (docs/pragmatic_mvp.md §4.6: "web/ read-only supervision UI") — `base`
+// ("web/ read-only supervision UI") — `base`
 // keeps built asset URLs correct under that prefix.
 export default defineConfig({
   base: "/ui/",

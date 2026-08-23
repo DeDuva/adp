@@ -20,7 +20,7 @@ import { registerOrgRoutes } from "../src/http-rest/orgs.js";
 
 const execFileAsync = promisify(execFile);
 
-// M4-7: the org policy console's API (docs/m4-readiness-review.md §4).
+// M4-7: the org policy console's API.
 //
 // The interesting assertions here are the ones a mock could not make: the
 // resolved policy is computed by reading a real policy.yaml out of a real

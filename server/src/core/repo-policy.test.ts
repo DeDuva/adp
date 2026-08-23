@@ -36,7 +36,7 @@ describe("resolveLandRequirements", () => {
   });
 
   // M4-2: the org policy plane adds a third level, additive same as the
-  // other two (docs/m4-readiness-review.md §4).
+  // other two.
   it("unions the org floor in alongside the instance floor and the repo's own", () => {
     const repoPolicy: RepoPolicy = { gates: [], land: { require: ["one_approval"], statistical: DEFAULT_STATISTICAL_POLICY } };
     expect(resolveLandRequirements(["gates_green"], ["gates_confident"], repoPolicy).sort()).toEqual(

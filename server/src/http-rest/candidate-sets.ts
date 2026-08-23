@@ -50,7 +50,7 @@ function serializeCandidateSet(row: typeof candidateSets.$inferSelect) {
   };
 }
 
-// Native plane (docs/pragmatic_mvp.md §2.2) — no GitHub analogue. A
+// Native plane — no GitHub analogue. A
 // candidate set is opened for an intent; proposals join it by passing
 // `candidate_set_id` at creation (http-rest/proposals.ts); selecting a
 // winner records which proposal that is, it doesn't merge or close the rest.

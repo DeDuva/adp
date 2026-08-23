@@ -87,8 +87,7 @@ that is the only thing that makes the trade sound.
 ## v0.3.0 — 2026-08-14
 
 The coordinated breaking contract release (#97), plus the full M4
-post-landing-audit remediation ([`docs/m4-postmortem-audit.md`](docs/m4-postmortem-audit.md),
-tracked in #87) — every fix its own PR carrying the audit's named
+post-landing-audit remediation (tracked in #87) — every fix its own PR carrying the audit's named
 negative-case test.
 
 **Security (P0).**

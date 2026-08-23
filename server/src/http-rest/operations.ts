@@ -31,7 +31,7 @@ function serializeOperation(row: typeof operations.$inferSelect) {
   };
 }
 
-// History-query by path (docs/pragmatic_mvp.md's last outstanding M1c item):
+// History-query by path (the last outstanding M1c item):
 // operations carry no path column, so this resolves the commit sha out of a
 // commit-scoped target ("owner/name@<sha>", written only by change.create —
 // see http-git/hooks.ts) and asks git which paths that commit actually
@@ -46,7 +46,7 @@ async function matchesPath(gitBackend: GitBackend, owner: string, name: string, 
   return paths.some((p) => p === wantedPath || p.startsWith(`${wantedPath}/`));
 }
 
-// Native plane (docs/pragmatic_mvp.md Tier 4, "/api/adp") — the op log and
+// Native plane ("/api/adp") — the op log and
 // undo have no GitHub analogue, so unlike everything else so far this
 // isn't projected onto /api/v3 at all.
 export function registerOperationRoutes(app: FastifyInstance, db: Db, gitBackend: GitBackend) {

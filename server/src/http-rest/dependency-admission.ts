@@ -18,7 +18,7 @@ const DependencyAdmissionBody = z.object({
   gate_name: z.string().min(1).default("dependency-admission"),
 });
 
-// Dependency admission v0 (docs/pragmatic_mvp.md M2): a typed gate a
+// Dependency admission v0: a typed gate a
 // lockfile diff reports into, same receiving-and-attestation shape as
 // core/dependency-admission.ts and http-rest/gates.ts's plain gate report —
 // the difference is this endpoint runs the OSV + npm-registry evaluation

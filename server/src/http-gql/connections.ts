@@ -1,4 +1,4 @@
-// Relay-style connections with cursor pagination, per docs/pragmatic_mvp.md
+// Relay-style connections with cursor pagination,
 // §2.4 Tier 3. Cursors are just base64(index) — an offset in disguise. Fine
 // at MVP scale (repos.select().from() already loads full result sets; see
 // core/repos-lookup.ts and friends), and it keeps the two things `gh`

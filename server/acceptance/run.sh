@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The definition of done (docs/pragmatic_mvp.md §2.1), executable.
+# The definition of done, executable.
 #
 # docs/manual-test-plan.md is this same walkthrough written for a person; the
 # step numbers below match it, so a failure here points at a section there.
@@ -301,7 +301,7 @@ pass "B7 typed review recorded, gh pr view shows the PR"
 # B8 — land. merge_method defaults to "merge" (GitHub's own default, and
 # `--merge` asks for it explicitly) — main lands on a real merge commit, not
 # a reused copy of the feature head, so main != HEAD_SHA is the fidelity win
-# here (docs/m2-readiness-review.md's merge-method-fidelity item), and the
+# here (the merge-method-fidelity item), and the
 # feature head must still be reachable from main afterward.
 MAIN_BEFORE=$(git --git-dir="${GIT_ROOT}/${OWNER}/${REPO}.git" rev-parse main)
 "$GH_BIN" pr merge 1 --repo "$GH_REPO" --merge >/dev/null || fail "B8: gh pr merge failed"
@@ -472,7 +472,7 @@ grep -q '"name":"osv-scanner"' <<<"$EVIDENCE_AFTER_SCAN" || fail "D16: evidence 
 pass "D16 osv-scanner adapter reported a real scan result, now in evidence"
 
 # D17 — dependency admission: typed per-package verdicts, live against the
-# real OSV.dev API (docs/pragmatic_mvp.md). sdxcode1@9.9.9 is a real
+# real OSV.dev API. sdxcode1@9.9.9 is a real
 # OpenSSF-reported malicious npm package (MAL-2025-2155); is-odd@3.0.1 is
 # real, old, and clean.
 #

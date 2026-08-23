@@ -103,7 +103,7 @@ function splitCgiResponse(onHeaders: (status: number, headers: Record<string, st
 // This is the reference implementation, already installed, and gives perfect
 // protocol fidelity for free — the single highest-value compatibility decision
 // in the MVP. Both directions are streamed through: neither the request pack
-// nor the response pack is ever fully buffered in memory (docs/pragmatic_mvp.md
+// nor the response pack is ever fully buffered in memory (
 // §1.5 — "any real-sized pack 413s ... currently fully buffered").
 function streamHttpBackend(
   opts: {

@@ -39,7 +39,7 @@ function serializeGateResult(row: typeof gateResults.$inferSelect) {
 }
 
 // Evidence bundles as DSSE envelopes wrapping in-toto Statements
-// (docs/pragmatic_mvp.md §1.5 item 1, M1c). No gate runner executes
+// (M1c). No gate runner executes
 // anything here — this server is the *receiving and attestation* end,
 // same shape as GitHub's own Checks API (external systems report results;
 // GitHub doesn't run the tests either). Scanner-as-gate adapters

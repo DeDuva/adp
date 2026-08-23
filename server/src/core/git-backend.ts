@@ -238,7 +238,7 @@ export class GitBackend {
   // ref currently points at expectedCurrentSha (optimistic concurrency) and
   // newSha is a descendant of it. No merge commits, no rebasing — matches
   // the cut list's "conflict = failed merge, agent rebases" MVP conflict
-  // model (docs/pragmatic_mvp.md §2.5).
+  // model.
   async fastForwardRef(
     owner: string,
     name: string,
@@ -309,7 +309,7 @@ export class GitBackend {
     return stdoutBuf;
   }
 
-  // M4-9c: "materializes a checkout" (pragmatic_mvp.md's gate-runner design)
+  // M4-9c: "materializes a checkout" (the gate-runner design)
   // for the isolated executor — a tarball of the tree at `sha`, not a host
   // mount and not a live clone. `docker cp` (runner/src/docker.ts) is what
   // actually gets these bytes into a container; this is just the source of

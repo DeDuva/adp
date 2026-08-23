@@ -9,7 +9,7 @@ ed25519.etc.sha512Sync = (...messages: Uint8Array[]) => {
 
 // Deterministic key derivation from the SIGNING_KEY env var so redeploying
 // the same server (same env) reproduces the same identity. A dedicated
-// per-agent-key story is explicitly deferred (docs/pragmatic_mvp.md §4.4 /
+// per-agent-key story is explicitly deferred (
 // cut list) — this is the server-held key the MVP calls for.
 export class Signer {
   private readonly privateKey: Uint8Array;
@@ -65,7 +65,7 @@ export interface EnvelopeVerifier {
   verifyRaw(message: Uint8Array, signature: Uint8Array): boolean;
 }
 
-// #102 (audit §P2, environments-plan.md §5.1): verification resolves the
+// #102: verification resolves the
 // envelope's `keyid` through a registry instead of comparing against the
 // single live signer. Before this, the first key rotation — or the first
 // second environment — turned every already-signed piece of evidence into a

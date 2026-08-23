@@ -3,8 +3,7 @@ info:
   title: ADP API
   version: 0.5.0
   description: >
-    Native and compat-plane HTTP surface for ADP — see docs/pragmatic_mvp.md
-    §2.4 for what is in scope and §2.5 for what is deliberately cut.
+    Native and compat-plane HTTP surface for ADP.
 
     Two planes share this file. `/api/v3` is the GitHub-compatible surface, kept
     faithful enough that unmodified `gh` works against it. `/api/adp` is the
@@ -46,8 +45,8 @@ paths:
         GraphQL endpoint. GitHub's real public schema SDL
         (spec/graphql/github.graphql), loaded unmodified — that file, not
         this OpenAPI doc, is the source of truth for the GraphQL surface.
-        Only a subset of fields have resolvers (docs/pragmatic_mvp.md §2.4
-        Tier 3); everything else is a valid query that fails as a resolver
+        Only a subset of fields have resolvers; everything else is a valid
+        query that fails as a resolver
         error, never a validation error. Currently backed: Query.repository,
         Query.node, Query.viewer, Repository.{owner,defaultBranchRef,issue,
         issues,pullRequest,pullRequests}, Issue.author, PullRequest.author.
@@ -385,7 +384,7 @@ paths:
       summary: >
         Record a typed change: an existing git commit plus intent and
         provenance, server-signed. No GitHub shape — native ADP metadata
-        living beside the commit (docs/pragmatic_mvp.md §2.2). Recorded via
+        living beside the commit. Recorded via
         explicit call; not yet triggered automatically by a git push.
       security:
         - bearerAuth: []
@@ -2334,7 +2333,7 @@ paths:
       x-required-scope: "runner"
       summary: >
         M4-9c: a tarball (`git archive --format=tar`) of the job's own
-        repo/sha — "materializes a checkout" (pragmatic_mvp.md's gate-runner
+        repo/sha — "materializes a checkout" (the gate-runner
         design) for the isolated executor to `docker cp` into a container,
         never a host mount and never routed through the container's own
         (network-denied) network. Requires the `runner` scope. Bounded to

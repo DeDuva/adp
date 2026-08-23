@@ -1,6 +1,6 @@
 # Scanner-as-gate adapters
 
-M2 (`docs/pragmatic_mvp.md`): any CLI scanner can drop into ADP's gate runner without ADP running it.
+M2: any CLI scanner can drop into ADP's gate runner without ADP running it.
 An adapter is a small script that takes a scanner's own output (SARIF, or the tool's native JSON),
 translates it to a typed verdict, and reports it to the substrate that actually attests it:
 

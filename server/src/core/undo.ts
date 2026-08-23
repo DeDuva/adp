@@ -9,7 +9,7 @@ export interface UndoResult {
   message?: string;
 }
 
-// The one undo case implemented in this slice (docs/pragmatic_mvp.md M1c,
+// The one undo case implemented in this slice (
 // native plane — "no GitHub analogue"): reverting a fast-forward merge.
 // Only safe if the base ref hasn't moved since — otherwise winding it back
 // would silently drop whatever landed after. Other verbs aren't undoable

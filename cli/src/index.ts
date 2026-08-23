@@ -6,7 +6,7 @@ import { prList } from "./commands/pr-list.js";
 import { prMerge } from "./commands/pr-merge.js";
 import { ApiError } from "./api.js";
 
-const USAGE = `adp — a CLI for ADP servers (docs/pragmatic_mvp.md M2)
+const USAGE = `adp — a CLI for ADP servers
 
 Usage:
   adp login --server <url> --token <token>

@@ -41,7 +41,7 @@ const CREDENTIAL_KEY = "0".repeat(64);
 //   deterministic eval result is attached to that run and reported as gate
 //   evidence.
 //
-// docs/m3-readiness-review.md's lesson applies directly: the check is not "does
+// The lesson applies directly: the check is not "does
 // the criterion have a test" but "does the test exercise the scenario in the
 // criterion's own words". So this walks a real multi-agent assignment against a
 // real git repository over HTTP — all six event kinds, a handoff between two

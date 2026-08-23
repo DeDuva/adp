@@ -7,7 +7,7 @@ import { signStatement, type InTotoStatement } from "./dsse.js";
 import { recordOperation } from "./operations.js";
 
 // CycloneDX 1.5 JSON (https://cyclonedx.org/docs/1.5/json/) — SBOM per land
-// (docs/pragmatic_mvp.md M2), emitted as ordinary evidence alongside a
+// emitted as ordinary evidence alongside a
 // change, not a bespoke format. v0 reads `package-lock.json` only (the same
 // npm-only scope core/dependency-admission.ts settled on) — a repo with no
 // npm lockfile at the merged sha gets a valid, empty-components SBOM rather

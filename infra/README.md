@@ -1,7 +1,6 @@
 # Dev environment
 
-Terraform for the **dev rung** described in [`docs/environments-plan.md`](../docs/environments-plan.md)
-§3 — one small VM running [`deploy/docker-compose.yml`](../deploy/docker-compose.yml) behind a real
+Terraform for the **dev rung** — one small VM running [`deploy/docker-compose.yml`](../deploy/docker-compose.yml) behind a real
 DNS name and a real certificate.
 
 **Why it exists:** M2 is mirror mode, and *inbound webhooks cannot be received by a laptop*. That is
@@ -9,8 +8,7 @@ the forcing function. A public HTTPS endpoint with a stable hostname is M2's fir
 requirement, not a polish item.
 
 **Cost:** ~$25/month with the default auto-shutdown (~$58 always-on). The floor is not zero — the
-boot disk and static IP bill while the instance is stopped. See
-[`docs/hosting-cost-estimate.md`](../docs/hosting-cost-estimate.md) §3.
+boot disk and static IP bill while the instance is stopped.
 
 ---
 
@@ -76,8 +74,8 @@ $EDITOR terraform.tfvars
 ```
 
 Set `project_id`, `hostname` (your duckdns FQDN), `owner_email`, and `retire_after`. The last two are
-not decoration — [`environments-plan.md`](../docs/environments-plan.md) §4 requires every long-lived
-instance to carry a stated owner and a retirement condition, and they are written as GCP labels so
+not decoration — every long-lived
+instance must carry a stated owner and a retirement condition, and they are written as GCP labels so
 the billing console can answer "whose box is this, and why is it still running?"
 
 `terraform.tfvars` is gitignored. It names a specific project and a specific person, neither of
@@ -202,23 +200,23 @@ the IAM grants. The access policy stays reviewable in a diff; the material never
 
 **The VM does not use the default service account,** which is Project Editor by default. It gets a
 dedicated account with `logging.logWriter`, `monitoring.metricWriter`, and `secretAccessor` on
-exactly three secrets. This matters ahead of time: `environments-plan.md` §4 requires `SIGNING_KEY`
-to stay off any host that executes gates, and this host will grow a gate runner before it grows a
+exactly three secrets. This matters ahead of time: `SIGNING_KEY`
+must stay off any host that executes gates, and this host will grow a gate runner before it grows a
 second key.
 
-**Workload identity federation is defined before it is used.** `environments-plan.md` §4 calls it
-"awkward to retrofit once a key is in circulation", so the pool, provider and CI service account
+**Workload identity federation is defined before it is used.** It is awkward to
+retrofit once a key is in circulation, so the pool, provider and CI service account
 exist now — while there is no long-lived key anywhere to migrate away from. The OIDC provider carries
 an `attribute_condition` pinning it to one repository; without one, any GitHub repo on the internet
 could exchange a token against the pool.
 
 ## What is deliberately left for later
 
-- **Image-push deploys.** `environments-plan.md` §3 wants the instance to run a pushed image so the
+- **Image-push deploys.** The instance should run a pushed image so the
   deploy path is exercised continuously. Today the box builds from the public repo on boot, which is
   fewer moving parts for a first cut. The Artifact Registry repository and the CI service account
   already exist, so that change is a workflow addition rather than an infrastructure one.
 - **Backups.** Dev is explicitly disposable — no backups, no PITR, wiped without ceremony. The moment
   it acquires data anyone minds losing, it has quietly become staging without the care staging
-  deserves (`environments-plan.md` §3).
+  deserves.
 - **Staging.** Sequenced against M4 and its restore drill, not built here.

@@ -14,7 +14,7 @@ const execFileAsync = promisify(execFile);
 // stubbed to a fixed identity so this suite doesn't need Postgres. The auth
 // *middleware* itself is covered separately (it's a thin DB lookup); this
 // suite is about wire-protocol fidelity, which is the highest-risk piece of
-// the compat plane (docs/pragmatic_mvp.md §2.4 Tier 1).
+// the compat plane.
 describe("git smart-HTTP proxy", () => {
   let gitRoot: string;
   let workDir: string;

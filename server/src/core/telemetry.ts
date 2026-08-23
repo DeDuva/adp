@@ -1,4 +1,4 @@
-// API-traffic telemetry — a named M2 prerequisite (docs/pragmatic_mvp.md:
+// API-traffic telemetry — a named M2 prerequisite (
 // "GraphQL coverage widened from measured real traffic... nothing measures
 // traffic today"), not the coverage-widening itself. Deliberately a plain
 // in-process counter map, not a metrics library: this instance is a single

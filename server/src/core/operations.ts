@@ -17,7 +17,7 @@ export interface OperationEntry {
   parentOp?: string;
 }
 
-// The hard invariant (docs/pragmatic_mvp.md §4.2): every mutation writes its
+// The hard invariant: every mutation writes its
 // state change and its operations row in the same transaction. Callers pass
 // the transaction handle, not the top-level db, so this can never be
 // forgotten silently. `repoId` is required (not defaulted) so a call site

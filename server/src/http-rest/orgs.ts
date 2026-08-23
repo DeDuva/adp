@@ -12,7 +12,7 @@ import { isSafeRepoSegment } from "../core/git-backend.js";
 import { describeOrgPolicy } from "../core/org-policy.js";
 import { loadRepoPolicy, resolveLandRequirements, type LandRequirement } from "../core/repo-policy.js";
 
-// M4-7 — the org policy console (docs/m4-readiness-review.md §4).
+// M4-7 — the org policy console.
 //
 // The review calls this item "UI work over an existing API". That was true of
 // the plane it names (M4-2 built resolution) and not of the API: the only

@@ -21,7 +21,7 @@ import { registerOperationRoutes } from "../src/http-rest/operations.js";
 
 const execFileAsync = promisify(execFile);
 
-// M1c: the op log read API + undo (docs/pragmatic_mvp.md Tier 4 — native
+// M1c: the op log read API + undo (native
 // plane, "no GitHub analogue"). No land-policy floor here (empty instance
 // floor) — this suite is about the op log and undo mechanics, not policy,
 // which is already covered by e2e-gates.test.ts.

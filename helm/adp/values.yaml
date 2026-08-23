@@ -129,7 +129,7 @@ oidc:
 
 # Bundled Postgres — for evaluation and for "does this work from nothing?".
 # It is a single StatefulSet with no backups, no PITR, no failover and no
-# connection pooling. docs/environments-plan.md §3 is explicit that the moment
+# connection pooling. The moment
 # an instance holds data anyone minds losing, it needs a managed database;
 # `externalDatabase.url` is how you say so.
 postgres:

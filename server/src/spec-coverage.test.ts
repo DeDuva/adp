@@ -7,7 +7,7 @@ import { GitBackend } from "./core/git-backend.js";
 import { Signer } from "./core/signing.js";
 import type { Db } from "./db/client.js";
 
-// `spec/` is the product (docs/pragmatic_mvp.md: "The standard is the product",
+// `spec/` is the product ("The standard is the product",
 // "spec and server are public from the first commit"). A spec that has drifted
 // behind the implementation quietly undermines the one claim ADP cannot buy
 // back — that the protocol, not the codebase, is the commitment.

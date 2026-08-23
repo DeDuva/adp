@@ -137,8 +137,7 @@ in-distribution infrastructure, so they must stay comparable:
 
 | Project | Plan |
 |---|---|
-| adp | [`/ROADMAP.md`](../ROADMAP.md) — status ledger; [`docs/pragmatic_mvp.md`](pragmatic_mvp.md) — scope, cut list, per-milestone narrative |
-| adp | [`docs/trajectory-eval-slice.md`](trajectory-eval-slice.md) — runs, trajectories, eval-gated close |
+| adp | [`/PLAN.md`](../PLAN.md) — what is left; [`/CHANGELOG.md`](../CHANGELOG.md) — what shipped |
 | adp-replay | `adp-replay/docs/execution-plan.md` |
 | squad-lab | the milestone reports `m0`–`m14`, in **duva-lab-tpm** (private) |
 | duva-bench, squad track | `squad/packages/duva-bench/PLAN.md` (S0–S7) |
@@ -149,4 +148,4 @@ Cross-project findings, and the open backlog they generated, live in **duva-lab-
 repo are filed as issues [#63](https://github.com/DeDuva/adp/issues/63) (closed) and
 [#65](https://github.com/DeDuva/adp/issues/65) (closed — became `docs/api-compatibility.md`'s
 "Plane dependencies" section). [#64](https://github.com/DeDuva/adp/issues/64) — native-plane
-response schemas — is still open; see `ROADMAP.md`'s Blockers.
+response schemas — is still open; see [`PLAN.md`](../PLAN.md).

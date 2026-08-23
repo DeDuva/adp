@@ -18,7 +18,7 @@ import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
 import { repoAccessCheck } from "../src/core/repos-lookup.js";
 import { runMergeContention } from "../../bench/lib/merge-contention.mjs";
 
-// M3-5, arm 1 (docs/m3-readiness-review.md): the merge-contention benchmark,
+// M3-5, arm 1: the merge-contention benchmark,
 // enforced in CI at small N.
 //
 // This drives `bench/lib/merge-contention.mjs` — the exact code the published

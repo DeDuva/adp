@@ -23,7 +23,7 @@ import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
 
 const execFileAsync = promisify(execFile);
 
-// #94 (docs/m4-postmortem-audit.md §P1-3): every quota is now evaluated
+// #94: every quota is now evaluated
 // inside the transaction that consumes it, serialized on the org row —
 // before this, all three counts ran outside the mutating transaction, so
 // two concurrent requests both read count = cap - 1, both passed, and every

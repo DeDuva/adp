@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M1b′ gate (docs/pragmatic_mvp.md): "definition of done §2.1 minus
+# The M1b′ gate: the definition of done minus
 # evidence/undo passes with a real, unmodified `gh` — gh issue view / pr
 # create / pr view / pr merge against the server." This script is that gate.
 #
@@ -211,7 +211,7 @@ echo "-- gh pr merge --"
 
 # merge_method defaults to "merge" — main lands on a real merge commit, so
 # this checks the feature commit is reachable from main, not that main *is*
-# the feature head (docs/m2-readiness-review.md's merge-method-fidelity item).
+# the feature head (the merge-method-fidelity item).
 MERGED_LOG=$(git --git-dir="${GIT_ROOT}/${OWNER}/widget.git" log --oneline main)
 echo "$MERGED_LOG" | grep -q "feature commit" || fail "pr merge did not land the feature commit on main server-side"
 

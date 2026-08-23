@@ -7,7 +7,7 @@ import { withTickLock, TICK_LOCKS } from "./tick-lock.js";
 
 const BATCH_SIZE = 50;
 
-// M4-3 (docs/m4-readiness-review.md §4): generalizes M3-2's on-demand
+// M4-3: generalizes M3-2's on-demand
 // candidate-set reclamation to a scheduled sweep, the way the milestone's own
 // text puts it. Reuses destroyWorkspace() rather than duplicating its ref
 // deletion + recordOperation logic — this is a caller of that function, not

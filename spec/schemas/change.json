@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://adp.dev/schemas/change.json",
   "title": "Change",
-  "description": "A typed transaction: diff + intent + provenance, signed. Git is the store; this is metadata beside a git commit. Per docs/pragmatic_mvp.md §4.3.",
+  "description": "A typed transaction: diff + intent + provenance, signed. Git is the store; this is metadata beside a git commit.",
   "type": "object",
   "required": ["id", "repo", "git_sha", "intent_id", "provenance", "signature"],
   "properties": {

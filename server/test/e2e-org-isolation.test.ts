@@ -26,8 +26,7 @@ import { registerGraphQLRoute } from "../src/http-gql/route.js";
 
 const execFileAsync = promisify(execFile);
 
-// #91 — the org-isolation MATRIX, M4 exit criterion #1
-// (docs/m4-readiness-review.md §5.1; docs/m4-postmortem-audit.md §P0-1).
+// #91 — the org-isolation MATRIX, M4 exit criterion #1.
 // Two organizations, provably non-interfering, across every plane the
 // server exposes: /api/v3 REST, git smart-HTTP, GraphQL, and /api/adp.
 // Every cross-org row answers 404 (or GraphQL null/NOT_FOUND) — never 403 —

@@ -49,7 +49,7 @@ function execErrorInfo(err: unknown): { exitCode: number | null; message: string
   return { exitCode, message: (stderrText || e.message || String(err)).slice(0, LOG_BYTE_LIMIT) };
 }
 
-// The isolation bar this executor exists to enforce (pragmatic_mvp.md
+// The isolation bar this executor exists to enforce (
 // §4.5/§4.7): network-deny by default, no host mounts, no ambient secrets,
 // CPU/memory caps. Each is an *absence* from this argument list — there is
 // no `-v` (no host mounts: the checkout arrives via `docker cp`, a
@@ -126,7 +126,7 @@ async function removeContainer(name: string): Promise<void> {
   }
 }
 
-// "Materializes a checkout, runs commands" (pragmatic_mvp.md's gate-runner
+// "Materializes a checkout, runs commands" (the gate-runner
 // design) as two literal, separate steps: `docker create` (the isolated
 // container, not yet running) + `docker cp` (checkoutDir's contents in,
 // daemon-mediated, no bind mount) + `docker start -a` (run it, wall-clock

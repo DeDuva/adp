@@ -76,7 +76,7 @@ async function main() {
     return { status: "ok" };
   });
   // Prometheus text format, unauthenticated like /healthz and /readyz — an
-  // operator's scraper, not a repo-scoped resource (docs/m2-readiness-review.md's
+  // operator's scraper, not a repo-scoped resource (the
   // "API-traffic telemetry" item).
   app.get("/metrics", async (_req, reply) => {
     reply.type("text/plain; version=0.0.4").send(renderMetrics());
@@ -121,7 +121,7 @@ async function main() {
         : undefined,
   });
 
-  // The read-only supervision UI (docs/pragmatic_mvp.md §4.6: "web/ served
+  // The read-only supervision UI ("web/ served
   // as static assets"), at /ui/* rather than / — the git routes already own
   // /:owner/:repo.git/*, and this avoids any ambiguity with them. It's a
   // single-page app with no client-side URL routing (App.tsx navigates via

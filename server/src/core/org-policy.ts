@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { GitBackend } from "./git-backend.js";
 import { LandRequirement } from "./repo-policy.js";
 
-// M4-2 (docs/m4-readiness-review.md §4): an org's floor, read from
+// M4-2: an org's floor, read from
 // `policy.yaml` on the default branch of the repo it designates
 // (orgs.policyRepoId). Deliberately narrower than a repo's own adp.yaml —
 // just `land.require` for now, not gates or statistical policy, which stay

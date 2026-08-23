@@ -25,7 +25,7 @@ import { registerDependencyAdmissionRoutes } from "../src/http-rest/dependency-a
 
 const execFileAsync = promisify(execFile);
 
-// M2: dependency admission v0 (docs/pragmatic_mvp.md) — a lockfile diff
+// M2: dependency admission v0 — a lockfile diff
 // becomes a typed gate. Uses the real OSV.dev + npm registry APIs (no
 // fetch mocking, unlike core/dependency-admission.test.ts's mocked cases) —
 // same live-network posture as that file's "live network" describe block,

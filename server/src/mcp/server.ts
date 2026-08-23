@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { createAdpClient, type AdpClient } from "./client.js";
 
-// The native plane's MCP surface (docs/pragmatic_mvp.md Tier 4: "ADP REST +
+// The native plane's MCP surface ("ADP REST +
 // MCP (~8 tools)"). Every tool below is a thin wrapper over the same
 // /api/adp REST endpoints a human or script could call directly — this
 // server holds no domain logic of its own, only protocol translation. That

@@ -2,7 +2,7 @@ import { parseFlags, splitRepo } from "../args.js";
 import { apiRequest } from "../api.js";
 
 // Wraps POST /api/v3/repos/:owner/:repo/gates — the same endpoint a
-// scanner-as-gate adapter (docs/pragmatic_mvp.md M2) posts a SARIF-derived
+// scanner-as-gate adapter posts a SARIF-derived
 // result to, exposed here as a plain CLI command for anything that isn't a
 // full adapter (a CI step, a manual report).
 export async function gateReport(argv: string[]): Promise<void> {

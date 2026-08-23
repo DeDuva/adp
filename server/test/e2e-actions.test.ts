@@ -24,7 +24,7 @@ const CREDENTIAL_KEY = "e2e-actions-credential-key";
 const SIGNING_KEY = "e2e-actions-signing-key";
 const PUBLIC_URL = "https://adp.example.com";
 
-// M2: the two halves of "Actions in mirror mode" (docs/pragmatic_mvp.md).
+// M2: the two halves of "Actions in mirror mode".
 //
 //   ingest      — a completed upstream workflow_run becomes signed gate
 //                 evidence. This is the *only* writer.

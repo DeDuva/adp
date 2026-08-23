@@ -22,7 +22,7 @@ const ZERO_SHA = "0".repeat(40);
 // present); trust is instead scoped to "requests from this host", which is
 // what actually matters for a hook subprocess spawned locally by `git
 // receive-pack`. Good enough for the MVP's single-host deployment
-// (docs/pragmatic_mvp.md §4.1); revisit if/when the git and API planes ever
+//; revisit if/when the git and API planes ever
 // run on separate hosts.
 function requireLoopback(req: FastifyRequest, reply: FastifyReply, done: () => void) {
   const ip = req.ip;

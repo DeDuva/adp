@@ -197,7 +197,7 @@ describe.skipIf(skipWithoutDocker)("runGateJob (real docker)", () => {
   //
   // Two absences, and the second is the one with teeth. A host file at a
   // known absolute path is invisible, so no bind mount is in play. And
-  // /var/run/docker.sock does not exist — pragmatic_mvp.md's stated reason
+  // /var/run/docker.sock does not exist — the stated reason
   // for putting the runner on its own host is that "a mounted Docker socket
   // is root on the host", and a socket mounted into a gate container would
   // hand every gate script exactly that, silently, while every other

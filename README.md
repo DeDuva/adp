@@ -123,7 +123,7 @@ Execution is a separate process. The gate runner in [`runner/`](runner) polls
 signed path any external reporter uses. It is a pure HTTP client — no server import, no database
 credential, no signing key — and it belongs on its own host, because a mounted Docker socket is
 root on that host. What the isolation actually guarantees, what proves it, and what it explicitly
-does not claim are in [`docs/m4-runner-isolation.md`](docs/m4-runner-isolation.md).
+does not claim are asserted in `server/test/` and the runner's own suite.
 
 ### Organizations
 
@@ -326,14 +326,18 @@ the same loop, so the "brand new machine" path stays verified rather than assume
 
 | Document | What it is |
 |---|---|
-| [`PLAN.md`](PLAN.md) | The executable backlog — every open work item, phased, each naming its tracking issue or PR. If work is not in this file it is not planned. Start here for "what is left." |
-| [`ROADMAP.md`](ROADMAP.md) | The status ledger — current milestone states, API contract version, blockers, and open decisions. Updated in the same PR as any status change. Start here for "where is the project." |
-| [`docs/agent-native-vcs-brief.md`](docs/agent-native-vcs-brief.md) | The thesis: the case for a neutral agent-native substrate — the GitHub interface question, the competitive landscape, architectural tradeoffs, the agent-harness boundary, and enterprise/supply-chain controls. Its appendices carry the three open decisions, the nine questions our own code and measurements settled, and the positions we hold with the evidence that would change each. |
-| [`docs/pragmatic_mvp.md`](docs/pragmatic_mvp.md) | The plan of record: scope, the exact GitHub surface that ships, the cut list and why each cut is defensible, and the per-milestone narrative of what shipped and why. |
 | [`docs/self-hosting.md`](docs/self-hosting.md) | Running your own instance: the Helm chart, the Compose path, what the chart refuses to guess and why, and where the sharp edges are. |
-| [`docs/ecosystem.md`](docs/ecosystem.md) | Who depends on ADP and how — the four repositories, the dependency graph, and what a change here requires elsewhere. Read this before changing the wire contract. |
+| [`docs/api-compatibility.md`](docs/api-compatibility.md) | What the contract version promises, and what a bump means for a generated client. |
 | [`docs/server-stack-tutorial.md`](docs/server-stack-tutorial.md) | The server stack explained piece by piece, no prior familiarity assumed. |
-| [`docs/test-environment-automation.md`](docs/test-environment-automation.md) | How the test environment is brought up, run, and torn down reproducibly — the preflight and leak-detection tooling, the ephemeral dependency stack, and the bare-metal bootstrap. |
+| [`docs/observability.md`](docs/observability.md) | What is measured, what pages, and what to do when it does. |
+| [`docs/ecosystem.md`](docs/ecosystem.md) | Who depends on ADP and how — the dependency graph, and what a change here requires elsewhere. Read this before changing the wire contract. |
+| [`CHANGELOG.md`](CHANGELOG.md) | What shipped, per released version. |
+| [`PLAN.md`](PLAN.md) | The backlog: what is left, in what order, and the open decisions. |
+
+Contributing to ADP itself also needs [`AGENTS.md`](AGENTS.md) — the branch and review
+conventions, the invariants that look wrong until you know why, and the commands that
+actually run — plus [`docs/test-environment-automation.md`](docs/test-environment-automation.md)
+for how the test environment is brought up and torn down.
 
 ---
 

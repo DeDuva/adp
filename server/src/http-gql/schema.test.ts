@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { execute, parse, validate } from "graphql";
 import { loadGitHubSchema } from "./schema.js";
 
-// The single biggest new-risk item in M1b (docs/pragmatic_mvp.md §2.4 Tier
+// The single biggest new-risk item in M1b (Tier
 // 3): does GitHub's real, unmodified public schema even parse under
 // graphql-js? If this breaks, everything downstream is moot.
 describe("loadGitHubSchema", () => {

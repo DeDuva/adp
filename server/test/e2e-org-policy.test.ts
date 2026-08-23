@@ -22,7 +22,7 @@ import { registerReviewRoutes } from "../src/http-rest/reviews.js";
 
 const execFileAsync = promisify(execFile);
 
-// M4-2: the org policy plane (docs/m4-readiness-review.md §4) proven through
+// M4-2: the org policy plane proven through
 // the real land path, the same rigor e2e-gates.test.ts holds instance-floor
 // and repo-policy enforcement to. Instance floor is deliberately empty here —
 // this file is about isolating what the *org* level contributes, not

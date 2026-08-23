@@ -1,6 +1,6 @@
 # Self-hosting ADP
 
-**Status:** built — M4-12 (`docs/m4-readiness-review.md` §4). Two supported paths, a Helm chart
+**Status:** built. Two supported paths, a Helm chart
 ([`helm/adp`](../helm/adp)) and Docker Compose ([`deploy/`](../deploy)), both of which stand up a
 working instance from nothing.
 
@@ -89,7 +89,7 @@ would be the expensive kind of regression here.
 
 ## 3. Docker Compose
 
-The single-VM path `docs/pragmatic_mvp.md` §4.5 defends, and what
+The single-VM path, and what
 [`infra/dev/`](../infra/dev) provisions on GCP:
 
 ```bash
@@ -116,7 +116,7 @@ reports through `/complete`. It holds no database credential and no signing key,
 asserts that in CI.
 
 It also needs a container daemon, and **a mounted daemon socket is root on the node holding it**.
-`docs/pragmatic_mvp.md` §4.5 says so in those words, which is why the runner was built to run on a
+That is why the runner was built to run on a
 separate host in the first place. All of that isolation is worth nothing if the runner pod lands on
 the node running the API server and holding the signing key.
 
@@ -168,7 +168,7 @@ because refusing to would just push people into a worse improvisation.
 
 - **Object storage.** Gate logs are inline in Postgres with a size cap, and evidence bundles are
   assembled on read. `externalDatabase.url` has no object-store sibling because M4-8 is not built —
-  it is blocked on a budget decision, not a design one (`ROADMAP.md`).
+  it is blocked on a budget decision, not a design one ([`PLAN.md`](../PLAN.md)).
 - **Backup/PITR as a supported procedure.** M4-10, and gated on M4-8. The exit criterion is an
   executed restore drill, not a documented one, so nothing is claimed here until that has been run.
 - **Horizontal scale.** One writer, per §1.

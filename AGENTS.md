@@ -9,21 +9,24 @@ binary for all plumbing.
 
 ## Where the plans live
 
-- **`ROADMAP.md`** — the single status ledger: milestone states, API contract version,
-  blockers, open decisions. A PR that changes milestone status updates it in the same PR.
-- **`PLAN.md`** — the single executable backlog: every open work item, phased, each naming
-  its tracking issue. If work is not in this file it is not planned. A PR that finishes an
-  item updates it in the same PR.
-- **`docs/pragmatic_mvp.md`** — the plan of record; it decides scope. (It superseded
-  `docs/adp-prototype-implementation-plan.md`, the original 24-week prototype proposal,
-  which is kept as history.)
-- The readiness reviews (`docs/m2-readiness-review.md`, `docs/m3-readiness-review.md`)
-  record what was actually verified at each milestone; `README.md` is orientation.
+- **`PLAN.md`** — the single executable backlog, and the authority on scope: every open
+  work item, phased, each naming its tracking issue, plus the open decisions and what is
+  deferred with the reason. If work is not in this file it is not planned. A PR that
+  finishes an item updates it in the same PR.
+- **`CHANGELOG.md`** — what actually shipped, per released version. A capability that
+  reaches `main` gets an entry; the version it ships under is the one
+  `server/src/api-version.ts` serves.
+- **`README.md`** — orientation for someone who has never seen the project.
 
-**Status lives in exactly one of these, never two.** The 2026-08-22 audit found sixteen
-contradictions across the doc set — three critical, all in `ROADMAP.md` — every one of them
-a fact with an owner elsewhere that had been copied into prose and then left behind when the
-owner moved. `scripts/check-docs.sh` now fails the build on the mechanical cases.
+**A fact lives in exactly one of these, never two.** The 2026-08-22 audit found sixteen
+contradictions across the doc set, every one of them a fact with an owner elsewhere that
+had been copied into prose and then left behind when the owner moved. `scripts/check-docs.sh`
+fails the build on the mechanical cases, and `scripts/dev/check-release.sh` on the version ones.
+
+The status ledger that used to sit in `ROADMAP.md` is gone rather than moved: milestone
+tables describing this project's own history are archaeology, and every fact worth keeping
+already had an owner — the contract version in `api-version.ts`, what shipped in
+`CHANGELOG.md`, what is left in `PLAN.md`.
 
 ## Process
 
@@ -77,7 +80,7 @@ and a codebase scan cannot see any of it — so a command that rebuilds project
 instructions by scanning the repository (`/init` and its equivalents) will silently
 replace hard-won knowledge with a description of the file tree. Edit it by hand;
 `make check` fails if a path named here stops existing — and, since 2026-08-22, if a link
-in any tracked document dangles or a `#NNN` in `ROADMAP.md`/`PLAN.md` disagrees with its
+in any tracked document dangles or a `#NNN` in `PLAN.md` disagrees with its
 real state on GitHub.
 
 This file is the instruction set for **any** coding agent working in this repository, and

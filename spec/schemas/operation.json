@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://adp.dev/schemas/operation.json",
   "title": "Operation",
-  "description": "Append-only op-log entry. Every mutation writes its state change and its operation row in one transaction — this is the audit log and what makes undo possible. Per docs/pragmatic_mvp.md §4.2, §4.3.",
+  "description": "Append-only op-log entry. Every mutation writes its state change and its operation row in one transaction — this is the audit log and what makes undo possible.",
   "type": "object",
   "required": ["id", "actor_id", "verb", "target", "created_at"],
   "properties": {

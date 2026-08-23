@@ -21,7 +21,7 @@ import { repoAccessCheck } from "../src/core/repos-lookup.js";
 
 const execFileAsync = promisify(execFile);
 
-// M4-3 (docs/m4-readiness-review.md §4): org-scoped quotas, proven through
+// M4-3: org-scoped quotas, proven through
 // the real REST routes rather than by calling the underlying functions
 // directly — a quota that's correct in the function but never reached by the
 // route that's supposed to enforce it protects nothing.

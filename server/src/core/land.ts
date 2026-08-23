@@ -38,7 +38,7 @@ export type LandResult =
 // error shapes and webhook payloads (which genuinely differ on the wire).
 //
 // What is deliberately *not* here: speculative merge batching. Land is serial
-// (docs/pragmatic_mvp.md §2.5 — a diverged base is a 409 and the agent
+// (a diverged base is a 409 and the agent
 // rebases), and batching stays an M5 item gated on the telemetry M3's
 // merge-contention benchmark exists to produce.
 export async function landProposal(
@@ -84,7 +84,7 @@ export async function landProposal(
   // performMerge below aren't one atomic step across git and Postgres, so this
   // narrows the window a superseding gate result could land in to the width of
   // one query rather than the whole request — it does not close it
-  // (docs/m2-readiness-review.md's TOCTOU item).
+  // (the TOCTOU item).
   const policyAtCas = await evaluateLandPolicy(db, gitBackend, instanceFloor, repo, proposal, org);
   if (!policyAtCas.allowed) {
     return { ok: false, status: 422, message: "Land policy not satisfied", unmet: policyAtCas.unmet };

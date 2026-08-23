@@ -20,12 +20,12 @@ export interface MergeTarget {
 
 export type PerformMergeResult = { ok: true; sha: string } | { ok: false; status: 409 | 422; message: string };
 
-// Land model keeps the FF-precondition-only conflict story (docs/pragmatic_mvp.md
+// Land model keeps the FF-precondition-only conflict story (
 // §2.5, "conflict = failed merge, agent rebases") — callers must already have
 // confirmed currentBaseSha is an ancestor of headSha before calling this. What
 // merge_method changes is what commit ends up on the base ref afterward: a real
 // merge commit or squash commit instead of always reusing headSha verbatim, the
-// fidelity gap named in docs/m2-readiness-review.md ("gh pr merge --merge cannot
+// fidelity gap ("gh pr merge --merge cannot
 // be distinguished from GitHub behavior until history is inspected").
 export async function performMerge(
   gitBackend: GitBackend,

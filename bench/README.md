@@ -1,6 +1,6 @@
 # `bench/` — the ADP benchmark harness
 
-The D4 demo and the A1 study (`docs/adp-prototype-implementation-plan.md` §5, §8).
+The D4 demo and the A1 study.
 Zero runtime dependencies, same as `adapters/`.
 
 Per A1 this benchmark **gates our own investment**, and per §8 the value is in

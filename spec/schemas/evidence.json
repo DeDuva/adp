@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://adp.dev/schemas/evidence.json",
   "title": "Evidence bundle",
-  "description": "Signed record of how a change was verified, projected to GitHub clients as a check-run. Per docs/pragmatic_mvp.md §2.4, §4.3.",
+  "description": "Signed record of how a change was verified, projected to GitHub clients as a check-run.",
   "type": "object",
   "required": ["id", "change_id", "verdict", "results", "signature"],
   "properties": {

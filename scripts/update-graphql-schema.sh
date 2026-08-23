@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Refreshes the vendored copy of GitHub's public GraphQL schema SDL.
-# Per docs/pragmatic_mvp.md §2.4 Tier 3: we load the real schema unmodified
+# We load the real schema unmodified
 # so `gh`'s queries validate against it and unimplemented fields fail as a
 # resolver error, never a validation error. This dodges "perpetually
 # chasing upstream" — the schema is upstream's artifact, we just refresh it.

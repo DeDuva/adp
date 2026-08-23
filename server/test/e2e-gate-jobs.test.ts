@@ -17,7 +17,7 @@ import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerGateJobRoutes } from "../src/http-rest/gate-jobs.js";
 import { selectClaimCandidate } from "../src/core/gate-jobs.js";
 
-// M4-9a (docs/m4-readiness-review.md §4): the gate-job queue mechanism,
+// M4-9a: the gate-job queue mechanism,
 // proven end-to-end over real HTTP acting as a stub runner — no `runner/`
 // package exists yet (M4-9b), only the server-side substrate it will use.
 describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
@@ -220,7 +220,7 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
     expect(completed.body!.finished_at).toBeTruthy();
   });
 
-  // #88's proof (docs/m4-postmortem-audit.md §P0-3): before the ownership
+  // #88's proof: before the ownership
   // check, ANY runner-scope token could tarball any org's source and
   // "complete" any org's job with `succeeded`, writing signed gate evidence
   // land policy trusts — a cross-tenant land-policy bypass from the

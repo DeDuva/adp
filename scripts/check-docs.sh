@@ -6,13 +6,12 @@
 # 2026-08-22 documentation audit then found sixteen contradictions it could not have
 # caught, because none of them were about a path — they were about *claims*:
 #
-#   - ROADMAP.md said the 0.3.0 contract batch was "not started" while line 26 of the
-#     same file recorded the contract version as 0.3.0 and the tag v0.3.0 existed.
-#   - ROADMAP.md said M4-5 Google OIDC "is built and acceptance-tested against real
-#     Google". There is no OIDC code in the tree; #103 is open. The claim had already
+#   - The status ledger said the 0.3.0 contract batch was "not started" while the same
+#     file recorded the contract version as 0.3.0 and the tag v0.3.0 existed.
+#   - It said M4-5 Google OIDC "is built and acceptance-tested against real Google".
+#     There was no OIDC code in the tree at the time, and the claim had already
 #     propagated to two other documents.
-#   - ROADMAP.md listed P2 items #98-#102 as still to come. All five closed on
-#     2026-08-14.
+#   - It listed P2 items #98-#102 as still to come. All five closed on 2026-08-14.
 #   - AGENTS.md described the `gh pr checks` gap as deliberately asserted, nineteen days
 #     after PR #53 closed it and inverted the assertion — in a passage that had
 #     *predicted* exactly this failure and named the documents that would need fixing.
@@ -148,7 +147,7 @@ done
 # Lines making neither claim, or both, are left alone — the check reports only what it
 # can be sure about, because a guard that cries wolf gets disabled.
 # ---------------------------------------------------------------------------
-STATUS_DOCS="ROADMAP.md PLAN.md"
+STATUS_DOCS="PLAN.md"
 
 gh_ok=0
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then

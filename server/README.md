@@ -17,7 +17,7 @@ enough to back `gh repo view`, `gh issue list/view/create/close`, `gh pr list/vi
 merge/review` for real. **Validated against the real `gh` binary**: `conformance/run.sh`,
 pinned to `gh` v2.63.0, drives the actual unmodified binary through
 `issue create` → `issue view` → `pr create` → `pr view` → `pr merge` against a live server
-in CI on every PR — see `docs/pragmatic_mvp.md` §M1b′ item 3 for what that gate does and
+in CI on every PR — see `conformance/run.sh` for what that gate does and
 doesn't cover (it isn't record-replay against production github.com).
 
 Real git `pre-receive`/`post-receive` hooks auto-record signed changes on every push and run
@@ -31,7 +31,8 @@ evidence-bundle read, candidate sets) is wrapped by a real MCP server (`server/s
 Proposal/issue numbering are independent sequences rather than GitHub's shared one — a
 known fidelity gap.
 Refresh the vendored GraphQL schema with `scripts/update-graphql-schema.sh`.
-See `docs/pragmatic_mvp.md` for the milestone plan and status ledger.
+See [`../CHANGELOG.md`](../CHANGELOG.md) for what has shipped and
+[`../PLAN.md`](../PLAN.md) for what is left.
 
 ## Local development
 
@@ -125,8 +126,7 @@ build, migrate against a fresh Postgres service container, then the full test su
 including e2e. This is what actually validates the M0 exit criterion going forward, instead
 of a one-off manual check.
 
-**What this doesn't cover yet**, per the verification plan in `docs/pragmatic_mvp.md` Part
-5: the `gh` record-replay conformance suite and the wider git fidelity suite (shallow /
+**What this doesn't cover yet:** the `gh` record-replay conformance suite and the wider git fidelity suite (shallow /
 partial / force-push / large file) are M1b+ work, once there's a GraphQL surface and more
 git operations worth pinning against real GitHub behavior. The `conformance/` black-box
 OpenAPI suite is the same — it needs a REST surface bigger than repo-create to be worth

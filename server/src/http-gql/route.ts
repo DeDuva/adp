@@ -54,7 +54,7 @@ function selectOperationForTelemetry(
 // Single endpoint, GitHub-shaped. Unimplemented fields resolve to a
 // GraphQL error (or null, if nullable) rather than a validation failure —
 // that's the entire point of loading the real SDL unmodified
-// (docs/pragmatic_mvp.md §2.4 Tier 3).
+//.
 //
 // Deliberately not using the graphql() convenience function: it runs a full
 // validateSchema() on every call, and GitHub's real published schema fails
@@ -65,7 +65,7 @@ function selectOperationForTelemetry(
 // only need to validate the incoming query document against it.
 export function registerGraphQLRoute(app: FastifyInstance, schema: GraphQLSchema, db: Db) {
   app.post("/api/graphql", async (req, reply) => {
-    // Default-private reads (docs/pragmatic_mvp.md §1.5): the whole endpoint
+    // Default-private reads: the whole endpoint
     // requires at least repo:read — surfaced as a GraphQL error (not a bare
     // REST 401/403) so `gh`-shaped clients see it in the usual `errors` array.
     if (!req.identity || !hasScope(req.identity.scopes, "repo:read")) {
