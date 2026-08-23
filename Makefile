@@ -145,7 +145,11 @@ check-docs: ## Assert tracked docs still point at real paths, links and issue st
 check-release: ## Assert the version surfaces agree: spec, chart, packages, CHANGELOG, tag
 	@bash scripts/dev/check-release.sh
 
+check-branch: ## Assert the current branch is named feat/, fix/ or docs/ (no-op on main)
+	@bash scripts/dev/check-branch.sh
+
 check: ## The gate. Same target name in every repo in this line of work.
+	@$(MAKE) check-branch
 	@$(MAKE) check-docs
 	@$(MAKE) check-release
 	@$(MAKE) test-all

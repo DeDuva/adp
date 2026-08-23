@@ -38,7 +38,7 @@ new plan is worth writing if the same drift can happen to it.
 | 0-4 | ROADMAP + brief: the fan-out-vs-serial bench arm described as never run | done | it ran 2026-08-10, pre-registered, 20/20 verified, digest `cfebbb7d…` |
 | 0-5 | `AGENTS.md`: `gh pr checks` invariant asserted the opposite of what the test asserts | done | PR #53 closed the gap 2026-08-03; `acceptance/run.sh:251-266` |
 | 0-6 | Two further copies of the same stale claim in `docs/test-environment-automation.md` | done | corrected in place, with the prediction it made left standing |
-| 0-7 | P1-7: record the bespoke-queue decision the audit asked for | done | the only postmortem item never discharged; now a `AGENTS.md` invariant |
+| 0-7 | P1-7: record the bespoke-queue decision the audit asked for | done | the only postmortem item never discharged; now an `AGENTS.md` invariant |
 | 0-8 | `docs/pragmatic_mvp.md` named `pg-boss`, which is in no package.json | done | consequence of 0-7 |
 | 0-9 | `docs/html/index.html` — live on GitHub Pages — called shipped features "the current milestone work" | done | org policy plane, dependency admission, scanner adapters all shipped |
 | 0-10 | Widen the freshness gate: `check-claude-md.sh` → `scripts/check-docs.sh` | done | paths + links across all tracked markdown, and issue/PR-state agreement in the status docs |

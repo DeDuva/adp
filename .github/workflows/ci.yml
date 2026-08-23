@@ -260,6 +260,21 @@ jobs:
       - uses: actions/checkout@v4
       - run: make check-release
 
+  # AGENTS.md §Branches names three prefixes and the reason this is a check rather than
+  # a note: a web agent session names its branch after the harness before the agent has
+  # read the file that would have told it not to. 24 of the last 30 PRs held the
+  # convention; the six that did not were mostly defaults nobody chose.
+  #
+  # pull_request only — a push build on main has no head ref to judge.
+  branch-name:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
+        run: make check-branch
+
   # M4-12. The chart is a published artifact — someone else's cluster runs it —
   # so it gets the same treatment as spec/openapi.yaml: something has to fail
   # when it stops being true. Lint plus a render of every combination that

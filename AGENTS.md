@@ -39,8 +39,12 @@ three prefixes and no others:
 | Prefix | For |
 |---|---|
 | `feat/` | new capability — a route, a plane, a milestone item |
-| `fix/` | something is wrong and this makes it right: bugs, hardening, CI and tooling repair |
+| `fix/` | something is wrong and this makes it right: bugs, hardening, CI and tooling repair, and cutting a release |
 | `docs/` | prose, the published site, the plan and status files |
+
+Three and no others — a release included. `release/0.3.0-contract` (#115) predates this
+rule; the next one is `fix/0.6.0-release`, because a release corrects the versions the
+tree claims. A fourth prefix would cost the rule the thing that makes it stick.
 
 Lowercase, hyphen-separated, and describing the change rather than the actor. Where an
 item has a tracking issue, leading with its number is the established shape:
@@ -63,6 +67,10 @@ A branch already pushed under the wrong name gets a correctly-named replacement,
 original is deleted rather than left to accumulate. Which prefix applies is decided by
 the change, not by which tool made it: an agent fixing a bug is on `fix/`, exactly as a
 human would be.
+
+`scripts/dev/check-branch.sh` enforces this — in `make check`, and as a CI job that
+fails the pull request. It is a check rather than a note for the reason above: by the
+time anyone reads this file, the branch already exists.
 
 **Do not regenerate this file.** Most of what follows was learned by getting it wrong,
 and a codebase scan cannot see any of it — so a command that rebuilds project
