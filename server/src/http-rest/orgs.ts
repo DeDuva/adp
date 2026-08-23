@@ -338,7 +338,7 @@ export function registerOrgRoutes(
           .where(eq(orgs.id, orgId))
           .returning();
 
-        // CLAUDE.md's standing invariant — the operation log is written in
+        // AGENTS.md's standing invariant — the operation log is written in
         // the same transaction as the change. One op per concern, each
         // carrying `orgId` (#97): an org-level op used to be repoId:null
         // and orgId:nothing, which made it invisible to the very audit-log

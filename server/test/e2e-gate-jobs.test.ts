@@ -362,7 +362,7 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
   // wrote no gate_results row, `gates_green` would see no failing gate and a
   // commit whose gate was killed mid-run would land as though nothing had
   // happened — "a skipped check must never look like a passing one"
-  // (CLAUDE.md), applied to the thing doing the checking. toGateResultStatus
+  // (AGENTS.md), applied to the thing doing the checking. toGateResultStatus
   // maps every non-succeeded status to `failure` for exactly this reason;
   // nothing proved it end to end until here.
   it.each(["timed_out", "error"] as const)(
@@ -420,7 +420,7 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
       expect(evidence!.envelope).toBeTruthy();
 
       // 2. And the refusal is in the operation log, in the same transaction
-      //    as the status flip (CLAUDE.md's standing invariant).
+      //    as the status flip (AGENTS.md's standing invariant).
       const [repo] = await db.select().from(repos).where(and(eq(repos.owner, owner), eq(repos.name, repoName)));
       const [op] = await db
         .select()

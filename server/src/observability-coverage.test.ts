@@ -9,7 +9,7 @@ import { METRIC_FAMILIES, renderMetrics } from "./core/telemetry.js";
 // export does not fail, warn, or look broken: it renders an empty chart, and an
 // empty chart is exactly what a healthy quiet system also renders. An alert
 // built on one never fires — which is indistinguishable, from the outside, from
-// an alert on a system that is fine. That is `CLAUDE.md`'s "a skipped test must
+// an alert on a system that is fine. That is `AGENTS.md`'s "a skipped test must
 // never look like a passing one", applied to the thing that is supposed to be
 // watching production.
 //

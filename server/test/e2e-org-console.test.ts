@@ -311,7 +311,7 @@ describe.skipIf(skipWithoutDb)("M4-7: org policy console", () => {
     const [org] = await db.select().from(orgs).where(eq(orgs.id, orgId));
     expect(org!.killSwitch).toBe(true);
 
-    // CLAUDE.md's invariant: the change and its operation row are written
+    // AGENTS.md's invariant: the change and its operation row are written
     // together. repoId is null — this is the first genuinely org-global verb.
     const [op] = await db
       .select()

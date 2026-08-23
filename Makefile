@@ -110,7 +110,7 @@ runner: ## Typecheck, build, and test the gate runner (no database, REAL docker 
 	# ADP_REQUIRE_DOCKER=1 (#99): without it, a machine where the docker
 	# daemon is down runs this target green while silently skipping the
 	# real-container isolation tier — the exact skip-looks-like-a-pass
-	# failure CLAUDE.md's standing invariant exists to prevent, on the one
+	# failure AGENTS.md's standing invariant exists to prevent, on the one
 	# package whose entire job is container isolation. This box runs the
 	# distro docker.io daemon; if this fails with "docker unreachable",
 	# start it, don't unset the flag.
