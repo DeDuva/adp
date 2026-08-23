@@ -27,7 +27,7 @@ runner should reach.
 
 The milestone's own exit criteria (`m4-readiness-review.md` §5) already name the missing tests. This
 review confirms they are still missing and turns them into a remediation plan. The disposition is
-below; the standard applied is the same one `CLAUDE.md` states: *a skipped check must never look like
+below; the standard applied is the same one `AGENTS.md` states: *a skipped check must never look like
 a passing one*, generalized here to *an unenforced boundary must never look like an enforced one*.
 
 The findings are severity-ranked. P0 is security or correctness that must be fixed before anyone is

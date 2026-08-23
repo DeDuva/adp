@@ -221,7 +221,7 @@ jobs:
       - run: npm run report
       - run: git diff --exit-code report/
 
-  # Documents that have quietly stopped being true. CLAUDE.md names the file carrying
+  # Documents that have quietly stopped being true. AGENTS.md names the file carrying
   # each invariant, so a rename turns guidance into a wrong map without anything
   # failing; ROADMAP.md and PLAN.md make status claims that the issue tracker can
   # settle. The 2026-08-22 audit found sixteen contradictions of exactly these shapes,

@@ -305,7 +305,7 @@ artifact) reduce that call to a minute of looking rather than a full manual walk
 > this document was written, and **PR #53 closed the gap on 2026-08-03**: each gate result now
 > projects to a `StatusContext`, and `run.sh:251-266` asserts that `gh pr checks` *succeeds*,
 > names the gate, reports it passing, and links the evidence bundle. The prediction below came
-> true and was then ignored — the test was inverted, but `CLAUDE.md` and this document went on
+> true and was then ignored — the test was inverted, but `AGENTS.md` and this document went on
 > describing a limitation that no longer existed for nineteen days. That is the failure mode
 > `scripts/check-docs.sh` now exists to catch. The original text is kept because the reasoning
 > is still the reason the assertion is shaped the way it is.

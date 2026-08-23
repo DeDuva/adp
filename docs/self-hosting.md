@@ -102,7 +102,7 @@ record must already resolve to the host before the stack starts. If it does not,
 up but TLS stays pending — `docker compose logs caddy`.
 
 Two notes carried over from the rest of the repo. `deploy/docker-compose.yml` is the *production*
-stack and must never be used for local development (`CLAUDE.md` explains what breaks). And the
+stack and must never be used for local development (`AGENTS.md` explains what breaks). And the
 server's port is published on `127.0.0.1` only, so the Ops Agent can scrape `/metrics` without
 exposing it to the internet — [`docs/observability.md`](observability.md) §2.
 
