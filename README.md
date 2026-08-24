@@ -1,4 +1,4 @@
-# ADP — the agent-native software forge
+# ADP — the agent-native forge
 
 ADP is a self-hosted, GitHub-compatible forge for AI coding agents. Keep using `git`, `gh`, and
 existing CI integrations while ADP binds every change to its intent, agent provenance, approvals,
@@ -7,28 +7,31 @@ and signed verification evidence.
 **Why ADP?** Agent transcripts are temporary, and an agent saying “tests pass” is not independent
 proof. ADP makes development context durable and enforces your evidence requirements at merge time.
 
-[Try ADP locally](#try-adp-locally) · [How it works](#how-it-works) ·
+[Run it](#run-it-end-to-end) · [How it works](#how-it-works) ·
 [Self-hosting](docs/self-hosting.md)
 
 Apache-2.0 · TypeScript · Fastify · PostgreSQL · the real `git` binary for all plumbing.
 
 ---
 
-## Try ADP locally
+## Run it end to end
 
-The fastest supported evaluation path provisions the toolchain, starts ADP with an ephemeral
-PostgreSQL database, runs the complete test suite—including a real
-**clone → push → propose → review → merge** flow—and removes everything afterward:
+One command provisions the toolchain, starts ADP against an ephemeral PostgreSQL, drives a real
+**clone → push → propose → review → merge** against the server with an unmodified `gh`, and tears
+everything down afterwards:
 
 ```bash
 bash scripts/dev/bootstrap.sh
 make up && make test-all && make down
 ```
 
-This path is designed for a clean Linux machine with Docker. It verifies both the familiar GitHub
-compatibility surface and ADP's signed change and evidence model without requiring a cloud account.
-See [Running it](#running-it) for source setup and [`docs/self-hosting.md`](docs/self-hosting.md) for
-persistent Docker Compose and Helm deployments.
+Be straight about what this is: the project's full verification suite, not a five-minute tour. It
+runs every tier and takes minutes, on a clean Linux machine with Docker — and in exchange it proves
+the whole system, including the parts a short demo would skip. No cloud account, nothing left
+running.
+
+For a persistent instance, see [`docs/self-hosting.md`](docs/self-hosting.md); to run from source,
+[Running it](#running-it).
 
 ---
 

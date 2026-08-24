@@ -1,9 +1,8 @@
 apiVersion: v2
 name: adp
 description: >-
-  ADP — a version control and CI/CD server that speaks GitHub's protocols over a
-  domain model where every change is a signed transaction binding intent, diff,
-  evidence and provenance.
+  ADP — the agent-native forge. GitHub-compatible, and every change is a signed
+  transaction binding intent, diff, evidence and provenance.
 type: application
 
 # The chart's own version, bumped when the chart changes.

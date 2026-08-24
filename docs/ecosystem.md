@@ -14,7 +14,7 @@ This page is a map, not a plan. Each project's own plan of record is linked belo
 
 | Repo | Purpose | Where it is |
 |---|---|---|
-| **adp** (this repo) | The agent-native VCS and verification substrate. Records runs, trajectories and attested evals; serves a GitHub-compatible plane and a native plane. | [`DeDuva/adp`](https://github.com/DeDuva/adp) — public |
+| **adp** (this repo) | The agent-native forge and verification substrate. Records runs, trajectories and attested evals; serves a GitHub-compatible plane and a native plane. | [`DeDuva/adp`](https://github.com/DeDuva/adp) — public |
 | **adp-replay** | Records agent trajectories on closed-world coding tasks and replays them under substituted models, producing evidence-gated verdicts about model performance. ADP's first external consumer. | [`DeDuva/adp-replay`](https://github.com/DeDuva/adp-replay) — public |
 | **squad** (fork) | Multi-agent dev-team orchestrator. Hosts two packages that matter here: `packages/squad-lab` (goal-setting and cross-provider A/B testing) and `packages/duva-bench` (the squad track of duva-bench). | [`DeDuva/squad`](https://github.com/DeDuva/squad) — default branch **`dev`** |
 | **duva-bench** | Controlled factorial experiments on coding agents. Two deliberately parallel tracks — a **squad** track (in the fork above) and a **Harbor** track (its own repo). | [`DeDuva/duva-bench`](https://github.com/DeDuva/duva-bench) — public |
