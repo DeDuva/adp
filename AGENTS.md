@@ -1,8 +1,9 @@
 # AGENTS.md — ADP
 
-A version control and CI/CD server that speaks GitHub's protocols (git wire, REST at
-`/api/v3`, GraphQL at `/api/graphql`) over a domain model where every change is a signed
-transaction binding **intent → diff → evidence → provenance**. The native plane at
+The agent-native forge: a self-hosted, GitHub-compatible forge for AI coding agents. It
+speaks GitHub's protocols (git wire, REST at `/api/v3`, GraphQL at `/api/graphql`) over a
+domain model where every change is a signed transaction binding
+**intent → diff → evidence → provenance**. The native plane at
 `/api/adp` (and over MCP) exposes what GitHub has no analogue for: the operation log,
 undo, evidence bundles, workspaces. TypeScript · Fastify · PostgreSQL · the real `git`
 binary for all plumbing.
