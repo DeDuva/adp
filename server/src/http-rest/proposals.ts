@@ -55,7 +55,7 @@ export function registerProposalRoutes(
   // since webhook emission isn't an opt-in feature the way SBOM recording is.
   credentialKey: string,
   instanceFloor: LandRequirement[] = [],
-  // Optional: SBOM-per-land (docs/pragmatic_mvp.md M2) needs a signer and a
+  // Optional: SBOM-per-land needs a signer and a
   // public URL for the DSSE statement's subject, same as gates.ts — kept
   // optional rather than required so every existing test app that doesn't
   // care about SBOMs doesn't have to start passing one.
@@ -309,7 +309,7 @@ export function registerProposalRoutes(
     merge_method: z.enum(["merge", "squash", "rebase"]).default("merge"),
   });
 
-  // Land policy (core/land-policy.ts, docs/pragmatic_mvp.md M1c/§1.5 item 2)
+  // Land policy (core/land-policy.ts)
   // gates the merge before the fast-forward-ancestry check ever runs — a
   // base that has diverged from head is the MVP's "conflict": 409, agent
   // rebases and retries, same as it would against a real forge today (cut

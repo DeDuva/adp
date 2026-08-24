@@ -132,7 +132,7 @@ ensure_secret() {
   ok "created $name"
 }
 
-# SIGNING_KEY is the root of the provenance claim (docs/environments-plan.md
+# SIGNING_KEY is the root of the provenance claim (
 # §4). core/signing.ts derives an Ed25519 key deterministically via
 # SHA-256(SIGNING_KEY), so any sufficiently random string works — but once the
 # instance has signed anything, changing this value changes the server's

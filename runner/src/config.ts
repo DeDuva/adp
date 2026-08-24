@@ -1,7 +1,7 @@
 import { hostname } from "node:os";
 import { z } from "zod";
 
-// This process's own security posture (docs/pragmatic_mvp.md §4.5/§4.7:
+// This process's own security posture (
 // "host separation is not optional once adp.yaml becomes executable") is what
 // this schema enforces the absence of, not what it configures — there is no
 // DATABASE_URL, no SIGNING_KEY. The runner is a pure HTTP client of ADP_SERVER_URL,
@@ -17,7 +17,7 @@ const EnvSchema = z.object({
   RUNNER_ID: z.string().min(1).default(`${hostname()}-${process.pid}`),
   POLL_INTERVAL_MS: z.coerce.number().int().positive().default(2000),
   // docker run --memory / --cpus — the resource-cap half of "network-deny by
-  // default ... CPU/memory/wall-clock caps" (pragmatic_mvp.md §4.7). Per-job
+  // default ... CPU/memory/wall-clock caps". Per-job
   // overrides are not exposed yet: every claimed job runs under the same
   // instance-wide ceiling until M4-9d scopes caps to an org's own quota.
   RUNNER_MEMORY: z.string().min(1).default("2g"),

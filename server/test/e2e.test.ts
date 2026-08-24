@@ -25,7 +25,7 @@ import { registerReviewRoutes } from "../src/http-rest/reviews.js";
 
 const execFileAsync = promisify(execFile);
 
-// This is the M0 exit criterion from docs/pragmatic_mvp.md: "a real repo can
+// This is the M0 exit criterion "a real repo can
 // be pushed to and cloned from the server over HTTPS with a token." Requires
 // a real Postgres — set DATABASE_URL to run it locally, or rely on CI, which
 // provides one as a service container. Skipped otherwise so `npm test` stays

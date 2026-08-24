@@ -15,7 +15,7 @@ import { registerAuditLogRoutes } from "../src/http-rest/audit-log.js";
 import { registerOrgRoutes } from "../src/http-rest/orgs.js";
 import { registerOperationRoutes } from "../src/http-rest/operations.js";
 
-// M4-3 (docs/m4-readiness-review.md §4): the audit-log export, proven
+// M4-3: the audit-log export, proven
 // through the real REST route — the first real consumer of requireOrgAccess
 // (auth/plugin.ts, built in M4-1 with no route calling it yet).
 describe.skipIf(skipWithoutDb)("M4-3: audit-log export", () => {
@@ -178,7 +178,7 @@ describe.skipIf(skipWithoutDb)("M4-3: audit-log export", () => {
   // "The audit-log export reconciles with the operation log — every row in an
   // export matches a row adp_history_query/adp_op_log would return for the
   // same filter, by construction (same table), proven by a test rather than
-  // asserted by the description." (docs/m4-readiness-review.md §5)
+  // asserted by the description."
   //
   // What was here before this test asserted row *counts* — that the export
   // returns exactly the two repo.create rows the org has. That is a weaker

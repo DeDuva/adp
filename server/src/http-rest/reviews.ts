@@ -28,7 +28,7 @@ function serializeReview(review: typeof reviews.$inferSelect) {
 }
 
 // Typed review state, not an emoji thread — one of the MVP's core claims
-// (docs/pragmatic_mvp.md §2.3, rubric step 7). Positional inline comments
+// (rubric step 7). Positional inline comments
 // (file/line/side) are best-effort annotations, not GitHub's diff-position
 // model — that's an explicit cut (§2.5).
 export function registerReviewRoutes(app: FastifyInstance, db: Db) {

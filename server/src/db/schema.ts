@@ -15,7 +15,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
-// M4-0 (docs/m4-readiness-review.md §4): the tenancy boundary every other M4
+// M4-0: the tenancy boundary every other M4
 // item hangs off — scoped tokens, the org policy plane, quotas, audit export.
 // `name` is unique because the backfill migration (drizzle/0018) synthesizes
 // one org per distinct pre-M4 `repos.owner` string, and that mapping has to
@@ -29,12 +29,12 @@ export const orgs = pgTable("orgs", {
   // as the existing two. An org's floor lives in a `policy.yaml` on this
   // repo's default branch (core/org-policy.ts) — reusing an ordinary repo,
   // not a new storage mechanism, is what makes "policy changes as signed
-  // reviewable changes" (docs/m4-readiness-review.md) true for free: landing
+  // reviewable changes" true for free: landing
   // a policy change already goes through the same intent→diff→evidence→
   // provenance path as any other change, because it *is* one. Null means
   // the org has designated no policy repo yet — an empty floor, not an error.
   policyRepoId: uuid("policy_repo_id").references((): AnyPgColumn => repos.id),
-  // The blast radius decided in docs/m4-readiness-review.md §3: refuses every
+  // The blast radius refuses every
   // land attempt for every repo in this org while set (core/land-policy.ts).
   // Deliberately does NOT block opening a new proposal — that's a stated,
   // narrower scope for this slice (see the M4-2 PR description); a proposal
@@ -55,7 +55,7 @@ export const orgs = pgTable("orgs", {
   maxConcurrentGateJobs: integer("max_concurrent_gate_jobs"),
   // M4-3, the half that was never built. This column waited on M4-8's object
   // store "to meter against" while M4-8's own sizing waited on this quota's
-  // shape existing to bound it (docs/m4-readiness-review.md §4 vs its M4-8
+  // shape existing to bound it (vs its M4-8
   // paragraph) — a deadlock that held for the whole milestone while nothing
   // bounded how much one org could write. It is broken here by refusing to
   // wait: the meter counts the bytes that exist *today* — Postgres rows and
@@ -281,7 +281,7 @@ export const proposals = pgTable(
   (table) => [unique().on(table.repoId, table.number)],
 );
 
-// Native-plane-only concept (docs/pragmatic_mvp.md §2.2, "the only MVP
+// Native-plane-only concept ("the only MVP
 // feature GitHub structurally cannot express"): N proposals fanned out
 // against one intent, scored, and one selected. `proposals.candidateSetId`
 // (added ahead of this table, schema.ts commit history) is how a proposal
@@ -371,7 +371,7 @@ export const gateResults = pgTable(
   ],
 );
 
-// Native-plane-only concept (docs/pragmatic_mvp.md §2.2: "Workspace | A
+// Native-plane-only concept ("Workspace | A
 // branch adp/ws/<id> | Lifecycle, TTL, GC, isolation") — deliberately just a
 // thin row around a real git ref, not a new storage mechanism. `branch` is
 // the actual `refs/heads/<branch>` name; destroying a workspace deletes that
@@ -442,7 +442,7 @@ export const runs = pgTable(
   ],
 );
 
-// M3 (docs/m3-readiness-review.md §4, M3-1): a unit of agent work that
+// M3 (M3-1): a unit of agent work that
 // outlives any one harness — the object D2 ("cross-harness portability") is
 // about. `harness` is just an identifier the caller supplies; ADP never
 // branches on its value, which is what makes the protocol harness-neutral
@@ -645,7 +645,7 @@ export const checkpoints = pgTable(
   (table) => [uniqueIndex("checkpoints_session_id_seq_idx").on(table.sessionId, table.seq)],
 );
 
-// Outbound webhook subscriptions, GitHub-shaped (docs/pragmatic_mvp.md M2:
+// Outbound webhook subscriptions, GitHub-shaped (
 // "outbound webhook emitter"). The decrypted secret signs deliveries
 // (HMAC-SHA256, GitHub's own `X-Hub-Signature-256` header shape,
 // core/webhooks.ts) — never returned in a serialized response, same as
@@ -736,15 +736,15 @@ export const operations = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   // Replaces the `target` LIKE-prefix scan http-rest/operations.ts's
-  // repoTargetFilter used to do (docs/m2-readiness-review.md) — every op in
+  // repoTargetFilter used to do — every op in
   // this table is repo-scoped in practice, this just makes that queryable.
   (table) => [index("operations_repo_id_idx").on(table.repoId)],
 );
 
-// M4-9a (docs/m4-readiness-review.md §4): the gate runner's job queue —
-// "Postgres job queue" in pragmatic_mvp.md's own layout table, not a new
+// M4-9a: the gate runner's job queue —
+// a "Postgres job queue" by design, not a new
 // message broker. This table is the *contract* between the API process and
-// a runner process that, per pragmatic_mvp.md §4.5/§4.7, must be able to run
+// a runner process that,, must be able to run
 // on a separate, untrusted-code host with no database credentials of its
 // own: a runner claims and completes jobs over the REST routes in
 // http-rest/gate-jobs.ts, the same way `cli/` talks to this server, never by

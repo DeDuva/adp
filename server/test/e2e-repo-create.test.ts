@@ -17,7 +17,7 @@ import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
 import { repoAccessCheck } from "../src/core/repos-lookup.js";
 
-// #89 (docs/m4-postmortem-audit.md §P0-5/§P0-6): the two negative cases the
+// #89: the two negative cases the
 // audit named as this fix's proof — concurrent creates of one owner/name
 // yield exactly one row (the repos_owner_name_idx unique index is the
 // authority, not the pre-insert existence check), and a traversal owner is

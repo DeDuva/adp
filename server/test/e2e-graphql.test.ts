@@ -37,7 +37,7 @@ interface GraphQLResponse<T = unknown> {
 // REST e2e suite. Not covered here: mutations (pr create/merge/review,
 // issue create/close via GraphQL — those exist over REST already), and
 // running the actual `gh` binary against this — that's the record-replay
-// conformance suite, a separate follow-up per docs/pragmatic_mvp.md §2.4.
+// conformance suite, a separate follow-up
 describe.skipIf(skipWithoutDb)("M1b GraphQL: read path", () => {
   let app: FastifyInstance;
   let db: Db;
@@ -237,7 +237,7 @@ describe.skipIf(skipWithoutDb)("M1b GraphQL: read path", () => {
   it("fails as a resolver error, not a validation error, on a field we haven't backed", async () => {
     // stargazerCount is Int! in the real schema — real, valid query; we just
     // don't populate it. This is the entire point of loading GitHub's SDL
-    // unmodified (docs/pragmatic_mvp.md §2.4 Tier 3): the failure must be a
+    // unmodified: the failure must be a
     // resolver/execution error, never "Cannot query field ... on type ...".
     const { status, body } = await gql(
       `query { repository(owner: "${owner}", name: "widget") { name stargazerCount } }`,
@@ -254,7 +254,7 @@ describe.skipIf(skipWithoutDb)("M1b GraphQL: read path", () => {
   });
 });
 
-// M1b′ mutation slice (docs/pragmatic_mvp.md M1b′ item 1): the same
+// M1b′ mutation slice: the same
 // mutations `gh issue create/close/comment` and `gh pr create/merge/close/
 // reopen/ready/review` send. Own repo/fixtures so it doesn't interleave with
 // the read-path suite's assertions above.

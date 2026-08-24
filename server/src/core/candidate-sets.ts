@@ -27,7 +27,7 @@ export interface CandidateSetError {
   message: string;
 }
 
-// Candidate sets (docs/pragmatic_mvp.md §2.2, the one MVP feature GitHub
+// Candidate sets (the one MVP feature GitHub
 // structurally cannot express): N proposals fanned out against one intent,
 // one selected. Opening a set just creates the row the intent's candidates
 // will join via `proposals.candidateSetId` — proposal creation is what

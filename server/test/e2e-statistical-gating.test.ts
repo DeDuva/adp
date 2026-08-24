@@ -24,7 +24,7 @@ import { registerGateRoutes } from "../src/http-rest/gates.js";
 
 const execFileAsync = promisify(execFile);
 
-// M3 / A8 (docs/pragmatic_mvp.md M3, docs/m3-readiness-review.md M3-4):
+// M3 / A8:
 // statistical land criteria. Two behaviours, and the second one is the one that
 // must not go wrong quietly:
 //

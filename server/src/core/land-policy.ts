@@ -36,8 +36,8 @@ export interface LandPolicyResult {
   quarantined: QuarantinedGate[];
 }
 
-// The M1c land-policy gate: instance floor ∧ repo adp.yaml
-// (docs/pragmatic_mvp.md §1.5 item 2). Repo policy is read off the *base*
+// The M1c land-policy gate: instance floor ∧ repo adp.yaml.
+// Repo policy is read off the *base*
 // ref — the branch being landed into, same as GitHub reads branch
 // protection off the target branch, not the PR's head.
 //

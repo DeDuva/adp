@@ -25,7 +25,7 @@ import { registerEvidenceRoutes } from "../src/http-rest/evidence.js";
 const execFileAsync = promisify(execFile);
 
 // M1c native plane, remaining slices: workspaces (a branch with lifecycle
-// metadata, docs/pragmatic_mvp.md §2.2) and adp_evidence_get's REST backing
+// metadata) and adp_evidence_get's REST backing
 // (the consolidated signed-change + gate-results view).
 describe.skipIf(skipWithoutDb)("M1c: workspaces + evidence bundle", () => {
   let app: FastifyInstance;

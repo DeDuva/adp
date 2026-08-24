@@ -26,7 +26,7 @@ keywords:
 # No dependencies, deliberately. The obvious one would be a Postgres subchart,
 # and taking it would mean this chart could not be rendered or installed
 # without reaching a chart repository first — which is exactly the property
-# `docs/m4-readiness-review.md` §5's "self-host actually works from nothing"
-# is asking about. The optional bundled Postgres in templates/postgres.yaml is
+# "self-host actually works from nothing" is asking about. The optional
+# bundled Postgres in templates/postgres.yaml is
 # a plain StatefulSet for evaluation; a real deployment points
 # `externalDatabase.url` at a real one.

@@ -11,7 +11,7 @@ export interface AdpClient {
   delete(path: string): Promise<AdpClientResult>;
 }
 
-// The MCP server is a REST client, nothing more (docs/pragmatic_mvp.md
+// The MCP server is a REST client, nothing more (
 // Tier 4: "Native plane | ADP REST + MCP" — MCP wraps the REST API, it
 // isn't a second implementation of it). Bearer-token authenticated exactly
 // like any other API consumer.

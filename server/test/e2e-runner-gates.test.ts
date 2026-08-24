@@ -24,7 +24,7 @@ import { registerGateRoutes } from "../src/http-rest/gates.js";
 
 const execFileAsync = promisify(execFile);
 
-// M4-9c (docs/m4-readiness-review.md §4): adp.yaml's `runner.gates` end to
+// M4-9c: adp.yaml's `runner.gates` end to
 // end — a real push whose adp.yaml names an ADP-run gate auto-enqueues a
 // gate_jobs row (http-git/hooks.ts); a stub runner (same substrate M4-9a's
 // own tests use, real HTTP rather than a real Docker daemon — that half is

@@ -87,7 +87,7 @@ jobs:
           path: ~/.cache/adp-conformance-gh
           key: gh-conformance-${{ hashFiles('server/conformance/run.sh') }}
 
-      # M1b′ gate (docs/pragmatic_mvp.md): the real, unmodified `gh` binary
+      # M1b′ gate: the real, unmodified `gh` binary
       # against this server — gh issue view / pr create / pr view / pr merge.
       - run: bash conformance/run.sh
 
@@ -223,7 +223,7 @@ jobs:
 
   # Documents that have quietly stopped being true. AGENTS.md names the file carrying
   # each invariant, so a rename turns guidance into a wrong map without anything
-  # failing; ROADMAP.md and PLAN.md make status claims that the issue tracker can
+  # failing; PLAN.md makes status claims that the issue tracker can
   # settle. The 2026-08-22 audit found sixteen contradictions of exactly these shapes,
   # three of them critical, none catchable by the path-only check this replaces.
   #

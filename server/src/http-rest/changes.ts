@@ -42,7 +42,7 @@ function serializeChange(change: typeof changes.$inferSelect, owner: string, rep
 
 // The typed change record: diff (referenced by git_sha, not duplicated) +
 // intent + provenance, signed. No GitHub shape exists for this — it's native
-// ADP metadata living beside a git commit (docs/pragmatic_mvp.md §2.2).
+// ADP metadata living beside a git commit.
 // Recorded via an explicit call rather than a git post-receive hook for now;
 // wiring automatic recording into the push path is follow-up work.
 export function registerChangeRoutes(

@@ -20,7 +20,7 @@ import { registerGraphQLRoute } from "../src/http-gql/route.js";
 import { recordHttpRequest, renderMetrics, resetMetricsForTest } from "../src/core/telemetry.js";
 import { sampleGateJobMetrics } from "../src/core/gate-job-metrics.js";
 
-// M2: API-traffic telemetry (docs/m2-readiness-review.md's "measurement gap"
+// M2: API-traffic telemetry (the "measurement gap"
 // item) — this is the wiring test (main.ts's onResponse hook + /metrics
 // route + GraphQL root-field counting) to go with core/telemetry.test.ts's
 // unit coverage of the counter/render logic itself.

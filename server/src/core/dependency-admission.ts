@@ -1,4 +1,4 @@
-// Dependency admission v0 (docs/pragmatic_mvp.md M2): a lockfile/manifest
+// Dependency admission v0: a lockfile/manifest
 // diff becomes gate input — registry existence, an age/cooldown window, and
 // OSV + OpenSSF malicious-package lookups — with a typed verdict per
 // package, not just a pass/fail blob.

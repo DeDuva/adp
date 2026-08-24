@@ -36,7 +36,7 @@ function textOf(result: { content: { type: string; text?: string }[] }): string 
   return first && first.type === "text" ? (first.text ?? "") : "";
 }
 
-// M1c: the MCP native plane (docs/pragmatic_mvp.md Tier 4). Every tool is a
+// M1c: the MCP native plane. Every tool is a
 // thin wrapper over the real /api/adp REST endpoints — this test runs a real
 // Fastify server against real Postgres, a real MCP Client/Server pair
 // talking over the SDK's in-memory transport, and the MCP server's real

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://adp.dev/schemas/session.json",
   "title": "Session",
-  "description": "A unit of agent work that outlives any one harness. `harness` is an opaque identifier ADP never branches on — that is what makes the protocol harness-neutral. A session resumed under a different harness is a new session linked by `resumed_from_session_id`, never an edit to the old one. Per docs/pragmatic_mvp.md M3 and docs/m3-readiness-review.md M3-3.",
+  "description": "A unit of agent work that outlives any one harness. `harness` is an opaque identifier ADP never branches on — that is what makes the protocol harness-neutral. A session resumed under a different harness is a new session linked by `resumed_from_session_id`, never an edit to the old one.",
   "type": "object",
   "required": ["id", "harness", "status", "created_at"],
   "properties": {

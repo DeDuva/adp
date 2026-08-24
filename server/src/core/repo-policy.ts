@@ -2,7 +2,7 @@ import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import type { GitBackend } from "./git-backend.js";
 
-// docs/pragmatic_mvp.md M1c: "Land policy, resolved two-level: instance
+// "Land policy, resolved two-level: instance
 // floor ∧ repo adp.yaml (require: [gates_green, one_approval], risk tiers
 // by path glob)." Risk tiers by path glob are not implemented in this
 // slice — `require` is repo-wide, not conditioned on what changed.
@@ -110,9 +110,9 @@ export async function loadRepoPolicy(
 }
 
 // Union, not override: each level is a minimum the next can only add to,
-// never remove from (docs/pragmatic_mvp.md §1.5 item 2 — "instance floor ∧
-// repo adp.yaml"; generalized to instance ∧ org ∧ repo by M4-2,
-// docs/m4-readiness-review.md §4). `orgFloor` is `[]` for a repo with no
+// never remove from ("instance floor ∧
+// repo adp.yaml"; generalized to instance ∧ org ∧ repo by M4-2.
+// `orgFloor` is `[]` for a repo with no
 // org and for an org with no policy repo designated — same "empty, not an
 // error" default the instance floor and repo policy already use.
 export function resolveLandRequirements(

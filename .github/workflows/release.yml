@@ -1,7 +1,7 @@
 # #101: release identity. Until this existed the repo had zero tags, zero
 # releases, no CHANGELOG, and no published image — a consumer could pin only
-# a raw SHA, and since there is deliberately no hosted staging rung
-# (docs/environments-plan.md), the pinnable artifact IS the separation
+# a raw SHA, and since there is deliberately no hosted staging rung, the
+# pinnable artifact IS the separation
 # between active development and what stakeholders depend on.
 #
 # Trigger is a version tag, pushed by a human after the release PR merges.

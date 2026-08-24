@@ -36,7 +36,7 @@ interface GraphQLResponse<T = unknown> {
   errors?: { message: string }[];
 }
 
-// M2: SBOM per land (docs/pragmatic_mvp.md) — CycloneDX emitted as ordinary
+// M2: SBOM per land — CycloneDX emitted as ordinary
 // evidence on every landed change. Real npm lockfile fixture (test/fixtures/
 // sbom-package-lock.json, captured from a real `npm install`), pushed and
 // merged for real, then read back through the same evidence-bundle endpoint

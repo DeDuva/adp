@@ -3,7 +3,7 @@
 #
 # adp-dev redeploys itself from `main` on every scheduled boot, silently, and
 # is stopped outside working hours — during which inbound GitHub webhooks are
-# dropped and GitHub does not retry indefinitely (docs/environments-plan.md
+# dropped and GitHub does not retry indefinitely (
 # §5.2). Both facts are invisible until something that depended on them fails.
 # This asks, in one command, and answers from four independent vantage points:
 # GCP's view of the instance, DNS, the TLS handshake, and the server's own
@@ -412,7 +412,7 @@ if [ -z "$retire" ]; then
 fi
 if [ -z "$retire" ]; then
   emit "cost" warn "retire-after" "no retirement date recorded" \
-    "dev is disposable by design (docs/environments-plan.md §5.2) — set retire_after in terraform.tfvars"
+    "dev is disposable by design — set retire_after in terraform.tfvars"
 else
   retire_epoch="$(epoch_of "$retire")"
   if [ -z "$retire_epoch" ]; then

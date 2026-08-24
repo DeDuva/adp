@@ -16,7 +16,7 @@ import { Signer } from "../src/core/signing.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerGateJobRoutes } from "../src/http-rest/gate-jobs.js";
 
-// M4-9d (docs/m4-readiness-review.md §4): claim skips a queued job whose org
+// M4-9d: claim skips a queued job whose org
 // is at its maxConcurrentGateJobs ceiling rather than refusing the whole
 // claim — proven through the real claim route, against real Postgres, the
 // way M4-3's own quota tests (e2e-quotas.test.ts) prove maxRepos and

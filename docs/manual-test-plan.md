@@ -1,6 +1,6 @@
 # Manual test plan
 
-The definition of done in [`pragmatic_mvp.md`](pragmatic_mvp.md) §2.1, written out as steps a
+The MVP definition of done, written out as steps a
 person can actually follow, and annotated with what is automated.
 
 > Set three environment variables. An off-the-shelf coding agent — no MCP config, no code changes,
@@ -223,7 +223,7 @@ The undo is itself an operation, so the log now records the reversal too.
 
 ## Part D — the M2 trust-plane ramp
 
-Everything in Part B and C is the M1 definition of done. M2 (`pragmatic_mvp.md`) added six more
+Everything in Part B and C is the M1 definition of done. M2 added six more
 surfaces on top of it — this part exercises each one for real, against the same running server,
 reusing the repo Part B already set up.
 

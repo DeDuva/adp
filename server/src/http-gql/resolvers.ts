@@ -24,7 +24,7 @@ type IssueCommentRow = typeof issueComments.$inferSelect;
 type ReviewRow = typeof reviews.$inferSelect;
 
 // GitHub's real SDL distinguishes User (human) from Bot (GitHub App/agent
-// actor) via the Actor interface — agent identities (docs/pragmatic_mvp.md
+// actor) via the Actor interface — agent identities (
 // §4.4) must resolve as Bot, not User, or `gh`-shaped clients that branch on
 // __typename misreport who did what.
 function shapeUser(identity: IdentityRow) {
@@ -263,7 +263,7 @@ export function createResolvers(
   credentialKey: string,
   instanceFloor: LandRequirement[] = [],
   // Optional, same reasoning as proposals.ts's registerProposalRoutes: SBOM
-  // per land (docs/pragmatic_mvp.md M2) needs a signer + public URL, kept
+  // per land needs a signer + public URL, kept
   // optional so existing callers/tests that don't care don't need one.
   sbom?: { signer: Signer; publicUrl: string },
 ): ResolverMap {
@@ -440,7 +440,7 @@ export function createResolvers(
     },
 
     // Evidence bundles (core/dsse.ts, core/gate-results-lookup.ts) projected
-    // onto the compat plane (docs/pragmatic_mvp.md M1c). Returns null entirely
+    // onto the compat plane. Returns null entirely
     // (StatusCheckRollup is a nullable field) when nothing has been reported
     // for this commit, same as a repo with no CI configured at all on real
     // GitHub.

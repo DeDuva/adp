@@ -8,7 +8,7 @@ import { recordOperation } from "./operations.js";
 // Ingest for a mirrored repo's upstream CI results.
 //
 // This is the half of "Actions in mirror mode" that carries the actual claim
-// (docs/pragmatic_mvp.md §2.4 and the M2 milestone): the repo stays on GitHub,
+// of the M2 milestone: the repo stays on GitHub,
 // GitHub's runners execute the workflows unchanged, and the *results* land here
 // as ordinary signed gate evidence. Nothing is reimplemented — marketplace
 // actions, matrix builds, self-hosted runners and OIDC all keep working because

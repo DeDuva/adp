@@ -24,7 +24,7 @@ import { findRepo } from "../src/core/repos-lookup.js";
 
 const execFileAsync = promisify(execFile);
 
-// M1c: the receive-path hook subsystem (docs/pragmatic_mvp.md) — post-receive
+// M1c: the receive-path hook subsystem — post-receive
 // auto-records typed changes on push, pre-receive blocks a push containing a
 // seeded secret with a typed, actionable error. Exercised through the real
 // `git` binary end to end: these hooks only fire because GitBackend writes
@@ -203,7 +203,7 @@ describe.skipIf(skipWithoutDb)("M1c: receive-path hooks", () => {
   });
 
   it(
-    "post-receive chunks a >500-commit push instead of truncating it (docs/m2-readiness-review.md)",
+    "post-receive chunks a >500-commit push instead of truncating it",
     async () => {
       const repoName = "mirror-import";
       await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {

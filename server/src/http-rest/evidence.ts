@@ -4,7 +4,7 @@ import { requireScope } from "../auth/plugin.js";
 import { findRepoAuthorized } from "../core/repos-lookup.js";
 import { getEvidenceBundle } from "../core/evidence.js";
 
-// Native plane (docs/pragmatic_mvp.md Tier 4) — "adp_evidence_get: full
+// Native plane — "adp_evidence_get: full
 // signed bundle for a change". Assembles, doesn't store — see core/evidence.ts.
 export function registerEvidenceRoutes(app: FastifyInstance, db: Db) {
   app.get(

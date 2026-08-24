@@ -28,10 +28,10 @@ function csvRow(fields: string[]): string {
   return `${fields.map(csvField).join(",")}\n`;
 }
 
-// M4-3 (docs/m4-readiness-review.md §4): "a projection of `operations`, not
+// M4-3: "a projection of `operations`, not
 // a second system" — no new storage, no new write path, this is a read over
 // data that already exists and is already the audit trail (`operations` IS
-// the op log CLAUDE.md's own invariant requires every write path to use).
+// the op log AGENTS.md's own invariant requires every write path to use).
 // The one real design decision is scope: an org's audit log spans every repo
 // in it, so this joins on `repos.orgId` rather than the single-repo
 // operations route it otherwise mirrors.

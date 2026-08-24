@@ -1,4 +1,4 @@
-// Bundled regex+entropy push-protection engine (docs/pragmatic_mvp.md M1c /
+// Bundled regex+entropy push-protection engine (
 // §1.5 item — "pluggable provider API" for later, this is the first-party
 // default). Deliberately conservative: false positives block a legitimate
 // push, which is annoying but recoverable (rebase and retry); false
@@ -62,7 +62,7 @@ function scanLine(line: string): Omit<SecretFinding, "line">[] {
 }
 
 // Bundled default: the built-in engine every instance runs below the policy
-// floor (docs/pragmatic_mvp.md M1c) — a pluggable provider API for external
+// floor — a pluggable provider API for external
 // scanners is scoped for later (§1.5's scanner-as-gate adapters, M2), not
 // implemented here.
 export class BundledSecretScanProvider implements SecretScanProvider {

@@ -27,7 +27,7 @@ function serializeWorkspace(row: typeof workspaces.$inferSelect) {
   };
 }
 
-// Native plane (docs/pragmatic_mvp.md Tier 4) — no GitHub analogue.
+// Native plane — no GitHub analogue.
 // A workspace is a branch with lifecycle metadata (core/workspaces.ts), not
 // a new isolation mechanism.
 export function registerWorkspaceRoutes(app: FastifyInstance, db: Db, gitBackend: GitBackend) {

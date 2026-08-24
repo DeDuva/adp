@@ -15,7 +15,7 @@ const EnvSchema = z.object({
   // Real repos push real-sized packs; Fastify's 1 MiB default 413s those.
   // Bounds the git smart-HTTP request body, not any other route.
   GIT_MAX_PACK_BYTES: z.coerce.number().int().positive().default(500 * 1024 * 1024),
-  // Instance-level land-policy floor (docs/pragmatic_mvp.md §1.5 item 2):
+  // Instance-level land-policy floor:
   // admin-owned, non-bypassable by any repo's adp.yaml — repos can only add
   // requirements on top, never remove one of these. Comma-separated
   // "gates_green" and/or "one_approval"; empty string means no floor.
@@ -62,7 +62,7 @@ const EnvSchema = z.object({
   // configured an IdP must keep working exactly as before — token auth is the
   // MVP's identity story and OIDC is additive to it, not a replacement.
   //
-  // Decision 1 (ROADMAP, resolved 2026-08-13) named Google, and these default
+  // The identity-provider decision (resolved 2026-08-13) named Google, and these default
   // to Google's endpoints. They are still parameters rather than constants:
   // the verification in core/oidc.ts is issuer-generic, and hard-coding an
   // issuer would make the one thing worth testing against a second provider

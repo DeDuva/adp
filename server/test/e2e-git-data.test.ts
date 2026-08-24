@@ -21,7 +21,7 @@ import { registerGitDataRoutes } from "../src/http-rest/git-data.js";
 
 const execFileAsync = promisify(execFile);
 
-// M1b′ item 2: the Tier-2 REST tail (docs/pragmatic_mvp.md) — contents,
+// M1b′ item 2: the Tier-2 REST tail — contents,
 // commits/compare, git/refs|blobs|trees|commits, PR files/diff, and the
 // GitHub-standard repo-create paths. All backed by the real `git` binary.
 describe.skipIf(skipWithoutDb)("M1b′ REST: Tier-2 tail", () => {

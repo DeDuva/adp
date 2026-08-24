@@ -19,7 +19,7 @@ import { findOrCreateSystemIdentity } from "../src/core/system-identity.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerGateJobRoutes } from "../src/http-rest/gate-jobs.js";
 
-// #92 (docs/m4-postmortem-audit.md §P1-1/§P1-5): a claim is a lease, the
+// #92: a claim is a lease, the
 // reaper is the recovery path, and both ends of the lifecycle write the
 // operation log. Before this, a runner that died after claiming left its
 // job `running` forever — gates_green blocked that commit's land

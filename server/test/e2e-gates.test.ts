@@ -28,7 +28,7 @@ import { registerGraphQLRoute } from "../src/http-gql/route.js";
 const execFileAsync = promisify(execFile);
 
 // M1c: the adp.yaml gate runner + two-level land policy
-// (docs/pragmatic_mvp.md §1.5 item 2) — this is the enforcement point the
+// — this is the enforcement point the
 // receive-path hooks and evidence bundles all feed into: a merge is refused
 // until the resolved requirements (instance floor ∧ repo adp.yaml) are met.
 describe.skipIf(skipWithoutDb)("M1c: gate runner + land policy", () => {

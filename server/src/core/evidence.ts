@@ -20,7 +20,7 @@ export interface EvidenceBundle {
   }[];
 }
 
-// "adp_evidence_get — full signed bundle for a change" (docs/pragmatic_mvp.md
+// "adp_evidence_get — full signed bundle for a change" (
 // Tier 4). Not a new source of truth — a read that assembles what's already
 // signed and stored elsewhere: the change record (core/signing.ts) and every
 // gate result reported for that commit (core/dsse.ts), most-recent-first.

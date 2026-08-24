@@ -117,7 +117,7 @@ grep -q "automountServiceAccountToken: false" "$DEFAULTS" || fail "default rende
 pass "default render carries the properties docs/self-hosting.md claims"
 
 # The runner's security posture, checked rather than described
-# (docs/pragmatic_mvp.md §4.5: a mounted daemon socket is root on the node, so
+# (a mounted daemon socket is root on the node, so
 # what that pod is handed matters more than anywhere else in the chart).
 #
 # --show-only, because the assertion is about the runner's own manifests and a

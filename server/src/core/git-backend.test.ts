@@ -35,7 +35,7 @@ describe("isSafeRepoSegment / repoPath traversal guard", () => {
 });
 
 // Exercises the real `git` binary against a scratch directory. No Postgres
-// required — this is the piece that must never break (docs/pragmatic_mvp.md
+// required — this is the piece that must never break (
 // Part 5, "git fidelity suite").
 describe("GitBackend", () => {
   let gitRoot: string;

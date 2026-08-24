@@ -32,7 +32,7 @@ interface ReceivedDelivery {
   bodyText: string;
 }
 
-// M2: outbound webhook emitter (docs/pragmatic_mvp.md) — a real HTTP
+// M2: outbound webhook emitter — a real HTTP
 // receiver on loopback stands in for a subscriber, so this exercises actual
 // delivery (signing, headers, payload shape), not just that emitWebhookEvent
 // was called (core/webhooks.test.ts covers the retry/filtering logic itself).

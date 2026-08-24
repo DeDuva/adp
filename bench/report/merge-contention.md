@@ -5,9 +5,9 @@
 
 **Deterministic arm.** No model, no agent, no LLM call. N writers race to land on
 one branch over the REST API, each rebasing and retrying when the base moves
-under it — the MVP land model's own instruction to an agent (`docs/pragmatic_mvp.md`
-§2.5). Writers touch **distinct paths**, so every conflict measured here is *ref
-contention*, not a textual conflict.
+under it — the MVP land model's own instruction to an agent. Writers touch
+**distinct paths**, so every conflict measured here is *ref contention*, not a
+textual conflict.
 
 Environment: linux/x64, node v24.18.0. Server commit(s): 7d4f7a477cd01e45ba26c9609aab88f8b621e2b9.
 

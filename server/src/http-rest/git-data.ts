@@ -27,7 +27,7 @@ function serializeTreeEntry(entry: TreeEntry) {
   };
 }
 
-// Tier-2 REST tail (docs/pragmatic_mvp.md M1b′ item 2): read-mostly git-data
+// Tier-2 REST tail: read-mostly git-data
 // plumbing `gh` and scripted agents fall back to when the native plane
 // doesn't cover something — contents, commits/compare, and the git/* object
 // endpoints. All backed by the real `git` binary (core/git-backend.ts), no

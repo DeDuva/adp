@@ -59,8 +59,8 @@ tool surface (no proposal-open tool), not of the native plane's design in genera
   agent pass by a competent model; neither exercises retries, multi-file changes,
   or a contested land. The interfaces may separate differently under harder work.
 - **The native-plane MCP gap is closeable.** Nothing here says ADP's native plane
-  is inherently costlier — it says today's `~8`-tool MCP surface (Tier 4,
-  `docs/pragmatic_mvp.md`) has no proposal-open tool, so an agent using it pays for
+  is inherently costlier — it says today's `~8`-tool MCP surface has no
+  proposal-open tool, so an agent using it pays for
   a REST round trip `gh` bundles into one command. That is an M3-5 finding for the
   native-plane MCP surface's own future scope, not a verdict on the plane itself.
 - **Local dev server, not production infrastructure.** Same caveat as arm 1: single
@@ -86,7 +86,7 @@ evidence without re-running an agent:
 
 ## What consumes this
 
-Per the M3-5 spec (`docs/m3-readiness-review.md`), this arm's own reason to exist is
+Per the M3-5 spec, this arm's own reason to exist is
 the same three interfaces measured on the same work — a number the fork's own
 benchmark-gates-investment stance (A1) says gets published whichever way it points.
 It is also the first first-party evidence for whether the native plane's promised

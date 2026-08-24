@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://adp.dev/schemas/provenance.json",
   "title": "Provenance",
-  "description": "Identity of the actor (human or agent) that produced a change, per docs/pragmatic_mvp.md §4.4.",
+  "description": "Identity of the actor (human or agent) that produced a change.",
   "type": "object",
   "required": ["kind", "principal"],
   "properties": {

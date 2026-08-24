@@ -15,7 +15,7 @@ export interface CreateWorkspaceError {
 }
 
 // A workspace is deliberately just a git branch with a row tracking it
-// (docs/pragmatic_mvp.md §2.2: "Workspace | A branch adp/ws/<id> |
+// ("Workspace | A branch adp/ws/<id> |
 // Lifecycle, TTL, GC, isolation") — no new storage mechanism, no VFS.
 export async function createWorkspace(
   db: Db,

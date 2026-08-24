@@ -1,6 +1,6 @@
 # Observability
 
-**Status:** built — M4-11 (`docs/m4-readiness-review.md` §4). Dashboards and alerting over
+**Status:** built. Dashboards and alerting over
 `/metrics`, on GCP Cloud Monitoring, applied by [`infra/dev/monitoring.tf`](../infra/dev/monitoring.tf).
 
 This document is the operator-facing half: what is measured, what pages, and what to do when
@@ -74,7 +74,7 @@ pipeline is named `adp` rather than `default_pipeline`, so it is added to the ag
 metrics rather than replacing them.
 
 No new provider enters the stack to draw a chart: GCP was already settled for every rung
-(`environments-plan.md` §5), and `roles/monitoring.metricWriter` was already granted to the VM's
+and `roles/monitoring.metricWriter` was already granted to the VM's
 service account (`infra/dev/iam.tf`) long before there was anything to write.
 
 **`/metrics` is host-local.** `deploy/docker-compose.yml` publishes the server on `127.0.0.1` only,
@@ -158,7 +158,7 @@ states in one line how many policies notify, where, and whether the availability
 per month; the active series count is dominated by `adp_http_requests_total`, whose cardinality is
 bounded by design — route *patterns*, never raw paths, so a repo explosion or a 404 flood does not
 move it. Call it a few hundred series, so tens of millions of samples a month, plus one uptime
-check well inside the free allowance. Following `hosting-cost-estimate.md`'s method, the rate to
+check well inside the free allowance. At that rate, the cost to
 multiply that by should be re-read from GCP's current list price before anyone commits to it rather
 than quoted from here; the shape of the answer is "a rounding error against the ~$25/month the VM
 already costs", not a second line item.
@@ -199,6 +199,6 @@ neither works, it is the server, and alert 1 should already have said so.
   keep the family, not to stop measuring.
 - **Log-based alerting.** The logs are shipped to Cloud Logging by the same agent and are
   searchable; no alert reads them. A log line that matters enough to page for should be a metric.
-- **A staging or production rung.** This is the dev rung's monitoring. `environments-plan.md` §3
+- **A staging or production rung.** This is the dev rung's monitoring. The plan of record
   sequences the others against M4-8, and the Terraform here is written to move — the only thing
   tying it to dev is which project it is applied in.

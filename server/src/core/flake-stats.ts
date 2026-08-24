@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { gateResults } from "../db/schema.js";
 
-// M3, the A8 contribution (docs/pragmatic_mvp.md M3, docs/m3-readiness-review.md M3-4):
+// M3, the A8 contribution:
 // statistical land criteria. Two questions about a gate, both answered from
 // `gate_results` alone:
 //

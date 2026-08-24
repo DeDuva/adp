@@ -2,7 +2,7 @@ import { KeyRegistry, type Signer } from "./signing.js";
 
 // DSSE (Dead Simple Signing Envelope, https://github.com/secure-systems-lab/dsse)
 // wrapping an in-toto v1 attestation Statement. Chosen now per
-// docs/pragmatic_mvp.md §1.5 item 1: "choosing the envelope now is nearly
+// "choosing the envelope now is nearly
 // free; converting stored evidence later is a migration."
 export interface DsseEnvelope {
   payloadType: string;

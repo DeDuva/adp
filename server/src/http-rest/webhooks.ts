@@ -35,7 +35,7 @@ function serializeWebhook(hook: typeof webhooks.$inferSelect) {
   };
 }
 
-// Outbound webhook management, GitHub-shaped (docs/pragmatic_mvp.md M2).
+// Outbound webhook management, GitHub-shaped.
 // Delivery mechanics (signing, retry) live in core/webhooks.ts; this is
 // just the subscription CRUD other mutation routes' emitWebhookEvent calls
 // read from.

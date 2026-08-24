@@ -6,7 +6,7 @@ import { findMirror } from "../core/mirrors-lookup.js";
 import { decryptCredential } from "../core/mirror-crypto.js";
 
 // Read-only GitHub Actions passthrough for mirrored repos
-// (docs/pragmatic_mvp.md M2, "Read-only Actions passthrough").
+// ("Read-only Actions passthrough").
 //
 // In mirror mode the upstream repo is on GitHub by definition, so `gh run list`
 // and `gh run view` can be made to work against GH_HOST=adp by relaying the
@@ -85,11 +85,11 @@ export function registerActionsRoutes(
         // anything.
         if (!mirror || !mirror.enabled) {
           // The passthrough is a property of *being mirrored*, not of the
-          // endpoint. A self-describing 404 (§2.4) costs an agent one turn;
+          // endpoint. A self-describing 404 costs an agent one turn;
           // a hang or a 500 costs it the trajectory.
           reply.code(404).send({
             message: "Actions is not implemented for non-mirrored repositories",
-            documentation_url: "https://github.com/DeDuva/adp/blob/main/docs/pragmatic_mvp.md",
+            documentation_url: "https://github.com/DeDuva/adp/blob/main/README.md",
             adp_equivalent:
               "ADP does not run workflows. Gates are `image + commands` in adp.yaml and report to " +
               "POST /api/v3/repos/{owner}/{repo}/gates; read them back from " +

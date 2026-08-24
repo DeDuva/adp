@@ -30,7 +30,7 @@ const execFileAsync = promisify(execFile);
 const SIGNING_KEY = "e2e-sessions-signing-key";
 const PUBLIC_URL = "https://adp.example.com";
 
-// M3 / D2 (docs/adp-prototype-implementation-plan.md §5, docs/m3-readiness-review.md M3-3):
+// M3 / D2:
 // "Start a refactoring task in Claude Code; checkpoint via ADP mid-task; resume
 // in OpenHands … One continuous signed history across both harnesses."
 //
