@@ -38,6 +38,13 @@ ok()   { printf '  %s✓%s %s\n' "$c_g" "$c_0" "$*"; }
 info() { printf '  %s%s%s\n' "$c_dim" "$*" "$c_0"; }
 die()  { printf '\n%sdemo failed:%s %s\n' "$c_r" "$c_0" "$*" >&2; exit 1; }
 
+# Decided once, up front: it gates both the wait at the end and whether the
+# live-instance credentials are printed at all. Non-interactive means the
+# instance is torn down the moment the flow finishes, so those lines would be
+# useless — and this script's own CI job showed the real cost of printing them
+# anyway: a token in a public build log, for an instance that no longer exists.
+if [ "${ADP_DEMO_NO_WAIT:-0}" = "1" ] || [ ! -t 0 ]; then INTERACTIVE=0; else INTERACTIVE=1; fi
+
 WORKDIR="$(mktemp -d -t adp-demo-XXXXXX)"
 SERVER_PID=""; PROXY_PID=""; STARTED_STACK=0
 SELF_PGID="$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')"
@@ -272,18 +279,21 @@ for (let i = 0; i < verbs.length; i += 4) {
 }
 ' "$WORKDIR/operations.json" || info "(see operations.json)"
 
-say ""
-say "  ${c_b}Look at any of it yourself, while this instance is still up:${c_0}"
-say "    ${c_c}curl -H 'Authorization: Bearer \$TOKEN' \\"
-say "      http://localhost:${PORT}/api/adp/repos/${OWNER}/${REPO}/evidence/${HEAD_SHA}${c_0}"
-say "    ${c_c}curl -H 'Authorization: Bearer \$TOKEN' \\"
-say "      http://localhost:${PORT}/api/adp/repos/${OWNER}/${REPO}/operations${c_0}"
-if [ -d server/web/dist ]; then
-  say "    ${c_c}open http://localhost:${PORT}/ui/${c_0}   (the read-only supervision UI)"
+if [ "$INTERACTIVE" = "1" ]; then
+  say ""
+  say "  ${c_b}Look at any of it yourself, while this instance is still up:${c_0}"
+  say "    ${c_c}curl -H \"Authorization: Bearer \$TOKEN\" \\"
+  say "      http://localhost:${PORT}/api/adp/repos/${OWNER}/${REPO}/evidence/${HEAD_SHA}${c_0}"
+  say "    ${c_c}curl -H \"Authorization: Bearer \$TOKEN\" \\"
+  say "      http://localhost:${PORT}/api/adp/repos/${OWNER}/${REPO}/operations${c_0}"
+  if [ -d server/web/dist ]; then
+    say "    ${c_c}open http://localhost:${PORT}/ui/${c_0}   (the read-only supervision UI)"
+  fi
+  say ""
+  say "    export TOKEN=${TOKEN}"
+  say "    export GH_HOST=${GH_HOST} GH_ENTERPRISE_TOKEN=\$TOKEN SSL_CERT_FILE=${WORKDIR}/cert.pem"
+  say "    ${c_dim}# then keep driving it: gh pr list --repo ${GH_REPO}${c_0}"
 fi
-say ""
-say "    export TOKEN=${TOKEN}"
-say "    export GH_HOST=${GH_HOST} GH_ENTERPRISE_TOKEN=\$TOKEN SSL_CERT_FILE=${WORKDIR}/cert.pem"
 
 # ---------------------------------------------------------------------------
 say ""
@@ -294,7 +304,7 @@ say ""
 say "  Run your own instance   ${c_c}docs/self-hosting.md${c_0}"
 say "  What the contract promises   ${c_c}docs/api-compatibility.md${c_0}"
 
-if [ "${ADP_DEMO_NO_WAIT:-0}" = "1" ] || [ ! -t 0 ]; then
+if [ "$INTERACTIVE" = "0" ]; then
   info "non-interactive — tearing down now"
 else
   say ""
