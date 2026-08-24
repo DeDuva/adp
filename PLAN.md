@@ -65,6 +65,44 @@ Three decisions are open. Each is answerable, and each has an experiment.
 
 ---
 
+## Settled, and what would reopen it
+
+Phase 4 names what is still open. This names what is closed, so it does not get relitigated
+without new evidence — and, for the positions this project holds rather than merely decided,
+what would actually change them.
+
+Every row here was settled by building or measuring rather than by argument, which is the
+strongest claim this project makes about its own method.
+
+| Question | Resolution | Settled by |
+|---|---|---|
+| Depth of GitHub compatibility | A pragmatic partial shim is sufficient; real unmodified `gh` drives the full loop | Shipping it, and pinning it in CI |
+| Bespoke store vs. git objects | Real git objects plus Postgres | Building it |
+| Jujutsu: adopt, fork, or reimplement | Neither — the ADP verb set over plain git | Cut early; never missed |
+| Structural (AST) merge vs. agent-mediated | Neither is needed: the gate means merge mistakes must be *caught*, not prevented | Cut; the gate does the work |
+| Is agent memory a merge problem? | No. It needs the same audit trail and provenance, not the same write path | Narrowed by implementation |
+| The monorepo assumption | Not load-bearing at this scope; mirror mode makes ADP additive first | Mirror mode shipping |
+| Wide fan-out vs. long serial sessions | **Small-N concurrent with one integrator is the base case.** Fan-out cost 3.6× for no measurable quality gain | Our own pre-registered arm (`bench/README.md` arm 3), plus market evidence |
+| Does merge contention bottleneck fleets? | Not at the ref level. But contention is real and lands elsewhere — 79.4% of agent PRs are temporally co-active, and the largest single cause of death is *another PR fixing the same thing* | External measurement ([arXiv:2607.04697](https://arxiv.org/abs/2607.04697), 33,596 PRs), correcting our earlier reasoning |
+| Erosion of the PR shape | Survivable by construction: evidence and history hang off changes and operations, never off `proposal` | Schema discipline, audited |
+| Queue implementation | The bespoke `gate_jobs` queue stays; `pg-boss` is not restored | #92–#96, and the reasoning in `AGENTS.md` |
+
+### Positions, and the tripwire for each
+
+A position with no stated tripwire is a belief, not an engineering decision. Each row names what
+would change it, and whether that has happened.
+
+| Position | What would change it | Tripped? |
+|---|---|---|
+| **Centralized source of truth** with offline-tolerant edges. CRDTs guarantee convergence, not correctness, and code demands correctness | An air-gap or data-residency requirement from a real partner | No |
+| **Signed provenance on every change**, aligned with WIMSE/Agentic-JWT rather than invented | A consumer refusing to persist traces for IP, safety or discoverability reasons — the schema would need graduated disclosure, which the opaque-payload seam already anticipates | No consumer yet |
+| **Implementation-first standardisation**, spec published early, conformance suite as the hedge | The incumbent shipping attested, non-bypassable evidence binding — not merely more gates | No |
+| **Adapters, never scanners.** One bundled engine (secret detection at the receive path) and no first-party SAST/SCA | Procurement demanding batteries-included baseline scanning | **Partly** — on breadth, not on principle: dependency admission and SBOM emission are npm-only. Carried in *Deferred* below |
+| **Two-level policy resolution inside the substrate**, org floor ∧ repo file, both signed and versioned | An enterprise insisting its existing policy engine stays the source of truth — ADP would become an enforcement point binding external decisions into the signed land record | No |
+| **Compliance as a byproduct**, not a product: the evidentiary substrate is guaranteed, and GRC tooling renders reports from it | Auditors rejecting attestation envelopes and demanding certified report formats | No |
+
+---
+
 ## Deferred, with the reason
 
 | Item | Why it is not in a phase |
