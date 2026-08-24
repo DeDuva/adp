@@ -260,6 +260,35 @@ jobs:
       - uses: actions/checkout@v4
       - run: make check-release
 
+  # The demo is a published claim — the README and the landing page both point a
+  # visitor at it — so it gets a gate like any other published artifact. It runs
+  # non-interactively here and asserts the whole narrated path: ephemeral stack,
+  # real gh, the 422 refusal before evidence, the land after it, and a readable
+  # evidence bundle at the end. Without this the demo rots the first time an
+  # endpoint or a response shape moves, and the first person to notice is
+  # someone evaluating the project.
+  #
+  # It brings up its own Postgres through scripts/dev/up.sh rather than a
+  # services: block, because that is the path a visitor actually takes.
+  demo:
+    runs-on: ubuntu-latest
+    env:
+      ADP_DEMO_NO_WAIT: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci --prefix server
+      - run: make demo
+      # The demo starts a database, a server and a proxy. If it can leak any of
+      # them, so can every laptop that runs it.
+      - name: nothing leaked
+        if: always()
+        run: bash scripts/dev/verify-clean.sh
+
   # AGENTS.md §Branches names three prefixes and the reason this is a check rather than
   # a note: a web agent session names its branch after the harness before the agent has
   # read the file that would have told it not to. 24 of the last 30 PRs held the
