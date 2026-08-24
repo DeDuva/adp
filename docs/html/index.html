@@ -205,13 +205,15 @@ gh pr merge</pre>
 
 <section class="wrap">
   <h2>Try it</h2>
-  <p class="sub">One command provisions the toolchain, starts ADP against an ephemeral PostgreSQL,
-  drives a real clone → push → propose → review → merge with an unmodified <code>gh</code>, and
-  tears everything down. It is the full verification suite rather than a short tour, so give it a
-  few minutes — and it leaves nothing running.</p>
+  <p class="sub">One command starts a throwaway ADP against an ephemeral PostgreSQL, then uses
+  ordinary <code>git</code> and an unmodified <code>gh</code> to clone, push, propose, gate and land
+  a change — narrating each step. It ends where the point is: the merge is <strong>refused</strong>
+  while the change has no gate result and no approval, and allowed once it does. Then you read the
+  signed evidence bundle and the operation log that record why.</p>
   <pre>git clone https://github.com/DeDuva/adp.git &amp;&amp; cd adp
-bash scripts/dev/bootstrap.sh
-make up &amp;&amp; make test-all &amp;&amp; make down</pre>
+make demo</pre>
+  <p class="sub">Needs Docker and Node 22. Nothing is installed, no account is created, and it all
+  tears down when you press Enter. Under five minutes.</p>
   <div class="grid">
     <div class="card"><h3>Run your own instance</h3><p>Helm chart or Docker Compose, with the sharp
     edges written down — <a href="https://github.com/DeDuva/adp/blob/main/docs/self-hosting.md">self-hosting guide</a>.</p></div>

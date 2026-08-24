@@ -7,28 +7,42 @@ and signed verification evidence.
 **Why ADP?** Agent transcripts are temporary, and an agent saying “tests pass” is not independent
 proof. ADP makes development context durable and enforces your evidence requirements at merge time.
 
-[Run it](#run-it-end-to-end) · [How it works](#how-it-works) ·
+[Try it](#try-it) · [How it works](#how-it-works) ·
 [Self-hosting](docs/self-hosting.md)
 
 Apache-2.0 · TypeScript · Fastify · PostgreSQL · the real `git` binary for all plumbing.
 
 ---
 
-## Run it end to end
+## Try it
 
-One command provisions the toolchain, starts ADP against an ephemeral PostgreSQL, drives a real
-**clone → push → propose → review → merge** against the server with an unmodified `gh`, and tears
-everything down afterwards:
+One command. It starts a throwaway ADP against an ephemeral PostgreSQL, then uses ordinary `git`
+and an **unmodified `gh`** to clone, push, open a proposal, report a gate, and land the change —
+narrating each step. Nothing is installed, no account is created, and everything is torn down when
+you press Enter.
+
+```bash
+git clone https://github.com/DeDuva/adp.git && cd adp
+make demo
+```
+
+It ends where the point is: the merge is **refused** while the change has no gate result and no
+approval, and then allowed once it does — and you get to read the signed evidence bundle and the
+operation log that record why.
+
+Needs Docker and Node 22 (`make doctor` checks). Under five minutes.
+
+<details>
+<summary>Or run the full verification suite</summary>
+
+Every tier, including conformance against the real `gh` binary and the §2.1 acceptance walkthrough.
+Minutes rather than seconds, and it proves the parts a demo skips:
 
 ```bash
 bash scripts/dev/bootstrap.sh
 make up && make test-all && make down
 ```
-
-Be straight about what this is: the project's full verification suite, not a five-minute tour. It
-runs every tier and takes minutes, on a clean Linux machine with Docker — and in exchange it proves
-the whole system, including the parts a short demo would skip. No cloud account, nothing left
-running.
+</details>
 
 For a persistent instance, see [`docs/self-hosting.md`](docs/self-hosting.md); to run from source,
 [Running it](#running-it).
