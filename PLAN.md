@@ -21,17 +21,87 @@ backlog and becomes a ledger nobody trusts.
 
 ---
 
+## Phase 1 — Adoption: the bindings
+
+**Why now:** a first-contact evaluation (2026-08-24, umbrella #140) walked the product as a new
+developer would, and did not reach the payoff. The finding is not that a capability is absent.
+Every blocker it names is a missing *default* on a capability that already works: the change
+record binds intent to diff, and the push path writes `intent_id` null; the trajectory store is
+complete to the last column, and nothing writes to it; provenance carries harness and model, and
+no route sets either. **The substrate is built and the bindings are missing** — which is why this
+phase sits ahead of the rest of the file rather than beside it, and why most of it is small.
+
+The rule the evaluation proposes, kept here because it decides what belongs in this phase: every
+input ADP requires is either *irreducible* (only a human can supply it — what you want, and
+whether you accept the result), *derivable* (ADP can compute it from what it holds), or
+*delegable* (a machine other than the human emits it). An input in the second or third category
+that a human is supplying is a defect. Each item below moves exactly one.
+
+### 1a — Bound: a change carries its own context
+
+No new services and no new concepts. Exit criterion: a commit pushed by a plain `git push`, from
+any harness, resolves to its intent, and the evidence bundle names that intent by title.
+
+| # | Item | Tracking | State |
+|---|---|---|---|
+| 1-1 | Token mint carries `harness`, `model` and `session_id` | #141 | not started. The columns, the reader and the signer all exist; `server/src/http-rest/tokens.ts` accepts none of the three, so the fields are unreachable over HTTP |
+| 1-2 | Commit trailers bind a pushed change to its intent | #142 | not started. `server/src/core/change-recorder.ts` hardcodes `intentId: null`, so no commit recorded by a push is bound to anything. Highest ratio of unblocked value to lines changed in this phase |
+| 1-3 | One change row per sha, and a deterministic evidence read | #143 | not started. The explicit create neither dedups nor is constrained unique, so the documented workaround for 1-2 writes a second row and the evidence read picks between them unordered |
+| 1-4 | Native-plane tools to open, review and merge a proposal | #144 | not started. The first step of OD-1's experiment, tracked here because this is where the work is |
+| 1-5 | Refusals name the command that satisfies them | #145 | not started. The refusal is what a first-time user came to see; it names the unmet requirement and stops one step short |
+| 1-6 | Local TLS as a supported mode rather than a test fixture | #158 | not started. `gh` refuses plain HTTP for any other host, and `server/acceptance/run.sh` already solves this for tests alone |
+
+2-1 belongs to this release as well: a developer evaluating ADP alone is both author and
+approver, so the refusal 1-5 teaches them to satisfy is, on their own instance, satisfiable by
+the person it exists to constrain.
+
+### 1b — Ambient: capture without being asked
+
+Exit criterion: a developer connects a harness, works an ordinary session, and finds the whole
+trajectory in ADP having called no ADP API — at an agent cost indistinguishable from a session
+with ADP absent.
+
+| # | Item | Tracking | State |
+|---|---|---|---|
+| 1-7 | `adp-recorder` — a buffered, replay-safe event producer, out of band | #149 | not started. Blocked on 3-1, 3-2 and 1-8, in that order. A sibling to `runner/` on the same terms: a pure HTTP client, no server import, no signing key |
+| 1-8 | Secret detection at the trajectory ingest path | #148 | not started. Push protection scans the diff; a trajectory holds everything the agent *read*, including files no diff ever touched |
+| 1-9 | Harness readers, two to start, and named in the README | #150 | not started. Translation lives in the recorder, so the server keeps storing `harness` as a string it never branches on |
+| 1-10 | Session lifecycle driven by harness signals | #151 | not started. What turns 2-3 into a demonstration rather than a script that calls two endpoints |
+| 1-11 | `adp connect <harness>` | #154 | not started. Proves itself with a round trip rather than reporting success on having written files |
+
+**Recording is out of band, and that is the thesis rather than an optimisation of it.** Arm 2's
+MCP arm recorded no trajectory at all and still cost $0.1435/trial against $0.0848 for the same
+work via `gh`. That gap is protocol round-trips, and per-event recording is the one workload that
+would multiply it — in exactly the measurement a prospect uses to compare us.
+
+### 1c — Legible: the record has a reader
+
+Exit criterion: someone who has never read the API documentation answers "why does this line
+exist" from the browser in under a minute.
+
+| # | Item | Tracking | State |
+|---|---|---|---|
+| 1-12 | `adp init` — attach to a repo that already exists, and detect the toolchain | #153 | not started. Mirror mode is the way in: it asks one developer to add a remote rather than a team to agree |
+| 1-13 | CLI: `watch`, `undo`, `bakeoff`, `runner` | #155 | not started. Removes the last two raw round-trips from the canonical walkthrough |
+| 1-14 | Runs, sessions, trajectories and evals in the UI | #156 | not started. `server/web/src/App.tsx` has six views and none of them is any of these, so the whole M3 surface is API-only |
+| 1-15 | Commit → intent → run navigation | #157 | not started. Depends on 1-2: today `intent_id` is null for the ordinary case, so the path resolves to nothing |
+| 1-16 | An interim retention default | #161 | not started. 3-6 is the real policy and waits on 3-5; this decides only what happens in the interval, which 1-7 makes expensive to get wrong |
+
+3-4, 2-2 and 2-3 belong to this release as well.
+
+---
+
 ## Phase 2 — The serial-base-case forward work
 
 **Why now:** the 2026-08-17 reweighting named three consequences and none of them was ever
 tracked. They are the differentiator the reweighting implies, and 2-1 doubles as the first half
-of open decision OD-2.
+of open decision OD-2. All three now have a release in Phase 1 to land in.
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 2-1 | Author-independent approval — `one_approval` currently accepts the author approving their own proposal | #121 | not started. `server/src/core/land-policy.ts:140`. Observed live in the arm-2 bench trajectories |
-| 2-2 | Compensating-revert undo — undo that survives a moved branch, rather than only CAS rollback | — | not started, no issue yet |
-| 2-3 | Cross-harness checkpoint/resume demo | — | not started, no issue yet. Also the instrument for OD-3, which is why it earns its place twice |
+| 2-1 | Author-independent approval — `one_approval` currently accepts the author approving their own proposal | #121 | not started. `server/src/core/land-policy.ts:140`. Observed live in the arm-2 bench trajectories. Also a precondition of a bake-off meaning anything, where every author is an agent |
+| 2-2 | Compensating-revert undo — undo that survives a moved branch, rather than only CAS rollback | #159 | not started. Lands with 1c |
+| 2-3 | Cross-harness checkpoint/resume demo | #160 | not started. Also the instrument for OD-3, which is why it earns its place twice. Waits on 1-10, without which it is a bespoke script rather than evidence of portability |
 
 ---
 
@@ -42,14 +112,21 @@ events and found the first failures are cheap to fix and the expensive ones are 
 So the cheap fixes land first, then the measurement, then the architecture — in that order,
 because this project does not build on a model when it can build on a number.
 
-| # | Item | State | Why |
-|---|---|---|---|
-| 3-1 | Index `operations` for the queries actually run against it | not started | One index (`repo_id`) exists while the history endpoint and the org audit export both filter and sort on `created_at`, `actor_id`, `verb` and `org_id`. The export's `OR(repoId …, orgId …)` cannot use it at all and buffers in memory |
-| 3-2 | Bound trajectory payloads | not started | `payload` and `state` are both `z.unknown()`. Measured mean is 833 B/event, but nothing in the code prevents the 85 KB/turn the industry anchor suggests — a 20× range with no ceiling |
-| 3-3 | Make the SBOM deterministic so identical dependency sets dedup | not started | `randomUUID()` and a fresh timestamp per land make ~8 KB of every ~12 KB landed change un-dedupable and ~100% redundant. Pure win; needs no object store |
-| 3-4 | Stream or bound `verifyChain` | not started | It loads an entire session into memory, and `/runs/:id/verify` does `Promise.all` over every session at once, behind a plain `repo:read` token. Checkpoints already sign the chain head, so incremental verification is available and unused |
-| 3-5 | Bench arm 4 — `storage-growth` | not started | Deterministic, no model, no tokens, CI-runnable like arm 1: bytes per unit on a real Postgres, realised vs batched compression, dedup yield, ingest cliff, peak RSS on `/verify` |
-| 3-6 | Retention and tiering as org policy | blocked on 3-5 | The intended shape — hot/extended tiers with promote-on-reference, attestations committing to digests never payloads, "verified, payload not retained" as an honest third verification state — is settled; the numbers that justify it come from 3-5. The object-store half also waits on decision 2 |
+**What changed on 2026-08-24:** 3-1 and 3-2 stopped being cheap fixes taken early and became
+*prerequisites*. Their urgency was correctly judged low while nothing wrote to these tables at
+volume; 1-7 is the thing that writes to them, and it is the first real load this schema has seen.
+Shipping capture before the ceiling and the indexes exist hands the most enthusiastic user a way
+to fill their own disk, and they will report it as ADP being unreliable rather than as ADP being
+popular. 3-4 moves for the same reason, one release later.
+
+| # | Item | Tracking | State | Why |
+|---|---|---|---|---|
+| 3-1 | Index `operations` for the queries actually run against it | #147 | not started. Prerequisite of 1-7 | One index (`repo_id`) exists while the history endpoint and the org audit export both filter and sort on `created_at`, `actor_id`, `verb` and `org_id`. The export's `OR(repoId …, orgId …)` cannot use it at all and buffers in memory |
+| 3-2 | Bound trajectory payloads | #146 | not started. Prerequisite of 1-7 | `payload` and `state` are both `z.unknown()`. Measured mean is 833 B/event, but nothing in the code prevents the 85 KB/turn the industry anchor suggests — a 20× range with no ceiling |
+| 3-3 | Make the SBOM deterministic so identical dependency sets dedup | — | not started | `randomUUID()` and a fresh timestamp per land make ~8 KB of every ~12 KB landed change un-dedupable and ~100% redundant. Pure win; needs no object store |
+| 3-4 | Stream or bound `verifyChain` | #152 | not started. Lands with 1c | It loads an entire session into memory, and `/runs/:id/verify` does `Promise.all` over every session at once, behind a plain `repo:read` token. Checkpoints already sign the chain head, so incremental verification is available and unused |
+| 3-5 | Bench arm 4 — `storage-growth` | — | not started | Deterministic, no model, no tokens, CI-runnable like arm 1: bytes per unit on a real Postgres, realised vs batched compression, dedup yield, ingest cliff, peak RSS on `/verify` |
+| 3-6 | Retention and tiering as org policy | — | blocked on 3-5 | The intended shape — hot/extended tiers with promote-on-reference, attestations committing to digests never payloads, "verified, payload not retained" as an honest third verification state — is settled; the numbers that justify it come from 3-5. 1-16 covers the interval. The object-store half also waits on decision 2 |
 
 ---
 
@@ -59,7 +136,7 @@ Three decisions are open. Each is answerable, and each has an experiment.
 
 | # | Decision | Experiment | State |
 |---|---|---|---|
-| 4-1 | **OD-1** — what is the native plane for, and what does it cost? | Close the MCP tool gap (no proposal-open tool today, so the agent pays a `curl` round-trip `gh` bundles into one command), then re-run arm 2 at study scale and add the long-trajectory and novel-CLI-from-docs arms | not started. Arm 2 measured ADP-MCP at $0.1435/trial against $0.0848 via `gh` and $0.0850 on real GitHub — a first-party number that contradicts our own bet |
+| 4-1 | **OD-1** — what is the native plane for, and what does it cost? | Close the MCP tool gap — 1-4, so the agent stops paying a round-trip `gh` bundles into one command — then re-run arm 2 at study scale and add the long-trajectory and novel-CLI-from-docs arms | not started. Arm 2 measured ADP-MCP at $0.1435/trial against $0.0848 via `gh` and $0.0850 on real GitHub — a first-party number that contradicts our own bet |
 | 4-2 | **OD-2** — can a gate detect an agent that has satisfied its own tests? | A held-out-vs-visible pass-rate bench arm, same shape as arms 2 and 3. 2-1 is its first half | not started. The flakiness half shipped (Wilson-lower-bound `gates_confident`, quarantine as an operation); none of the reward-hacking half did |
 | 4-3 | **OD-3** — will a harness vendor adopt, and what is the minimum portable slice? | Register ADP as a reverse-DNS MCP extension; take 2-3's demo to two harness teams | not started. MCP 2026-07-28 removed protocol sessions and told servers to mint explicit handles — the technical path is now a namespace registration. Most of the open positions wait on the design partner this produces |
 
