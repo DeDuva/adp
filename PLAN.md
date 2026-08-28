@@ -89,6 +89,24 @@ exist" from the browser in under a minute.
 
 3-4, 2-2 and 2-3 belong to this release as well.
 
+### 1d — Legible before install: the published site
+
+The three releases above begin at `git clone`. The site is what a developer reads while deciding
+whether to type it, so it precedes every other item in this phase — and it is the one surface
+where a change publishes itself, since `.github/workflows/pages.yml` deploys `docs/html/` on every
+push to `main` that touches it.
+
+It is admitted here on that ground rather than the one above: it moves no input between the three
+categories. #138 gave the site a front door, and named what it was leaving open.
+
+Exit criterion: the published site renders from 320 px to 1440 px with no horizontal scroll on the
+body and no table that needs pinch-zoom, every margin comes from one named scale, and nothing it
+serves depends on a package this repository does not contain.
+
+| # | Item | Tracking | State |
+|---|---|---|---|
+| 1-17 | One design system for the site, and no runtime it cannot rebuild | #163 | not started. `docs/html/support.js` is generated from a `dc-runtime/` that is not in this tree, so `/why/` cannot be fixed or upgraded by anyone working here; #138 confined that dependency to the secondary page rather than resolving it. The two pages also share no styles — the palette is declared twice, the container widths disagree at `940px` against `1120/760/520`, and the landing page's verticals are seven unrelated margins with an inline `style=` at the one place the scale ran out |
+
 ---
 
 ## Phase 2 — The serial-base-case forward work
