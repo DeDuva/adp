@@ -35,6 +35,20 @@ already had an owner — the contract version in `api-version.ts`, what shipped 
 including one-line and docs-only changes, and including changes made by an agent.
 Commit messages and PR bodies carry no AI attribution, and name no model or vendor.
 
+That last rule has a failure mode an agent cannot avoid by obeying it. Several harnesses
+append their own attribution footer to a pull request body **server-side, after
+submission** — so a body that left the agent clean arrives on GitHub carrying a
+*Generated with …* line the agent never wrote and does not see unless it looks. PR #162
+opened that way, by an agent that had deliberately omitted one. Writing no attribution is
+therefore not sufficient: **an agent opening a pull request here re-reads the body as
+GitHub stored it and edits the footer out.** Same for the commit message if a harness
+appends trailers to that.
+
+The scope is the record that travels with the change — the commit message and the pull
+request body. Issue comments, review comments and PR comments are a different surface and
+keep whatever their tooling adds; who wrote a comment is useful context for the person
+reading it, and it is not part of the permanent record of the change.
+
 ### Branches
 
 Branch off `main`, and name the branch for the kind of change it carries. There are
