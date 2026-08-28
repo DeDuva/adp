@@ -25,10 +25,10 @@ backlog and becomes a ledger nobody trusts.
 
 **Why now:** a first-contact evaluation (2026-08-24, umbrella #140) walked the product as a new
 developer would, and did not reach the payoff. The finding is not that a capability is absent.
-Every blocker it names is a missing *default* on a capability that already works: the change
-record binds intent to diff, and the push path writes `intent_id` null; the trajectory store is
-complete to the last column, and nothing writes to it; provenance carries harness and model, and
-no route sets either. **The substrate is built and the bindings are missing** — which is why this
+Every blocker it names is a missing *default* on a capability that already works: the trajectory
+store is complete to the last column, and nothing writes to it; provenance carries harness and
+model, and no route sets either. The first of them is closed — a pushed commit now binds to the
+intent its trailer names, where before the push path wrote `intent_id` null unconditionally. **The substrate is built and the bindings are missing** — which is why this
 phase sits ahead of the rest of the file rather than beside it, and why most of it is small.
 
 The rule the evaluation proposes, kept here because it decides what belongs in this phase: every
@@ -45,11 +45,15 @@ any harness, resolves to its intent, and the evidence bundle names that intent b
 | # | Item | Tracking | State |
 |---|---|---|---|
 | 1-1 | Token mint carries `harness`, `model` and `session_id` | #141 | not started. The columns, the reader and the signer all exist; `server/src/http-rest/tokens.ts` accepts none of the three, so the fields are unreachable over HTTP |
-| 1-2 | Commit trailers bind a pushed change to its intent | #142 | not started. `server/src/core/change-recorder.ts` hardcodes `intentId: null`, so no commit recorded by a push is bound to anything. Highest ratio of unblocked value to lines changed in this phase |
-| 1-3 | One change row per sha, and a deterministic evidence read | #143 | not started. The explicit create neither dedups nor is constrained unique, so the documented workaround for 1-2 writes a second row and the evidence read picks between them unordered |
+| 1-3 | One change row per sha, and a deterministic evidence read | #143 | not started. The explicit create neither dedups nor is constrained unique, so a commit already recorded by the push path gains a second row when the explicit route is called for the same sha, and the evidence read picks between them unordered |
 | 1-4 | Native-plane tools to open, review and merge a proposal | #144 | not started. The first step of OD-1's experiment, tracked here because this is where the work is |
 | 1-5 | Refusals name the command that satisfies them | #145 | not started. The refusal is what a first-time user came to see; it names the unmet requirement and stops one step short |
 | 1-6 | Local TLS as a supported mode rather than a test fixture | #158 | not started. `gh` refuses plain HTTP for any other host, and `server/acceptance/run.sh` already solves this for tests alone |
+
+Item 1-2 — commit trailers binding a pushed change to its intent, #142 — shipped and is gone
+from this table, because this file records what is left. Its number is not reused: the issues
+filed against this phase cite these numbers, and a recycled 1-2 would point two of them at
+different work.
 
 2-1 belongs to this release as well: a developer evaluating ADP alone is both author and
 approver, so the refusal 1-5 teaches them to satisfy is, on their own instance, satisfiable by
@@ -84,7 +88,7 @@ exist" from the browser in under a minute.
 | 1-12 | `adp init` — attach to a repo that already exists, and detect the toolchain | #153 | not started. Mirror mode is the way in: it asks one developer to add a remote rather than a team to agree |
 | 1-13 | CLI: `watch`, `undo`, `bakeoff`, `runner` | #155 | not started. Removes the last two raw round-trips from the canonical walkthrough |
 | 1-14 | Runs, sessions, trajectories and evals in the UI | #156 | not started. `server/web/src/App.tsx` has six views and none of them is any of these, so the whole M3 surface is API-only |
-| 1-15 | Commit → intent → run navigation | #157 | not started. Depends on 1-2: today `intent_id` is null for the ordinary case, so the path resolves to nothing |
+| 1-15 | Commit → intent → run navigation | #157 | not started. The commit-to-intent edge is populated now that trailers bind it; what is missing is a surface that follows it |
 | 1-16 | An interim retention default | #161 | not started. 3-6 is the real policy and waits on 3-5; this decides only what happens in the interval, which 1-7 makes expensive to get wrong |
 
 3-4, 2-2 and 2-3 belong to this release as well.

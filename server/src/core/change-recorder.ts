@@ -2,8 +2,16 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend, CommitInfo } from "./git-backend.js";
 import type { Signer } from "./signing.js";
-import { changes } from "../db/schema.js";
+import { changes, intents, issues, sessions } from "../db/schema.js";
 import { recordOperation } from "./operations.js";
+import {
+  asIntentUuid,
+  asIssueNumber,
+  asSessionUuid,
+  noteToken,
+  parseCommitTrailers,
+  type CommitTrailers,
+} from "./commit-trailers.js";
 
 const ZERO_SHA = "0".repeat(40);
 
@@ -18,6 +26,81 @@ export interface RecordActor {
   id: string;
   kind: string;
   principal: string;
+}
+
+// What a batch's trailers resolved to, keyed by the raw token as written so a
+// commit can look up its own without re-parsing.
+interface ResolvedTrailers {
+  intents: Map<string, string>;
+  sessions: Map<string, string>;
+}
+
+// Resolve a whole batch's trailers in three queries rather than three per
+// commit. A first mirror import walks an entire history in 500-commit pages, so
+// a per-commit lookup here is 500 round-trips against a path whose whole job is
+// to not be the slow part of a push.
+//
+// **Everything is scoped to this repo, and nothing here can fail a push.** A
+// trailer is written by whoever can push, so it is untrusted input: a token
+// that is not shaped like a reference never reaches a query (Postgres rejects a
+// malformed uuid with an error, which would surface as a failed push), and one
+// that names another repository's intent resolves to nothing. An unresolvable
+// trailer leaves the change unbound — never rejected. A push refused over a
+// mistyped trailer is a far worse failure than a change that is missing a link.
+async function resolveTrailers(db: Db, repoId: string, parsed: CommitTrailers[]): Promise<ResolvedTrailers> {
+  const resolved: ResolvedTrailers = { intents: new Map(), sessions: new Map() };
+
+  const intentTokens = new Map<string, string>();
+  const issueTokens = new Map<string, number>();
+  const sessionTokens = new Map<string, string>();
+  for (const trailers of parsed) {
+    if (trailers.intent) {
+      const uuid = asIntentUuid(trailers.intent);
+      if (uuid) intentTokens.set(trailers.intent, uuid);
+      else {
+        const number = asIssueNumber(trailers.intent);
+        if (number !== null) issueTokens.set(trailers.intent, number);
+      }
+    }
+    if (trailers.session) {
+      const uuid = asSessionUuid(trailers.session);
+      if (uuid) sessionTokens.set(trailers.session, uuid);
+    }
+  }
+
+  if (intentTokens.size > 0) {
+    const rows = await db
+      .select({ id: intents.id })
+      .from(intents)
+      .where(and(eq(intents.repoId, repoId), inArray(intents.id, [...new Set(intentTokens.values())])));
+    const known = new Set(rows.map((row) => row.id));
+    for (const [token, uuid] of intentTokens) if (known.has(uuid)) resolved.intents.set(token, uuid);
+  }
+
+  if (issueTokens.size > 0) {
+    const rows = await db
+      .select({ number: issues.number, intentId: issues.intentId })
+      .from(issues)
+      .where(and(eq(issues.repoId, repoId), inArray(issues.number, [...new Set(issueTokens.values())])));
+    // An issue filed before intents were minted alongside them has no intent to
+    // inherit; that is unresolved, not an error.
+    const byNumber = new Map(rows.filter((row) => row.intentId).map((row) => [row.number, row.intentId!]));
+    for (const [token, number] of issueTokens) {
+      const intentId = byNumber.get(number);
+      if (intentId) resolved.intents.set(token, intentId);
+    }
+  }
+
+  if (sessionTokens.size > 0) {
+    const rows = await db
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(and(eq(sessions.repoId, repoId), inArray(sessions.id, [...new Set(sessionTokens.values())])));
+    const known = new Set(rows.map((row) => row.id));
+    for (const [token, uuid] of sessionTokens) if (known.has(uuid)) resolved.sessions.set(token, uuid);
+  }
+
+  return resolved;
 }
 
 async function recordCommitsBatch(
@@ -40,23 +123,42 @@ async function recordCommitsBatch(
   const toRecord = commits.filter((c) => !existing.has(c.sha));
   if (toRecord.length === 0) return 0;
 
+  // Read the batch's trailers before opening the transaction: these are lookups
+  // against rows this push does not touch, and holding a write transaction open
+  // across them buys nothing.
+  const trailersBySha = new Map(toRecord.map((c) => [c.sha, parseCommitTrailers(c.message)]));
+  const resolved = await resolveTrailers(db, repoId, [...trailersBySha.values()]);
+
   // One transaction per batch (not per commit) — a >500-commit mirror import
   // used to do one DB round-trip per commit; this keeps the per-commit
   // signature and operations row (the append-only spine invariant) but pages
   // the round-trips instead.
   await db.transaction(async (tx) => {
     for (const commit of toRecord) {
-      const provenance = { kind: actor.kind, principal: actor.principal, via };
+      const trailers = trailersBySha.get(commit.sha)!;
+      const intentId = trailers.intent ? (resolved.intents.get(trailers.intent) ?? null) : null;
+      const sessionId = trailers.session ? (resolved.sessions.get(trailers.session) ?? null) : null;
+
+      // `session_id` rides in provenance rather than in a column of its own,
+      // which is where the explicit change route already puts the one it reads
+      // off the token — so both paths produce the same shape, and the signature
+      // covers it either way.
+      const provenance = {
+        kind: actor.kind,
+        principal: actor.principal,
+        via,
+        ...(sessionId ? { session_id: sessionId } : {}),
+      };
       const signature = signer.sign({
         repo: `${owner}/${name}`,
         git_sha: commit.sha,
-        intent_id: null,
+        intent_id: intentId,
         provenance,
       });
 
       const [change] = await tx
         .insert(changes)
-        .values({ repoId, gitSha: commit.sha, intentId: null, provenance, signature })
+        .values({ repoId, gitSha: commit.sha, intentId, provenance, signature })
         .returning();
 
       await recordOperation(tx, {
@@ -64,7 +166,16 @@ async function recordCommitsBatch(
         actorId: actor.id,
         verb: "change.create",
         target: `${owner}/${name}@${commit.sha}`,
-        after: { id: change!.id, gitSha: commit.sha, via },
+        after: {
+          id: change!.id,
+          gitSha: commit.sha,
+          via,
+          intentId,
+          // A trailer that named something this repo does not have is worth
+          // finding later — a typo'd UUID looks identical to no trailer at all
+          // in the change record, and the difference is the whole point.
+          ...(trailers.intent && !intentId ? { unresolvedIntentTrailer: noteToken(trailers.intent) } : {}),
+        },
       });
     }
   });

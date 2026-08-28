@@ -112,7 +112,12 @@ Two mechanisms run at the point where code enters the system, both as real git h
   push at the wire with a typed error naming the line and pattern. Because `pre-receive` runs while
   pushed objects are still in git's per-push object quarantine, the hook computes its diff locally
   and ships the text to the server, rather than shipping shas the server cannot yet resolve.
-- **`post-receive`** records a signed change per new commit, deduplicated by `(repo, sha)`.
+- **`post-receive`** records a signed change per new commit, deduplicated by `(repo, sha)`. A
+  commit that carries an `ADP-Intent` trailer — the intent's id, or the issue number as `#41` —
+  is bound to that intent, and `ADP-Session` links it to a session; both are covered by the
+  signature. The binding rides on `git` rather than on an API call, so it works from any harness,
+  and a trailer naming something this repo does not have leaves the change unbound rather than
+  failing the push.
 
 Landing is governed by a three-level land policy: an instance floor (`LAND_POLICY_FLOOR`,
 admin-owned), unioned with the org's floor, unioned with the repo's own `adp.yaml` — each level can

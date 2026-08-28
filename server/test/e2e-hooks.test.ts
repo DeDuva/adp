@@ -8,7 +8,7 @@ import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
-import { changes, identities, operations } from "../src/db/schema.js";
+import { changes, identities, intents, issues, operations, sessions } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
 import { mintToken } from "../src/auth/tokens.js";
 import { grantOwner } from "./org-fixture.js";
@@ -38,6 +38,7 @@ describe.skipIf(skipWithoutDb)("M1c: receive-path hooks", () => {
   let port: number;
   let token: string;
   let identityId: string;
+  let signer: Signer;
   let cleanRepoName: string;
   let cleanSha: string;
   const owner = `hooks-owner-${Date.now()}`;
@@ -49,7 +50,7 @@ describe.skipIf(skipWithoutDb)("M1c: receive-path hooks", () => {
 
     gitRoot = await mkdtemp(path.join(tmpdir(), "adp-e2e-hooks-git-"));
     const gitBackend = new GitBackend(gitRoot);
-    const signer = new Signer("e2e-hooks-signing-key");
+    signer = new Signer("e2e-hooks-signing-key");
 
     app = Fastify({ logger: false });
     app.addContentTypeParser(
@@ -121,6 +122,111 @@ describe.skipIf(skipWithoutDb)("M1c: receive-path hooks", () => {
     expect(op).toBeTruthy();
     expect(op!.verb).toBe("change.create");
     expect(op!.actorId).toBe(identityId);
+  });
+
+  // #142: the binding that makes a change a change rather than a commit, and
+  // the reason it rides on a trailer — nothing below calls an ADP API. This is
+  // `git push` and nothing else, which is what makes it work for any harness.
+  it("post-receive binds a pushed commit to the intent and session its trailers name", async () => {
+    const repoName = "trailer-repo";
+    await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: repoName }),
+    });
+    const repo = (await findRepo(db, owner, repoName))!;
+
+    const [intent] = await db
+      .insert(intents)
+      .values({ repoId: repo.id, title: "Clamp the retry backoff at 30s", body: "", source: "issue" })
+      .returning();
+    // Referenced as `#7`, which is what a person or an agent actually types.
+    await db
+      .insert(issues)
+      .values({ repoId: repo.id, number: 7, title: "Clamp the retry backoff at 30s", authorId: identityId, intentId: intent!.id })
+      .returning();
+    const [session] = await db
+      .insert(sessions)
+      .values({ repoId: repo.id, harness: "claude-code", actorId: identityId })
+      .returning();
+
+    const cloneDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-hooks-trailer-"));
+    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/${repoName}.git`;
+    await execFileAsync("git", ["clone", cloneUrl, cloneDir]);
+    await execFileAsync("git", ["checkout", "-B", "main"], { cwd: cloneDir });
+    await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
+    await execFileAsync("git", ["config", "user.name", "Test"], { cwd: cloneDir });
+    await execFileAsync("sh", ["-c", "echo hi > README.md"], { cwd: cloneDir });
+    await execFileAsync("git", ["add", "."], { cwd: cloneDir });
+    await execFileAsync("git", ["commit", "-m", `clamp the backoff\n\nADP-Intent: #7\nADP-Session: ${session!.id}`], {
+      cwd: cloneDir,
+    });
+    await execFileAsync("git", ["push", "origin", "main"], { cwd: cloneDir });
+    const sha = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: cloneDir })).stdout.trim();
+    await rm(cloneDir, { recursive: true, force: true });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    const [change] = await db.select().from(changes).where(eq(changes.gitSha, sha));
+    expect(change).toBeTruthy();
+    expect(change!.intentId).toBe(intent!.id);
+    expect((change!.provenance as { session_id?: string }).session_id).toBe(session!.id);
+    // The binding is only worth having if the signature covers it, which is
+    // what stops it from being an annotation someone can edit afterwards.
+    expect(
+      signer.verify(
+        { repo: `${owner}/${repoName}`, git_sha: sha, intent_id: intent!.id, provenance: change!.provenance },
+        change!.signature,
+      ),
+    ).toBe(true);
+  });
+
+  it("records the change unbound when a trailer names nothing this repo has, and never fails the push", async () => {
+    const repoName = "bad-trailer-repo";
+    await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: repoName }),
+    });
+
+    const cloneDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-hooks-bad-trailer-"));
+    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/${repoName}.git`;
+    await execFileAsync("git", ["clone", cloneUrl, cloneDir]);
+    await execFileAsync("git", ["checkout", "-B", "main"], { cwd: cloneDir });
+    await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
+    await execFileAsync("git", ["config", "user.name", "Test"], { cwd: cloneDir });
+    await execFileAsync("sh", ["-c", "echo hi > README.md"], { cwd: cloneDir });
+    await execFileAsync("git", ["add", "."], { cwd: cloneDir });
+    // Three ways to be wrong at once: a value that is not a reference at all, a
+    // well-formed uuid for a session that does not exist, and an issue number
+    // this repo has never had. A push refused over any of them would be a far
+    // worse failure than a change that is missing a link.
+    await execFileAsync(
+      "git",
+      ["commit", "-m", "no idea what I am doing\n\nADP-Intent: not-a-real-reference\nADP-Session: 9f3c1b7e-2a4d-4c5e-8f10-b2c3d4e5f607"],
+      { cwd: cloneDir },
+    );
+    await execFileAsync("git", ["push", "origin", "main"], { cwd: cloneDir });
+
+    await execFileAsync("sh", ["-c", "echo again >> README.md"], { cwd: cloneDir });
+    await execFileAsync("git", ["commit", "-am", "still guessing\n\nADP-Intent: #4242"], { cwd: cloneDir });
+    await execFileAsync("git", ["push", "origin", "main"], { cwd: cloneDir });
+
+    const shas = (await execFileAsync("git", ["rev-list", "HEAD"], { cwd: cloneDir })).stdout.trim().split("\n");
+    await rm(cloneDir, { recursive: true, force: true });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    for (const sha of shas) {
+      const [change] = await db.select().from(changes).where(eq(changes.gitSha, sha));
+      expect(change).toBeTruthy();
+      expect(change!.intentId).toBeNull();
+      expect((change!.provenance as { session_id?: string }).session_id).toBeUndefined();
+    }
+
+    // Unbound is not the same as untried: the operation log keeps what the
+    // trailer said, because a typo'd reference and no reference at all are
+    // indistinguishable in the change record and the difference is the point.
+    const [op] = await db.select().from(operations).where(eq(operations.target, `${owner}/${repoName}@${shas[0]}`));
+    expect((op!.after as { unresolvedIntentTrailer?: string }).unresolvedIntentTrailer).toBe("#4242");
   });
 
   it("pre-receive rejects a push containing a seeded secret, with a typed error", async () => {
