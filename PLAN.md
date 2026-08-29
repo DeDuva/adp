@@ -105,12 +105,15 @@ categories. #138 gave the site a front door, and named what it was leaving open.
 
 Exit criterion: the published site renders from 320 px to 1440 px with no horizontal scroll on the
 body and no table that needs pinch-zoom, every margin comes from one named scale, and nothing it
-serves depends on a package this repository does not contain — the last of the three met as of
-2026-08-29, the first two still open.
+serves depends on a package this repository does not contain — **all three met as of 2026-08-29**,
+and asserted by `make site` rather than by inspection.
 
-| # | Item | Tracking | State |
-|---|---|---|---|
-| 1-17 | One design system for the site, and no runtime it cannot rebuild | #163 | **in progress** — the runtime half is done; the design-system half is not. `dc-runtime/` now holds the source for `docs/html/support.js`, recovered from the artifact and verified by rebuilding it byte for byte (`dc-runtime/README.md`); React and ReactDOM are vendored under `docs/html/vendor/` instead of fetched from unpkg at read time, which had made an unreachable CDN a blank page rather than a degraded one. `make dc-runtime` and CI's `site-runtime` job assert the committed artifacts are current. Still open, and the reason this row stays: the two pages share no styles — the palette is declared twice, the container widths disagree at `940px` against `1120/760/520`, the landing page's verticals are seven unrelated margins with an inline `style=` at the one place the scale ran out, neither page responds to a breakpoint or shows a focus ring, and both tables are unreadable at 375 px |
+Item 1-17 — one design system for the site, and no runtime it cannot rebuild, #163 — is
+finished and is gone from this table, in the same way 1-2 was: the runtime half landed in
+#166 and the design-system half with this change. What shipped is described in
+`CHANGELOG.md`; what it now holds itself to is `make site`, which drives both published
+pages in a real browser and fails on any of the six exit criteria rather than leaving them
+to inspection. **Release 1d is complete.**
 
 ---
 

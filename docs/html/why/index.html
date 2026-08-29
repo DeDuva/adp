@@ -12,345 +12,242 @@
 <helmet>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-:root{--bg:#0d0e10;--panel:#16181b;--panel2:#1d2024;--panel3:#131518;--line:#2a2e33;--fg:#e9e7e2;--sub:#b9bcc1;--dim:#8b9098;--cyan:#4fd1d9;--amber:#e0a458;--red:#e4695e;--green:#57d9a3;--mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',system-ui,sans-serif}
-html,body{margin:0;padding:0;background:var(--bg);}
-body{-webkit-font-smoothing:antialiased;}
-*{box-sizing:border-box;}
-a{color:var(--cyan);text-decoration:none;border-bottom:1px solid rgba(79,209,217,.35);}
-a:hover{color:#7fe3e9;border-bottom-color:#7fe3e9;}
-input[type=range]{-webkit-appearance:none;appearance:none;height:4px;background:var(--line);border-radius:2px;outline:none;}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--fg);cursor:pointer;}
-.wrap{max-width:1120px;margin:0 auto;padding:110px 40px 0}
-.kick{font:500 12px/1 var(--mono);letter-spacing:.18em;margin-bottom:20px}
-.t{font:600 40px/1.15 var(--sans);letter-spacing:-.015em;margin:0 0 24px;color:var(--fg)}
-.b{color:var(--sub);margin:0 0 18px;max-width:68ch;text-wrap:pretty;font:400 17px/1.65 var(--sans)}
-.fig{border:1px solid var(--line);background:var(--panel);border-radius:4px;overflow:hidden;margin-top:44px}
-.fighead{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--panel2);flex-wrap:wrap}
-.figlab{font:500 12px var(--mono);letter-spacing:.12em;color:var(--dim)}
-.figcap{padding:16px 20px;border-top:1px solid var(--line);background:var(--panel3);font:400 14px/1.5 var(--mono);color:var(--dim)}
-.btn{font:500 12px var(--mono);letter-spacing:.08em;color:#0d0e10;background:var(--cyan);border:none;border-radius:3px;padding:7px 14px;cursor:pointer}
-.ctrl{display:flex;align-items:center;gap:14px}
-.counter{font:400 12px var(--mono);color:var(--dim);width:46px}
-.mono{font-family:var(--mono)}
-.stat{background:var(--panel2);padding:18px}
-.statk{font:400 11px var(--mono);letter-spacing:.1em;color:var(--dim);margin-bottom:8px}
-.statv{font:500 26px var(--mono);color:var(--fg)}
-.chip{border:1px solid var(--line);background:var(--panel);border-radius:4px;padding:18px 20px;flex:1;min-width:210px}
-.chipv{font:500 30px var(--mono);letter-spacing:-.02em;margin-bottom:8px}
-.chipk{font:400 13px/1.5 var(--sans);color:var(--dim)}
-.acc{border:1px solid var(--line);background:var(--panel);border-radius:4px;margin-top:14px;overflow:hidden}
-.accbtn{width:100%;display:flex;align-items:baseline;gap:16px;padding:20px 22px;background:transparent;border:none;cursor:pointer;text-align:left}
-.accbtn:hover{background:#191c1f}
-.accarrow{font:400 14px var(--mono);color:var(--cyan);width:14px;flex-shrink:0}
-.acct{font:500 18px var(--sans);color:var(--fg);letter-spacing:-.01em}
-.accs{font:400 14px var(--sans);color:var(--dim);margin-left:auto;text-align:right;max-width:38ch}
-.accbody{padding:0 22px 24px}
-.cell{border:1px solid var(--line);background:var(--panel2);border-radius:3px;padding:10px 12px;font:400 13px var(--mono);color:var(--fg)}
-.conline{font:400 13px/1.7 var(--mono)}
-.mx{display:grid;grid-template-columns:190px repeat(8,1fr);gap:1px;background:var(--line);min-width:980px}
-.mxh{background:var(--panel2);padding:12px 10px;font:500 10px var(--mono);letter-spacing:.08em;color:var(--dim);text-align:center}
-.mxn{background:var(--panel);padding:14px 12px;font:500 14px var(--sans);color:var(--fg);display:flex;align-items:center;gap:8px;cursor:pointer}
-.mxn:hover{background:#191c1f}
-.mxc{background:var(--panel);padding:14px 10px;font:400 15px var(--mono);text-align:center}
-.mxd{background:var(--panel3);padding:18px 22px;grid-column:1 / -1;font:400 14px/1.65 var(--sans);color:var(--sub)}
-.full{color:var(--cyan)}.part{color:var(--amber)}.none{color:#3f454c}
-.argcard{border:1px solid var(--line);background:var(--panel);border-radius:4px;padding:26px 24px}
-.argk{font:500 12px var(--mono);letter-spacing:.12em;color:var(--cyan);margin-bottom:14px}
-.argb{font:400 15px/1.65 var(--sans);color:var(--sub);margin:0}
-.ref{border-bottom:none;font:500 11px var(--mono);color:var(--dim);vertical-align:super;margin-left:1px}
-.ref:hover{color:var(--cyan);border-bottom:none}
-.refs{margin:18px 0 0;padding-left:22px;font:400 13px/1.8 var(--mono);color:var(--dim)}
-.refs li{margin-bottom:6px}
-.hero-stage{position:relative;height:330px;border:1px solid var(--line);border-radius:4px;background:linear-gradient(180deg,#101215 0%,#0e1013 100%);overflow:hidden;margin-top:60px}
-.hlab{position:absolute;font:500 11px var(--mono);letter-spacing:.12em;color:var(--dim)}
-.loopbox{position:absolute;left:4%;top:30%;width:23%;height:40%;border:1px dashed #2f353b;border-radius:8px}
-.dot{position:absolute;width:9px;height:9px;border-radius:50%;left:9%;top:50%;opacity:0;background:#e4695e;animation:hflow 10s linear infinite;animation-delay:var(--d)}
-.dot.hd{animation-name:hdrop}
-.dot.hu{animation-name:hundo}
-@keyframes hflow{
-0%{left:9%;top:50%;opacity:0;background:#e4695e;border-radius:50%;box-shadow:none}
-3%{opacity:.95}
-9%{left:15.5%;top:36%;background:#e4695e}
-15%{left:22%;top:50%;background:#e0a458}
-21%{left:15.5%;top:64%;background:#e4695e}
-27%{left:9%;top:50%;background:#e0a458}
-33%{left:15.5%;top:36%;background:#e0a458}
-39%{left:22%;top:50%;background:#e0a458}
-45%{left:15.5%;top:64%;background:#57d9a3}
-50%{left:27%;top:47%;background:#57d9a3;border-radius:50%}
-58%{left:56%;top:47%;background:#57d9a3;border-radius:50%;box-shadow:none}
-62%{left:61.5%;top:47%;background:#57d9a3;border-radius:2px;box-shadow:0 0 10px rgba(87,217,163,.6)}
-94%{opacity:.95}
-100%{left:102%;top:47%;background:#57d9a3;border-radius:2px;opacity:0}
-}
-@keyframes hdrop{
-0%{left:9%;top:50%;opacity:0;background:#e4695e;border-radius:50%;box-shadow:none}
-3%{opacity:.95}
-9%{left:15.5%;top:36%;background:#e4695e}
-15%{left:22%;top:50%;background:#e0a458}
-21%{left:15.5%;top:64%;background:#e4695e}
-27%{left:9%;top:50%;background:#e0a458}
-33%{left:15.5%;top:36%;background:#e0a458}
-39%{left:22%;top:50%;background:#e0a458}
-45%{left:15.5%;top:64%;background:#57d9a3}
-50%{left:27%;top:47%;background:#57d9a3;border-radius:50%}
-58%{left:56%;top:47%;background:#57d9a3;border-radius:50%}
-61%{left:59.5%;top:47%;background:#57d9a3}
-70%{left:60%;top:80%;background:#8b9098;border-radius:2px;opacity:.75}
-88%{left:60%;top:80%;opacity:.3}
-100%{left:60%;top:80%;opacity:0}
-}
-@keyframes hundo{
-0%{left:9%;top:50%;opacity:0;background:#e4695e;border-radius:50%;box-shadow:none}
-3%{opacity:.95}
-9%{left:15.5%;top:36%;background:#e4695e}
-15%{left:22%;top:50%;background:#e0a458}
-21%{left:15.5%;top:64%;background:#e4695e}
-27%{left:9%;top:50%;background:#e0a458}
-33%{left:15.5%;top:36%;background:#e0a458}
-39%{left:22%;top:50%;background:#e0a458}
-45%{left:15.5%;top:64%;background:#57d9a3}
-50%{left:27%;top:47%;background:#57d9a3;border-radius:50%}
-58%{left:56%;top:47%;background:#57d9a3;border-radius:50%;box-shadow:none}
-62%{left:61.5%;top:47%;background:#57d9a3;border-radius:2px;box-shadow:0 0 10px rgba(87,217,163,.6)}
-72%{left:80%;top:47%;background:#57d9a3;border-radius:2px}
-77%{left:80%;top:47%;background:#e4695e;border-radius:2px;box-shadow:0 0 10px rgba(228,105,94,.6)}
-85%{left:62.5%;top:47%;background:#e4695e;border-radius:2px;box-shadow:none}
-91%{left:62%;top:80%;background:#8b9098;border-radius:2px;opacity:.6}
-100%{left:62%;top:80%;opacity:0}
-}
-.gate{position:absolute;left:60.8%;top:30%;height:36%;width:3px;background:var(--cyan);border-radius:2px;animation:gpulse 2.4s ease-in-out infinite}
-@keyframes gpulse{0%,100%{box-shadow:0 0 6px rgba(79,209,217,.35)}50%{box-shadow:0 0 20px rgba(79,209,217,.9)}}
-.trunk{position:absolute;left:61.2%;right:0;top:calc(47% + 3px);height:2px;background:#2f353b}
-.oplog{position:absolute;left:56%;right:0;bottom:0;height:14%;border-top:1px dashed #2f353b;background:rgba(139,144,152,.04)}
-@media (prefers-reduced-motion:reduce){.dot{animation:none;opacity:0}.gate{animation:none}}
-@media (max-width:760px){.hero-stage{height:260px}.accs{display:none}}
-</style>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../site.css">
 </helmet>
-<div style="background:var(--bg);color:var(--fg);font:400 17px/1.65 var(--sans);min-height:100vh;padding-bottom:140px">
+<div class="page">
 
 <!-- ══════════════════════ HERO ══════════════════════ -->
-<header class="wrap" style="padding-top:100px">
-<div class="kick" style="color:var(--cyan)">ADP · AGENT DEVELOPMENT-STATE PROTOCOL</div>
-<h1 style="font:600 64px/1.05 var(--sans);letter-spacing:-.02em;margin:0 0 28px;max-width:18ch">Code got cheap.<br>Trust didn't.</h1>
-<p style="font-size:21px;line-height:1.55;color:var(--sub);margin:0;max-width:64ch;text-wrap:pretty">At Google, roughly three-quarters of new code is now written by AI. Agent-authored pull requests wait five times longer for a human to even look at them. And the way that code actually ships is not a swarm of speculative attempts — it is <em style="font-style:normal;color:var(--cyan)">one capable agent iterating against CI until it believes the work is done</em>, then merging. The operative word is <em style="font-style:normal;color:var(--amber)">believes</em>: agents saturate the tests they can see while quietly failing the ones they can't<a class="ref" href="#ref-16">16</a> — and every line still ships through machinery built for one human on one branch.</p>
-<p style="font-size:21px;line-height:1.55;color:var(--sub);margin:18px 0 0;max-width:64ch;text-wrap:pretty">ADP is an open protocol for making machine-written software trustworthy at machine speed: a gate that converts an agent's belief into checkable proof. Every change lands as one signed, typed record — <span class="mono" style="font-size:17px;color:var(--fg)">intent → diff → evidence → provenance</span> — tested as the state that actually ships, reversible when it lands wrong, and legible to whoever picks the work up next: an auditor, a human, or a different agent.</p>
-
-<div class="hero-stage">
-<span class="hlab" style="left:24px;top:20px;color:var(--cyan)">ONE AGENT — ITERATES UNTIL IT BELIEVES IT'S DONE</span>
-<span class="hlab" style="left:4%;top:72%;color:#3f454c">edit → test → red → edit → test → green</span>
-<span class="hlab" style="left:53.5%;top:20px;color:var(--cyan)">GATE — BELIEF BECOMES SIGNED EVIDENCE</span>
-<span class="hlab" style="right:24px;top:calc(47% - 26px);color:var(--green)">MAIN — EVERY CHANGE ATTESTED</span>
-<span class="hlab" style="right:24px;bottom:12px">OPERATION LOG — REJECTIONS AND ROLLBACKS STAY ON THE RECORD</span>
-<div class="loopbox"></div>
-<div class="gate"></div>
-<div class="trunk"></div>
-<div class="oplog"></div>
-<div class="dot" style="--d:0s"></div>
-<div class="dot" style="--d:1.7s"></div>
-<div class="dot hd" style="--d:3.4s"></div>
-<div class="dot" style="--d:5.1s"></div>
-<div class="dot hu" style="--d:6.8s"></div>
-<div class="dot" style="--d:8.5s"></div>
+<header class="wrap sec">
+<div class="flow flow--loose">
+<p class="eyebrow">ADP · Agent Development-state Protocol</p>
+<h1>Code got cheap.<br>Trust didn't.</h1>
+<div class="flow flow--tight">
+<p class="lede">At Google, roughly three-quarters of new code is now written by AI. Agent-authored pull requests wait five times longer for a human to even look at them. And the way that code actually ships is not a swarm of speculative attempts — it is <em class="k">one capable agent iterating against CI until it believes the work is done</em>, then merging. The operative word is <em class="warn">believes</em>: agents saturate the tests they can see while quietly failing the ones they can't<a class="ref" href="#ref-16">16</a> — and every line still ships through machinery built for one human on one branch.</p>
+<p class="lede">ADP is an open protocol for making machine-written software trustworthy at machine speed: a gate that converts an agent's belief into checkable proof. Every change lands as one signed, typed record — <span class="mono em">intent → diff → evidence → provenance</span> — tested as the state that actually ships, reversible when it lands wrong, and legible to whoever picks the work up next: an auditor, a human, or a different agent.</p>
 </div>
 
-<div style="display:flex;gap:14px;margin-top:28px;flex-wrap:wrap">
-<div class="chip"><div class="chipv" style="color:var(--fg)">~75%</div><div class="chipk">of new code at Google is AI-generated and engineer-approved (April 2026)<a class="ref" href="#ref-1">1</a></div></div>
-<div class="chip"><div class="chipv" style="color:var(--amber)">5.3×</div><div class="chipk">longer wait for reviewer pickup on agent-authored PRs — 1,055 vs 201 minutes<a class="ref" href="#ref-2">2</a></div></div>
-<div class="chip"><div class="chipv" style="color:var(--red)">32.7%</div><div class="chipk">acceptance rate of agent-authored PRs, against 84.4% for human-authored ones<a class="ref" href="#ref-2">2</a></div></div>
-<div class="chip"><div class="chipv" style="color:var(--amber)">2×</div><div class="chipk">the baseline secret-leak rate in AI-assisted commits on public GitHub<a class="ref" href="#ref-3">3</a></div></div>
+<div class="stage">
+<span class="stage__lab stage__lab--agent">One agent — iterates until it believes it's done</span>
+<span class="stage__lab stage__lab--loop">edit → test → red → edit → test → green</span>
+<span class="stage__lab stage__lab--gate">Gate — belief becomes signed evidence</span>
+<span class="stage__lab stage__lab--main">Main — every change attested</span>
+<span class="stage__lab stage__lab--log">Operation log — rejections and rollbacks stay on the record</span>
+<div class="stage__loop"></div>
+<div class="stage__gate"></div>
+<div class="stage__trunk"></div>
+<div class="stage__log"></div>
+<div class="dot dot--d0"></div>
+<div class="dot dot--d1"></div>
+<div class="dot dot--drop dot--d2"></div>
+<div class="dot dot--d3"></div>
+<div class="dot dot--undo dot--d4"></div>
+<div class="dot dot--d5"></div>
 </div>
 
-<div style="display:flex;flex-wrap:wrap;gap:28px;margin-top:44px;padding-top:24px;border-top:1px solid var(--line);font:400 13px var(--mono);color:var(--dim)">
+<div class="grid grid--4">
+<div class="stat"><div class="stat__v">~75%</div><div class="stat__k">of new code at Google is AI-generated and engineer-approved (April 2026)<a class="ref" href="#ref-1">1</a></div></div>
+<div class="stat"><div class="stat__v warn">5.3×</div><div class="stat__k">longer wait for reviewer pickup on agent-authored PRs — 1,055 vs 201 minutes<a class="ref" href="#ref-2">2</a></div></div>
+<div class="stat"><div class="stat__v bad">32.7%</div><div class="stat__k">acceptance rate of agent-authored PRs, against 84.4% for human-authored ones<a class="ref" href="#ref-2">2</a></div></div>
+<div class="stat"><div class="stat__v warn">2×</div><div class="stat__k">the baseline secret-leak rate in AI-assisted commits on public GitHub<a class="ref" href="#ref-3">3</a></div></div>
+</div>
+
+<div class="foot">
 <span>Created by Dov Zimring, with lots of help from Claude</span>
 <a href="https://github.com/DeDuva/adp">github.com/DeDuva/adp</a>
 <a href="https://github.com/DeDuva/adp/blob/main/LICENSE">Apache-2.0 licensed</a>
 </div>
+</div>
 </header>
 
 <!-- ══════════════════════ 01 WHY ══════════════════════ -->
-<section class="wrap">
-<div class="kick" style="color:var(--cyan)">01 · WHY</div>
-<h2 class="t" style="max-width:26ch">Verification is the new bottleneck</h2>
-<p class="b">For seventy years, writing code was the expensive part, so every practice we have — pull requests, line-by-line review, branch protection, CI on the branch head — amortizes verification against slow authoring. Agents inverted the ratio. Teams using AI merge <strong style="color:var(--fg);font-weight:500">98% more pull requests</strong>, while review time per change rises <strong style="color:var(--fg);font-weight:500">91%</strong><a class="ref" href="#ref-4">4</a>. Developer trust in AI output fell to <strong style="color:var(--fg);font-weight:500">29%</strong> in the same period<a class="ref" href="#ref-5">5</a> — the code got faster and less trusted at once.</p>
-<p class="b">This is not a gap a better review UI closes. Any process whose unit of assurance is <em style="font-style:normal;color:var(--fg)">human attention per change</em> fails arithmetically once changes arrive at machine rate. Drag the slider: the constant is one team's thorough-review capacity, roughly 25 changes a day.</p>
+<section class="wrap sec">
+<div class="band"><span class="band__n">01</span><span class="band__label">WHY</span></div>
+<div class="flow flow--loose">
+<h2>Verification is the new bottleneck</h2>
+<p class="b">For seventy years, writing code was the expensive part, so every practice we have — pull requests, line-by-line review, branch protection, CI on the branch head — amortizes verification against slow authoring. Agents inverted the ratio. Teams using AI merge <strong class="strong">98% more pull requests</strong>, while review time per change rises <strong class="strong">91%</strong><a class="ref" href="#ref-4">4</a>. Developer trust in AI output fell to <strong class="strong">29%</strong> in the same period<a class="ref" href="#ref-5">5</a> — the code got faster and less trusted at once.</p>
+<p class="b">This is not a gap a better review UI closes. Any process whose unit of assurance is <em class="em">human attention per change</em> fails arithmetically once changes arrive at machine rate. Drag the slider: the constant is one team's thorough-review capacity, roughly 25 changes a day.</p>
 
-<figure class="fig" style="margin-top:36px">
-<div class="fighead">
-<span class="figlab">FIG 01 · ATTENTION ARITHMETIC</span>
-<label style="display:flex;align-items:center;gap:10px;font:400 12px var(--mono);color:var(--dim)">fleet output <input type="range" min="1" max="50" step="1" value="{{ mult }}" onChange="{{ multSet }}" style="width:160px"> <span style="color:var(--fg);width:96px">{{ prodDay }}</span></label>
+<figure class="plate">
+<div class="plate__head">
+<span>FIG 01 · ATTENTION ARITHMETIC</span>
+<label class="plate__ctrl">fleet output <input type="range" min="1" max="50" step="1" value="{{ mult }}" onChange="{{ multSet }}" class="slider"> <span class="em">{{ prodDay }}</span></label>
 </div>
-<div style="padding:34px 28px;display:flex;flex-direction:column;gap:26px">
+<div class="plate__body">
 <div>
-<div style="display:flex;justify-content:space-between;font:400 13px var(--mono);color:var(--sub);margin-bottom:10px"><span style="color:var(--amber)">changes produced per day</span><span>{{ prodDay }}</span></div>
-<div style="height:22px;background:var(--panel2);border:1px solid var(--line);border-radius:3px;overflow:hidden"><div style="height:100%;background:rgba(224,164,88,.55);width:100%"></div></div>
+<div class="bar__head"><span class="warn">changes produced per day</span><span>{{ prodDay }}</span></div>
+<div class="bar__track"><div class="bar__fill bar__fill--warn"></div></div>
 </div>
 <div>
-<div style="display:flex;justify-content:space-between;font:400 13px var(--mono);color:var(--sub);margin-bottom:10px"><span style="color:var(--cyan)">reviewed thoroughly — fixed human capacity</span><span>25 / day</span></div>
-<div style="height:22px;background:var(--panel2);border:1px solid var(--line);border-radius:3px;overflow:hidden"><div style="height:100%;background:rgba(79,209,217,.55);width:{{ revW }};transition:width .3s ease"></div></div>
+<div class="bar__head"><span class="k">reviewed thoroughly — fixed human capacity</span><span>25 / day</span></div>
+<div class="bar__track"><div class="bar__fill bar__fill--accent" style="width:{{ revW }}"></div></div>
 </div>
-<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:3px">
-<div class="stat"><div class="statk">REVIEWER MINUTES PER CHANGE</div><div class="statv" style="color:{{ perChangeColor }}">{{ perChange }}</div></div>
-<div class="stat"><div class="statk">UNREVIEWED AFTER 30 DAYS</div><div class="statv" style="color:{{ backlogColor }}">{{ backlog30 }}</div></div>
-<div class="stat"><div class="statk">WHAT REVIEW BECOMES</div><div class="statv" style="font-size:18px;line-height:1.4;color:var(--sub)">{{ reviewMode }}</div></div>
+<div class="grid">
+<div class="stat"><div class="stat__label">REVIEWER MINUTES PER CHANGE</div><div class="stat__v" style="color:{{ perChangeColor }}">{{ perChange }}</div></div>
+<div class="stat"><div class="stat__label">UNREVIEWED AFTER 30 DAYS</div><div class="stat__v" style="color:{{ backlogColor }}">{{ backlog30 }}</div></div>
+<div class="stat"><div class="stat__label">WHAT REVIEW BECOMES</div><div class="stat__v stat__v--text">{{ reviewMode }}</div></div>
 </div>
 </div>
-<figcaption class="figcap">{{ multNote }}</figcaption>
+<figcaption class="plate__cap">{{ multNote }}</figcaption>
 </figure>
 
-<p class="b" style="margin-top:36px">The industry's answer so far is AI reviewing AI: merge-blocking review bots (CodeRabbit, Greptile, Cursor's Bugbot, Copilot code review) are now normal. That helps — but a second opinion is not a verification system. What the evidence supports is a different division of labor: <em style="font-style:normal;color:var(--fg)">machines verify mechanically</em> — does it build, do the tests and evals pass against the state that will actually ship, does policy hold — <em style="font-style:normal;color:var(--fg)">and humans review intent and evidence</em>, sampling deeper only where risk warrants it. That division needs the change itself to carry its intent, its evidence, and its provenance as first-class, machine-readable data. No current forge records any of the three.</p>
+<p class="b">The industry's answer so far is AI reviewing AI: merge-blocking review bots (CodeRabbit, Greptile, Cursor's Bugbot, Copilot code review) are now normal. That helps — but a second opinion is not a verification system. What the evidence supports is a different division of labor: <em class="em">machines verify mechanically</em> — does it build, do the tests and evals pass against the state that will actually ship, does policy hold — <em class="em">and humans review intent and evidence</em>, sampling deeper only where risk warrants it. That division needs the change itself to carry its intent, its evidence, and its provenance as first-class, machine-readable data. No current forge records any of the three.</p>
+</div>
 </section>
 
 <!-- ══════════════════════ 02 HOW AGENTS SHIP ══════════════════════ -->
-<section class="wrap">
-<div class="kick" style="color:var(--amber)">02 · HOW AGENTS ACTUALLY SHIP</div>
-<h2 class="t" style="max-width:28ch">The loop: iterate, believe, merge</h2>
-<p class="b">The observed pattern is not a swarm. It is <strong style="color:var(--cyan);font-weight:500">one capable agent iterating against CI until green, then submitting</strong> — and increasingly, merging. The field data points one way: fully autonomous agent-authored merges are still a rounding error — a few hundred out of 153,000 measured — while AI assistance already touches at least 1 in 7 private merges, and that floor is rising<a class="ref" href="#ref-14">14</a>. Where agents do author whole fixes, 65% merge, and the top failure modes are exactly the loop's: tests fail (18.1%), or the fix is wrong beneath a green build (15.3%)<a class="ref" href="#ref-15">15</a>. Even the vendors shipping parallel agents describe fan-out as the exception: Cursor's own guidance reserves multi-model ensembles for "hard problems," and uses parallelism for <em style="font-style:normal;color:var(--fg)">independent</em> tasks in separate worktrees<a class="ref" href="#ref-18">18</a>. The economics agree — multi-agent coordination pays +81% on parallelizable work but degrades sequential work 39–70%<a class="ref" href="#ref-6">6</a> at 4–220× the token cost<a class="ref" href="#ref-7">7</a>. We measured it ourselves rather than resting on other people's numbers: a pre-registered arm, 20 of 20 trials verified, found swarm topology cost <strong style="color:var(--fg);font-weight:500">3.6× the tokens and wall clock and 2.8× the tool calls</strong> of a single agent for <strong style="color:var(--fg);font-weight:500">no measurable quality difference</strong><a class="ref" href="#ref-19">19</a> — on two tasks both solvable in one pass, which is the limit on what that arm can conclude and is stated as such in its own report.</p>
-<p class="b">The serial loop has a failure mode the swarm never had, and it is worse. When one agent writes, tests, and submits, oversight collapses onto a single surface: the test suite the agent itself can see — and often touch. Measured across frontier agents, every one saturates the visible tests while a gap opens on held-out tests that grows <strong style="color:var(--fg);font-weight:500">28 percentage points for every tenfold increase in code size</strong> — up to and including a 2,900-line hash-table "compiler" that memorizes test inputs<a class="ref" href="#ref-16">16</a>. Verifying, not generating, is now the hard problem<a class="ref" href="#ref-17">17</a>. <em style="font-style:normal;color:var(--fg)">The agent's belief that the work is done is the one signal you cannot ship on.</em> And when a change does land wrong, the questions that follow — roll it back, validate it, continue the work in a different harness — all need a record that today exists only as a transcript in one vendor's format. Step through both shapes.</p>
+<section class="wrap sec">
+<div class="band"><span class="band__n">02</span><span class="band__label">HOW AGENTS ACTUALLY SHIP</span></div>
+<div class="flow flow--loose">
+<h2>The loop: iterate, believe, merge</h2>
+<p class="b">The observed pattern is not a swarm. It is <strong class="k strong">one capable agent iterating against CI until green, then submitting</strong> — and increasingly, merging. The field data points one way: fully autonomous agent-authored merges are still a rounding error — a few hundred out of 153,000 measured — while AI assistance already touches at least 1 in 7 private merges, and that floor is rising<a class="ref" href="#ref-14">14</a>. Where agents do author whole fixes, 65% merge, and the top failure modes are exactly the loop's: tests fail (18.1%), or the fix is wrong beneath a green build (15.3%)<a class="ref" href="#ref-15">15</a>. Even the vendors shipping parallel agents describe fan-out as the exception: Cursor's own guidance reserves multi-model ensembles for "hard problems," and uses parallelism for <em class="em">independent</em> tasks in separate worktrees<a class="ref" href="#ref-18">18</a>. The economics agree — multi-agent coordination pays +81% on parallelizable work but degrades sequential work 39–70%<a class="ref" href="#ref-6">6</a> at 4–220× the token cost<a class="ref" href="#ref-7">7</a>. We measured it ourselves rather than resting on other people's numbers: a pre-registered arm, 20 of 20 trials verified, found swarm topology cost <strong class="strong">3.6× the tokens and wall clock and 2.8× the tool calls</strong> of a single agent for <strong class="strong">no measurable quality difference</strong><a class="ref" href="#ref-19">19</a> — on two tasks both solvable in one pass, which is the limit on what that arm can conclude and is stated as such in its own report.</p>
+<p class="b">The serial loop has a failure mode the swarm never had, and it is worse. When one agent writes, tests, and submits, oversight collapses onto a single surface: the test suite the agent itself can see — and often touch. Measured across frontier agents, every one saturates the visible tests while a gap opens on held-out tests that grows <strong class="strong">28 percentage points for every tenfold increase in code size</strong> — up to and including a 2,900-line hash-table "compiler" that memorizes test inputs<a class="ref" href="#ref-16">16</a>. Verifying, not generating, is now the hard problem<a class="ref" href="#ref-17">17</a>. <em class="em">The agent's belief that the work is done is the one signal you cannot ship on.</em> And when a change does land wrong, the questions that follow — roll it back, validate it, continue the work in a different harness — all need a record that today exists only as a transcript in one vendor's format. Step through both shapes.</p>
 
-<figure class="fig">
-<div class="fighead">
-<span class="figlab">FIG 02 · THE SERIAL STREAM — ONE SESSION, 160 CHANGES A DAY</span>
-<div class="ctrl">
+<figure class="plate">
+<div class="plate__head">
+<span>FIG 02 · THE SERIAL STREAM — ONE SESSION, 160 CHANGES A DAY</span>
+<div class="plate__ctrl">
 <button class="btn" onClick="{{ sePlay }}">{{ sePlayLabel }}</button>
-<input type="range" min="0" max="5" step="1" value="{{ seStep }}" onChange="{{ seSet }}" style="width:150px">
+<input type="range" min="0" max="5" step="1" value="{{ seStep }}" onChange="{{ seSet }}" class="slider">
 <span class="counter">{{ seCounter }}</span>
 </div>
 </div>
-<div style="padding:34px 28px;display:flex;flex-direction:column;gap:24px">
+<div class="plate__body">
 <div>
-<div style="font:500 11px var(--mono);letter-spacing:.12em;color:var(--dim);margin-bottom:14px">TRUNK — ONE WRITER, SERIAL LANDINGS</div>
-<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+<div class="label">TRUNK — ONE WRITER, SERIAL LANDINGS</div>
+<div class="ticks">
 <sc-for list="{{ seTicks }}" as="tick" hint-placeholder-count="40">
-<div style="width:12px;height:22px;border-radius:2px;background:{{ tick.bg }};border:1px solid {{ tick.bd }};opacity:{{ tick.op }};transition:background .4s ease,opacity .4s ease,border-color .4s ease"></div>
+<div class="fade" style="width:12px;height:22px;border-radius:2px;background:{{ tick.bg }};border:1px solid {{ tick.bd }};opacity:{{ tick.op }}"></div>
 </sc-for>
 </div>
 </div>
 <div>
-<div style="display:flex;justify-content:space-between;font:400 13px var(--mono);color:var(--sub);margin-bottom:10px"><span>{{ seBacklogLabel }}</span><span style="color:{{ seBacklogColor }}">{{ seBacklogStat }}</span></div>
-<div style="height:18px;background:var(--panel2);border:1px solid var(--line);border-radius:3px;overflow:hidden"><div style="height:100%;background:{{ seBacklogFill }};width:{{ seBacklogW }};transition:width .5s ease,background .5s ease"></div></div>
+<div class="bar__head"><span>{{ seBacklogLabel }}</span><span style="color:{{ seBacklogColor }}">{{ seBacklogStat }}</span></div>
+<div class="bar__track"><div class="bar__fill" style="background:{{ seBacklogFill }};width:{{ seBacklogW }}"></div></div>
 </div>
 <sc-if value="{{ seShowGit }}" hint-placeholder-val="{{ false }}">
-<div style="border:1px solid rgba(228,105,94,.4);background:rgba(228,105,94,.06);border-radius:3px;padding:16px;font:400 13px/1.7 var(--mono);color:var(--sub)">
-<div style="color:var(--red);margin-bottom:8px">AUDIT · "what was change 118 for, and how was it verified?"</div>
+<div class="note note--bad">
+<div class="bad">AUDIT · "what was change 118 for, and how was it verified?"</div>
 <div>git's complete answer: author agent-runner &lt;ci@example&gt; · date · "refactor session handling"</div>
-<div style="color:var(--dim)">intent: not a field · evidence: not a field · model, session, prompt: not fields · pre-rewrite history: gone</div>
+<div class="dim">intent: not a field · evidence: not a field · model, session, prompt: not fields · pre-rewrite history: gone</div>
 </div>
 </sc-if>
 <sc-if value="{{ seShowAdp }}" hint-placeholder-val="{{ false }}">
-<div style="border:1px solid rgba(79,209,217,.4);background:rgba(79,209,217,.05);border-radius:3px;padding:16px;font:400 13px/1.7 var(--mono);color:var(--sub)">
-<div style="color:var(--cyan);margin-bottom:8px">SAME QUESTION, ADP · change ch_2118 (signed)</div>
+<div class="note note--accent">
+<div class="k">SAME QUESTION, ADP · change ch_2118 (signed)</div>
 <div>intent: issue #872 · diff: 4 files +61 −18 · evidence: unit 412/412, eval session-suite 0.96, bound at land</div>
 <div>provenance: harness, model, session s_4410 · op log: rewrite op_0455 holds before/after refs — nothing is ever off the record</div>
 </div>
 </sc-if>
 </div>
-<figcaption class="figcap">{{ seCaption }}</figcaption>
+<figcaption class="plate__cap">{{ seCaption }}</figcaption>
 </figure>
 
-<figure class="fig">
-<div class="fighead">
-<span class="figlab">FIG 03 · THE FAN-OUT MODE — 60 ATTEMPTS, ONE INTENT</span>
-<div class="ctrl">
+<figure class="plate">
+<div class="plate__head">
+<span>FIG 03 · THE FAN-OUT MODE — 60 ATTEMPTS, ONE INTENT</span>
+<div class="plate__ctrl">
 <button class="btn" onClick="{{ swPlay }}">{{ swPlayLabel }}</button>
-<input type="range" min="0" max="6" step="1" value="{{ swStep }}" onChange="{{ swSet }}" style="width:150px">
+<input type="range" min="0" max="6" step="1" value="{{ swStep }}" onChange="{{ swSet }}" class="slider">
 <span class="counter">{{ swCounter }}</span>
 </div>
 </div>
-<div style="padding:34px 28px;display:grid;grid-template-columns:1.1fr 1fr;gap:28px;align-items:start">
+<div class="plate__body cols-wide">
 <div>
-<div style="font:500 11px var(--mono);letter-spacing:.12em;color:var(--dim);margin-bottom:14px">ATTEMPTS</div>
-<div style="display:flex;flex-wrap:wrap;gap:5px;max-width:520px">
+<div class="label">ATTEMPTS</div>
+<div class="cells">
 <sc-for list="{{ swCells }}" as="cell" hint-placeholder-count="60">
-<div style="width:15px;height:15px;border-radius:2px;background:{{ cell.bg }};border:1px solid {{ cell.bd }};opacity:{{ cell.op }};transition:background .45s ease,opacity .45s ease,border-color .45s ease"></div>
+<div class="fade" style="width:15px;height:15px;border-radius:2px;background:{{ cell.bg }};border:1px solid {{ cell.bd }};opacity:{{ cell.op }}"></div>
 </sc-for>
 </div>
-<div style="display:flex;gap:24px;margin-top:20px;font:400 13px var(--mono);flex-wrap:wrap">
-<span style="color:var(--dim)">spawned <span style="color:var(--fg)">{{ swSpawned }}</span></span>
-<span style="color:var(--dim)">landed <span style="color:var(--cyan)">{{ swLanded }}</span></span>
-<span style="color:var(--dim)">discarded <span style="color:var(--amber)">{{ swKilled }}</span></span>
-<span style="color:var(--dim)">on the record <span style="color:{{ swLoggedColor }}">{{ swLogged }}</span></span>
+<div class="legend">
+<span class="dim">spawned <span class="em">{{ swSpawned }}</span></span>
+<span class="dim">landed <span class="k">{{ swLanded }}</span></span>
+<span class="dim">discarded <span class="warn">{{ swKilled }}</span></span>
+<span class="dim">on the record <span style="color:{{ swLoggedColor }}">{{ swLogged }}</span></span>
 </div>
 </div>
-<div style="border:1px solid var(--line);background:var(--panel2);border-radius:3px;padding:18px;min-height:200px">
-<div style="font:500 11px var(--mono);letter-spacing:.12em;color:var(--dim);margin-bottom:14px">{{ swConTitle }}</div>
-<div style="display:flex;flex-direction:column;gap:7px">
+<div class="console">
+<div class="label">{{ swConTitle }}</div>
+<div class="stack-sm">
 <sc-for list="{{ swCon }}" as="row" hint-placeholder-count="4">
 <div class="conline" style="color:{{ row.color }}">{{ row.text }}</div>
 </sc-for>
 </div>
 </div>
 </div>
-<figcaption class="figcap">{{ swCaption }}</figcaption>
+<figcaption class="plate__cap">{{ swCaption }}</figcaption>
 </figure>
+</div>
 </section>
 
 <!-- ══════════════════════ 03 THE INVARIANT ══════════════════════ -->
-<section class="wrap">
-<div class="kick" style="color:var(--cyan)">03 · THE INVARIANT</div>
-<h2 class="t" style="max-width:28ch">What survives every scenario</h2>
-<p class="b">The two shapes stress different machinery. The serial stream — the base case — breaks the <em style="font-style:normal;color:var(--cyan)">trust path</em>: it needs evidence the author can't grade for itself, an authoritative operation log, durable checkpoints, universal undo, and history that survives its own author rewriting it. Fan-out — the mode fleets enter for hard problems and mass remediation — breaks the <em style="font-style:normal;color:var(--amber)">merge path</em>: it needs attempts as first-class objects, conflicts that don't halt pipelines, and a queue that tests merged states before landing. The mix will shift with model capability and token prices; the machinery has to serve both, weighted toward the one that's actually here.</p>
-<p class="b">But one thing is invariant. In any future where software ships without a human reading every line, four questions must be answerable, per change, forever: <strong style="color:var(--fg);font-weight:500">what was it for, what changed, how was it verified, and who — or what — produced it.</strong> That is intent → diff → evidence → provenance. It is not one strategy among several; it is the minimum record that makes non-human-reviewed software trustworthy at all. And it cannot be retrofitted by convention — commit trailers, harness memory files, wiki links — because conventions don't bind automation. The record has to be typed, signed, and enforced where changes are admitted, or it will simply be absent the day an auditor, a regulator, or an incident review asks.</p>
+<section class="wrap sec">
+<div class="band"><span class="band__n">03</span><span class="band__label">THE INVARIANT</span></div>
+<div class="flow flow--loose">
+<h2>What survives every scenario</h2>
+<p class="b">The two shapes stress different machinery. The serial stream — the base case — breaks the <em class="k">trust path</em>: it needs evidence the author can't grade for itself, an authoritative operation log, durable checkpoints, universal undo, and history that survives its own author rewriting it. Fan-out — the mode fleets enter for hard problems and mass remediation — breaks the <em class="warn">merge path</em>: it needs attempts as first-class objects, conflicts that don't halt pipelines, and a queue that tests merged states before landing. The mix will shift with model capability and token prices; the machinery has to serve both, weighted toward the one that's actually here.</p>
+<p class="b">But one thing is invariant. In any future where software ships without a human reading every line, four questions must be answerable, per change, forever: <strong class="strong">what was it for, what changed, how was it verified, and who — or what — produced it.</strong> That is intent → diff → evidence → provenance. It is not one strategy among several; it is the minimum record that makes non-human-reviewed software trustworthy at all. And it cannot be retrofitted by convention — commit trailers, harness memory files, wiki links — because conventions don't bind automation. The record has to be typed, signed, and enforced where changes are admitted, or it will simply be absent the day an auditor, a regulator, or an incident review asks.</p>
 
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:4px;margin-top:40px">
-<div style="background:var(--panel);padding:24px 20px"><div style="font:500 11px var(--mono);letter-spacing:.12em;color:var(--cyan);margin-bottom:12px">INTENT</div><div style="font-size:15px;line-height:1.55;color:var(--sub)">The task or spec the change answers. In the serial stream: what change 118 was for. In fan-out: what 60 attempts share.</div></div>
-<div style="background:var(--panel);padding:24px 20px"><div style="font:500 11px var(--mono);letter-spacing:.12em;color:var(--cyan);margin-bottom:12px">DIFF</div><div style="font-size:15px;line-height:1.55;color:var(--sub)">The change itself, in the ordinary git object graph. <span class="mono" style="font-size:13px;color:var(--fg)">git clone</span> keeps working.</div></div>
-<div style="background:var(--panel);padding:24px 20px"><div style="font:500 11px var(--mono);letter-spacing:.12em;color:var(--cyan);margin-bottom:12px">EVIDENCE</div><div style="font-size:15px;line-height:1.55;color:var(--sub)">Tests, evals, benchmark deltas — signed, and bound to the merged state that ships, not the branch head that didn't.</div></div>
-<div style="background:var(--panel);padding:24px 20px"><div style="font:500 11px var(--mono);letter-spacing:.12em;color:var(--cyan);margin-bottom:12px">PROVENANCE</div><div style="font-size:15px;line-height:1.55;color:var(--sub)">Which agent, model, session, prompt lineage; which human attested. The supply-chain answer at fleet scale.</div></div>
+<div class="grid grid--4">
+<div class="card"><div class="label label--accent">INTENT</div><div class="card__b">The task or spec the change answers. In the serial stream: what change 118 was for. In fan-out: what 60 attempts share.</div></div>
+<div class="card"><div class="label label--accent">DIFF</div><div class="card__b">The change itself, in the ordinary git object graph. <span class="mono em mono">git clone</span> keeps working.</div></div>
+<div class="card"><div class="label label--accent">EVIDENCE</div><div class="card__b">Tests, evals, benchmark deltas — signed, and bound to the merged state that ships, not the branch head that didn't.</div></div>
+<div class="card"><div class="label label--accent">PROVENANCE</div><div class="card__b">Which agent, model, session, prompt lineage; which human attested. The supply-chain answer at fleet scale.</div></div>
 </div>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:4px;margin-top:14px">
-<div style="background:var(--panel);padding:22px 20px"><div style="font:500 11px var(--mono);letter-spacing:.12em;color:var(--cyan);margin-bottom:10px">THE SERIAL BASE CASE</div><div style="font-size:15px;line-height:1.6;color:var(--sub)">The gate, the operation log, and checkpoint/undo are load-bearing; the record is how one agent's 160 daily changes stay individually accountable — and how the next agent, in any harness, validates, reverts, or continues the work.</div></div>
-<div style="background:var(--panel);padding:22px 20px"><div style="font:500 11px var(--mono);letter-spacing:.12em;color:var(--amber);margin-bottom:10px">THE FAN-OUT MODE</div><div style="font-size:15px;line-height:1.6;color:var(--sub)">Candidate sets and the eval-gated queue are load-bearing; the record is how a selector chooses among 60 attempts — N remediation candidates for one vulnerability, N models on one hard problem — and how the losers still teach the next run.</div></div>
+<div class="grid grid--2">
+<div class="card"><div class="label label--accent">THE SERIAL BASE CASE</div><div class="card__b">The gate, the operation log, and checkpoint/undo are load-bearing; the record is how one agent's 160 daily changes stay individually accountable — and how the next agent, in any harness, validates, reverts, or continues the work.</div></div>
+<div class="card"><div class="label label--warn">THE FAN-OUT MODE</div><div class="card__b">Candidate sets and the eval-gated queue are load-bearing; the record is how a selector chooses among 60 attempts — N remediation candidates for one vulnerability, N models on one hard problem — and how the losers still teach the next run.</div></div>
+</div>
 </div>
 </section>
 
 <!-- ══════════════════════ 04 GROUND TRUTH ══════════════════════ -->
-<section class="wrap">
-<div class="kick" style="color:var(--amber)">04 · GROUND TRUTH</div>
-<h2 class="t" style="max-width:30ch">Why git and the forge can't just be patched</h2>
+<section class="wrap sec">
+<div class="band"><span class="band__n">04</span><span class="band__label">GROUND TRUTH</span></div>
+<div class="flow flow--loose">
+<h2>Why git and the forge can't just be patched</h2>
 <p class="b">None of this is a criticism of git — it is a mechanical description of a system designed, brilliantly, for a different workload. Six properties that were fine for one human on one branch are structural at agent scale. Expand any of them; each is stated mechanically, most with a simulation you can step through. No familiarity with git internals assumed.</p>
 
 <!-- Card 1: no provenance fields -->
 <div class="acc">
-<button class="accbtn" onClick="{{ c1Tog }}"><span class="accarrow">{{ c1Arrow }}</span><span class="acct">The commit has no field for any of it</span><span class="accs">author, date, message, parents, tree — that's the whole schema</span></button>
+<button class="acc__btn" onClick="{{ c1Tog }}"><span class="acc__arrow">{{ c1Arrow }}</span><span class="acc__t">The commit has no field for any of it</span><span class="acc__s">author, date, message, parents, tree — that's the whole schema</span></button>
 <sc-if value="{{ c1Open }}" hint-placeholder-val="{{ false }}">
-<div class="accbody">
+<div class="acc__body">
 <p class="b">Git stores snapshots, not diffs, and the commit is the only record of a change. Its fields were designed for a person who could be asked what they were thinking: author, timestamp, message, parents, tree. When the author is a model, the questions that matter — which model, which session, from which prompt and spec, verified how — have no field. So each harness invents a private store: shadow repositories, session JSON, commit-message trailers. An organization running three harnesses gets three incompatible audit trails, none complete. The precedent is OpenTelemetry rather than LSP, and the distinction is load-bearing: LSP standardised a request/response interface between two pieces of local software, whereas what fragments here is emitted state that outlives the process and has to be correlated across vendors — the telemetry problem exactly. OpenTelemetry won not by making tools talk to each other but by standardising the record, so any backend could consume it.</p>
-<figure class="fig" style="margin-top:24px">
-<div class="fighead">
-<span class="figlab">THE SAME CHANGE, TWO RECORDS</span>
-<div style="display:flex;gap:8px">
-<button onClick="{{ f6ShowGit }}" style="font:500 12px var(--mono);letter-spacing:.08em;border:1px solid var(--line);border-radius:3px;padding:7px 14px;cursor:pointer;background:{{ f6GitBg }};color:{{ f6GitFg }}">git commit</button>
-<button onClick="{{ f6ShowAdp }}" style="font:500 12px var(--mono);letter-spacing:.08em;border:1px solid var(--line);border-radius:3px;padding:7px 14px;cursor:pointer;background:{{ f6AdpBg }};color:{{ f6AdpFg }}">adp change</button>
+<figure class="plate">
+<div class="plate__head">
+<span>THE SAME CHANGE, TWO RECORDS</span>
+<div class="row">
+<button onClick="{{ f6ShowGit }}" class="btn btn--toggle" style="background:{{ f6GitBg }};color:{{ f6GitFg }}">git commit</button>
+<button onClick="{{ f6ShowAdp }}" class="btn btn--toggle" style="background:{{ f6AdpBg }};color:{{ f6AdpFg }}">adp change</button>
 </div>
 </div>
-<div style="padding:30px 24px">
+<div class="plate__body">
 <sc-if value="{{ f6IsGit }}" hint-placeholder-val="{{ true }}">
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
-<div style="border:1px solid var(--line);background:var(--panel2);border-radius:3px;padding:18px;font:400 13px/1.8 var(--mono);color:var(--sub)">
-<div style="color:var(--fg)">commit b70f214a9c…</div>
+<div class="cols-2">
+<div class="note">
+<div class="em">commit b70f214a9c…</div>
 <div>Author: agent-runner &lt;ci@example&gt;</div>
 <div>Date: Fri Jul 24 09:12:04 2026</div>
-<div style="margin-top:10px">&nbsp;&nbsp;&nbsp;&nbsp;enforce scopes per route</div>
-<div style="margin-top:10px;color:var(--dim)">&nbsp;&nbsp;&nbsp;&nbsp;Co-authored-by: claude &lt;noreply&gt;</div>
+<div>&nbsp;&nbsp;&nbsp;&nbsp;enforce scopes per route</div>
+<div class="dim">&nbsp;&nbsp;&nbsp;&nbsp;Co-authored-by: claude &lt;noreply&gt;</div>
 </div>
-<div style="display:flex;flex-direction:column;gap:12px">
-<div style="border:1px solid rgba(228,105,94,.3);background:rgba(228,105,94,.05);border-radius:3px;padding:14px;font:400 13px/1.6 var(--mono);color:var(--red)">no field for: intent · model version · session · evidence · attestation</div>
-<div style="display:flex;flex-direction:column;gap:8px;font:400 13px/1.6 var(--mono);color:var(--dim)">
-<div style="border:1px solid var(--line);border-radius:3px;padding:12px">harness A → shadow repo of file snapshots</div>
-<div style="border:1px solid var(--line);border-radius:3px;padding:12px">harness B → session JSON in a home directory</div>
-<div style="border:1px solid var(--line);border-radius:3px;padding:12px">harness C → commit-message trailers</div>
+<div class="stack-sm">
+<div class="note note--bad">no field for: intent · model version · session · evidence · attestation</div>
+<div class="stack-sm">
+<div class="box">harness A → shadow repo of file snapshots</div>
+<div class="box">harness B → session JSON in a home directory</div>
+<div class="box">harness C → commit-message trailers</div>
 </div>
 </div>
 </div>
 </sc-if>
 <sc-if value="{{ f6IsAdp }}" hint-placeholder-val="{{ false }}">
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
-<div style="border:1px solid rgba(79,209,217,.3);background:var(--panel2);border-radius:3px;padding:18px;font:400 13px/1.8 var(--mono);color:var(--sub)">
-<div style="color:var(--cyan)">change ch_8241 (signed)</div>
+<div class="cols-2">
+<div class="note note--accent">
+<div class="k">change ch_8241 (signed)</div>
 <div>intent: issue #418 · spec/auth.md@a91</div>
 <div>diff: 3 files, +48 −12</div>
 <div>evidence: unit 412/412 · e2e 38/38</div>
@@ -360,10 +257,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 <div>&nbsp;&nbsp;model=…, session=s_7741</div>
 <div>&nbsp;&nbsp;attested-by: dev@x (key 4f19)</div>
 </div>
-<div style="display:flex;flex-direction:column;gap:12px;font:400 13px/1.6 var(--mono);color:var(--dim)">
-<div style="border:1px solid var(--line);border-radius:3px;padding:14px;color:var(--sub)">One typed transaction: intent → diff → evidence → provenance. Same schema whichever harness produced it.</div>
-<div style="border:1px solid var(--line);border-radius:3px;padding:14px">git clone still works — the git object graph is the store; the change record sits beside the DAG.</div>
-<div style="border:1px solid var(--line);border-radius:3px;padding:14px">Schemas live in spec/schemas/ — change.json, evidence.json, operation.json, provenance.json.</div>
+<div class="stack-sm">
+<div class="box sub">One typed transaction: intent → diff → evidence → provenance. Same schema whichever harness produced it.</div>
+<div class="box">git clone still works — the git object graph is the store; the change record sits beside the DAG.</div>
+<div class="box">Schemas live in spec/schemas/ — change.json, evidence.json, operation.json, provenance.json.</div>
 </div>
 </div>
 </sc-if>
@@ -375,34 +272,34 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 
 <!-- Card 2: O(repo) cost -->
 <div class="acc">
-<button class="accbtn" onClick="{{ c2Tog }}"><span class="accarrow">{{ c2Arrow }}</span><span class="acct">Starting work costs O(repository), not O(task)</span><span class="accs">every sandbox is a fresh machine paying for full history</span></button>
+<button class="acc__btn" onClick="{{ c2Tog }}"><span class="acc__arrow">{{ c2Arrow }}</span><span class="acc__t">Starting work costs O(repository), not O(task)</span><span class="acc__s">every sandbox is a fresh machine paying for full history</span></button>
 <sc-if value="{{ c2Open }}" hint-placeholder-val="{{ false }}">
-<div class="accbody">
+<div class="acc__body">
 <p class="b">Every clone carries the full object graph, so the cost of starting work is a function of repository size, not of how much the task touches. A human pays once per laptop; an agent fleet pays once per attempt, because every sandbox starts with an empty disk. This is the wall Google hit at billions of lines — why Piper is a centralized, DB-backed store behind a virtual filesystem — and the wall Meta's Sapling/EdenFS answered by making operations scale with the working set.</p>
-<figure class="fig" style="margin-top:24px">
-<div class="fighead">
-<span class="figlab">COST OF STARTING WORK</span>
-<div style="display:flex;align-items:center;gap:22px;flex-wrap:wrap">
-<label style="display:flex;align-items:center;gap:10px;font:400 12px var(--mono);color:var(--dim)">repo <input type="range" min="50" max="8000" step="50" value="{{ repoMB }}" onChange="{{ repoSet }}" style="width:120px"> <span style="color:var(--fg);width:66px">{{ repoLabel }}</span></label>
-<label style="display:flex;align-items:center;gap:10px;font:400 12px var(--mono);color:var(--dim)">attempts <input type="range" min="1" max="200" step="1" value="{{ agents }}" onChange="{{ agentsSet }}" style="width:120px"> <span style="color:var(--fg);width:34px">{{ agents }}</span></label>
+<figure class="plate">
+<div class="plate__head">
+<span>COST OF STARTING WORK</span>
+<div class="legend">
+<label class="plate__ctrl">repo <input type="range" min="50" max="8000" step="50" value="{{ repoMB }}" onChange="{{ repoSet }}" class="slider--sm"> <span class="em">{{ repoLabel }}</span></label>
+<label class="plate__ctrl">attempts <input type="range" min="1" max="200" step="1" value="{{ agents }}" onChange="{{ agentsSet }}" class="slider--sm"> <span class="em">{{ agents }}</span></label>
 </div>
 </div>
-<div style="padding:30px 24px;display:flex;flex-direction:column;gap:24px">
+<div class="plate__body">
 <div>
-<div style="display:flex;justify-content:space-between;font:400 13px var(--mono);color:var(--sub);margin-bottom:10px"><span style="color:var(--amber)">git clone — full history, every attempt</span><span>{{ cloneTotal }}</span></div>
-<div style="height:22px;background:var(--panel2);border:1px solid var(--line);border-radius:3px;overflow:hidden"><div style="height:100%;background:rgba(224,164,88,.55);width:100%"></div></div>
+<div class="bar__head"><span class="warn">git clone — full history, every attempt</span><span>{{ cloneTotal }}</span></div>
+<div class="bar__track"><div class="bar__fill bar__fill--warn"></div></div>
 </div>
 <div>
-<div style="display:flex;justify-content:space-between;font:400 13px var(--mono);color:var(--sub);margin-bottom:10px"><span style="color:var(--cyan)">lazy materialization — only what the task reads</span><span>{{ wsTotal }}</span></div>
-<div style="height:22px;background:var(--panel2);border:1px solid var(--line);border-radius:3px;overflow:hidden"><div style="height:100%;background:rgba(79,209,217,.55);width:{{ wsW }};transition:width .3s ease"></div></div>
+<div class="bar__head"><span class="k">lazy materialization — only what the task reads</span><span>{{ wsTotal }}</span></div>
+<div class="bar__track"><div class="bar__fill bar__fill--accent" style="width:{{ wsW }}"></div></div>
 </div>
-<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:3px">
-<div class="stat"><div class="statk">TRANSFERRED PER ATTEMPT</div><div class="statv" style="color:var(--amber)">{{ cloneEach }}</div></div>
-<div class="stat"><div class="statk">ACTUALLY READ PER ATTEMPT</div><div class="statv" style="color:var(--cyan)">{{ wsEach }}</div></div>
-<div class="stat"><div class="statk">WASTE FACTOR</div><div class="statv">{{ ratio }}</div></div>
+<div class="grid">
+<div class="stat"><div class="stat__label">TRANSFERRED PER ATTEMPT</div><div class="stat__v warn">{{ cloneEach }}</div></div>
+<div class="stat"><div class="stat__label">ACTUALLY READ PER ATTEMPT</div><div class="stat__v k">{{ wsEach }}</div></div>
+<div class="stat"><div class="stat__label">WASTE FACTOR</div><div class="stat__v">{{ ratio }}</div></div>
 </div>
 </div>
-<figcaption class="figcap">Oak reports ~50% fewer VCS tokens and ~90% faster operations from mounting instead of cloning<a class="ref" href="#ref-12">12</a>; Cursor demoed ~296,000 clones/hour against one repository<a class="ref" href="#ref-9">9</a> — the number the server sees.</figcaption>
+<figcaption class="plate__cap">Oak reports ~50% fewer VCS tokens and ~90% faster operations from mounting instead of cloning<a class="ref" href="#ref-12">12</a>; Cursor demoed ~296,000 clones/hour against one repository<a class="ref" href="#ref-9">9</a> — the number the server sees.</figcaption>
 </figure>
 </div>
 </sc-if>
@@ -410,55 +307,55 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 
 <!-- Card 3: conflicts halt -->
 <div class="acc">
-<button class="accbtn" onClick="{{ c3Tog }}"><span class="accarrow">{{ c3Arrow }}</span><span class="acct">A conflict is an error, so parallel work stalls</span><span class="accs">exit 1 propagates; the harness invents its own retry loop</span></button>
+<button class="acc__btn" onClick="{{ c3Tog }}"><span class="acc__arrow">{{ c3Arrow }}</span><span class="acc__t">A conflict is an error, so parallel work stalls</span><span class="acc__s">exit 1 propagates; the harness invents its own retry loop</span></button>
 <sc-if value="{{ c3Open }}" hint-placeholder-val="{{ false }}">
-<div class="accbody">
+<div class="acc__body">
 <p class="b">Git merges line by line across three versions. When two changes touch overlapping lines it writes conflict markers into the working tree and exits non-zero. For a human that's a prompt; for a pipeline it's a halt — the exit code propagates, the agent's next command fails, and the harness falls back to a retry-and-rebase loop it wrote itself. Jujutsu showed the alternative: the conflict as a first-class object that can be committed and resolved later, so resolution becomes a task instead of an exception.</p>
-<figure class="fig" style="margin-top:24px">
-<div class="fighead">
-<span class="figlab">TWO AGENTS, ONE HUNK</span>
-<div class="ctrl">
+<figure class="plate">
+<div class="plate__head">
+<span>TWO AGENTS, ONE HUNK</span>
+<div class="plate__ctrl">
 <button class="btn" onClick="{{ f3Play }}">{{ f3PlayLabel }}</button>
-<input type="range" min="0" max="5" step="1" value="{{ f3Step }}" onChange="{{ f3Set }}" style="width:150px">
+<input type="range" min="0" max="5" step="1" value="{{ f3Step }}" onChange="{{ f3Set }}" class="slider">
 <span class="counter">{{ f3Counter }}</span>
 </div>
 </div>
-<div style="padding:30px 24px;display:grid;grid-template-columns:1fr 1fr;gap:24px">
-<div style="display:flex;flex-direction:column;gap:14px">
-<div style="border:1px solid var(--line);background:var(--panel2);border-radius:3px;padding:16px;opacity:{{ f3aOp }};transition:opacity .4s ease">
-<div style="font:500 12px var(--mono);letter-spacing:.1em;color:var(--cyan);margin-bottom:10px">AGENT A · workspace-a1</div>
-<div style="font:400 13px/1.7 var(--mono);color:var(--sub)"><div>export const PORT = 3000;</div><div style="background:rgba(79,209,217,.12);color:var(--cyan)">const MAX = env.MAX ?? 64;</div><div>export default cfg;</div></div>
+<div class="plate__body--grid">
+<div class="stack-sm">
+<div class="note">
+<div class="label label--accent">AGENT A · workspace-a1</div>
+<div class="mono-sm"><div>export const PORT = 3000;</div><div class="pill pill--accent">const MAX = env.MAX ?? 64;</div><div>export default cfg;</div></div>
 </div>
-<div style="border:1px solid var(--line);background:var(--panel2);border-radius:3px;padding:16px;opacity:{{ f3bOp }};transition:opacity .4s ease">
-<div style="font:500 12px var(--mono);letter-spacing:.1em;color:var(--amber);margin-bottom:10px">AGENT B · workspace-b7</div>
-<div style="font:400 13px/1.7 var(--mono);color:var(--sub)"><div>export const PORT = 3000;</div><div style="background:rgba(224,164,88,.12);color:var(--amber)">const MAX = Number(env.MAX) || 32;</div><div>export default cfg;</div></div>
+<div class="note">
+<div class="label label--warn">AGENT B · workspace-b7</div>
+<div class="mono-sm"><div>export const PORT = 3000;</div><div class="pill pill--warn">const MAX = Number(env.MAX) || 32;</div><div>export default cfg;</div></div>
 </div>
 </div>
-<div style="border:1px solid var(--line);background:var(--panel2);border-radius:3px;padding:16px;display:flex;flex-direction:column;gap:14px">
-<div style="font:500 12px var(--mono);letter-spacing:.1em;color:var(--dim)">SERVER · refs/heads/main</div>
-<div style="font:400 13px/1.8 var(--mono);color:var(--sub)">
+<div class="note stack-sm">
+<div class="label">SERVER · refs/heads/main</div>
+<div class="mono-sm">
 <div>0e9b3d5 init</div>
-<div style="opacity:{{ f3pushOp }};transition:opacity .4s ease;color:var(--cyan)">4c1e77a A: cap concurrency</div>
+<div class="k fade" style="opacity:{{ f3pushOp }}">4c1e77a A: cap concurrency</div>
 </div>
 <sc-if value="{{ f3Reject }}" hint-placeholder-val="{{ false }}">
-<div style="border:1px solid rgba(228,105,94,.45);background:rgba(228,105,94,.08);border-radius:3px;padding:12px;font:400 13px/1.6 var(--mono);color:var(--red)">! [rejected] main -&gt; main (non-fast-forward)</div>
+<div class="note note--bad">! [rejected] main -&gt; main (non-fast-forward)</div>
 </sc-if>
 <sc-if value="{{ f3Conflict }}" hint-placeholder-val="{{ false }}">
-<div style="font:400 13px/1.7 var(--mono);color:var(--sub);border-top:1px solid var(--line);padding-top:14px">
-<div style="color:var(--red)">&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD</div>
+<div class="mono-sm rule-top">
+<div class="bad">&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD</div>
 <div>const MAX = env.MAX ?? 64;</div>
-<div style="color:var(--red)">=======</div>
+<div class="bad">=======</div>
 <div>const MAX = Number(env.MAX) || 32;</div>
-<div style="color:var(--red)">&gt;&gt;&gt;&gt;&gt;&gt;&gt; b7</div>
-<div style="color:var(--dim);margin-top:8px">exit 1 · CONFLICT (content): merge conflict in config.ts</div>
+<div class="bad">&gt;&gt;&gt;&gt;&gt;&gt;&gt; b7</div>
+<div class="dim">exit 1 · CONFLICT (content): merge conflict in config.ts</div>
 </div>
 </sc-if>
 <sc-if value="{{ f3Stall }}" hint-placeholder-val="{{ false }}">
-<div style="border:1px solid rgba(228,105,94,.45);background:rgba(228,105,94,.08);border-radius:3px;padding:12px;font:400 13px/1.6 var(--mono);color:var(--red)">agent B blocked · harness retry {{ f3Retries }} · no server-side record that this attempt existed</div>
+<div class="note note--bad">agent B blocked · harness retry {{ f3Retries }} · no server-side record that this attempt existed</div>
 </sc-if>
 </div>
 </div>
-<figcaption class="figcap">{{ f3Caption }}</figcaption>
+<figcaption class="plate__cap">{{ f3Caption }}</figcaption>
 </figure>
 </div>
 </sc-if>
@@ -466,9 +363,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 
 <!-- Card 4: no attempt object -->
 <div class="acc">
-<button class="accbtn" onClick="{{ c4Tog }}"><span class="accarrow">{{ c4Arrow }}</span><span class="acct">Speculative fan-out has no home in the model</span><span class="accs">git has no object for "attempt" — the one primitive with no GitHub analogue</span></button>
+<button class="acc__btn" onClick="{{ c4Tog }}"><span class="acc__arrow">{{ c4Arrow }}</span><span class="acc__t">Speculative fan-out has no home in the model</span><span class="acc__s">git has no object for "attempt" — the one primitive with no GitHub analogue</span></button>
 <sc-if value="{{ c4Open }}" hint-placeholder-val="{{ false }}">
-<div class="accbody">
+<div class="acc__body">
 <p class="b">The fan-out workload is N attempts at one intent: fan out, evaluate, keep the best. Git has no object for "attempt" and no lifecycle for a workspace, so orchestrators approximate with branches, worktrees, or whole clones, then garbage-collect them out of band. The discarded attempts leave no trace — nothing can learn from them, and no audit can see them. A GitHub merge queue picks between changes that already exist as pull requests; it cannot represent N competing candidate solutions to a single stated intent. ADP's candidate set is exactly that object, and it is the one primitive here with no GitHub analogue at all — you saw it animated in FIG 03.</p>
 </div>
 </sc-if>
@@ -476,43 +373,43 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 
 <!-- Card 5: op log -->
 <div class="acc">
-<button class="accbtn" onClick="{{ c5Tog }}"><span class="accarrow">{{ c5Arrow }}</span><span class="acct">The server keeps no operation log</span><span class="accs">after a force-push, the previous history simply never happened</span></button>
+<button class="acc__btn" onClick="{{ c5Tog }}"><span class="acc__arrow">{{ c5Arrow }}</span><span class="acc__t">The server keeps no operation log</span><span class="acc__s">after a force-push, the previous history simply never happened</span></button>
 <sc-if value="{{ c5Open }}" hint-placeholder-val="{{ false }}">
-<div class="accbody">
+<div class="acc__body">
 <p class="b">Git records the state of the tree, not the operations that produced it. A rebase creates new commits and moves the pointer; the originals become unreachable, recoverable only from a per-clone reflog that expires and is never pushed. After a force-push, the server has no record the previous history existed, who replaced it, or why. At one writer per branch that is survivable. With hundreds of automated writers — or one long-horizon agent rewriting as it works — it removes the two things automation needs most: an authoritative account of what happened, and a way to reverse it.</p>
-<figure class="fig" style="margin-top:24px">
-<div class="fighead">
-<span class="figlab">REBASE, FORCE-PUSH, UNDO</span>
-<div class="ctrl">
+<figure class="plate">
+<div class="plate__head">
+<span>REBASE, FORCE-PUSH, UNDO</span>
+<div class="plate__ctrl">
 <button class="btn" onClick="{{ f5Play }}">{{ f5PlayLabel }}</button>
-<input type="range" min="0" max="3" step="1" value="{{ f5Step }}" onChange="{{ f5Set }}" style="width:150px">
+<input type="range" min="0" max="3" step="1" value="{{ f5Step }}" onChange="{{ f5Set }}" class="slider">
 <span class="counter">{{ f5Counter }}</span>
 </div>
 </div>
-<div style="padding:30px 24px;display:grid;grid-template-columns:1fr 1fr;gap:24px">
-<div style="border:1px solid var(--line);background:var(--panel2);border-radius:3px;padding:18px">
-<div style="font:500 12px var(--mono);letter-spacing:.1em;color:var(--amber);margin-bottom:16px">GIT SERVER STATE</div>
-<div style="display:flex;flex-direction:column;gap:6px;font:400 13px/1.6 var(--mono)">
+<div class="plate__body--grid">
+<div class="note">
+<div class="label label--warn">GIT SERVER STATE</div>
+<div class="stack-sm">
 <sc-for list="{{ f5GitRows }}" as="row" hint-placeholder-count="4">
-<div style="color:{{ row.color }};opacity:{{ row.op }};text-decoration:{{ row.strike }};transition:opacity .4s ease">{{ row.text }}</div>
+<div class="fade" style="color:{{ row.color }};opacity:{{ row.op }};text-decoration:{{ row.strike }}">{{ row.text }}</div>
 </sc-for>
 </div>
-<div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line);font:400 13px/1.6 var(--mono);color:var(--dim)">{{ f5GitNote }}</div>
+<div class="rule-top">{{ f5GitNote }}</div>
 </div>
-<div style="border:1px solid rgba(79,209,217,.3);background:var(--panel2);border-radius:3px;padding:18px">
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px">
-<span style="font:500 12px var(--mono);letter-spacing:.1em;color:var(--cyan)">ADP OPERATION LOG</span>
-<button onClick="{{ f5Undo }}" style="font:500 11px var(--mono);letter-spacing:.08em;color:var(--cyan);background:transparent;border:1px solid rgba(79,209,217,.5);border-radius:3px;padding:6px 12px;cursor:pointer;opacity:{{ f5UndoOp }};transition:opacity .3s ease">UNDO LAST OP</button>
+<div class="note note--accent">
+<div class="plate__head">
+<span class="label label--accent">ADP OPERATION LOG</span>
+<button onClick="{{ f5Undo }}" class="chip-outline">UNDO LAST OP</button>
 </div>
-<div style="display:flex;flex-direction:column;gap:6px;font:400 13px/1.6 var(--mono)">
+<div class="stack-sm">
 <sc-for list="{{ f5OpRows }}" as="row" hint-placeholder-count="3">
 <div style="color:{{ row.color }}">{{ row.text }}</div>
 </sc-for>
 </div>
-<div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line);font:400 13px/1.6 var(--mono);color:var(--dim)">{{ f5AdpNote }}</div>
+<div class="rule-top">{{ f5AdpNote }}</div>
 </div>
 </div>
-<figcaption class="figcap">{{ f5Caption }}</figcaption>
+<figcaption class="plate__cap">{{ f5Caption }}</figcaption>
 </figure>
 </div>
 </sc-if>
@@ -520,176 +417,183 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 
 <!-- Card 6: green check -->
 <div class="acc">
-<button class="accbtn" onClick="{{ c6Tog }}"><span class="accarrow">{{ c6Arrow }}</span><span class="acct">A green check is not evidence about what ships</span><span class="accs">CI tested the branch head; the merge commit was never run</span></button>
+<button class="acc__btn" onClick="{{ c6Tog }}"><span class="acc__arrow">{{ c6Arrow }}</span><span class="acc__t">A green check is not evidence about what ships</span><span class="acc__s">CI tested the branch head; the merge commit was never run</span></button>
 <sc-if value="{{ c6Open }}" hint-placeholder-val="{{ false }}">
-<div class="accbody">
+<div class="acc__body">
 <p class="b">CI runs against the head of a branch. What ships is the merge of that branch into a trunk that has moved since. Two changes can each pass, be textually mergeable, and still break in combination — one renames a field, the other adds a caller. Nothing in the git or GitHub model requires the evidence to describe the state that actually landed. (GitHub's merge queue does test a speculative merge — but its verdict is a transient check, not a signed object bound to the change; it evaporates rather than becoming part of the record.) When agents write most of the code, this is the layer that decides whether throughput lands as trustworthy software — and evals are stochastic, so the gate must be a statistical land criterion, not a binary pass.</p>
-<figure class="fig" style="margin-top:24px">
-<div class="fighead">
-<span class="figlab">WHAT THE CHECK TESTED</span>
-<div class="ctrl">
+<figure class="plate">
+<div class="plate__head">
+<span>WHAT THE CHECK TESTED</span>
+<div class="plate__ctrl">
 <button class="btn" onClick="{{ f7Play }}">{{ f7PlayLabel }}</button>
-<input type="range" min="0" max="4" step="1" value="{{ f7Step }}" onChange="{{ f7Set }}" style="width:150px">
+<input type="range" min="0" max="4" step="1" value="{{ f7Step }}" onChange="{{ f7Set }}" class="slider">
 <span class="counter">{{ f7Counter }}</span>
 </div>
 </div>
-<div style="padding:30px 24px;display:grid;grid-template-columns:1fr 1fr;gap:24px">
-<div style="border:1px solid var(--line);background:var(--panel2);border-radius:3px;padding:18px;display:flex;flex-direction:column;gap:12px">
-<div style="font:500 12px var(--mono);letter-spacing:.1em;color:var(--amber)">FORGE PIPELINE</div>
-<div style="font:400 13px/1.6 var(--mono);color:var(--sub);display:flex;flex-direction:column;gap:8px">
-<div style="opacity:{{ f7s1 }};transition:opacity .4s ease">PR #91 head 3c17f2 · checks queued</div>
-<div style="opacity:{{ f7s2 }};transition:opacity .4s ease;color:var(--cyan)">✓ tests pass on 3c17f2</div>
-<div style="opacity:{{ f7s3 }};transition:opacity .4s ease">trunk advanced: 4c1e77a → 9f02b6c</div>
-<div style="opacity:{{ f7s4 }};transition:opacity .4s ease">merge commit d81a05e created — never tested</div>
-<div style="opacity:{{ f7s5 }};transition:opacity .4s ease;color:var(--red)">✗ main red · revert, re-queue, repeat</div>
+<div class="plate__body--grid">
+<div class="note stack-sm">
+<div class="label label--warn">FORGE PIPELINE</div>
+<div class="stack-sm">
+<div class="fade" style="opacity:{{ f7s1 }}">PR #91 head 3c17f2 · checks queued</div>
+<div class="k fade" style="opacity:{{ f7s2 }}">✓ tests pass on 3c17f2</div>
+<div class="fade" style="opacity:{{ f7s3 }}">trunk advanced: 4c1e77a → 9f02b6c</div>
+<div class="fade" style="opacity:{{ f7s4 }}">merge commit d81a05e created — never tested</div>
+<div class="bad fade" style="opacity:{{ f7s5 }}">✗ main red · revert, re-queue, repeat</div>
 </div>
 </div>
-<div style="border:1px solid rgba(79,209,217,.3);background:var(--panel2);border-radius:3px;padding:18px;display:flex;flex-direction:column;gap:12px">
-<div style="font:500 12px var(--mono);letter-spacing:.1em;color:var(--cyan)">EVAL-GATED SPECULATIVE QUEUE</div>
-<div style="font:400 13px/1.6 var(--mono);color:var(--sub);display:flex;flex-direction:column;gap:8px">
-<div style="opacity:{{ f7a1 }};transition:opacity .4s ease">3 candidates for intent #418</div>
-<div style="opacity:{{ f7a2 }};transition:opacity .4s ease">merged states materialized speculatively</div>
-<div style="opacity:{{ f7a3 }};transition:opacity .4s ease">incremental graph: 41 of 3,400 targets affected</div>
-<div style="opacity:{{ f7a4 }};transition:opacity .4s ease">evidence bundle bound to the merged tree</div>
-<div style="opacity:{{ f7a5 }};transition:opacity .4s ease;color:var(--cyan)">✓ candidate 2 lands attested · 2 discarded, logged</div>
+<div class="note note--accent stack-sm">
+<div class="label label--accent">EVAL-GATED SPECULATIVE QUEUE</div>
+<div class="stack-sm">
+<div class="fade" style="opacity:{{ f7a1 }}">3 candidates for intent #418</div>
+<div class="fade" style="opacity:{{ f7a2 }}">merged states materialized speculatively</div>
+<div class="fade" style="opacity:{{ f7a3 }}">incremental graph: 41 of 3,400 targets affected</div>
+<div class="fade" style="opacity:{{ f7a4 }}">evidence bundle bound to the merged tree</div>
+<div class="k fade" style="opacity:{{ f7a5 }}">✓ candidate 2 lands attested · 2 discarded, logged</div>
 </div>
 </div>
 </div>
-<figcaption class="figcap">{{ f7Caption }}</figcaption>
+<figcaption class="plate__cap">{{ f7Caption }}</figcaption>
 </figure>
 </div>
 </sc-if>
 </div>
 
+</div>
 </section>
 
 <!-- ══════════════════════ 05 THE PROTOCOL ══════════════════════ -->
-<section class="wrap">
-<div class="kick" style="color:var(--cyan)">05 · THE PROTOCOL</div>
-<h2 class="t" style="max-width:30ch">A typed transaction, and a server that gates on it</h2>
-<p class="b">ADP is two things. A <strong style="color:var(--fg);font-weight:500">schema</strong>: every change is one signed record — intent → diff → evidence → provenance — with the git object graph as the store, so <span class="mono" style="font-size:15px;color:var(--fg)">git clone</span> and every existing tool keep working. And a <strong style="color:var(--fg);font-weight:500">gate</strong>: changes are admitted by policy that evaluates the record — tests and evals against the merged state, secrets blocked at the receive path, dependency changes checked at admission, org-level rules no agent can bypass — with the verdict returned to the authoring agent as a typed object it can act on in-trajectory, not an alert in a queue a human never empties.</p>
+<section class="wrap sec">
+<div class="band"><span class="band__n">05</span><span class="band__label">THE PROTOCOL</span></div>
+<div class="flow flow--loose">
+<h2>A typed transaction, and a server that gates on it</h2>
+<p class="b">ADP is two things. A <strong class="strong">schema</strong>: every change is one signed record — intent → diff → evidence → provenance — with the git object graph as the store, so <span class="mono em">git clone</span> and every existing tool keep working. And a <strong class="strong">gate</strong>: changes are admitted by policy that evaluates the record — tests and evals against the merged state, secrets blocked at the receive path, dependency changes checked at admission, org-level rules no agent can bypass — with the verdict returned to the authoring agent as a typed object it can act on in-trajectory, not an alert in a queue a human never empties.</p>
 <p class="b">The division of labor with harnesses is deliberate: the harness is the brain and hands — planning, context, model quality; the substrate is the world and the ledger — workspaces, history, conflicts, evidence, identity. Harnesses should compete furiously on the first list and should not be able to compete on owning your history. The precedent is OpenTelemetry: every vendor once emitted its own incompatible record of what happened, until a standard for the record itself let any backend consume all of them. Every harness today reimplements checkpoints, session state, memory files, and retry loops — the same movie, one layer down.</p>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:4px;margin-top:40px;font-size:15px;line-height:1.6">
-<div style="background:var(--panel2);padding:14px 20px;font:500 11px var(--mono);letter-spacing:.12em;color:var(--dim)">HARNESS (POLICY)</div>
-<div style="background:var(--panel2);padding:14px 20px;font:500 11px var(--mono);letter-spacing:.12em;color:var(--dim)">SUBSTRATE (STATE &amp; TRUTH)</div>
-<div style="background:var(--panel);padding:16px 20px;color:var(--sub)">Decides what context to load, what to remember, when to checkpoint, which evals matter, when to fan out</div>
-<div style="background:var(--panel);padding:16px 20px;color:var(--sub)">Versions and serves the artifacts; owns workspace lifecycle, the operation log, conflict objects, the evidence graph, signed identity</div>
+<div class="grid grid--2">
+<div class="card card--head label">HARNESS (POLICY)</div>
+<div class="card card--head label">SUBSTRATE (STATE &amp; TRUTH)</div>
+<div class="card card__b">Decides what context to load, what to remember, when to checkpoint, which evals matter, when to fan out</div>
+<div class="card card__b">Versions and serves the artifacts; owns workspace lifecycle, the operation log, conflict objects, the evidence graph, signed identity</div>
+</div>
 </div>
 </section>
 
 <!-- ══════════════════════ 06 LANDSCAPE ══════════════════════ -->
-<section class="wrap">
-<div class="kick" style="color:var(--dim)">06 · LANDSCAPE</div>
-<h2 class="t" style="max-width:30ch">Everyone solved a piece. Nobody solved trust.</h2>
+<section class="wrap sec">
+<div class="band"><span class="band__n">06</span><span class="band__label">LANDSCAPE</span></div>
+<div class="flow flow--loose">
+<h2>Everyone solved a piece. Nobody solved trust.</h2>
 <p class="b">Between February and June 2026, five well-resourced teams shipped systems on these premises — independent convergence by an ex-GitHub CEO, an IDE company, a game engine, a Perforce challenger, and an indie is the strongest available evidence the architecture is right. The matrix below scores each against the capabilities both futures require, from public sources as of August 2026. Every row expands to the evidence; ● shipped and verifiable, ◐ partial or announced, ○ absent or unpublished. Corrections welcome — <a href="https://github.com/DeDuva/adp/issues">file an issue</a>.</p>
 
-<div style="margin-top:36px;border:1px solid var(--line);border-radius:4px;overflow-x:auto">
+<div class="plate__scroll">
 <div class="mx">
-<div class="mxh" style="text-align:left;padding-left:14px">PLAYER</div>
-<div class="mxh">WORKING-SET OPS</div>
-<div class="mxh">NON-HALTING MERGE</div>
-<div class="mxh">FAN-OUT PRIMITIVE</div>
-<div class="mxh">OP LOG + UNDO</div>
-<div class="mxh">INTENT + PROVENANCE</div>
-<div class="mxh">EVIDENCE AT LAND</div>
-<div class="mxh">ADMISSION POLICY</div>
-<div class="mxh">OPEN + NEUTRAL</div>
+<div class="mx__h mx__h--name">PLAYER</div>
+<div class="mx__h">WORKING-SET OPS</div>
+<div class="mx__h">NON-HALTING MERGE</div>
+<div class="mx__h">FAN-OUT PRIMITIVE</div>
+<div class="mx__h">OP LOG + UNDO</div>
+<div class="mx__h">INTENT + PROVENANCE</div>
+<div class="mx__h">EVIDENCE AT LAND</div>
+<div class="mx__h">ADMISSION POLICY</div>
+<div class="mx__h">OPEN + NEUTRAL</div>
 
-<div class="mxn" onClick="{{ r1Tog }}"><span class="accarrow">{{ r1Arrow }}</span>GitHub + Agent HQ</div>
-<div class="mxc part">◐</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc part">◐</div><div class="mxc part">◐</div><div class="mxc part">◐</div><div class="mxc full">●</div><div class="mxc none">○</div>
+<div class="mx__n" onClick="{{ r1Tog }}"><span class="acc__arrow">{{ r1Arrow }}</span>GitHub + Agent HQ</div>
+<div class="mx__c part">◐</div><div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c part">◐</div><div class="mx__c part">◐</div><div class="mx__c part">◐</div><div class="mx__c full">●</div><div class="mx__c none">○</div>
 <sc-if value="{{ r1Open }}" hint-placeholder-val="{{ false }}">
-<div class="mxd">The incumbent, and the strongest all-round position: org-enforceable rulesets, push protection on by default, merge queue (which does test a speculative merged state — but emits a transient check, not signed evidence bound to the change), partial/shallow clone (opt-in; default tooling still clones), audit-log export as a separate product. Agent HQ fronts multi-agent orchestration with enterprise governance; Copilot sessions are logged in proprietary form. The structural gaps: no attempt/candidate object, conflicts still halt, no operation-level undo, and the control shape is human-pace — alerts, dashboards, and review queues rather than typed admission verdicts. Owned by Microsoft; every frontier lab competes with its owner.</div>
+<div class="mx__d">The incumbent, and the strongest all-round position: org-enforceable rulesets, push protection on by default, merge queue (which does test a speculative merged state — but emits a transient check, not signed evidence bound to the change), partial/shallow clone (opt-in; default tooling still clones), audit-log export as a separate product. Agent HQ fronts multi-agent orchestration with enterprise governance; Copilot sessions are logged in proprietary form. The structural gaps: no attempt/candidate object, conflicts still halt, no operation-level undo, and the control shape is human-pace — alerts, dashboards, and review queues rather than typed admission verdicts. Owned by Microsoft; every frontier lab competes with its owner.</div>
 </sc-if>
 
-<div class="mxn" onClick="{{ r2Tog }}"><span class="accarrow">{{ r2Arrow }}</span>Cursor Origin</div>
-<div class="mxc part">◐</div><div class="mxc part">◐</div><div class="mxc part">◐</div><div class="mxc none">○</div><div class="mxc part">◐</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc none">○</div>
+<div class="mx__n" onClick="{{ r2Tog }}"><span class="acc__arrow">{{ r2Arrow }}</span>Cursor Origin</div>
+<div class="mx__c part">◐</div><div class="mx__c part">◐</div><div class="mx__c part">◐</div><div class="mx__c none">○</div><div class="mx__c part">◐</div><div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c none">○</div>
 <sc-if value="{{ r2Open }}" hint-placeholder-val="{{ false }}">
-<div class="mxd">Announced June 16, 2026 at Compile; <strong>open beta since 17 August</strong> to paid plans<a class="ref" href="#ref-9">9</a>. Thinner than the June framing promised: no merge queue, no stacked PRs, no machine-readable review, and Cursor's own changelog keeps <strong>GitHub as the source of truth</strong> for synced repos. Separately, Cursor published <strong>Continuity</strong> — the most detailed git-storage engineering artifact of the year: a write-ahead log in S3 as source of truth, a normal git repo on NVMe as warm cache, atomic CAS instead of consensus. That is our Layer 0 position independently derived and pushed harder — and it is a storage layer only: no intent, no evidence, no verification, no agent change model. Nothing published on evidence semantics, operation logs, or policy. Proprietary and product-captive — and since <strong>14 August its parent Anysphere is owned by SpaceX</strong>, so every lab's neutrality calculus changed with it.</div>
+<div class="mx__d">Announced June 16, 2026 at Compile; <strong>open beta since 17 August</strong> to paid plans<a class="ref" href="#ref-9">9</a>. Thinner than the June framing promised: no merge queue, no stacked PRs, no machine-readable review, and Cursor's own changelog keeps <strong>GitHub as the source of truth</strong> for synced repos. Separately, Cursor published <strong>Continuity</strong> — the most detailed git-storage engineering artifact of the year: a write-ahead log in S3 as source of truth, a normal git repo on NVMe as warm cache, atomic CAS instead of consensus. That is our Layer 0 position independently derived and pushed harder — and it is a storage layer only: no intent, no evidence, no verification, no agent change model. Nothing published on evidence semantics, operation logs, or policy. Proprietary and product-captive — and since <strong>14 August its parent Anysphere is owned by SpaceX</strong>, so every lab's neutrality calculus changed with it.</div>
 </sc-if>
 
-<div class="mxn" onClick="{{ r3Tog }}"><span class="accarrow">{{ r3Arrow }}</span>Entire</div>
-<div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc part">◐</div><div class="mxc full">●</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc part">◐</div>
+<div class="mx__n" onClick="{{ r3Tog }}"><span class="acc__arrow">{{ r3Arrow }}</span>Entire</div>
+<div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c part">◐</div><div class="mx__c full">●</div><div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c part">◐</div>
 <sc-if value="{{ r3Open }}" hint-placeholder-val="{{ false }}">
-<div class="mxd">Founded by Thomas Dohmke (ex-GitHub CEO); record $60M seed<a class="ref" href="#ref-10">10</a>. Checkpoints version agent sessions, prompts, tool calls, and reasoning traces as git-native objects — the intent/provenance half of our thesis, nearly verbatim, and the strongest capture story shipping. Distributed git network in public preview since July 2026, with ForgeMark, an open push-throughput benchmark. The gap is the other half: capture without merge-time evidence binding is the audit half without the trust half — and the business model centers on hosting the agent-session data layer, so labs would rent their own provenance.</div>
+<div class="mx__d">Founded by Thomas Dohmke (ex-GitHub CEO); record $60M seed<a class="ref" href="#ref-10">10</a>. Checkpoints version agent sessions, prompts, tool calls, and reasoning traces as git-native objects — the intent/provenance half of our thesis, nearly verbatim, and the strongest capture story shipping. Distributed git network in public preview since July 2026, with ForgeMark, an open push-throughput benchmark. The gap is the other half: capture without merge-time evidence binding is the audit half without the trust half — and the business model centers on hosting the agent-session data layer, so labs would rent their own provenance.</div>
 </sc-if>
 
-<div class="mxn" onClick="{{ r4Tog }}"><span class="accarrow">{{ r4Arrow }}</span>Diversion</div>
-<div class="mxc full">●</div><div class="mxc none">○</div><div class="mxc part">◐</div><div class="mxc none">○</div><div class="mxc part">◐</div><div class="mxc none">○</div><div class="mxc part">◐</div><div class="mxc none">○</div>
+<div class="mx__n" onClick="{{ r4Tog }}"><span class="acc__arrow">{{ r4Arrow }}</span>Diversion</div>
+<div class="mx__c full">●</div><div class="mx__c none">○</div><div class="mx__c part">◐</div><div class="mx__c none">○</div><div class="mx__c part">◐</div><div class="mx__c none">○</div><div class="mx__c part">◐</div><div class="mx__c none">○</div>
 <sc-if value="{{ r4Open }}" hint-placeholder-val="{{ false }}">
-<div class="mxd">Cloud-native VCS, not a git layer: central repository, unlimited ephemeral working copies, no local clones — the cleanest working-set story in production, with bi-directional GitHub mirroring. "Trajectory" captures the why behind AI-generated changes. Closed-source commercial SaaS; no open spec; no operation-log or evidence semantics exposed. Notably, Diversion argues agents erode switching costs — an argument for why non-git substrates can now exist at all, which the whole field, including ADP, benefits from.</div>
+<div class="mx__d">Cloud-native VCS, not a git layer: central repository, unlimited ephemeral working copies, no local clones — the cleanest working-set story in production, with bi-directional GitHub mirroring. "Trajectory" captures the why behind AI-generated changes. Closed-source commercial SaaS; no open spec; no operation-log or evidence semantics exposed. Notably, Diversion argues agents erode switching costs — an argument for why non-git substrates can now exist at all, which the whole field, including ADP, benefits from.</div>
 </sc-if>
 
-<div class="mxn" onClick="{{ r5Tog }}"><span class="accarrow">{{ r5Arrow }}</span>Epic Lore</div>
-<div class="mxc full">●</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc part">◐</div><div class="mxc full">●</div>
+<div class="mx__n" onClick="{{ r5Tog }}"><span class="acc__arrow">{{ r5Arrow }}</span>Epic Lore</div>
+<div class="mx__c full">●</div><div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c part">◐</div><div class="mx__c full">●</div>
 <sc-if value="{{ r5Open }}" hint-placeholder-val="{{ false }}">
-<div class="mxd">Open-sourced (MIT, open spec) June 17, 2026. Centralized content-addressed VCS: Merkle-tree revisions, fragment-level dedup, lazy sparse working copies; binary-scale payloads (weights, datasets) native, pairing with Horde CI/CD. This is our Layer 0 storage architecture independently derived. We evaluated building on the Lore spec and did not adopt it: the gap analysis did not justify the dependency, and Cursor's Continuity result is independent evidence that keeping real git as the object layer is the right call. Game-industry design center: per-path ACLs exist, but there is no agent change model — no intent, evidence, or provenance semantics — and no notion of attempts or gates.</div>
+<div class="mx__d">Open-sourced (MIT, open spec) June 17, 2026. Centralized content-addressed VCS: Merkle-tree revisions, fragment-level dedup, lazy sparse working copies; binary-scale payloads (weights, datasets) native, pairing with Horde CI/CD. This is our Layer 0 storage architecture independently derived. We evaluated building on the Lore spec and did not adopt it: the gap analysis did not justify the dependency, and Cursor's Continuity result is independent evidence that keeping real git as the object layer is the right call. Game-industry design center: per-path ACLs exist, but there is no agent change model — no intent, evidence, or provenance semantics — and no notion of attempts or gates.</div>
 </sc-if>
 
-<div class="mxn" onClick="{{ r6Tog }}"><span class="accarrow">{{ r6Arrow }}</span>Oak</div>
-<div class="mxc full">●</div><div class="mxc none">○</div><div class="mxc part">◐</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc part">◐</div><div class="mxc part">◐</div><div class="mxc none">○</div>
+<div class="mx__n" onClick="{{ r6Tog }}"><span class="acc__arrow">{{ r6Arrow }}</span>Oak</div>
+<div class="mx__c full">●</div><div class="mx__c none">○</div><div class="mx__c part">◐</div><div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c part">◐</div><div class="mx__c part">◐</div><div class="mx__c none">○</div>
 <sc-if value="{{ r6Open }}" hint-placeholder-val="{{ false }}">
-<div class="mxd">Purpose-built Rust VCS: ~1s virtual mounts, no full clone, per-task branch isolation for parallel agents; claims ~50% fewer VCS tokens and ~90% faster operations<a class="ref" href="#ref-12">12</a>. Validates token cost and mount latency as first-order VCS metrics — numbers this page cites. <strong>Now a server, not just a client</strong>: native CI in <span class="mono" style="font-size:13px">.oak/workflows</span>, verified content-addressed commits, policy as a repo file, a checkout-free branch-review API, and <strong>a merge gate that refuses a squash while CI is red</strong> — which is why this page no longer claims nobody gates at the landing point. The gate takes <span class="mono" style="font-size:13px">--force</span>; a bypassable gate is a linter with good manners, and the enterprise question is what an admin can make <em style="font-style:normal;color:var(--fg)">non</em>-bypassable.</div>
+<div class="mx__d">Purpose-built Rust VCS: ~1s virtual mounts, no full clone, per-task branch isolation for parallel agents; claims ~50% fewer VCS tokens and ~90% faster operations<a class="ref" href="#ref-12">12</a>. Validates token cost and mount latency as first-order VCS metrics — numbers this page cites. <strong>Now a server, not just a client</strong>: native CI in <span class="mono fine">.oak/workflows</span>, verified content-addressed commits, policy as a repo file, a checkout-free branch-review API, and <strong>a merge gate that refuses a squash while CI is red</strong> — which is why this page no longer claims nobody gates at the landing point. The gate takes <span class="mono fine">--force</span>; a bypassable gate is a linter with good manners, and the enterprise question is what an admin can make <em class="em">non</em>-bypassable.</div>
 </sc-if>
 
-<div class="mxn" onClick="{{ r7Tog }}"><span class="accarrow">{{ r7Arrow }}</span>jj · GitButler · Sapling</div>
-<div class="mxc part">◐</div><div class="mxc full">●</div><div class="mxc part">◐</div><div class="mxc full">●</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc full">●</div>
+<div class="mx__n" onClick="{{ r7Tog }}"><span class="acc__arrow">{{ r7Arrow }}</span>jj · GitButler · Sapling</div>
+<div class="mx__c part">◐</div><div class="mx__c full">●</div><div class="mx__c part">◐</div><div class="mx__c full">●</div><div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c full">●</div>
 <sc-if value="{{ r7Open }}" hint-placeholder-val="{{ false }}">
-<div class="mxd">The open-source ecosystem supplies the change model ADP builds on. Jujutsu: operation log, universal undo, first-class commit-able conflicts — the ideal agent change semantics, but client-side only, with no server or collaboration layer. GitButler: agent hooks plus the 300-run vcbench benchmark showing agent-oriented VCS interfaces completing tasks ~65% faster with ~78% fewer commands than raw git<a class="ref" href="#ref-11">11</a>. Sapling/EdenFS proved git can be a facade over different internals at Meta scale, though the server was never fully productionized externally. Fragments, not a substrate: none combines change model, storage, verification, and a server.</div>
+<div class="mx__d">The open-source ecosystem supplies the change model ADP builds on. Jujutsu: operation log, universal undo, first-class commit-able conflicts — the ideal agent change semantics, but client-side only, with no server or collaboration layer. GitButler: agent hooks plus the 300-run vcbench benchmark showing agent-oriented VCS interfaces completing tasks ~65% faster with ~78% fewer commands than raw git<a class="ref" href="#ref-11">11</a>. Sapling/EdenFS proved git can be a facade over different internals at Meta scale, though the server was never fully productionized externally. Fragments, not a substrate: none combines change model, storage, verification, and a server.</div>
 </sc-if>
 
-<div class="mxn" onClick="{{ r8Tog }}"><span class="accarrow">{{ r8Arrow }}</span>Harness-private state</div>
-<div class="mxc none">○</div><div class="mxc none">○</div><div class="mxc part">◐</div><div class="mxc part">◐</div><div class="mxc part">◐</div><div class="mxc none">○</div><div class="mxc part">◐</div><div class="mxc none">○</div>
+<div class="mx__n" onClick="{{ r8Tog }}"><span class="acc__arrow">{{ r8Arrow }}</span>Harness-private state</div>
+<div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c part">◐</div><div class="mx__c part">◐</div><div class="mx__c part">◐</div><div class="mx__c none">○</div><div class="mx__c part">◐</div><div class="mx__c none">○</div>
 <sc-if value="{{ r8Open }}" hint-placeholder-val="{{ false }}">
-<div class="mxd">Claude Code, Codex CLI, Gemini CLI, Devin, OpenHands, Cursor's agents: each ships its own checkpoint-and-rewind (shadow repos or file snapshots outside version control), session persistence, memory files, worktree orchestration, and retry-and-rebase conflict handling — version-control primitives, reinvented per harness, invisible to the repository, incompatible with every other harness. The drift now extends to governance: org-managed settings, credential isolation, and egress policy accumulating in the layer with the least visibility into what landed. An enterprise running three harnesses holds three incomplete audit trails. This is the pre-OpenTelemetry world, one layer down — every vendor emitting its own incompatible record of what happened — and harness vendors would mostly be glad to delete this code if a standard existed.</div>
+<div class="mx__d">Claude Code, Codex CLI, Gemini CLI, Devin, OpenHands, Cursor's agents: each ships its own checkpoint-and-rewind (shadow repos or file snapshots outside version control), session persistence, memory files, worktree orchestration, and retry-and-rebase conflict handling — version-control primitives, reinvented per harness, invisible to the repository, incompatible with every other harness. The drift now extends to governance: org-managed settings, credential isolation, and egress policy accumulating in the layer with the least visibility into what landed. An enterprise running three harnesses holds three incomplete audit trails. This is the pre-OpenTelemetry world, one layer down — every vendor emitting its own incompatible record of what happened — and harness vendors would mostly be glad to delete this code if a standard existed.</div>
 </sc-if>
 
-<div class="mxn" onClick="{{ r9Tog }}" style="border-left:2px solid var(--cyan)"><span class="accarrow">{{ r9Arrow }}</span><span style="color:var(--cyan)">ADP</span></div>
-<div class="mxc part">◐</div><div class="mxc part">◐</div><div class="mxc full">●</div><div class="mxc full">●</div><div class="mxc full">●</div><div class="mxc full">●</div><div class="mxc part">◐</div><div class="mxc full">●</div>
+<div class="mx__n" onClick="{{ r9Tog }}" class="quote"><span class="acc__arrow">{{ r9Arrow }}</span><span class="k">ADP</span></div>
+<div class="mx__c part">◐</div><div class="mx__c part">◐</div><div class="mx__c full">●</div><div class="mx__c full">●</div><div class="mx__c full">●</div><div class="mx__c full">●</div><div class="mx__c part">◐</div><div class="mx__c full">●</div>
 <sc-if value="{{ r9Open }}" hint-placeholder-val="{{ false }}">
-<div class="mxd">Scored with the same standard of evidence, against the working reference implementation (CI-verified end to end, validated against the real unmodified <span class="mono" style="font-size:13px">gh</span> binary). Shipped: candidate sets (the fan-out object no one else has), append-only operation log with undo written in the same transaction as every mutation, typed Ed25519-signed changes binding commit to intent and provenance, DSSE-signed in-toto evidence bundles gated by a two-level land policy, and push protection at the receive path. Honest partials: the store is real git today — working-set virtualization is roadmap; conflicts-as-objects and the speculative eval-gated merge queue are specified, not shipped; the trust plane's org policy plane, dependency admission, scanner-as-gate adapters and isolated gate execution (network-denied, resource-capped Docker) have all shipped; what remains is SSO/SCIM, and dependency admission's breadth — it covers npm today. Apache-2.0, open spec, designed for multi-vendor implementation; governance moves to a neutral foundation once two independent implementations exist.</div>
+<div class="mx__d">Scored with the same standard of evidence, against the working reference implementation (CI-verified end to end, validated against the real unmodified <span class="mono fine">gh</span> binary). Shipped: candidate sets (the fan-out object no one else has), append-only operation log with undo written in the same transaction as every mutation, typed Ed25519-signed changes binding commit to intent and provenance, DSSE-signed in-toto evidence bundles gated by a two-level land policy, and push protection at the receive path. Honest partials: the store is real git today — working-set virtualization is roadmap; conflicts-as-objects and the speculative eval-gated merge queue are specified, not shipped; the trust plane's org policy plane, dependency admission, scanner-as-gate adapters and isolated gate execution (network-denied, resource-capped Docker) have all shipped; what remains is SSO/SCIM, and dependency admission's breadth — it covers npm today. Apache-2.0, open spec, designed for multi-vendor implementation; governance moves to a neutral foundation once two independent implementations exist.</div>
 </sc-if>
 </div>
 </div>
-<div style="font:400 13px/1.5 var(--mono);color:var(--dim);margin-top:14px">● shipped &amp; verifiable · ◐ partial or announced · ○ absent or unpublished — public sources, August 2026</div>
+<div class="fine">● shipped &amp; verifiable · ◐ partial or announced · ○ absent or unpublished — public sources, August 2026</div>
 
-<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:44px">
+<div class="grid">
 <div class="argcard">
-<div class="argk">WHY NOT GITHUB</div>
-<p class="argb">GitHub's control shape scales <em style="font-style:normal;color:var(--fg)">human</em> review: alerts for humans to triage, dashboards for humans to read, queues for humans to empty, rules humans can bypass. Each is a human in the loop by construction, so throughput is capped by human attention — the exact resource that stopped scaling. ADP's gate is an admission controller: typed verdicts computed against the state that ships, returned to the authoring agent in-trajectory. Machinery that scales with compute, not attention — and it answers the question no incumbent can: <em style="font-style:normal;color:var(--fg)">prove what entered the codebase, what put it there, and how it was verified.</em></p>
+<div class="argcard__k">WHY NOT GITHUB</div>
+<p class="b">GitHub's control shape scales <em class="em">human</em> review: alerts for humans to triage, dashboards for humans to read, queues for humans to empty, rules humans can bypass. Each is a human in the loop by construction, so throughput is capped by human attention — the exact resource that stopped scaling. ADP's gate is an admission controller: typed verdicts computed against the state that ships, returned to the authoring agent in-trajectory. Machinery that scales with compute, not attention — and it answers the question no incumbent can: <em class="em">prove what entered the codebase, what put it there, and how it was verified.</em></p>
 </div>
 <div class="argcard">
-<div class="argk">WHY NOT THE ENTRANTS</div>
-<p class="argb">Every entrant stops at storage and capture. Lore, Diversion, and Oak solve where bytes live and how fast workspaces spawn — real problems, and ADP adopts their conclusions (centralized content-addressed storage, working-set ops as a metric) without adopting their implementations. Entire and Diversion capture context and trajectory — the audit half. None binds context to verification evidence at merge time, and none gates on it. Capture without binding tells you <em style="font-style:normal;color:var(--fg)">what the agent was doing</em>; it cannot tell you <em style="font-style:normal;color:var(--fg)">whether what landed is safe</em>. Verification is the layer that decides whether agent throughput lands as trustworthy software — the hardest layer, and the uncontested one.</p>
+<div class="argcard__k">WHY NOT THE ENTRANTS</div>
+<p class="b">Every entrant stops at storage and capture. Lore, Diversion, and Oak solve where bytes live and how fast workspaces spawn — real problems, and ADP adopts their conclusions (centralized content-addressed storage, working-set ops as a metric) without adopting their implementations. Entire and Diversion capture context and trajectory — the audit half. None binds context to verification evidence at merge time, and none gates on it. Capture without binding tells you <em class="em">what the agent was doing</em>; it cannot tell you <em class="em">whether what landed is safe</em>. Verification is the layer that decides whether agent throughput lands as trustworthy software — the hardest layer, and the uncontested one.</p>
 </div>
 <div class="argcard">
-<div class="argk">WHY NOT THE HARNESSES</div>
-<p class="argb">Per-harness state is a dead end on three counts. Provenance fragments — three harnesses, three incompatible audit trails, none complete, which no regulator will accept. Work is captive — a task started in one harness cannot be resumed, reviewed, or verified in another. And the harness becomes the lock-in point — whoever owns the harness owns your history, the play Cursor is running by pairing its harness with its forge. The labs' own incentive runs the other way: their harnesses win on model quality, and they win bigger when enterprises can adopt them without forfeiting cross-harness auditability. OpenTelemetry proved the pattern for emitted state; MCP's adoption proves harnesses embrace neutral protocols when they exist — and MCP's 2026-07-28 revision, which removed protocol-level sessions and told servers to mint explicit handles, points at exactly the shape ADP implements.</p>
+<div class="argcard__k">WHY NOT THE HARNESSES</div>
+<p class="b">Per-harness state is a dead end on three counts. Provenance fragments — three harnesses, three incompatible audit trails, none complete, which no regulator will accept. Work is captive — a task started in one harness cannot be resumed, reviewed, or verified in another. And the harness becomes the lock-in point — whoever owns the harness owns your history, the play Cursor is running by pairing its harness with its forge. The labs' own incentive runs the other way: their harnesses win on model quality, and they win bigger when enterprises can adopt them without forfeiting cross-harness auditability. OpenTelemetry proved the pattern for emitted state; MCP's adoption proves harnesses embrace neutral protocols when they exist — and MCP's 2026-07-28 revision, which removed protocol-level sessions and told servers to mint explicit handles, points at exactly the shape ADP implements.</p>
+</div>
 </div>
 </div>
 </section>
 
 <!-- ══════════════════════ 07 STATUS ══════════════════════ -->
-<section class="wrap">
-<div class="kick" style="color:var(--cyan)">07 · WHERE IT STANDS</div>
-<h2 class="t" style="max-width:28ch">Working today, stated plainly</h2>
-<div style="border:1px solid var(--line);background:var(--panel);border-radius:4px;padding:28px">
-<p class="b" style="max-width:74ch">Working end to end and CI-verified: a Fastify + Postgres server with token auth; git smart-HTTP proxied to the real <span class="mono" style="font-size:15px;color:var(--fg)">git http-backend</span>; REST and GraphQL compatibility validated against the real, unmodified <span class="mono" style="font-size:15px;color:var(--fg)">gh</span> binary; a three-level land policy (instance ∧ org ∧ repo); push protection and DSSE-signed evidence bundles; candidate sets; and an append-only operation log with undo — written in the same transaction as the change it describes. A native MCP plane (17 tools) and a read-only web UI sit alongside the compat surface.</p>
-<p class="b" style="max-width:74ch">The trust plane is built: the org policy plane with a fleet kill switch, dependency admission, scanner-as-gate adapters, an SBOM per landed change, and a gate runner that executes in a network-denied, capability-dropped, resource-capped container and cannot see the host filesystem or the Docker socket — each proved against a real daemon. Multi-tenancy landed with it: org isolation enforced on every plane and asserted by a matrix, per-org quotas including a storage ceiling, an audit-log export reconciled row-for-row against the operation log, OpenID Connect login, and a Helm chart verified by installing on a throwaway cluster. The wire contract is published and versioned at <span class="mono" style="font-size:15px;color:var(--fg)">0.5.0</span>.</p>
-<p class="b" style="max-width:74ch;color:var(--dim)">Not built, stated plainly: SCIM provisioning (deferred by decision, not blocked); dependency admission beyond npm; the storage architecture beyond its cheapest fixes; and a hosted preview.</p>
-<p class="b" style="margin:0;color:var(--dim);max-width:74ch">The MVP target, met today: set three environment variables and an unmodified coding agent clones, reads an issue, edits, pushes, opens a PR, watches checks, gets a typed review and merges — against an ADP server, with no knowledge that ADP exists.</p>
+<section class="wrap sec">
+<div class="band"><span class="band__n">07</span><span class="band__label">WHERE IT STANDS</span></div>
+<div class="flow flow--loose">
+<h2>Working today, stated plainly</h2>
+<div class="panel">
+<p class="b">Working end to end and CI-verified: a Fastify + Postgres server with token auth; git smart-HTTP proxied to the real <span class="mono em">git http-backend</span>; REST and GraphQL compatibility validated against the real, unmodified <span class="mono em">gh</span> binary; a three-level land policy (instance ∧ org ∧ repo); push protection and DSSE-signed evidence bundles; candidate sets; and an append-only operation log with undo — written in the same transaction as the change it describes. A native MCP plane (17 tools) and a read-only web UI sit alongside the compat surface.</p>
+<p class="b">The trust plane is built: the org policy plane with a fleet kill switch, dependency admission, scanner-as-gate adapters, an SBOM per landed change, and a gate runner that executes in a network-denied, capability-dropped, resource-capped container and cannot see the host filesystem or the Docker socket — each proved against a real daemon. Multi-tenancy landed with it: org isolation enforced on every plane and asserted by a matrix, per-org quotas including a storage ceiling, an audit-log export reconciled row-for-row against the operation log, OpenID Connect login, and a Helm chart verified by installing on a throwaway cluster. The wire contract is published and versioned at <span class="mono em">0.5.0</span>.</p>
+<p class="b">Not built, stated plainly: SCIM provisioning (deferred by decision, not blocked); dependency admission beyond npm; the storage architecture beyond its cheapest fixes; and a hosted preview.</p>
+<p class="b dim">The MVP target, met today: set three environment variables and an unmodified coding agent clones, reads an issue, edits, pushes, opens a PR, watches checks, gets a typed review and merges — against an ADP server, with no knowledge that ADP exists.</p>
+</div>
 </div>
 </section>
 
-<footer class="wrap" style="padding-top:96px">
-<div style="border-top:1px solid var(--line);padding-top:24px;display:flex;gap:32px;flex-wrap:wrap;font:400 13px var(--mono);color:var(--dim)">
+<footer class="wrap sec">
+<div class="foot">
 <a href="../">← ADP</a>
 <a href="https://github.com/DeDuva/adp#readme">README</a>
 <a href="https://github.com/DeDuva/adp/blob/main/docs/self-hosting.md">docs/self-hosting.md</a>
 <a href="https://github.com/DeDuva/adp/blob/main/docs/server-stack-tutorial.md">docs/server-stack-tutorial.md</a>
 <span>Apache-2.0 code · CC-BY prose</span>
 </div>
-<div style="margin-top:28px;font:500 12px var(--mono);letter-spacing:.12em;color:var(--dim)">REFERENCES</div>
+<div class="label">REFERENCES</div>
 <ol class="refs">
 <li id="ref-1">Sundar Pichai, April 2026: 75% of new code at Google is AI-generated and engineer-approved — <a href="https://www.fastcompany.com/91531519/google-ceo-says-75-of-the-companys-code-is-ai-generated">Fast Company</a>, <a href="https://devops.com/google-ceo-says-75-of-new-code-is-ai-generated/">DevOps.com</a></li>
 <li id="ref-2">LinearB, 2026 Software Engineering Benchmarks Report (8.1M PRs, 4,800 teams): agent-PR reviewer pickup 5.3× slower at p75 (1,055 vs 201 min); acceptance 32.7% vs 84.4% — <a href="https://linearb.io/resources/software-engineering-benchmarks-report">linearb.io</a></li>
@@ -788,47 +692,47 @@ class Component extends DCLogic {
     const landedSet = [7 % n, 19 % n, winner, 53 % n];
     const cells = [];
     for (let i = 0; i < n; i++) {
-      let bg = "#22262b", bd = "#22262b", op = 0.25;
-      if (s === 1) { bg = "#2f353b"; bd = "#2f353b"; op = 1; }
+      let bg = "var(--sim-idle)", bd = "var(--sim-idle)", op = 0.25;
+      if (s === 1) { bg = "var(--sim-idle)"; bd = "var(--sim-idle)"; op = 1; }
       else if (s === 2) {
-        if (i === winner) { bg = "rgba(79,209,217,.7)"; bd = "rgba(79,209,217,.7)"; }
-        else { bg = "rgba(224,164,88,.3)"; bd = "rgba(224,164,88,.3)"; }
+        if (i === winner) { bg = "var(--sim-accent)"; bd = "var(--sim-accent)"; }
+        else { bg = "var(--sim-warn-soft)"; bd = "var(--sim-warn-soft)"; }
         op = 1;
       } else if (s === 3) {
-        if (i === winner) { bg = "rgba(79,209,217,.7)"; bd = "rgba(79,209,217,.7)"; op = 1; }
-        else if (i % 3 === 0) { bg = "rgba(228,105,94,.35)"; bd = "rgba(228,105,94,.6)"; op = 1; }
-        else { bg = "rgba(224,164,88,.3)"; bd = "rgba(224,164,88,.3)"; op = 0.8; }
+        if (i === winner) { bg = "var(--sim-accent)"; bd = "var(--sim-accent)"; op = 1; }
+        else if (i % 3 === 0) { bg = "var(--sim-bad-soft)"; bd = "var(--sim-bad)"; op = 1; }
+        else { bg = "var(--sim-warn-soft)"; bd = "var(--sim-warn-soft)"; op = 0.8; }
       } else if (s === 4) {
-        if (landedSet.indexOf(i) >= 0) { bg = "rgba(79,209,217,.7)"; bd = "rgba(79,209,217,.7)"; op = 1; }
-        else { bg = "#1a1d20"; bd = "#1a1d20"; op = 0.2; }
+        if (landedSet.indexOf(i) >= 0) { bg = "var(--sim-accent)"; bd = "var(--sim-accent)"; op = 1; }
+        else { bg = "var(--sim-track)"; bd = "var(--sim-track)"; op = 0.2; }
       } else if (s === 5) {
-        bg = "#2f353b"; bd = "rgba(79,209,217,.45)"; op = 1;
-        if (i === winner) { bg = "rgba(79,209,217,.5)"; }
+        bg = "var(--sim-idle)"; bd = "var(--sim-accent-soft)"; op = 1;
+        if (i === winner) { bg = "var(--sim-accent)"; }
       } else if (s === 6) {
-        if (i === winner) { bg = "#4fd1d9"; bd = "#4fd1d9"; op = 1; }
-        else { bg = "#1a1d20"; bd = "#3a3f45"; op = 0.55; }
+        if (i === winner) { bg = "var(--sim-accent)"; bd = "var(--sim-accent)"; op = 1; }
+        else { bg = "var(--sim-track)"; bd = "var(--sim-spent)"; op = 0.55; }
       }
       cells.push({ bg: bg, bd: bd, op: String(op) });
     }
     const swConsoles = [
-      [{ text: "intent #418 — make token scopes enforceable per route", color: "#e9e7e2" },
-       { text: "orchestrator: prepare " + n + "-way fan-out", color: "#8b9098" }],
-      [{ text: n + " × git clone — " + this.fmt(1200 * n) + " served for one task", color: "#e0a458" },
-       { text: "server view: anonymous traffic; no attempt object exists", color: "#8b9098" }],
-      [{ text: "push main ← attempt-41  ✓ fast-forward", color: "#4fd1d9" },
-       { text: "push main ← " + (n - 1) + " attempts  ✗ non-fast-forward", color: "#e0a458" }],
-      [{ text: "CONFLICT (content): config.ts × " + Math.round(n / 3), color: "#e4695e" },
-       { text: "exit 1 — pipelines halt; harnesses enter private retry loops", color: "#e4695e" },
-       { text: "each retry: rebase, re-run, race again", color: "#8b9098" }],
-      [{ text: "4 attempts eventually land, serially", color: "#b9bcc1" },
-       { text: "each tested pre-merge; trunk moved 3× meanwhile", color: "#e0a458" },
-       { text: "record of the other " + (n - 4) + " attempts: none", color: "#e4695e" }],
-      [{ text: "same workload on ADP —", color: "#e9e7e2" },
-       { text: "candidate set cs_112: " + n + " attempts, typed and registered", color: "#4fd1d9" },
-       { text: "queue materializes merged states; evals run against them", color: "#4fd1d9" }],
-      [{ text: "land: attempt-41, evidence e_970 bound to merged tree", color: "#4fd1d9" },
-       { text: (n - 1) + " discarded — each an operation in the log", color: "#b9bcc1" },
-       { text: "queryable: what was tried, what failed, why the winner won", color: "#8b9098" }]
+      [{ text: "intent #418 — make token scopes enforceable per route", color: "var(--ink)" },
+       { text: "orchestrator: prepare " + n + "-way fan-out", color: "var(--dim)" }],
+      [{ text: n + " × git clone — " + this.fmt(1200 * n) + " served for one task", color: "var(--sim-warn)" },
+       { text: "server view: anonymous traffic; no attempt object exists", color: "var(--dim)" }],
+      [{ text: "push main ← attempt-41  ✓ fast-forward", color: "var(--sim-accent)" },
+       { text: "push main ← " + (n - 1) + " attempts  ✗ non-fast-forward", color: "var(--sim-warn)" }],
+      [{ text: "CONFLICT (content): config.ts × " + Math.round(n / 3), color: "var(--sim-bad)" },
+       { text: "exit 1 — pipelines halt; harnesses enter private retry loops", color: "var(--sim-bad)" },
+       { text: "each retry: rebase, re-run, race again", color: "var(--dim)" }],
+      [{ text: "4 attempts eventually land, serially", color: "var(--sub)" },
+       { text: "each tested pre-merge; trunk moved 3× meanwhile", color: "var(--sim-warn)" },
+       { text: "record of the other " + (n - 4) + " attempts: none", color: "var(--sim-bad)" }],
+      [{ text: "same workload on ADP —", color: "var(--ink)" },
+       { text: "candidate set cs_112: " + n + " attempts, typed and registered", color: "var(--sim-accent)" },
+       { text: "queue materializes merged states; evals run against them", color: "var(--sim-accent)" }],
+      [{ text: "land: attempt-41, evidence e_970 bound to merged tree", color: "var(--sim-accent)" },
+       { text: (n - 1) + " discarded — each an operation in the log", color: "var(--sub)" },
+       { text: "queryable: what was tried, what failed, why the winner won", color: "var(--dim)" }]
     ];
     const swCaptions = [
       "step 0 — one intent. For a hard problem or a fleet-wide remediation, an orchestrator tries " + n + " solutions in parallel: the fan-out mode.",
@@ -845,21 +749,21 @@ class Component extends DCLogic {
     const ticks = [];
     const T = 40;
     for (let i = 0; i < T; i++) {
-      let bg = "#22262b", bd = "#22262b", op = 0.2;
-      if (e >= 1) { bg = "rgba(79,209,217,.4)"; bd = "rgba(79,209,217,.4)"; op = 1; }
+      let bg = "var(--sim-idle)", bd = "var(--sim-idle)", op = 0.2;
+      if (e >= 1) { bg = "var(--sim-accent-soft)"; bd = "var(--sim-accent-soft)"; op = 1; }
       if (e >= 2) {
-        if (i < 4) { bg = "rgba(87,217,163,.6)"; bd = "rgba(87,217,163,.6)"; }
-        else { bg = "rgba(224,164,88,.35)"; bd = "rgba(224,164,88,.35)"; }
+        if (i < 4) { bg = "var(--sim-ok)"; bd = "var(--sim-ok)"; }
+        else { bg = "var(--sim-warn-soft)"; bd = "var(--sim-warn-soft)"; }
       }
-      if (e >= 3 && i >= 12 && i < 20) { bg = "#1a1d20"; bd = "rgba(228,105,94,.6)"; op = 0.7; }
-      if (e >= 5) { bd = "rgba(79,209,217,.55)"; op = 1; if (!(i >= 12 && i < 20)) bg = "rgba(79,209,217,.35)"; else bg = "#2f353b"; }
+      if (e >= 3 && i >= 12 && i < 20) { bg = "var(--sim-track)"; bd = "var(--sim-bad)"; op = 0.7; }
+      if (e >= 5) { bd = "var(--sim-accent)"; op = 1; if (!(i >= 12 && i < 20)) bg = "var(--sim-accent-soft)"; else bg = "var(--sim-idle)"; }
       ticks.push({ bg: bg, bd: bd, op: String(op) });
     }
     const seBacklogW = ["0%", "12%", "84%", "84%", "84%", "84%"][e];
-    const seBacklogFill = e >= 5 ? "rgba(79,209,217,.5)" : (e >= 2 ? "rgba(228,105,94,.5)" : "rgba(79,209,217,.5)");
+    const seBacklogFill = e >= 5 ? "var(--sim-accent)" : (e >= 2 ? "var(--sim-bad)" : "var(--sim-accent)");
     const seBacklogLabel = e >= 5 ? "evidence-gated: every change machine-verified; humans sample by risk" : "human review backlog";
     const seBacklogStat = ["0 waiting", "12 waiting", "136 waiting, growing 130/day", "136 waiting — against rewritten history", "136 waiting", "0 unaccounted for"][e];
-    const seBacklogColor = e >= 5 ? "#4fd1d9" : (e >= 2 ? "#e4695e" : "#8b9098");
+    const seBacklogColor = e >= 5 ? "var(--sim-accent)" : (e >= 2 ? "var(--sim-bad)" : "var(--dim)");
     const seCaptions = [
       "step 0 — the base case: one long-horizon agent in one session, iterating to green and landing serially. No merge contention at all.",
       "step 1 — a change every ~90 seconds; 160 by end of day. Each individually reasonable. Nobody read any of them.",
@@ -884,18 +788,18 @@ class Component extends DCLogic {
     const s5 = st.f5;
     const undone = this.state.f5Undone;
     const gitRows = [];
-    gitRows.push({ text: "0e9b3d5  init", color: "#b9bcc1", op: "1", strike: "none" });
+    gitRows.push({ text: "0e9b3d5  init", color: "var(--sub)", op: "1", strike: "none" });
     if (s5 === 0) {
-      gitRows.push({ text: "4c1e77a  cap concurrency", color: "#b9bcc1", op: "1", strike: "none" });
-      gitRows.push({ text: "b70f214  enforce scopes  ← main", color: "#e9e7e2", op: "1", strike: "none" });
+      gitRows.push({ text: "4c1e77a  cap concurrency", color: "var(--sub)", op: "1", strike: "none" });
+      gitRows.push({ text: "b70f214  enforce scopes  ← main", color: "var(--ink)", op: "1", strike: "none" });
     } else if (s5 === 1) {
-      gitRows.push({ text: "4c1e77a  cap concurrency", color: "#8b9098", op: "0.4", strike: "line-through" });
-      gitRows.push({ text: "b70f214  enforce scopes", color: "#8b9098", op: "0.4", strike: "line-through" });
-      gitRows.push({ text: "a11c390  cap concurrency (rebased)", color: "#b9bcc1", op: "1", strike: "none" });
-      gitRows.push({ text: "e6d4471  enforce scopes (rebased)  ← main", color: "#e9e7e2", op: "1", strike: "none" });
+      gitRows.push({ text: "4c1e77a  cap concurrency", color: "var(--dim)", op: "0.4", strike: "line-through" });
+      gitRows.push({ text: "b70f214  enforce scopes", color: "var(--dim)", op: "0.4", strike: "line-through" });
+      gitRows.push({ text: "a11c390  cap concurrency (rebased)", color: "var(--sub)", op: "1", strike: "none" });
+      gitRows.push({ text: "e6d4471  enforce scopes (rebased)  ← main", color: "var(--ink)", op: "1", strike: "none" });
     } else {
-      gitRows.push({ text: "a11c390  cap concurrency (rebased)", color: "#b9bcc1", op: "1", strike: "none" });
-      gitRows.push({ text: "e6d4471  enforce scopes (rebased)  ← main", color: "#e9e7e2", op: "1", strike: "none" });
+      gitRows.push({ text: "a11c390  cap concurrency (rebased)", color: "var(--sub)", op: "1", strike: "none" });
+      gitRows.push({ text: "e6d4471  enforce scopes (rebased)  ← main", color: "var(--ink)", op: "1", strike: "none" });
     }
     const gitNotes = [
       "main at b70f214. Two commits of agent work.",
@@ -904,16 +808,16 @@ class Component extends DCLogic {
       "recovery is a support ticket: find a machine whose reflog still has the old hashes."
     ];
     const opRows = [];
-    opRows.push({ text: "op_0091  create-repo      dev@x", color: "#8b9098" });
-    opRows.push({ text: "op_0104  land-change      agent/claude-code", color: "#8b9098" });
+    opRows.push({ text: "op_0091  create-repo      dev@x", color: "var(--dim)" });
+    opRows.push({ text: "op_0104  land-change      agent/claude-code", color: "var(--dim)" });
     if (s5 >= 1 && !undone) {
-      opRows.push({ text: "op_0117  rewrite-history  agent/orchestrator", color: "#e0a458" });
-      opRows.push({ text: "         before: b70f214 · after: e6d4471", color: "#8b9098" });
+      opRows.push({ text: "op_0117  rewrite-history  agent/orchestrator", color: "var(--sim-warn)" });
+      opRows.push({ text: "         before: b70f214 · after: e6d4471", color: "var(--dim)" });
     }
     if (undone) {
-      opRows.push({ text: "op_0117  rewrite-history  (undone)", color: "#8b9098" });
-      opRows.push({ text: "op_0118  undo-operation   dev@x", color: "#4fd1d9" });
-      opRows.push({ text: "         refs/heads/main restored to b70f214", color: "#4fd1d9" });
+      opRows.push({ text: "op_0117  rewrite-history  (undone)", color: "var(--dim)" });
+      opRows.push({ text: "op_0118  undo-operation   dev@x", color: "var(--sim-accent)" });
+      opRows.push({ text: "         refs/heads/main restored to b70f214", color: "var(--sim-accent)" });
     }
     const f5Captions = [
       "step 0 — the same repository under both models. Two commits landed.",
@@ -946,9 +850,9 @@ class Component extends DCLogic {
       prodDay: prod + " / day",
       revW: Math.min(100, (capacity / prod) * 100).toFixed(1) + "%",
       perChange: attention >= 1 ? Math.round(attention) + " min" : Math.round(attention * 60) + " sec",
-      perChangeColor: attention >= 5 ? "#e9e7e2" : "#e4695e",
+      perChangeColor: attention >= 5 ? "var(--ink)" : "var(--sim-bad)",
       backlog30: keeping ? "0" : (backlog >= 1000 ? (backlog / 1000).toFixed(1) + "k" : String(backlog)),
-      backlogColor: keeping ? "#4fd1d9" : "#e0a458",
+      backlogColor: keeping ? "var(--sim-accent)" : "var(--sim-warn)",
       reviewMode: reviewMode,
       multNote: multNotes,
 
@@ -960,7 +864,7 @@ class Component extends DCLogic {
       swLanded: s >= 6 ? "1 (attested)" : (s >= 4 ? "4" : (s >= 2 ? "1" : "0")),
       swKilled: s >= 6 ? String(n - 1) : (s >= 4 ? String(n - 4) : "0"),
       swLogged: s >= 5 ? "all " + n : (s >= 4 ? "4 of " + n : "—"),
-      swLoggedColor: s >= 5 ? "#4fd1d9" : "#e4695e",
+      swLoggedColor: s >= 5 ? "var(--sim-accent)" : "var(--sim-bad)",
 
       // fig 03 serial
       seStep: e, seSet: this.handler("se"), sePlay: () => this.play("se", 5), sePlayLabel: this.label("se"),
@@ -972,10 +876,10 @@ class Component extends DCLogic {
       // record compare
       f6IsGit: this.state.f6 === "git", f6IsAdp: this.state.f6 === "adp",
       f6ShowGit: () => this.setState({ f6: "git" }), f6ShowAdp: () => this.setState({ f6: "adp" }),
-      f6GitBg: this.state.f6 === "git" ? "#e9e7e2" : "transparent",
-      f6GitFg: this.state.f6 === "git" ? "#0d0e10" : "#8b9098",
-      f6AdpBg: this.state.f6 === "adp" ? "#e9e7e2" : "transparent",
-      f6AdpFg: this.state.f6 === "adp" ? "#0d0e10" : "#8b9098",
+      f6GitBg: this.state.f6 === "git" ? "var(--ink)" : "transparent",
+      f6GitFg: this.state.f6 === "git" ? "var(--paper)" : "var(--dim)",
+      f6AdpBg: this.state.f6 === "adp" ? "var(--ink)" : "transparent",
+      f6AdpFg: this.state.f6 === "adp" ? "var(--paper)" : "var(--dim)",
 
       // cost
       repoMB: repoMB, repoLabel: this.fmt(repoMB), agents: agents,

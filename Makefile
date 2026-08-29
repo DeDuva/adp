@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner helm dc-runtime
+.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner helm dc-runtime site
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -124,6 +124,10 @@ dc-runtime: ## Rebuild the published site's runtime from dc-runtime/src and asse
 	npm run typecheck --prefix dc-runtime
 	npm run check --prefix dc-runtime
 
+site: ## Assert the published pages meet #163's exit criteria, in a real browser
+	npm ci --prefix dc-runtime
+	npm test --prefix dc-runtime
+
 bench: ## Regenerate the benchmark report from bench/runs/ and assert it is unchanged
 	npm run report --prefix bench
 	@git diff --exit-code bench/report/ || { \
@@ -142,6 +146,7 @@ test-all: ## Everything CI runs: build, full suite, web, cli, adapters, runner, 
 	@$(MAKE) helm
 	@$(MAKE) bench
 	@$(MAKE) dc-runtime
+	@$(MAKE) site
 	@$(LOAD_ENV) bash server/conformance/run.sh
 	@$(LOAD_ENV) bash server/acceptance/run.sh
 

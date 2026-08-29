@@ -20,6 +20,11 @@
 node_modules
 dist/
 
+# Playwright's per-run output. `dc-runtime` writes it on every `make site`; it is
+# a report of one run on one machine, never an input to another.
+test-results/
+playwright-report/
+
 # Local env
 .env
 deploy/.env
