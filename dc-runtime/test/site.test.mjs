@@ -107,6 +107,33 @@ for (const path of PAGES) {
   });
 }
 
+// A botched block move once left `.argcard` nested inside `.argcard`, with one
+// card's prose under another card's heading. It shipped: browsers repair bad
+// nesting silently, every rendering assertion above still passed, and the page
+// was visibly wrong. Self-nesting is never intended in this design system, and
+// it is the signature of exactly that edit — so it is worth one cheap check.
+for (const path of PAGES) {
+  test(`${path}: no card-like element nests inside itself`, async ({ page }) => {
+    await page.goto(site.base + path, { waitUntil: 'networkidle' });
+    const nested = await page.evaluate(() =>
+      ['argcard', 'card', 'step', 'stat', 'plate', 'grid']
+        .map((c) => [c, document.querySelectorAll(`.${c} .${c}`).length])
+        .filter(([, n]) => n > 0));
+    expect(nested, 'self-nested elements').toEqual([]);
+  });
+}
+
+// Tag balance is a separate failure from the above — the missing close does not
+// self-nest anything, and the browser hides it just as thoroughly.
+test('every page balances its divs', () => {
+  for (const rel of ['index.html', 'why/index.html', 'sdlc/index.html']) {
+    const src = readFileSync(resolve(ROOT, rel), 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+    const open = (src.match(/<div\b/g) || []).length;
+    const close = (src.match(/<\/div>/g) || []).length;
+    expect(close, `${rel} div balance`).toBe(open);
+  }
+});
+
 test('no page defines a colour, and no static inline style survives', () => {
   for (const rel of ['index.html', 'why/index.html', 'sdlc/index.html']) {
     const src = readFileSync(resolve(ROOT, rel), 'utf8');
