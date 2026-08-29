@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The AI-native SDLC, and the layer under it — ADP</title>
+<meta name="description" content="The published playbooks for agentic development agree on a shape: six stages, each ending by committing an artifact the next stage reads. This walks all six and asks the same question at each — what actually enforces that artifact once no human is reading every line?">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- The same font URL as / and /why/, so arriving here from either reuses the
+     cache entry instead of fetching a second stylesheet for the same faces. -->
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../site.css">
+</head>
+<body>
+
+<div class="mastband">
+  <p class="masthead"><span><a href="../">ADP · the agent-native forge</a></span><span class="masthead__meta">Spec 0.5.0 · Apache-2.0</span></p>
+</div>
+
+<header class="wrap sec sec--top">
+  <div class="flow flow--loose">
+    <p class="eyebrow">The AI-native SDLC</p>
+    <h1>The AI-native SDLC, and the layer under it</h1>
+    <div class="flow flow--tight">
+      <p class="lede">The published playbooks for agentic development have converged on a shape, and
+      they are right about it: <strong>six stages, each ending by committing an artifact the next stage
+      reads.</strong> The handoff is a file. The commit is the trigger. Nothing waits for a meeting.</p>
+      <p class="lede">This page walks all six, and asks the same question at each one: <em>what actually
+      enforces that artifact</em> once nobody is reading every line?</p>
+    </div>
+    <p class="sub">This is not a correction. The playbooks describe how a team should work, and a team
+    that adopts one is better off than a team that does not. They do not describe a forge, and they
+    should not have to — but the artifacts they rely on have to be held by something, and today that
+    something is the same tool that wrote the code. This page is about the layer underneath.</p>
+    <div class="cta">
+      <a class="btn btn--primary" href="../#try-it">See it refuse a merge</a>
+      <a class="btn" href="../why/">The longer argument</a>
+      <a class="btn" href="https://github.com/DeDuva/adp">Source on GitHub</a>
+    </div>
+  </div>
+</header>
+
+<section class="wrap sec">
+  <div class="band"><span class="band__n">01</span><span class="band__label">The shape</span></div>
+  <div class="flow flow--loose">
+    <h2>Six stages, six committed artifacts</h2>
+    <p class="sub">The chain is the whole mechanic. A stage does not end by notifying anyone; it ends by
+    writing something down, and the next stage begins by reading it. That is what removes the handoff
+    delay, and it is also what makes the process auditable in principle.</p>
+
+    <div class="steps">
+      <div class="step"><span class="step__n">Stage 01 · Plan</span><span class="step__h">The intent</span><span class="step__b">What the change is for, written before the work, approved by whoever owns the outcome.</span></div>
+      <div class="step"><span class="step__n">Stage 02 · Design</span><span class="step__h">The spec</span><span class="step__b">Requirements and design in one pass, shaped by the organization's own policy.</span></div>
+      <div class="step"><span class="step__n">Stage 03 · Build</span><span class="step__h">The plan, then the diff</span><span class="step__b">No implementation without a written plan; conventions and guardrails held in the repository.</span></div>
+      <div class="step"><span class="step__n">Stage 04 · Test</span><span class="step__h">The evidence</span><span class="step__b">The session verifies itself before a human sees it, and the configuration is regression-tested too.</span></div>
+      <div class="step"><span class="step__n">Stage 05 · Deploy</span><span class="step__h">The findings, and the approval</span><span class="step__b">Policy-based review ranked by severity; a named person still authorizes the release.</span></div>
+      <div class="step"><span class="step__n">Stage 06 · Maintain</span><span class="step__h">The incident record</span><span class="step__b">Production breaches diagnose back into the loop, and the finding becomes the next intent.</span></div>
+    </div>
+
+    <p class="sub">Every one of those artifacts is a file in a repository. Everything that keeps them
+    honest — the hook that blocks an edit to a protected path, the policy encoded as a skill, the review
+    pass that ranks findings, the gate that pauses for an approval — <strong>runs inside the harness that
+    also wrote the code.</strong> That is not a flaw in the playbooks. It is the boundary of what a
+    playbook can reach.</p>
+  </div>
+</section>
+
+<section class="wrap sec">
+  <div class="band"><span class="band__n">02</span><span class="band__label">Stage by stage</span></div>
+  <div class="flow flow--loose">
+    <h2>What holds each artifact, and what could</h2>
+    <p class="sub">Read the middle column as a description rather than a complaint: each of these
+    mechanisms is real, works, and is better than what came before it. The question is only what remains
+    true when the agent does not cooperate, when the harness changes, or when someone asks in eighteen
+    months.</p>
+
+    <div class="table-scroll">
+      <table class="table--stack">
+        <thead>
+          <tr><th>Stage, and what it commits</th><th>What holds it today</th><th>What a typed record makes of it</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-th="Stage"><strong>01 Plan</strong> — the intent</td>
+            <td data-th="What holds it today">A markdown file, reviewed by a person and committed. Nothing downstream requires it to exist, and nothing checks that the code which follows answers it.</td>
+            <td data-th="What a typed record makes of it">An intent the change record references by identity. A pushed commit resolves to the intent its trailer names, and the evidence bundle names that intent in turn — so a change with none is a change policy can refuse.</td>
+          </tr>
+          <tr>
+            <td data-th="Stage"><strong>02 Design</strong> — the spec</td>
+            <td data-th="What holds it today">The spec, the prompt that produced it, and the policy versions in force are all in version control — in several places, correlated by convention and by whoever remembers the convention.</td>
+            <td data-th="What a typed record makes of it">Artifacts carried on the change and versioned with it. What a change is answering travels <em>with</em> the change rather than beside it, and is still attached when the branch is gone.</td>
+          </tr>
+          <tr>
+            <td data-th="Stage"><strong>03 Build</strong> — the plan, then the diff</td>
+            <td data-th="What holds it today">Plan mode, a knowledge file, hooks that block edits to protected paths. All of it lives inside the harness, and a second harness on the same repository brings its own.</td>
+            <td data-th="What a typed record makes of it">The diff stays ordinary git objects — <code>git clone</code> keeps working, and no tool has to learn anything. What is added is the harness, the model and the session that produced it, as fields rather than as a transcript.</td>
+          </tr>
+          <tr>
+            <td data-th="Stage"><strong>04 Test</strong> — the evidence</td>
+            <td data-th="What holds it today">The agent runs the checks and reports the output; evals gate changes to the agent's own configuration. The thing that ran the tests is the thing telling you they passed.</td>
+            <td data-th="What a typed record makes of it">Gates run in an isolated, network-denied container, and the verdict is a signed bundle bound to the state that will actually ship rather than to a branch head that will not. ADP attests; it never executes the code it attests to.</td>
+          </tr>
+          <tr>
+            <td data-th="Stage"><strong>05 Deploy</strong> — the findings, and the approval</td>
+            <td data-th="What holds it today">Hooks pause an action until a named person approves; the pull request is the audit record; autonomy is tiered by environment. All correct — and all enforced by the tool whose behaviour is being constrained.</td>
+            <td data-th="What a typed record makes of it">Requirements evaluated where changes are admitted, over an instance floor, an organization floor and the repository's own rules, returning a typed verdict the authoring agent can act on. A refusal is recorded as carefully as an admission.</td>
+          </tr>
+          <tr>
+            <td data-th="Stage"><strong>06 Maintain</strong> — the incident record</td>
+            <td data-th="What holds it today">A detection script invokes an agent on a breach, and the chat channel is the audit trail. The finding becomes the next intent and re-enters the loop.</td>
+            <td data-th="What a typed record makes of it">The return edge is where the record has to still exist. An append-only operation log written in the same transaction as the change; undo as a first-class operation; the rollback on the record the way the change was.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="wrap sec">
+  <div class="band"><span class="band__n">03</span><span class="band__label">The gap</span></div>
+  <div class="flow flow--loose">
+    <h2>Three things a convention cannot do</h2>
+    <p class="sub">A discipline held by agreement is worth having. It is not the same object as a
+    control, and the difference only shows up on the days that matter.</p>
+    <div class="grid">
+      <div class="argcard">
+        <span class="argcard__k">One</span>
+        <p>It cannot bind the thing it constrains. The separation-of-duties rule the playbooks state —
+        the agent that wrote the code has no way to approve it — is exactly the right rule, and it is
+        implemented as a hook inside the agent's own harness. The constraint and the constrained share
+        an address space. That holds until it doesn't, and nothing records the moment it stops.</p>
+      </div>
+      <div class="argcard">
+        <span class="argcard__k">Two</span>
+        <p>It cannot survive the stage where it matters most. The chain is legible while the work is
+        in flight and the session is open. The question that needs it — <em>what was this change for,
+        and how was it verified?</em> — is asked at three in the morning, months later, by someone who
+        was not there and cannot re-open a transcript that no longer exists.</p>
+      </div>
+      <div class="argcard">
+        <span class="argcard__k">Three</span>
+        <p>It cannot cross a harness boundary. Every coding agent ships its own checkpoints, session
+        store and memory files. Run three and you hold three incomplete audit trails, none of which the
+        next agent can read and none of which outlives the vendor that wrote it. No regulator accepts
+        any of the three, and no engineer can resume work across them.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap sec">
+  <div class="band"><span class="band__n">04</span><span class="band__label">Where the loop closes</span></div>
+  <div class="flow flow--loose">
+    <h2>Stages five and six are where the evidence is worst</h2>
+    <p class="sub">The playbooks' own framing is that build has stopped being the constraint, and that
+    plan, review and deploy have stretched to fill the gap. Review is where the queue is visible. Deploy
+    and operate are where the failures are, and the 2026 field data is blunt about it: among developers
+    using AI coding tools very frequently, <strong class="em">69%</strong> report deployment problems
+    always, nearly always or frequently, and <strong class="em">53%</strong> report more vulnerabilities
+    and security incidents since adoption. Mean time to restore does not improve with adoption — it goes
+    the other way, 7.6 hours against 6.3 for occasional users.</p>
+    <p class="sub">That last number is the one to sit with. Faster authoring, slower recovery. The
+    reason is not mysterious: recovery is a question about the past, and the past is exactly what the
+    machinery in front of it fails to keep.</p>
+
+    <div class="split">
+      <div class="flow flow--tight">
+        <h3>What the closing edge needs</h3>
+        <p class="sub">For an incident to feed the next intent — the loop's whole point — three things
+        have to be recoverable long after the session that produced them ended, and none of them is a
+        property of the code itself.</p>
+        <div class="grid grid--2">
+          <div class="card"><h3>Identify</h3><p>Which change did this, out of the hundreds that landed
+          this week — bound to the state that shipped, not to a branch that has since moved.</p></div>
+          <div class="card"><h3>Attribute</h3><p>What produced it: the intent it answered, the harness,
+          the model, the session, and which human attested to it.</p></div>
+          <div class="card"><h3>Reverse</h3><p>Undo it without losing the reasoning, and have the
+          reversal itself be as legible as the original change was.</p></div>
+        </div>
+      </div>
+      <div class="split__aside">
+        <p><strong>ADP does not deploy your software and does not watch your metrics.</strong> It has no
+        control bands, no promotion pipeline and no pager. Those belong to your delivery stack and your
+        observability stack, and there are good products for both.</p>
+        <p class="rule-top">What it owns is the record those tools need and currently do not get:
+        written at the moment the change is admitted, in the same transaction, and verifiable later by
+        anyone — including by someone who is not running ADP.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap sec">
+  <div class="band"><span class="band__n">05</span><span class="band__label">Scope</span></div>
+  <div class="flow flow--loose">
+    <h2>What this page is not claiming</h2>
+    <p class="sub">A page arguing that assertions are not proof should be careful about its own. Four
+    things this is not.</p>
+    <div class="grid grid--2">
+      <div class="card"><h3>Not a replacement for a playbook</h3><p>ADP has no opinion about how you
+      plan, who approves a spec, or whether you use plan mode. Adopt any of them; the record is the same
+      shape underneath.</p></div>
+      <div class="card"><h3>Not a harness, and not competing with one</h3><p>Planning, context and model
+      quality are where a coding agent earns its place. Workspaces, history, evidence and identity are
+      not — no harness should be able to compete on owning your history.</p></div>
+      <div class="card"><h3>Not deployment, monitoring or incident response</h3><p>Stated once more
+      because the temptation to blur it is real. The operation log is an <em>input</em> to an incident
+      review, not the review.</p></div>
+      <div class="card"><h3>Not finished</h3><p>What is built and what is not are listed plainly, with
+      the partial rows marked partial, on the <a href="../">front page</a> — which is the one place that
+      claim is maintained.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap sec">
+  <div class="band"><span class="band__n">06</span><span class="band__label">Start here</span></div>
+  <div class="flow flow--loose">
+    <h2>The smallest way to see whether this is true</h2>
+    <p class="sub">One command starts a throwaway instance, then uses ordinary <code>git</code> and an
+    unmodified <code>gh</code> to clone, push, propose, gate and land a change. It ends on a refusal —
+    the merge is blocked while the change has no gate result and no approval, and allowed once it has
+    both — and then shows you the signed evidence and the operation log that say why.</p>
+    <pre>git clone https://github.com/DeDuva/adp.git &amp;&amp; cd adp
+make demo</pre>
+    <div class="grid">
+      <div class="card"><h3>Adopt it additively</h3><p>Mirror mode lets ADP sit alongside a repository
+      that stays where it is, so trying it asks one person to add a remote rather than a team to agree —
+      <a href="https://github.com/DeDuva/adp/blob/main/docs/self-hosting.md">self-hosting guide</a>.</p></div>
+      <div class="card"><h3>Read the argument in full</h3><p>Why verification became the bottleneck, why
+      git and the forge cannot simply be patched, and how every other entrant scores —
+      <a href="../why/">Why ADP exists</a>.</p></div>
+      <div class="card"><h3>Build against the contract</h3><p>Published as OpenAPI with a conformance
+      suite, versioned, and served on every response —
+      <a href="https://github.com/DeDuva/adp/tree/main/spec">spec/</a>.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap sec">
+  <div class="band"><span class="band__n">07</span><span class="band__label">Sources</span></div>
+  <div class="flow flow--tight">
+    <ol class="refs">
+      <li>Anthropic, <a href="https://claude.com/blog/the-ai-native-sdlc-playbook">The AI-Native SDLC Playbook</a> — the six-stage loop, the committed-artifact chain, separation of duties, tiered autonomy by environment, and the framing that build has stopped being the constraint.</li>
+      <li>Harness, <em>DevOps Modernization Report</em> — 700 engineering practitioners across five countries, February 2026: 69% of very frequent AI users report deployment problems always, nearly always or frequently; 53% report more vulnerabilities and security incidents since adoption; mean restoration time 7.6 hours against 6.3 for occasional users.</li>
+      <li>CodeRabbit, <a href="https://www.coderabbit.ai/guides/agentic-sdlc">A guide to the agentic SDLC</a> — the verification tax and behavioural drift, and the concession that mechanisms for capturing agent decision-making remain underdeveloped.</li>
+      <li>Port, <a href="https://www.port.io/blog/anthropic-ai-native-sdlc-playbook">Implementing the AI-native SDLC playbook</a> — the playbook as "the destination and the map" rather than the vehicle.</li>
+      <li>Waydev, <a href="https://waydev.co/anthropics-ai-native-sdlc-playbook-has-a-missing-layer-measurement/">The missing layer: measurement</a> — control bands need a baseline, and the signals live in systems nothing correlates.</li>
+      <li>The references for everything on this page about how agents actually ship — reviewer pickup latency, held-out test gaps, multi-agent token cost, merge-queue field data — are listed in full at the foot of <a href="../why/">Why ADP exists</a>.</li>
+    </ol>
+  </div>
+</section>
+
+<footer class="wrap sec">
+  <div class="foot">
+    <a href="../">ADP</a>
+    <a href="../why/">Why ADP exists</a>
+    <a href="https://github.com/DeDuva/adp">GitHub</a>
+    <a href="https://github.com/DeDuva/adp/blob/main/docs/self-hosting.md">Self-hosting</a>
+    <span>Apache-2.0 code · CC-BY prose</span>
+  </div>
+</footer>
+
+</body>
+</html>

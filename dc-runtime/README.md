@@ -71,11 +71,11 @@ resolves them against **this script's** own URL rather than the document's, whic
 lets one `support.js` serve both `/` and `/why/`.
 
 `@babel/standalone` is *not* vendored. It is 2.8 MB, it was only ever reached by
-`<x-import>` of JSX, and nothing on the site uses that path — both pages contain zero
-`x-import` elements. `ensureBabel()` now rejects with an explanation instead of reaching
+`<x-import>` of JSX, and nothing on the site uses that path — no published page contains
+an `x-import` element. `ensureBabel()` now rejects with an explanation instead of reaching
 for the network; a host page that supplies `window.Babel` still works.
 
-Google Fonts is once again the only external asset either page loads.
+Google Fonts is once again the only external asset any published page loads.
 
 ## Layout
 
