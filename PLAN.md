@@ -105,11 +105,12 @@ categories. #138 gave the site a front door, and named what it was leaving open.
 
 Exit criterion: the published site renders from 320 px to 1440 px with no horizontal scroll on the
 body and no table that needs pinch-zoom, every margin comes from one named scale, and nothing it
-serves depends on a package this repository does not contain.
+serves depends on a package this repository does not contain — the last of the three met as of
+2026-08-29, the first two still open.
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 1-17 | One design system for the site, and no runtime it cannot rebuild | #163 | not started. `docs/html/support.js` is generated from a `dc-runtime/` that is not in this tree, so `/why/` cannot be fixed or upgraded by anyone working here; #138 confined that dependency to the secondary page rather than resolving it. The two pages also share no styles — the palette is declared twice, the container widths disagree at `940px` against `1120/760/520`, and the landing page's verticals are seven unrelated margins with an inline `style=` at the one place the scale ran out |
+| 1-17 | One design system for the site, and no runtime it cannot rebuild | #163 | **in progress** — the runtime half is done; the design-system half is not. `dc-runtime/` now holds the source for `docs/html/support.js`, recovered from the artifact and verified by rebuilding it byte for byte (`dc-runtime/README.md`); React and ReactDOM are vendored under `docs/html/vendor/` instead of fetched from unpkg at read time, which had made an unreachable CDN a blank page rather than a degraded one. `make dc-runtime` and CI's `site-runtime` job assert the committed artifacts are current. Still open, and the reason this row stays: the two pages share no styles — the palette is declared twice, the container widths disagree at `940px` against `1120/760/520`, the landing page's verticals are seven unrelated margins with an inline `style=` at the one place the scale ran out, neither page responds to a breakpoint or shows a focus ring, and both tables are unreadable at 375 px |
 
 ---
 

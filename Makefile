@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner helm
+.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner helm dc-runtime
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -119,6 +119,11 @@ runner: ## Typecheck, build, and test the gate runner (no database, REAL docker 
 helm: ## Lint and render the self-host chart (skipped if helm is absent; ADP_REQUIRE_HELM=1 makes that fatal)
 	@bash scripts/dev/helm-check.sh
 
+dc-runtime: ## Rebuild the published site's runtime from dc-runtime/src and assert it is unchanged
+	npm ci --prefix dc-runtime
+	npm run typecheck --prefix dc-runtime
+	npm run check --prefix dc-runtime
+
 bench: ## Regenerate the benchmark report from bench/runs/ and assert it is unchanged
 	npm run report --prefix bench
 	@git diff --exit-code bench/report/ || { \
@@ -136,6 +141,7 @@ test-all: ## Everything CI runs: build, full suite, web, cli, adapters, runner, 
 	@$(MAKE) runner
 	@$(MAKE) helm
 	@$(MAKE) bench
+	@$(MAKE) dc-runtime
 	@$(LOAD_ENV) bash server/conformance/run.sh
 	@$(LOAD_ENV) bash server/acceptance/run.sh
 

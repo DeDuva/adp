@@ -221,6 +221,28 @@ jobs:
       - run: npm run report
       - run: git diff --exit-code report/
 
+  # The published site ships two build outputs — docs/html/support.js and the React
+  # bundles beside it — and GitHub Pages deploys them straight from the tree, so a
+  # stale artifact is a stale *site*. Before this job existed the runtime was
+  # generated from a `dc-runtime/` that was not in the repository at all: the file
+  # could be served but not rebuilt, fixed or upgraded by anyone working here.
+  #
+  # `npm run check` rebuilds into memory and compares. A diff means someone edited a
+  # generated file by hand, or changed dc-runtime/src without committing the result.
+  site-runtime:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dc-runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run check
+
   # Documents that have quietly stopped being true. AGENTS.md names the file carrying
   # each invariant, so a rename turns guidance into a wrong map without anything
   # failing; PLAN.md makes status claims that the issue tracker can

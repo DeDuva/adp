@@ -1,4 +1,5 @@
-// GENERATED from dc-runtime/src/*.ts — do not edit. Rebuild with `cd dc-runtime && bun run build`.
+// GENERATED from dc-runtime/src/*.ts — do not edit.
+// Rebuild with `make dc-runtime` (or `npm run build --prefix dc-runtime`).
 "use strict";
 (() => {
   var __defProp = Object.defineProperty;
@@ -16,9 +17,9 @@
     if (!RD) throw new Error("dc-runtime: window.ReactDOM is not available yet");
     return RD;
   }
-  var h = ((...args) => getReact().createElement(
+  var h = (...args) => getReact().createElement(
     ...args
-  ));
+  );
 
   // src/parse.ts
   function parseDcDocument(doc) {
@@ -476,7 +477,7 @@
       for (const c of node.childNodes) stamp(c);
     })(tpl.content);
     const builders = walkChildren(tpl.content, host);
-    const render = ((vals, ctx) => builders.map((b, i) => b(vals || {}, ctx, i)));
+    const render = (vals, ctx) => builders.map((b, i) => b(vals || {}, ctx, i));
     render.__annotated = tpl.innerHTML;
     return render;
   }
@@ -1139,19 +1140,6 @@
     return b instanceof Blob ? b : null;
   }
 
-  // src/cdn.ts
-  var REACT_URL = "https://unpkg.com/react@18.3.1/umd/react.production.min.js";
-  var REACT_SRI = "sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z";
-  var REACT_DOM_URL = "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js";
-  var REACT_DOM_SRI = "sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1";
-  var BABEL_URL = "https://unpkg.com/@babel/standalone@7.29.0/babel.min.js";
-  var BABEL_SRI = "sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y";
-  function cdnScriptFor(url, sri) {
-    const res = window.__resources;
-    const v = res ? res[url] : void 0;
-    return typeof v === "string" && v ? { src: v } : { src: url, integrity: sri };
-  }
-
   // src/external.ts
   var isCustomElementName = (n) => !n.includes(".") && n.includes("-");
   function isRenderableType(g) {
@@ -1170,25 +1158,13 @@
   var GLOBAL_POLL_TIMEOUT_MS = 3e4;
   function createExternalModules(onResolved) {
     const cache = /* @__PURE__ */ new Map();
-    let babelLoading = null;
     const reportedMissing = /* @__PURE__ */ new Map();
     const polling = /* @__PURE__ */ new Set();
     function ensureBabel() {
       if (window.Babel) return Promise.resolve();
-      if (babelLoading) return babelLoading;
-      const babel = cdnScriptFor(BABEL_URL, BABEL_SRI);
-      babelLoading = new Promise((res, rej) => {
-        const s = document.createElement("script");
-        s.src = babel.src;
-        if (babel.integrity) {
-          s.integrity = babel.integrity;
-          s.crossOrigin = "anonymous";
-        }
-        s.onload = () => res();
-        s.onerror = rej;
-        document.head.appendChild(s);
-      });
-      return babelLoading;
+      return Promise.reject(new Error(
+        "dc-runtime: <x-import> of JSX needs window.Babel, which this build does not ship. Import already-compiled JavaScript, or have the host page provide @babel/standalone."
+      ));
     }
     const pending = /* @__PURE__ */ new Map();
     function load(kind, url, after) {
@@ -1814,21 +1790,35 @@
     };
   }
 
+  // src/assets.ts
+  var VENDOR_DIR = "vendor";
+  var SCRIPT_SRC = document.currentScript?.src || "";
+  function assetUrl(file) {
+    try {
+      return new URL(VENDOR_DIR + "/" + file, SCRIPT_SRC || document.baseURI).href;
+    } catch {
+      return VENDOR_DIR + "/" + file;
+    }
+  }
+  var REACT_URL = assetUrl("react-18.3.1.production.min.js");
+  var REACT_DOM_URL = assetUrl("react-dom-18.3.1.production.min.js");
+  function assetScriptFor(url) {
+    const res = window.__resources;
+    const v = res ? res[url] : void 0;
+    return typeof v === "string" && v ? { src: v } : { src: url };
+  }
+
   // src/index.ts
   function hideRawTemplate() {
     const s = document.createElement("style");
     s.textContent = "x-dc{display:none!important}";
     document.head.appendChild(s);
   }
-  function loadScript(src, integrity) {
+  function loadScript(src) {
     return new Promise((resolve2, reject) => {
       //! nosemgrep: create-script-element
       const s = document.createElement("script");
       s.src = src;
-      if (integrity) {
-        s.integrity = integrity;
-        s.crossOrigin = "anonymous";
-      }
       s.async = false;
       s.onload = () => resolve2();
       s.onerror = () => reject(new Error(`failed to load ${src}`));
@@ -1838,11 +1828,9 @@
   function loadReactUmd() {
     const w = window;
     if (w.React && w.ReactDOM) return Promise.resolve();
-    const react = cdnScriptFor(REACT_URL, REACT_SRI);
-    const reactDom = cdnScriptFor(REACT_DOM_URL, REACT_DOM_SRI);
     return Promise.all([
-      loadScript(react.src, react.integrity),
-      loadScript(reactDom.src, reactDom.integrity)
+      loadScript(assetScriptFor(REACT_URL).src),
+      loadScript(assetScriptFor(REACT_DOM_URL).src)
     ]).then(() => void 0);
   }
   function init() {
