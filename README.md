@@ -4,11 +4,15 @@ ADP is a self-hosted, GitHub-compatible forge for AI coding agents. Keep using `
 existing CI integrations while ADP binds every change to its intent, agent provenance, approvals,
 and signed verification evidence.
 
-**Why ADP?** Agent transcripts are temporary, and an agent saying “tests pass” is not independent
-proof. ADP makes development context durable and enforces your evidence requirements at merge time.
+**Why ADP?** An agent saying “tests pass” is not proof, and the transcript that could show its
+work is gone when the session ends. ADP keeps that context on the change itself, and refuses to
+land a change that does not meet your evidence requirements.
 
-[Try it](#try-it) · [How it works](#how-it-works) ·
-[Self-hosting](docs/self-hosting.md)
+[Try it](#try-it) · [How it works](#how-it-works) · [Self-hosting](docs/self-hosting.md)
+
+**New here?** Start with the site — [what ADP is](https://deduva.github.io/adp/),
+[why it exists](https://deduva.github.io/adp/why/), and
+[the AI-native SDLC stage by stage](https://deduva.github.io/adp/sdlc/).
 
 Apache-2.0 · TypeScript · Fastify · PostgreSQL · the real `git` binary for all plumbing.
 
@@ -26,16 +30,17 @@ git clone https://github.com/DeDuva/adp.git && cd adp
 make demo
 ```
 
-It ends where the point is: the merge is **refused** while the change has no gate result and no
-approval, and then allowed once it does — and you get to read the signed evidence bundle and the
-operation log that record why.
+It ends where the point is. The merge is **refused** while the change has no gate result and no
+approval, and allowed once it has both. You then read the signed evidence bundle and the operation
+log that record why.
 
 Needs Docker and Node 22 (`make doctor` checks). Under five minutes.
 
 <details>
 <summary>Or run the full verification suite</summary>
 
-Every tier, including conformance against the real `gh` binary and the §2.1 acceptance walkthrough.
+Every tier, including conformance against the real `gh` binary and the browser-driven acceptance
+walkthrough.
 Minutes rather than seconds, and it proves the parts a demo skips:
 
 ```bash
@@ -51,35 +56,36 @@ For a persistent instance, see [`docs/self-hosting.md`](docs/self-hosting.md); t
 
 ## Why
 
-Software development is moving from one human on one branch to agents writing most new code. The
-dominant working pattern is serial, not a swarm: one capable agent iterates against CI until it
-believes the work is done, then submits and merges — with fan-out reserved for hard problems and
-fleet-wide remediation. Git was designed for neither: its unit of work is the line-based patch, its
-conflicts halt automation, and it records *what* changed while discarding *why* and *whether it was
-checked*.
+Agents write most new code now, and the pattern is serial rather than a swarm: one capable agent
+iterates against CI until it believes the work is done, then submits. Fan-out is reserved for hard
+problems and fleet-wide remediation.
 
-The serial pattern has a failure mode of its own, and it is the important one: when the author
-decides when it's done, the only oversight surface is a test suite the author can see — and often
-touch. An agent's belief that the work is done is not evidence. And when a change lands wrong,
-everything that follows — rolling it back, validating it, continuing the work with a different
-model or harness — needs a record that today exists only as a transcript in one vendor's format,
-because every agent harness privately reinvents the same primitives: checkpoint/rewind, session
-persistence, multi-workspace orchestration, each invisible to the repository's history and
-incompatible with every other harness.
+The belief is the problem. When the author decides when it's finished, the only oversight surface
+is a test suite the author can see — and often edit.
 
-ADP's bet is that the durable primitive is not storage and not the change model, but **binding
-context to verification evidence at merge time**: capturing intent and proof-of-verification in one
-signed record, and gating the merge on it. Plenty of systems capture provenance. The point here is
-to make it enforceable — to convert the agent's belief into evidence someone else can check,
+Git was built for a different job. Its conflicts halt automation, and it records *what* changed
+while discarding *why* and *whether anyone checked*. So when a change lands wrong, everything that
+follows — revert it, validate it, continue it with a different model or harness — needs a record
+that today exists only as a transcript in one vendor's format. Every harness privately reinvents
+the same primitives: checkpoint and rewind, session persistence, workspace orchestration. None is
+visible to the repository, and none can read another's.
+
+ADP's bet is that the durable primitive is neither storage nor the change model, but **binding
+context to verification evidence at merge time**. Plenty of systems capture provenance; the point
+here is to make it enforceable — to turn the agent's belief into evidence someone else can check,
 revert, or build on.
 
-Git compatibility is preserved throughout — `git clone` keeps working.
+`git clone` keeps working throughout.
+
+The long version, with the field data and how every other entrant scores:
+**[Why ADP exists](https://deduva.github.io/adp/why/)**.
 
 ---
 
 ## How it works
 
-ADP presents two planes over one domain model.
+ADP serves two APIs over the same data. One imitates GitHub, so tools you already have keep
+working. The other exposes what GitHub has no equivalent for.
 
 **The compatibility plane** is GitHub's surface: the git wire protocol, REST at `/api/v3`, and
 GraphQL at `/api/graphql`. An off-the-shelf agent or CI tool uses it with no knowledge that ADP
@@ -153,12 +159,13 @@ does not claim are asserted in `server/test/` and the runner's own suite.
 
 ### Organizations
 
-Repos live in orgs, and the org is the tenancy boundary: repo access authorizes against the
-caller's org on every plane — REST, git wire, GraphQL, and `/api/adp` alike — with the matrix that
-proves it in `server/test/e2e-org-isolation.test.ts`. An org carries its policy floor, a kill
-switch that refuses every land while set, per-org quotas (repos, concurrent workspaces, concurrent
-gate jobs, and a storage ceiling in bytes), and an audit-log export that is a projection of the
-operation log rather than a second system. Org administration is itself audited: quota and
+Repos live in orgs, and the org is the tenancy boundary. Repo access authorizes against the
+caller's org on every plane alike — REST, git wire, GraphQL and `/api/adp` — and the matrix that
+proves it is in `server/test/e2e-org-isolation.test.ts`.
+
+An org carries four more things: its policy floor; a kill switch that refuses every land while set;
+quotas on repos, concurrent workspaces, concurrent gate jobs and stored bytes; and an audit-log
+export. That export is a projection of the operation log, not a second system. Org administration is itself audited: quota and
 policy-repo changes write operations, and the policy floor is a file in a repo, so changing it
 travels the same signed, reviewable path as code.
 
@@ -360,10 +367,10 @@ the same loop, so the "brand new machine" path stays verified rather than assume
 | [`CHANGELOG.md`](CHANGELOG.md) | What shipped, per released version. |
 | [`PLAN.md`](PLAN.md) | The backlog: what is left, in what order, and the open decisions. |
 
-Contributing to ADP itself also needs [`AGENTS.md`](AGENTS.md) — the branch and review
-conventions, the invariants that look wrong until you know why, and the commands that
-actually run — plus [`docs/test-environment-automation.md`](docs/test-environment-automation.md)
-for how the test environment is brought up and torn down.
+Contributing to ADP itself needs two more. [`AGENTS.md`](AGENTS.md) has the branch and review
+conventions, the invariants that look wrong until you know why, and the commands that actually run.
+[`docs/test-environment-automation.md`](docs/test-environment-automation.md) covers how the test
+environment is brought up and torn down.
 
 ---
 

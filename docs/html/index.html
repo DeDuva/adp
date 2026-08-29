@@ -195,8 +195,8 @@ gh pr merge</pre>
     <p class="sub">Every harness ships its own checkpoints, session store and memory files. Run three
     of them and you hold three incomplete audit trails, none of which the next harness can read, and
     none of which outlives the vendor that wrote it. ADP records the intent, the harness, the model and
-    the session on the change itself, in a published, versioned, Apache-2.0 wire format — so work
-    started in one agent can be reviewed, reverted or continued in another, and an auditor gets one
+    the session on the change itself, in a published, versioned, Apache-2.0 wire format. Work started
+    in one agent can then be reviewed, reverted or continued in another, and an auditor gets one
     answer instead of three.</p>
     <p class="sub">The precedent is OpenTelemetry. Its win was not making tools talk to each other; it
     was standardising the record, so that any backend could read all of them. Version control is one
