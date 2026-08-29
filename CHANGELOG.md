@@ -23,6 +23,10 @@ merge-blocking review bot can make, ending where the field data says the trouble
 front page now covers what the record is for after a change lands and why it has to survive a
 change of harness, and `docs/html/sdlc/` is a new page mapping the six-stage loop the
 published agentic-SDLC playbooks describe against what holds each committed artifact today.
+The essay reaches past the merge too: section 01 now says that verification is where the
+queue is visible and deployment is where the failures land, and the alternatives it weighs
+gained the one that is a practice rather than a product — a playbook is what says an artifact
+should be written down, and cannot be the thing that refuses when it wasn't.
 No capability claim moved: the front page's status table is still the only place that is
 maintained. `make site` and CI's `site-runtime` job now drive three pages rather than two, on
 the same exit criteria, so the new page cannot be published ungated.
