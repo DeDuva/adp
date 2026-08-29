@@ -39,12 +39,15 @@ describe.skipIf(skipWithoutDb)("M4-2: org policy plane", () => {
   let gitRoot: string;
   let port: number;
   let token: string;
+  // #121: the org-sourced `one_approval` below is author-independent, so
+  // satisfying it takes a principal that is not the proposal's author.
+  let reviewerToken: string;
   const owner = `org-policy-owner-${Date.now()}`;
 
-  async function api(pathAndQuery: string, init: RequestInit = {}) {
+  async function apiAs(asToken: string, pathAndQuery: string, init: RequestInit = {}) {
     const res = await fetch(`http://127.0.0.1:${port}${pathAndQuery}`, {
       ...init,
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...init.headers },
+      headers: { Authorization: `Bearer ${asToken}`, "Content-Type": "application/json", ...init.headers },
     });
     const text = await res.text();
     let body: unknown;
@@ -55,6 +58,8 @@ describe.skipIf(skipWithoutDb)("M4-2: org policy plane", () => {
     }
     return { status: res.status, body };
   }
+
+  const api = (pathAndQuery: string, init: RequestInit = {}) => apiAs(token, pathAndQuery, init);
 
   async function repoRow(name: string) {
     const [row] = await db.select().from(repos).where(and(eq(repos.owner, owner), eq(repos.name, name)));
@@ -96,6 +101,13 @@ describe.skipIf(skipWithoutDb)("M4-2: org policy plane", () => {
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
     await grantOwner(db, identity!.id, owner);
+
+    const [reviewer] = await db
+      .insert(identities)
+      .values({ kind: "human", principal: `org-policy-e2e-reviewer-${Date.now()}` })
+      .returning();
+    reviewerToken = await mintToken(db, reviewer!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, reviewer!.id, owner);
   });
 
   afterAll(async () => {
@@ -186,7 +198,21 @@ describe.skipIf(skipWithoutDb)("M4-2: org policy plane", () => {
     expect(attempt1.status).toBe(422);
     expect((attempt1.body as { unmet: string[] }).unmet.join(" ")).toMatch(/one_approval/);
 
+    // The author's own approval does not satisfy an org-sourced requirement
+    // any more than an instance-sourced one (#121) — the check lives in the
+    // resolved requirement, so every level that can name it inherits this.
     await api(`/api/v3/repos/${owner}/${targetRepoName}/pulls/${pr.number}/reviews`, {
+      method: "POST",
+      body: JSON.stringify({ state: "approved", body: "lgtm, me" }),
+    });
+    const attempt2 = await api(`/api/v3/repos/${owner}/${targetRepoName}/pulls/${pr.number}/merge`, {
+      method: "PUT",
+      body: "{}",
+    });
+    expect(attempt2.status).toBe(422);
+    expect((attempt2.body as { unmet: string[] }).unmet.join(" ")).toMatch(/one_approval/);
+
+    await apiAs(reviewerToken, `/api/v3/repos/${owner}/${targetRepoName}/pulls/${pr.number}/reviews`, {
       method: "POST",
       body: JSON.stringify({ state: "approved", body: "lgtm" }),
     });

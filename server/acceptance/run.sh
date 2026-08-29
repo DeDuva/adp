@@ -71,15 +71,19 @@ fail() { printf '\033[31mACCEPTANCE FAIL:\033[0m %s\n' "$*" >&2; exit 1; }
 # (FST_ERR_CTP_EMPTY_JSON_BODY) — which is what the undo endpoint is, since it
 # takes everything it needs from the URL. server/web/src/api.ts gets this right
 # for the same reason; this helper did not.
-api() {
-  local method="$1" path="$2"
-  shift 2
+api_as() {
+  local as_token="$1" method="$2" path="$3"
+  shift 3
   local ct=()
   for arg in "$@"; do
     case "$arg" in -d|--data|--data-raw|--data-binary) ct=(-H "Content-Type: application/json"); break ;; esac
   done
   curl -sS -X "$method" "http://localhost:${PORT}${path}" \
-    -H "Authorization: Bearer ${TOKEN}" "${ct[@]}" "$@"
+    -H "Authorization: Bearer ${as_token}" "${ct[@]}" "$@"
+}
+
+api() {
+  api_as "$TOKEN" "$@"
 }
 
 step "A — environment"
@@ -167,6 +171,11 @@ REPO="widget"
 # pre-M4 unscoped one, which is what lets C13 exercise the org console.
 TOKEN=$(npx tsx src/bootstrap.ts "acceptance-actor-$$" --org "$OWNER" 2>&1 | grep '^Token:' | awk '{print $2}')
 [ -n "$TOKEN" ] || fail "bootstrap didn't mint a token"
+# A second principal in the same org. `one_approval` is author-independent
+# (#121), so the walkthrough needs someone other than the actor to approve —
+# which is also the honest shape of §2.1: the agent proposes, a human accepts.
+REVIEWER_TOKEN=$(npx tsx src/bootstrap.ts "acceptance-reviewer-$$" --org "$OWNER" 2>&1 | grep '^Token:' | awk '{print $2}')
+[ -n "$REVIEWER_TOKEN" ] || fail "bootstrap didn't mint a reviewer token"
 api POST "/api/v3/repos/${OWNER}" -d "{\"name\":\"${REPO}\"}" -o /dev/null -f || fail "repo create failed"
 pass "repo ${OWNER}/${REPO}"
 
@@ -292,7 +301,22 @@ grep -q "/api/adp/repos/${OWNER}/${REPO}/evidence/" <<<"$GH_CHECKS_OUT" \
 pass "B6 'gh pr checks' enumerates the gate, its verdict, and its evidence link"
 
 # B7 — typed review
+# The actor approves its own proposal first. The review is recorded — it is a
+# real typed review, and the operation log gets its `review.create` — but it
+# does not satisfy `one_approval`, which is author-independent (#121). Before
+# that fix this script proved a merge that the author had unblocked by itself,
+# which is the move the arm-2 bench agent made and the one this whole
+# requirement exists to prevent.
 api POST "/api/v3/repos/${OWNER}/${REPO}/pulls/1/reviews" \
+  -d '{"state":"approved","body":"lgtm, me"}' -o /dev/null -f || fail "B7: self-review failed"
+SELF_REFUSED=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
+  "http://localhost:${PORT}/api/v3/repos/${OWNER}/${REPO}/pulls/1/merge" \
+  -H "Authorization: Bearer ${TOKEN}")
+[ "$SELF_REFUSED" = "422" ] \
+  || fail "B7: expected the land policy to refuse a merge approved only by its author (422), got $SELF_REFUSED"
+pass "B7 the author's own approval does not satisfy one_approval"
+
+api_as "$REVIEWER_TOKEN" POST "/api/v3/repos/${OWNER}/${REPO}/pulls/1/reviews" \
   -d '{"state":"approved","body":"looks good"}' -o /dev/null -f || fail "B7: review failed"
 PR_OUT=$("$GH_BIN" pr view 1 --repo "$GH_REPO") || fail "B7: gh pr view failed"
 grep -q "Describe the widget" <<<"$PR_OUT" || fail "B7: PR title missing from gh output"
@@ -552,7 +576,7 @@ SBOM_PR_NUM=$(node -e 'process.stdout.write(String(JSON.parse(require("fs").read
 api POST "/api/v3/repos/${OWNER}/${SBOM_REPO}/gates" \
   -d "{\"git_sha\":\"${SBOM_HEAD_SHA}\",\"name\":\"test\",\"status\":\"success\",\"summary\":\"ok\"}" -o /dev/null -f \
   || fail "D18: gate report failed"
-api POST "/api/v3/repos/${OWNER}/${SBOM_REPO}/pulls/${SBOM_PR_NUM}/reviews" \
+api_as "$REVIEWER_TOKEN" POST "/api/v3/repos/${OWNER}/${SBOM_REPO}/pulls/${SBOM_PR_NUM}/reviews" \
   -d '{"state":"approved","body":"lgtm"}' -o /dev/null -f || fail "D18: review failed"
 api PUT "/api/v3/repos/${OWNER}/${SBOM_REPO}/pulls/${SBOM_PR_NUM}/merge" -d '{}' -o /dev/null -f \
   || fail "D18: merge failed"

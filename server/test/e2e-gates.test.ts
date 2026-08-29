@@ -38,12 +38,16 @@ describe.skipIf(skipWithoutDb)("M1c: gate runner + land policy", () => {
   let gitRoot: string;
   let port: number;
   let token: string;
+  // #121: `one_approval` is author-independent, so a suite that merges under
+  // it needs two principals. This is the second — a member of the same org,
+  // with the same scopes, differing only in identity.
+  let reviewerToken: string;
   const owner = `gates-owner-${Date.now()}`;
 
-  async function api(pathAndQuery: string, init: RequestInit = {}) {
+  async function apiAs(asToken: string, pathAndQuery: string, init: RequestInit = {}) {
     const res = await fetch(`http://127.0.0.1:${port}${pathAndQuery}`, {
       ...init,
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...init.headers },
+      headers: { Authorization: `Bearer ${asToken}`, "Content-Type": "application/json", ...init.headers },
     });
     const text = await res.text();
     let body: unknown;
@@ -54,6 +58,8 @@ describe.skipIf(skipWithoutDb)("M1c: gate runner + land policy", () => {
     }
     return { status: res.status, body };
   }
+
+  const api = (pathAndQuery: string, init: RequestInit = {}) => apiAs(token, pathAndQuery, init);
 
   beforeAll(async () => {
     const databaseUrl = process.env.DATABASE_URL!;
@@ -97,6 +103,13 @@ describe.skipIf(skipWithoutDb)("M1c: gate runner + land policy", () => {
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
     await grantOwner(db, identity!.id, owner);
+
+    const [reviewer] = await db
+      .insert(identities)
+      .values({ kind: "human", principal: `gates-e2e-reviewer-${Date.now()}` })
+      .returning();
+    reviewerToken = await mintToken(db, reviewer!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, reviewer!.id, owner);
   });
 
   afterAll(async () => {
@@ -171,8 +184,24 @@ describe.skipIf(skipWithoutDb)("M1c: gate runner + land policy", () => {
     expect((attempt3.body as { unmet: string[] }).unmet.join(" ")).toMatch(/one_approval/);
     expect((attempt3.body as { unmet: string[] }).unmet.join(" ")).not.toMatch(/gates_green/);
 
-    // Approve — now both requirements are met.
-    await api(`/api/v3/repos/${owner}/${repoName}/pulls/${pr.number}/reviews`, {
+    // The author approves its own proposal — the exact move the arm-2 bench
+    // agent made, and which used to satisfy the requirement (#121). The review
+    // is recorded; it just does not count, and the refusal says which of the
+    // two "unapproved" states this is.
+    const selfReview = await api(`/api/v3/repos/${owner}/${repoName}/pulls/${pr.number}/reviews`, {
+      method: "POST",
+      body: JSON.stringify({ state: "approved", body: "lgtm, me" }),
+    });
+    expect(selfReview.status).toBe(201);
+    const attempt4 = await api(`/api/v3/repos/${owner}/${repoName}/pulls/${pr.number}/merge`, { method: "PUT", body: "{}" });
+    expect(attempt4.status).toBe(422);
+    const selfUnmet = (attempt4.body as { unmet: string[] }).unmet.join(" ");
+    expect(selfUnmet).toMatch(/one_approval/);
+    expect(selfUnmet).toMatch(/author/);
+    expect(selfUnmet).not.toMatch(/no approving review/);
+
+    // A second principal approves — now both requirements are met.
+    await apiAs(reviewerToken, `/api/v3/repos/${owner}/${repoName}/pulls/${pr.number}/reviews`, {
       method: "POST",
       body: JSON.stringify({ state: "approved", body: "lgtm" }),
     });
@@ -270,5 +299,75 @@ describe.skipIf(skipWithoutDb)("M1c: gate runner + land policy", () => {
     // `true` here would tell gh a gate blocks merging when the repo may not
     // require it at all.
     expect(contexts.every((c) => c.isRequired === false)).toBe(true);
+  }, 120_000);
+
+  // The same requirement over the other merge path. REST and GraphQL both
+  // reach `landProposal`, so this is a claim about shared code rather than a
+  // second implementation — but "matching GitHub semantics on both merge
+  // paths" is the thing #121 asked for, and a claim about shared code is
+  // exactly the kind that stops being true when someone adds a third caller.
+  it("refuses a GraphQL merge on the author's own approval, and lands it on a second principal's", async () => {
+    const repoName = "gql-approval";
+    await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: repoName }) });
+
+    const dir = await mkdtemp(path.join(tmpdir(), "adp-e2e-gql-approval-"));
+    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/${repoName}.git`;
+    await execFileAsync("git", ["clone", cloneUrl, dir]);
+    await execFileAsync("git", ["checkout", "-B", "main"], { cwd: dir });
+    await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: dir });
+    await execFileAsync("git", ["config", "user.name", "Test"], { cwd: dir });
+    // No adp.yaml: this repo names no gates, so gates_green is satisfied
+    // vacuously and one_approval is the only requirement left standing.
+    await execFileAsync("sh", ["-c", "echo hi > README.md"], { cwd: dir });
+    await execFileAsync("git", ["add", "."], { cwd: dir });
+    await execFileAsync("git", ["commit", "-m", "init"], { cwd: dir });
+    await execFileAsync("git", ["push", "origin", "main"], { cwd: dir });
+    await execFileAsync("git", ["checkout", "-b", "feature"], { cwd: dir });
+    await execFileAsync("sh", ["-c", "echo more >> README.md"], { cwd: dir });
+    await execFileAsync("git", ["add", "."], { cwd: dir });
+    await execFileAsync("git", ["commit", "-m", "feature"], { cwd: dir });
+    await execFileAsync("git", ["push", "origin", "feature"], { cwd: dir });
+    await rm(dir, { recursive: true, force: true });
+
+    const gql = async (asToken: string, query: string, variables: Record<string, unknown>) =>
+      apiAs(asToken, "/api/graphql", { method: "POST", body: JSON.stringify({ query, variables }) });
+
+    const repoQuery = await api("/api/graphql", {
+      method: "POST",
+      body: JSON.stringify({ query: `query { repository(owner:"${owner}", name:"${repoName}") { id } }` }),
+    });
+    const repoId = (repoQuery.body as { data: { repository: { id: string } } }).data.repository.id;
+
+    const created = await gql(
+      token,
+      `mutation($input: CreatePullRequestInput!) {
+        createPullRequest(input: $input) { pullRequest { id } }
+      }`,
+      { input: { repositoryId: repoId, title: "gql approval", baseRefName: "main", headRefName: "feature" } },
+    );
+    const prId = (created.body as { data: { createPullRequest: { pullRequest: { id: string } } } })
+      .data.createPullRequest.pullRequest.id;
+
+    const approveMutation = `mutation($input: AddPullRequestReviewInput!) {
+      addPullRequestReview(input: $input) { pullRequestReview { state } }
+    }`;
+    const mergeMutation = `mutation($input: MergePullRequestInput!) {
+      mergePullRequest(input: $input) { pullRequest { state } }
+    }`;
+
+    const selfApproval = await gql(token, approveMutation, { input: { pullRequestId: prId, event: "APPROVE", body: "me" } });
+    expect((selfApproval.body as { errors?: unknown[] }).errors).toBeUndefined();
+
+    const refused = await gql(token, mergeMutation, { input: { pullRequestId: prId } });
+    const errors = (refused.body as { errors?: { message: string }[] }).errors;
+    expect(errors).toBeDefined();
+    expect(errors!.map((e) => e.message).join(" ")).toMatch(/one_approval/);
+
+    await gql(reviewerToken, approveMutation, { input: { pullRequestId: prId, event: "APPROVE", body: "lgtm" } });
+    const merged = await gql(token, mergeMutation, { input: { pullRequestId: prId } });
+    expect((merged.body as { errors?: unknown[] }).errors).toBeUndefined();
+    expect((merged.body as { data: { mergePullRequest: { pullRequest: { state: string } } } }).data.mergePullRequest.pullRequest.state).toBe(
+      "MERGED",
+    );
   }, 120_000);
 });

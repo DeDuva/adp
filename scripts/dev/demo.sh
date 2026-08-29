@@ -155,13 +155,20 @@ GH_HOST="localhost:${TLS_PORT}"
 GH_REPO="${GH_HOST}/${OWNER}/${REPO}"
 TOKEN=$( cd server && npx tsx src/bootstrap.ts "demo-agent" --org "$OWNER" 2>&1 | grep '^Token:' | awk '{print $2}' )
 [ -n "$TOKEN" ] || die "could not mint a token"
+# Two principals, because `one_approval` is author-independent (#121): the
+# agent that opens the proposal cannot be the one that approves it. The demo
+# shows it trying.
+REVIEWER_TOKEN=$( cd server && npx tsx src/bootstrap.ts "demo-reviewer" --org "$OWNER" 2>&1 | grep '^Token:' | awk '{print $2}' )
+[ -n "$REVIEWER_TOKEN" ] || die "could not mint a reviewer token"
 
-api() {
-  local method="$1" path="$2"; shift 2
+api_as() {
+  local as_token="$1" method="$2" path="$3"; shift 3
   local ct=()
   for a in "$@"; do case "$a" in -d|--data|--data-raw) ct=(-H "Content-Type: application/json"); break ;; esac; done
-  curl -sS -X "$method" "http://localhost:${PORT}${path}" -H "Authorization: Bearer ${TOKEN}" "${ct[@]}" "$@"
+  curl -sS -X "$method" "http://localhost:${PORT}${path}" -H "Authorization: Bearer ${as_token}" "${ct[@]}" "$@"
 }
+
+api() { api_as "$TOKEN" "$@"; }
 api POST "/api/v3/repos/${OWNER}" -d "{\"name\":\"${REPO}\"}" -o /dev/null -f || die "could not create the repo"
 ok "organization ${c_c}${OWNER}${c_0}, repository ${c_c}${OWNER}/${REPO}${c_0}, one scoped token"
 
@@ -236,9 +243,22 @@ info "$ gh pr checks 1"
 gh_ pr checks 1 --repo "$GH_REPO" 2>&1 | sed 's/^/    /' || true
 ok "gh sees the gate, its verdict, and a link to the evidence behind it"
 
+# The agent approves its own proposal. This is not a hypothetical: in ADP's
+# own three-way-cost benchmark the agent did exactly this — `gh pr review
+# --approve` on its own PR, then `gh pr merge`, in one trajectory.
 api POST "/api/v3/repos/${OWNER}/${REPO}/pulls/1/reviews" \
+  -d '{"state":"approved","body":"lgtm"}' -o /dev/null -f || die "self-review failed"
+info "$ gh pr review 1 --approve   ${c_dim}# ...as the same agent that wrote it${c_0}"
+SELF_REFUSED=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
+  "http://localhost:${PORT}/api/v3/repos/${OWNER}/${REPO}/pulls/1/merge" -H "Authorization: Bearer ${TOKEN}")
+[ "$SELF_REFUSED" = "422" ] || die "expected the land policy to refuse a self-approved merge (422), got $SELF_REFUSED"
+say "  ${c_y}422 — still refused.${c_0}"
+info "The approval is recorded, and it does not count. An agent cannot satisfy"
+info "a requirement that exists to check it by signing off on its own work."
+
+api_as "$REVIEWER_TOKEN" POST "/api/v3/repos/${OWNER}/${REPO}/pulls/1/reviews" \
   -d '{"state":"approved","body":"looks good"}' -o /dev/null -f || die "review failed"
-ok "approved"
+ok "approved by a second principal"
 
 info "$ gh pr merge 1 --merge"
 gh_ pr merge 1 --repo "$GH_REPO" --merge >/dev/null || die "gh pr merge failed"
@@ -298,8 +318,8 @@ fi
 # ---------------------------------------------------------------------------
 say ""
 say "${c_g}${c_b}Done.${c_0} You landed a policy-compliant change with ordinary git and gh,"
-say "watched ADP refuse it while it lacked evidence, and read the signed record"
-say "of why it was allowed."
+say "watched ADP refuse it while it lacked evidence — and again when the agent"
+say "tried to approve itself — and read the signed record of why it was allowed."
 say ""
 say "  Run your own instance   ${c_c}docs/self-hosting.md${c_0}"
 say "  What the contract promises   ${c_c}docs/api-compatibility.md${c_0}"

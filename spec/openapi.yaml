@@ -582,7 +582,9 @@ paths:
         which narrows but does not close the window a superseding gate result
         could land in (git and Postgres are not one transaction). Requirements
         are `gates_green`, `one_approval`, and `gates_confident`, the last
-        gating on the Wilson lower bound of a gate's trailing pass rate. A gate
+        gating on the Wilson lower bound of a gate's trailing pass rate.
+        `one_approval` is author-independent: an approving review from the
+        proposal's own author does not satisfy it. A gate
         that disagrees with itself often enough is quarantined: it stops
         blocking, but visibly, and the quarantine is recorded as an operation.
 

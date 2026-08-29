@@ -55,9 +55,10 @@ from this table, because this file records what is left. Its number is not reuse
 filed against this phase cite these numbers, and a recycled 1-2 would point two of them at
 different work.
 
-2-1 belongs to this release as well: a developer evaluating ADP alone is both author and
-approver, so the refusal 1-5 teaches them to satisfy is, on their own instance, satisfiable by
-the person it exists to constrain.
+1-5's suggested remedy for `one_approval` is `gh pr review --approve`, which became honest advice
+only when 2-1 shipped: before it, a developer evaluating ADP alone was both author and approver, so
+the refusal 1-5 exists to teach them to satisfy was, on their own instance, satisfiable by the
+person it exists to constrain.
 
 ### 1b — Ambient: capture without being asked
 
@@ -120,14 +121,19 @@ to inspection. **Release 1d is complete.**
 ## Phase 2 — The serial-base-case forward work
 
 **Why now:** the 2026-08-17 reweighting named three consequences and none of them was ever
-tracked. They are the differentiator the reweighting implies, and 2-1 doubles as the first half
-of open decision OD-2. All three now have a release in Phase 1 to land in.
+tracked. They are the differentiator the reweighting implies. Both remaining items have a release
+in Phase 1 to land in.
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 2-1 | Author-independent approval — `one_approval` currently accepts the author approving their own proposal | #121 | not started. `server/src/core/land-policy.ts:140`. Observed live in the arm-2 bench trajectories. Also a precondition of a bake-off meaning anything, where every author is an agent |
 | 2-2 | Compensating-revert undo — undo that survives a moved branch, rather than only CAS rollback | #159 | not started. Lands with 1c |
 | 2-3 | Cross-harness checkpoint/resume demo | #160 | not started. Also the instrument for OD-3, which is why it earns its place twice. Waits on 1-10, without which it is a bespoke script rather than evidence of portability |
+
+Item 2-1 — author-independent approval, #121 — shipped and is gone from this table. Its number is
+not reused, for the reason given under 1a. It was the first half of OD-2 below, and the half that
+had to come first: until it landed, `one_approval` was satisfiable by the principal it exists to
+constrain, so no bake-off's "landed" column measured anything and no refusal 1-5 could honestly
+teach a solo evaluator to satisfy.
 
 ---
 
@@ -163,7 +169,7 @@ Three decisions are open. Each is answerable, and each has an experiment.
 | # | Decision | Experiment | State |
 |---|---|---|---|
 | 4-1 | **OD-1** — what is the native plane for, and what does it cost? | Close the MCP tool gap — 1-4, so the agent stops paying a round-trip `gh` bundles into one command — then re-run arm 2 at study scale and add the long-trajectory and novel-CLI-from-docs arms | not started. Arm 2 measured ADP-MCP at $0.1435/trial against $0.0848 via `gh` and $0.0850 on real GitHub — a first-party number that contradicts our own bet |
-| 4-2 | **OD-2** — can a gate detect an agent that has satisfied its own tests? | A held-out-vs-visible pass-rate bench arm, same shape as arms 2 and 3. 2-1 is its first half | not started. The flakiness half shipped (Wilson-lower-bound `gates_confident`, quarantine as an operation); none of the reward-hacking half did |
+| 4-2 | **OD-2** — can a gate detect an agent that has satisfied its own tests? | A held-out-vs-visible pass-rate bench arm, same shape as arms 2 and 3 | not started. Two of its three halves shipped: flakiness (Wilson-lower-bound `gates_confident`, quarantine as an operation) and self-approval (#121, author-independent `one_approval`). The reward-hacking half — an agent editing the tests that judge it — is the one still open, and the one the arm measures |
 | 4-3 | **OD-3** — will a harness vendor adopt, and what is the minimum portable slice? | Register ADP as a reverse-DNS MCP extension; take 2-3's demo to two harness teams | not started. MCP 2026-07-28 removed protocol sessions and told servers to mint explicit handles — the technical path is now a namespace registration. Most of the open positions wait on the design partner this produces |
 
 ---
