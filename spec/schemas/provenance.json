@@ -10,7 +10,12 @@
     "principal": { "type": "string", "description": "Stable identity, e.g. a username or service account" },
     "harness": { "type": "string", "description": "Agent harness name, e.g. claude-code, codex (agent kind only)" },
     "model": { "type": "string", "description": "Model identifier used for this session (agent kind only)" },
-    "session_id": { "type": "string", "description": "Harness session/conversation identifier (agent kind only)" }
+    "session_id": { "type": "string", "description": "Harness session/conversation identifier (agent kind only)" },
+    "via": {
+      "type": "string",
+      "enum": ["push", "mirror-inbound"],
+      "description": "How the change reached ADP, when it was recorded automatically at the receive path rather than by an explicit call"
+    }
   },
   "additionalProperties": false
 }
