@@ -126,6 +126,16 @@ dc-runtime: ## Rebuild the published site's runtime from dc-runtime/src and asse
 
 site: ## Assert the published pages meet #163's exit criteria, in a real browser
 	npm ci --prefix dc-runtime
+	@# The browser comes from dc-runtime's own Playwright, not from `make browser`
+	@# (which uses server/): this test must run without server's dependency tree
+	@# installed, since nothing it touches needs a database or a server. Like
+	@# `make acceptance-ui`, it deliberately does not install system libraries —
+	@# that needs root, and the workflow does it in its own step.
+	@if [ -x "$${ADP_CHROMIUM_PATH:-}" ]; then \
+		echo "using ADP_CHROMIUM_PATH=$$ADP_CHROMIUM_PATH — skipping the pinned download"; \
+	else \
+		npx --prefix dc-runtime playwright install chromium; \
+	fi
 	npm test --prefix dc-runtime
 
 bench: ## Regenerate the benchmark report from bench/runs/ and assert it is unchanged
