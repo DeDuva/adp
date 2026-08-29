@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner helm dc-runtime site
+.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner helm dc-runtime site land
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -171,6 +171,9 @@ demo: ## The test drive: land a change and read its signed evidence, then tear d
 
 check-branch: ## Assert the current branch is named feat/, fix/ or docs/ (no-op on main)
 	@bash scripts/dev/check-branch.sh
+
+land: ## Merge a PR (PR=n), keeping its branch when another open PR is stacked on it
+	@bash scripts/dev/land.sh $(PR)
 
 check: ## The gate. Same target name in every repo in this line of work.
 	@$(MAKE) check-branch

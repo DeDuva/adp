@@ -90,6 +90,33 @@ human would be.
 fails the pull request. It is a check rather than a note for the reason above: by the
 time anyone reads this file, the branch already exists.
 
+### Landing a stack
+
+**Do not delete a branch another open pull request is based on.** GitHub does not orphan
+the dependent — it *closes* it, and a closed pull request whose base branch is gone can be
+neither reopened nor retargeted. The commits survive; the review thread, the number, and
+every link pointing at it do not. This happened twice on 2026-08-29, to #172 and #180, and
+the second time the branch was deleted by `gh pr merge --delete-branch` — which makes the
+destructive step the default spelling of the safe one.
+
+So land pull requests with the script rather than by hand:
+
+```bash
+make land PR=181          # or: bash scripts/dev/land.sh 181
+```
+
+`scripts/dev/land.sh` refuses a pull request whose checks are not green or that GitHub
+reports unmergeable, asks whether anything is stacked on the branch *before* merging, and
+deletes the branch only when nothing is. When something is, it merges, keeps the branch,
+and prints the recipe for the child: rebase onto the new base — the squash makes git drop
+the merged commit as already applied — push with `--force-with-lease`, retarget with
+`gh pr edit`, and land it the same way.
+
+A stack is worth keeping when the parts are separately reviewable, and it is worth
+insisting on when one part is urgent: #179 repaired a live rendering fault on the published
+site and should not have waited behind a copy edit. The cost of a stack is one rebase, and
+that is cheaper than either enlarging a focused pull request or delaying a fix.
+
 **Do not regenerate this file.** Most of what follows was learned by getting it wrong,
 and a codebase scan cannot see any of it — so a command that rebuilds project
 instructions by scanning the repository (`/init` and its equivalents) will silently
