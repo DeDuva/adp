@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ADP — the agent-native forge</title>
-<meta name="description" content="A self-hosted, GitHub-compatible forge for AI coding agents. Keep using git and gh while ADP binds every change to its intent, agent provenance, approvals and signed verification evidence.">
+<meta name="description" content="A self-hosted, GitHub-compatible forge for AI coding agents. Keep using git and gh while ADP binds every change to its intent, agent provenance, approvals and signed verification evidence — one portable record that still answers, long after the merge, what a change was for, which agent and model produced it, and how it was verified.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- One font URL, identical on both pages, so navigating / → /why/ reuses the
@@ -20,14 +20,16 @@
 
 <header class="wrap sec sec--top">
   <div class="flow flow--loose">
-    <h1>Agents write the code. Something has to check it.</h1>
+    <h1>Agents write the code. Someone still has to answer for it.</h1>
     <div class="flow flow--tight">
       <p class="lede">ADP is a <strong>self-hosted, GitHub-compatible forge for AI coding agents.</strong>
       Keep using <code>git</code>, <code>gh</code> and your existing CI, while ADP binds every change to
       its intent, agent provenance, approvals and signed verification evidence — and refuses to land
       changes that do not meet your requirements.</p>
-      <p class="lede">An agent saying “tests pass” is not proof. ADP turns that claim into evidence
-      someone else can check, revert, or build on.</p>
+      <p class="lede">An agent saying “tests pass” is not proof — and proof is only the first
+      question. When the change reaches production, the ones that decide the next hour are: what was
+      this for, which agent and model produced it, how was it verified, and can it be reversed without
+      losing the reasoning. ADP makes all four answerable, per change, in any harness, years later.</p>
     </div>
     <div class="cta">
       <a class="btn btn--primary" href="https://github.com/DeDuva/adp#try-it">Try it in one command</a>
@@ -127,11 +129,90 @@ gh pr merge</pre>
       and the repository's own <code>adp.yaml</code>. A change that cannot show the evidence does not
       land — and the refusal is recorded too.</figcaption>
     </figure>
+
+    <div class="flow flow--tight">
+      <h3>The chain an AI-native SDLC already commits, with something enforcing it</h3>
+      <p class="sub">The published playbooks for agentic development converge on the same shape: each
+      stage ends by committing an artifact the next stage reads — the intent, the spec, the plan, the
+      diff, the review findings, the incident record. That discipline is right, and it is held together
+      by convention. A convention does not bind automation. ADP is the point where the same chain
+      becomes a constraint: typed, signed, and checked where changes are admitted.</p>
+      <div class="table-scroll">
+        <table class="table--stack">
+          <thead><tr><th>The stage commits</th><th>ADP binds it as</th></tr></thead>
+          <tbody>
+            <tr><td data-th="The stage commits">An intent, written down before the work</td>
+                <td data-th="ADP binds it as">A typed intent the change record references, resolved from an ordinary <code>git push</code></td></tr>
+            <tr><td data-th="The stage commits">The spec and the plan that followed it</td>
+                <td data-th="ADP binds it as">Artifacts carried on the change, versioned with it rather than beside it</td></tr>
+            <tr><td data-th="The stage commits">The diff</td>
+                <td data-th="ADP binds it as">Ordinary git objects — <code>git clone</code> keeps working</td></tr>
+            <tr><td data-th="The stage commits">The review findings</td>
+                <td data-th="ADP binds it as">Gate results, each linked to a signed evidence bundle bound to the state that ships</td></tr>
+            <tr><td data-th="The stage commits">The approval</td>
+                <td data-th="ADP binds it as">A land policy — instance ∧ organization ∧ repository — that no agent can bypass</td></tr>
+            <tr><td data-th="The stage commits">The incident record</td>
+                <td data-th="ADP binds it as">An operation-log entry with guarded undo, written in the same transaction as the change</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </section>
 
 <section class="wrap sec">
-  <div class="band"><span class="band__n">03</span><span class="band__label">What that buys you</span></div>
+  <div class="band"><span class="band__n">03</span><span class="band__label">After it lands</span></div>
+  <div class="flow flow--loose">
+    <h2>Verification is the bottleneck. It is not the finish line.</h2>
+    <p class="sub">Past review sit deployment and operations, and that is where the failures are.
+    Machine-written code passes review looking better than the code a human wrote — and introduces
+    roughly 1.7&#215; more critical runtime issues once it ships. Four in five teams surveyed had
+    suffered a major production failure caused by AI code in the previous six months, and one of the
+    four leading causes was the audit trail itself going missing.</p>
+    <p class="sub"><strong class="em">ADP does not deploy your software and does not watch your
+    metrics.</strong> It makes the change that broke production identifiable, attributable and
+    reversible — because the record was written in the same transaction as the change, rather than
+    reconstructed afterwards from a session transcript that no longer exists.</p>
+    <div class="grid">
+      <div class="card"><h3>Which change did this?</h3><p>An append-only operation log, written in the
+      same database transaction as the change it describes — so there is no state in which the change
+      landed and the record of it did not.</p></div>
+      <div class="card"><h3>Produced by what?</h3><p>The intent, the harness, the model and the session
+      are fields on the change record, not a transcript inside a tool you may no longer run.</p></div>
+      <div class="card"><h3>Reverse it, keep the reasoning</h3><p>Checkpoints and guarded undo are
+      first-class operations, and the rollback goes on the record the same way the change did.</p></div>
+    </div>
+    <p class="fine">Production-failure figures: New Relic, <em>The 2026 State of AI Coding Report</em>
+    — Hanover Research, 200 US technology decision-makers, June 2026.</p>
+  </div>
+</section>
+
+<section class="wrap sec">
+  <div class="band"><span class="band__n">04</span><span class="band__label">Portability</span></div>
+  <div class="flow flow--loose">
+    <h2>One record, whichever agent wrote it</h2>
+    <p class="sub">Every harness ships its own checkpoints, session store and memory files. Run three
+    of them and you hold three incomplete audit trails, none of which the next harness can read, and
+    none of which outlives the vendor that wrote it. ADP records the intent, the harness, the model and
+    the session on the change itself, in a published, versioned, Apache-2.0 wire format — so work
+    started in one agent can be reviewed, reverted or continued in another, and an auditor gets one
+    answer instead of three.</p>
+    <p class="sub">The precedent is OpenTelemetry. Its win was not making tools talk to each other; it
+    was standardising the record, so that any backend could read all of them. Version control is one
+    layer below, with the same problem and no such standard yet.</p>
+    <div class="grid grid--2">
+      <div class="card"><h3>The harness should compete</h3><p>Planning, context, model quality, when to
+      fan out — that is where a coding agent earns its place, and where vendors should compete
+      furiously.</p></div>
+      <div class="card"><h3>The substrate should not</h3><p>Workspaces, history, the operation log, the
+      evidence graph, signed identity. No harness should be able to compete on owning your
+      history.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap sec">
+  <div class="band"><span class="band__n">05</span><span class="band__label">What that buys you</span></div>
   <div class="flow flow--loose">
     <h2>What that buys you</h2>
     <div class="table-scroll">
@@ -155,7 +236,7 @@ gh pr merge</pre>
 </section>
 
 <section class="wrap sec">
-  <div class="band"><span class="band__n">04</span><span class="band__label">Status</span></div>
+  <div class="band"><span class="band__n">06</span><span class="band__label">Status</span></div>
   <div class="flow flow--loose">
     <h2>Working today</h2>
     <div class="table-scroll">
@@ -183,7 +264,7 @@ gh pr merge</pre>
 </section>
 
 <section class="wrap sec">
-  <div class="band"><span class="band__n">05</span><span class="band__label">Try it</span></div>
+  <div class="band"><span class="band__n">07</span><span class="band__label">Try it</span></div>
   <div class="flow flow--loose">
     <h2>Try it</h2>
     <p class="sub">One command starts a throwaway ADP against an ephemeral PostgreSQL, then uses
@@ -198,8 +279,8 @@ make demo</pre>
     <div class="grid">
       <div class="card"><h3>Run your own instance</h3><p>Helm chart or Docker Compose, with the sharp
       edges written down — <a href="https://github.com/DeDuva/adp/blob/main/docs/self-hosting.md">self-hosting guide</a>.</p></div>
-      <div class="card"><h3>Read the argument</h3><p>Why verification became the bottleneck, and why
-      git and the forge cannot simply be patched — <a href="./why/">Why ADP exists</a>.</p></div>
+      <div class="card"><h3>Read the argument</h3><p>Why verification became the bottleneck, and what
+      the record has to carry once it isn't — <a href="./why/">Why ADP exists</a>.</p></div>
       <div class="card"><h3>Build against it</h3><p>The contract is published as OpenAPI, with a
       conformance suite — <a href="https://github.com/DeDuva/adp/tree/main/spec">spec/</a>.</p></div>
     </div>
