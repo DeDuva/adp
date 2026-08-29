@@ -147,7 +147,7 @@ describe.skipIf(skipWithoutDb)("M4-3: per-org storage quota", () => {
       .returning();
     runnerIdentityId = runner!.id;
     runnerToken = await mintToken(db, runner!.id, ["runner"]);
-  });
+  }, 120_000);
 
   afterAll(async () => {
     await app.close();
@@ -155,6 +155,15 @@ describe.skipIf(skipWithoutDb)("M4-3: per-org storage quota", () => {
     await rm(gitRoot, { recursive: true, force: true });
   });
 
+  // Every test here gets 120_000, matching the eight other git-heavy e2e files
+  // rather than the 20s global (#169). `seedOrg` clones over the real git wire,
+  // commits and pushes — and the first test does it twice — so a test that
+  // costs 2-3s alone costs over 20s when sixteen workers are all spawning
+  // `git` at once. The file used to take the global, and flaked on a different
+  // test each full-suite run, which is the shape of noise that gets re-run
+  // until green. Nothing here is slow on its own: measured against a database
+  // already holding 57 orgs from the rest of the tier, the whole file is 11s
+  // and `meterAllOrgs` is 400ms.
   it("measures both halves of an org's storage, and attributes neither to another org", async () => {
     const mine = await seedOrg("storage-measure-mine");
     const theirs = await seedOrg("storage-measure-theirs");
@@ -187,7 +196,7 @@ describe.skipIf(skipWithoutDb)("M4-3: per-org storage quota", () => {
     // one org's writes because another org was noisy.
     const neighbour = await measureOrgStorage(db, gitBackend, theirs.orgId);
     expect(measured.postgresBytes).toBeGreaterThan(neighbour.postgresBytes + 20_000);
-  });
+  }, 120_000);
 
   it("writes the reading onto the org and publishes it as adp_storage_bytes", async () => {
     const { owner, orgId } = await seedOrg("storage-meter-tick");
@@ -209,7 +218,7 @@ describe.skipIf(skipWithoutDb)("M4-3: per-org storage quota", () => {
     const metrics = renderMetrics();
     expect(metrics).toContain("# TYPE adp_storage_bytes gauge");
     expect(metrics).toContain(`adp_storage_bytes{org="${owner}"} ${after.storageBytesUsed}`);
-  });
+  }, 120_000);
 
   it("refuses a trajectory append and a checkpoint once the org is over its ceiling", async () => {
     const { owner, orgId, gitSha } = await seedOrg("storage-over");
@@ -232,7 +241,7 @@ describe.skipIf(skipWithoutDb)("M4-3: per-org storage quota", () => {
     });
     expect(checkpoint.status).toBe(403);
     expect(checkpoint.body.message).toMatch(/storage quota exceeded/i);
-  });
+  }, 120_000);
 
   it("refuses a push over the ceiling but never a clone — a quota is not a lockout", async () => {
     const { owner, orgId } = await seedOrg("storage-push");
@@ -264,7 +273,7 @@ describe.skipIf(skipWithoutDb)("M4-3: per-org storage quota", () => {
     expect(pushed).not.toBeNull();
     expect(pushed).toMatch(/403/);
     await rm(cloneDir, { recursive: true, force: true });
-  });
+  }, 120_000);
 
   // The decision that most looks like a bug from the enforcement code alone.
   it("does not refuse an org that has never been metered — null used is unknown, not over", async () => {
@@ -283,7 +292,7 @@ describe.skipIf(skipWithoutDb)("M4-3: per-org storage quota", () => {
       body: JSON.stringify({ events: [{ kind: "message", type: "assistant", payload: { text: "hi" } }] }),
     });
     expect(append.status).toBe(201);
-  });
+  }, 120_000);
 
   // The other one: a storage quota must never become a land outage.
   it("completes a gate job over the ceiling, dropping its logs and saying so in the op log", async () => {
@@ -339,7 +348,7 @@ describe.skipIf(skipWithoutDb)("M4-3: per-org storage quota", () => {
       .from(operations)
       .where(and(eq(operations.verb, "gate_job.complete"), eq(operations.repoId, (await findRepo(db, owner, "app"))!.id)));
     expect((op!.after as Record<string, unknown>).logs_dropped).toBe("org storage quota");
-  });
+  }, 120_000);
 
   it("serves the ceiling and its measurement age on the org console, and audits a change to it", async () => {
     const { orgId } = await seedOrg("storage-console");
@@ -374,5 +383,5 @@ describe.skipIf(skipWithoutDb)("M4-3: per-org storage quota", () => {
       .from(operations)
       .where(and(eq(operations.verb, "org.quota_update"), eq(operations.orgId, orgId), isNull(operations.repoId)));
     expect((op!.after as Record<string, unknown>).max_storage_bytes).toBe(5_000_000_000);
-  });
+  }, 120_000);
 });
