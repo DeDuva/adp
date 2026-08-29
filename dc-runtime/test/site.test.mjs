@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../docs/html');
-const PAGES = ['/', '/why/'];
+const PAGES = ['/', '/why/', '/sdlc/'];
 // The widths #163 names. 320 is the narrowest phone still worth supporting;
 // 1440 is where the container stops growing.
 const WIDTHS = [320, 375, 768, 1024, 1440];
@@ -107,8 +107,8 @@ for (const path of PAGES) {
   });
 }
 
-test('neither page defines a colour, and no static inline style survives', () => {
-  for (const rel of ['index.html', 'why/index.html']) {
+test('no page defines a colour, and no static inline style survives', () => {
+  for (const rel of ['index.html', 'why/index.html', 'sdlc/index.html']) {
     const src = readFileSync(resolve(ROOT, rel), 'utf8');
     const body = src.replace(/<!--[\s\S]*?-->/g, '');
 

@@ -16,6 +16,17 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**The published site argues past the merge, and a third page walks the loop.** `make site`
+asserted that the site *rendered*; nothing asserted that it argued the right thing, and read
+cold the front page claimed only that agents write code and ADP checks it — a claim every
+merge-blocking review bot can make, ending where the field data says the trouble starts. The
+front page now covers what the record is for after a change lands and why it has to survive a
+change of harness, and `docs/html/sdlc/` is a new page mapping the six-stage loop the
+published agentic-SDLC playbooks describe against what holds each committed artifact today.
+No capability claim moved: the front page's status table is still the only place that is
+maintained. `make site` and CI's `site-runtime` job now drive three pages rather than two, on
+the same exit criteria, so the new page cannot be published ungated.
+
 **`one_approval` is author-independent.** An approving review from the
 principal that authored the proposal no longer satisfies it (#121). A merge
 that was previously allowed on the author's own approval is now refused with
