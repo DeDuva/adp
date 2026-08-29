@@ -116,7 +116,7 @@ find the same text rather than a second, drifting copy.
 | `adapters/` | scanner-as-gate adapters (osv-scanner, wizcli) |
 | `runner/` | the gate runner: polls `/api/adp/gate-jobs/claim`, executes in an isolated container (network-deny, no host mounts, no ambient secrets, resource caps), reports via `/complete`. A pure HTTP client like `cli/` — no `server/` import, no DB or signing-key credential |
 | `bench/` | benchmark arms, runs, and the generated report |
-| `dc-runtime/` | the published site's client runtime. Builds `docs/html/support.js` and the React bundles beside it — all committed, because the site itself has no build step. `dc-runtime/test/` drives both published pages in a real browser (`make site`) |
+| `dc-runtime/` | the published site's client runtime. Builds `docs/html/support.js` and the React bundles beside it — all committed, because the site itself has no build step. `dc-runtime/test/` drives every published page in a real browser (`make site`) |
 | `spec/` | the published contract: `spec/openapi.yaml`, `spec/schemas/`, `spec/graphql/github.graphql` |
 | `scripts/dev/` | what the Makefile actually runs — `up`, `down`, `doctor`, `verify-clean` |
 | `deploy/`, `infra/` | production compose stack; Terraform for the GCP dev box |

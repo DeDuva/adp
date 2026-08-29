@@ -122,9 +122,12 @@ SDLC playbook and the 2026 field data published alongside it, found the front pa
 narrower claim than the product: it answered the review stage only, stopped at the merge,
 and carried cross-harness provenance — the one capability an incumbent cannot copy — in a
 single table cell. The page now covers what the record is for after it lands, and why it has
-to be portable across harnesses. That is prose rather than an input moved between the three
-categories above, so it opens no item here; it is recorded because the next person to read
-this section should know the site was measured twice, on two different criteria.
+to be portable across harnesses, and a third page at `/sdlc/` walks all six stages of the
+loop those playbooks describe against what actually enforces each one. That is prose rather
+than an input moved between the three categories above, so it opens no item here; it is
+recorded because the next person to read this section should know the site was measured
+twice, on two different criteria — and because `make site` now gates three pages, which is
+the number a fourth has to join rather than quietly skip.
 
 ---
 

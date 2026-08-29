@@ -136,7 +136,8 @@ gh pr merge</pre>
       stage ends by committing an artifact the next stage reads — the intent, the spec, the plan, the
       diff, the review findings, the incident record. That discipline is right, and it is held together
       by convention. A convention does not bind automation. ADP is the point where the same chain
-      becomes a constraint: typed, signed, and checked where changes are admitted.</p>
+      becomes a constraint: typed, signed, and checked where changes are admitted. All six stages,
+      at length: <a href="./sdlc/">the AI-native SDLC, and the layer under it</a>.</p>
       <div class="table-scroll">
         <table class="table--stack">
           <thead><tr><th>The stage commits</th><th>ADP binds it as</th></tr></thead>
@@ -263,7 +264,7 @@ gh pr merge</pre>
   </div>
 </section>
 
-<section class="wrap sec">
+<section class="wrap sec" id="try-it">
   <div class="band"><span class="band__n">07</span><span class="band__label">Try it</span></div>
   <div class="flow flow--loose">
     <h2>Try it</h2>
@@ -280,7 +281,8 @@ make demo</pre>
       <div class="card"><h3>Run your own instance</h3><p>Helm chart or Docker Compose, with the sharp
       edges written down — <a href="https://github.com/DeDuva/adp/blob/main/docs/self-hosting.md">self-hosting guide</a>.</p></div>
       <div class="card"><h3>Read the argument</h3><p>Why verification became the bottleneck, and what
-      the record has to carry once it isn't — <a href="./why/">Why ADP exists</a>.</p></div>
+      the record has to carry once it isn't — <a href="./why/">Why ADP exists</a>, or
+      <a href="./sdlc/">the six SDLC stages one by one</a>.</p></div>
       <div class="card"><h3>Build against it</h3><p>The contract is published as OpenAPI, with a
       conformance suite — <a href="https://github.com/DeDuva/adp/tree/main/spec">spec/</a>.</p></div>
     </div>
@@ -291,6 +293,7 @@ make demo</pre>
   <div class="foot">
     <a href="https://github.com/DeDuva/adp">GitHub</a>
     <a href="./why/">Why ADP exists</a>
+    <a href="./sdlc/">The AI-native SDLC</a>
     <a href="https://github.com/DeDuva/adp/blob/main/docs/self-hosting.md">Self-hosting</a>
     <a href="https://github.com/DeDuva/adp/blob/main/CHANGELOG.md">Changelog</a>
     <span>Apache-2.0 code · CC-BY prose</span>
