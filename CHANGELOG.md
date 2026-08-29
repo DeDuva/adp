@@ -16,6 +16,45 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**One design system for the published site (#163, second half).** The two pages were
+written months apart by different means and shared no styles: the palette was declared
+twice and identically, the container widths disagreed at `940px` against `1120/760/520`,
+and the vertical scale was thirteen unrelated numbers with an inline `style=` at the one
+place it ran out. Neither page responded to a breakpoint, neither showed a focus ring, and
+both tables were unreadable on a phone.
+
+`docs/html/site.css` now owns the palette, a seven-step type ramp and an 8-base spacing
+scale for both pages. Neither page declares a colour or a static inline `style=`; the
+essay's simulations reach their colours through `var(--sim-*)` tokens instead of the 91
+hex and `rgba()` literals that used to live in its JavaScript, so the whole site restyles
+from one file.
+
+The direction is **"Blueprint"**: cool paper under a faint 24px grid, structure drawn in
+1px black, section boundaries banded and numbered, figures set as numbered plates. It was
+chosen from four drawn against the same content — Paper (warm, serif, narrow measure),
+Instrument (the dark page rebuilt), Blueprint, and Inversion (ink on paper with full-bleed
+dark figure bands) — and it won on the specific complaint: the page had no visible section
+boundary and no scale, and Blueprint's whole grammar is drawn structure, so it cannot
+quietly lose them again. `docs/html/site.css` carries the shortlist and the reasoning.
+
+What a reader gets: rhythm and gutters that move on three breakpoints, prose tables that
+stack into labelled records below 620px, a core diagram that stacks rather than becoming a
+640px horizontal scroller on a phone, 44px touch targets, and a visible focus ring on every
+interactive element. Text colours were picked against the paper ground rather than by eye —
+every one clears WCAG AA, with separate tokens for marks, which only need 3:1.
+
+Two inline styles survive by design, and only in the essay: a width or an opacity a
+simulation computes per frame is state, not styling, and cannot live in a stylesheet. Each
+is required to carry a `{{ hole }}`, which the test asserts.
+
+`make site` drives both published pages in the pinned Chromium and asserts #163's exit
+criteria — no horizontal scroll at 320, 375, 768, 1024 and 1440px, every table readable at
+375px, a focus ring on every interactive element, one stylesheet owning the palette, and
+nothing off-origin but Google Fonts. CI runs it in the `site-runtime` job. The criteria
+stopped being things anyone had to check by looking.
+
+No contract change; nothing under `server/`, `cli/`, `runner/` or `spec/` moves.
+
 **The published site can rebuild what it serves (#163, first half).** `docs/html/support.js`
 is 69 KB of generated JavaScript whose own header named a `dc-runtime/` that was in no
 repository anyone working here could reach. It drives every interaction in the essay at

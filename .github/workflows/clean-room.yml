@@ -97,6 +97,14 @@ jobs:
       - name: Bring up the ephemeral dependency stack
         run: make up
 
+      # Chromium and its system libraries, installed here rather than by a make
+      # target because it needs root: `make acceptance-ui` and `make site`
+      # deliberately do not use --with-deps. This sits ahead of `make test-all`
+      # because that target now drives the published pages in a browser too
+      # (`make site`), not only the web UI acceptance further down.
+      - name: Install Chromium and its system libraries
+        run: npx --prefix server playwright install --with-deps chromium
+
       - name: Full suite, web build, conformance and acceptance
         run: make test-all
 
@@ -106,12 +114,6 @@ jobs:
       # Chromium's shared libraries (libnspr4 and friends) are not in the
       # browser download and are not on a stock runner either — without them the
       # browser exits 127 before Playwright can attach. Done as its own step
-      # because it needs root: `make acceptance-ui` deliberately does not use
-      # `--with-deps`, so that running it on a developer machine cannot trigger
-      # a sudo password prompt in the middle of a target.
-      - name: Install Chromium and its system libraries
-        run: npx --prefix server playwright install --with-deps chromium
-
       - name: Web UI acceptance (Playwright)
         run: make acceptance-ui
 

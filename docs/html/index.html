@@ -7,224 +7,206 @@
 <meta name="description" content="A self-hosted, GitHub-compatible forge for AI coding agents. Keep using git and gh while ADP binds every change to its intent, agent provenance, approvals and signed verification evidence.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-:root{
-  --bg:#0d0e10;--panel:#16181b;--panel2:#1d2024;--line:#2a2e33;
-  --fg:#e9e7e2;--sub:#b9bcc1;--dim:#8b9098;
-  --cyan:#4fd1d9;--amber:#e0a458;--green:#57d9a3;--red:#e4695e;
-  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
-  --sans:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
-}
-*{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--bg);color:var(--fg);font:400 17px/1.65 var(--sans);
-  -webkit-font-smoothing:antialiased}
-.wrap{max-width:940px;margin:0 auto;padding:0 24px}
-a{color:var(--cyan);text-decoration:none}
-a:hover{text-decoration:underline}
-code,kbd{font-family:var(--mono);font-size:.92em}
-
-header{padding:96px 0 72px;border-bottom:1px solid var(--line)}
-.eyebrow{font:500 13px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--cyan);margin:0 0 22px}
-h1{font:600 clamp(38px,6.2vw,60px)/1.06 var(--sans);letter-spacing:-.022em;margin:0 0 26px;max-width:17ch}
-.lede{font-size:clamp(18px,2.2vw,21px);line-height:1.55;color:var(--sub);max-width:62ch;margin:0 0 20px}
-.lede strong{color:var(--fg);font-weight:500}
-.meta{font:400 14px/1.6 var(--mono);color:var(--dim);margin:28px 0 0}
-
-.cta{display:flex;gap:12px;flex-wrap:wrap;margin:34px 0 0}
-.btn{display:inline-block;padding:11px 20px;border-radius:6px;font:500 15px var(--sans);
-  border:1px solid var(--line);color:var(--fg)}
-.btn:hover{text-decoration:none;border-color:var(--dim)}
-.btn.primary{background:var(--cyan);border-color:var(--cyan);color:#072426}
-.btn.primary:hover{filter:brightness(1.08)}
-
-section{padding:64px 0;border-bottom:1px solid var(--line)}
-h2{font:600 clamp(24px,3.4vw,30px)/1.2 var(--sans);letter-spacing:-.015em;margin:0 0 16px;max-width:26ch}
-h3{font:600 17px/1.4 var(--sans);margin:0 0 8px}
-p{max-width:70ch}
-p.sub{color:var(--sub)}
-
-.grid{display:grid;gap:20px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));margin:32px 0 0}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:22px}
-.card p{color:var(--sub);font-size:15.5px;margin:0;max-width:none}
-
-pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:18px 20px;
-  overflow-x:auto;font:400 14px/1.7 var(--mono);color:var(--fg);margin:22px 0}
-pre .c{color:var(--dim)}
-
-figure{margin:32px 0 0;background:var(--panel);border:1px solid var(--line);border-radius:9px;
-  padding:26px 22px;overflow-x:auto}
-figure svg{display:block;min-width:640px;width:100%;height:auto}
-figcaption{color:var(--dim);font-size:14px;margin:16px 0 0;line-height:1.6}
-
-table{border-collapse:collapse;width:100%;margin:26px 0 0;font-size:15px}
-th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
-th{font:500 13px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
-td code{color:var(--fg)}
-.tick{color:var(--green)}
-.part{color:var(--amber)}
-
-footer{padding:44px 0 72px;color:var(--dim);font:400 14px/1.8 var(--mono)}
-footer a{color:var(--sub)}
-.foot{display:flex;gap:28px;flex-wrap:wrap}
-
-@media (prefers-reduced-motion:no-preference){a,.btn{transition:border-color .15s,filter .15s}}
-</style>
+<!-- One font URL, identical on both pages, so navigating / → /why/ reuses the
+     cache entry instead of fetching a second stylesheet for the same faces. -->
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./site.css">
 </head>
 <body>
 
-<header class="wrap">
-  <p class="eyebrow">The agent-native forge</p>
-  <h1>Agents write the code. Something has to check it.</h1>
-  <p class="lede">ADP is a <strong>self-hosted, GitHub-compatible forge for AI coding agents.</strong>
-  Keep using <code>git</code>, <code>gh</code> and your existing CI, while ADP binds every change to
-  its intent, agent provenance, approvals and signed verification evidence — and refuses to land
-  changes that do not meet your requirements.</p>
-  <p class="lede">An agent saying “tests pass” is not proof. ADP turns that claim into evidence
-  someone else can check, revert, or build on.</p>
-  <div class="cta">
-    <a class="btn primary" href="https://github.com/DeDuva/adp#try-it">Try it in one command</a>
-    <a class="btn" href="https://github.com/DeDuva/adp">Source on GitHub</a>
-    <a class="btn" href="./why/">Why ADP exists</a>
+<div class="mastband">
+  <p class="masthead"><span>ADP · the agent-native forge</span><span class="masthead__meta">Spec 0.5.0 · Apache-2.0</span></p>
+</div>
+
+<header class="wrap sec sec--top">
+  <div class="flow flow--loose">
+    <h1>Agents write the code. Something has to check it.</h1>
+    <div class="flow flow--tight">
+      <p class="lede">ADP is a <strong>self-hosted, GitHub-compatible forge for AI coding agents.</strong>
+      Keep using <code>git</code>, <code>gh</code> and your existing CI, while ADP binds every change to
+      its intent, agent provenance, approvals and signed verification evidence — and refuses to land
+      changes that do not meet your requirements.</p>
+      <p class="lede">An agent saying “tests pass” is not proof. ADP turns that claim into evidence
+      someone else can check, revert, or build on.</p>
+    </div>
+    <div class="cta">
+      <a class="btn btn--primary" href="https://github.com/DeDuva/adp#try-it">Try it in one command</a>
+      <a class="btn" href="https://github.com/DeDuva/adp">Source on GitHub</a>
+      <a class="btn" href="./why/">Why ADP exists</a>
+    </div>
+    <p class="fine">Apache-2.0 · self-hosted · TypeScript · PostgreSQL · the real <code>git</code> binary</p>
   </div>
-  <p class="meta">Apache-2.0 · self-hosted · TypeScript · PostgreSQL · the real <code>git</code> binary</p>
 </header>
 
-<section class="wrap">
-  <h2>Your tools do not change</h2>
-  <p class="sub">ADP speaks git's wire protocol and a compatible subset of GitHub's REST and GraphQL
-  APIs. An unmodified agent clones, reads an issue, pushes, opens a proposal, watches checks, and
-  merges — without knowing ADP exists.</p>
-  <pre><span class="c"># the same commands, pointed at your own instance</span>
+<section class="wrap sec">
+  <div class="band"><span class="band__n">01</span><span class="band__label">Compatibility</span></div>
+  <div class="flow flow--loose">
+    <h2>Your tools do not change</h2>
+    <p class="sub">ADP speaks git's wire protocol and a compatible subset of GitHub's REST and GraphQL
+    APIs. An unmodified agent clones, reads an issue, pushes, opens a proposal, watches checks, and
+    merges — without knowing ADP exists.</p>
+    <pre><span class="c"># the same commands, pointed at your own instance</span>
 git clone https://adp.example.com/acme/service.git
 gh issue view 41
 gh pr create --fill
 gh pr checks        <span class="c"># gate results, each linked to a signed evidence bundle</span>
 gh pr merge</pre>
-  <div class="grid">
-    <div class="card"><h3>Compatible where it counts</h3><p>Validated in CI against the real,
-    unmodified <code>gh</code> binary — not a mock, and not a claim of full parity.</p></div>
-    <div class="card"><h3>Additive first</h3><p>Mirror mode lets ADP sit alongside a repository that
-    stays on GitHub, so adopting it is not a migration.</p></div>
-    <div class="card"><h3>Self-hosted</h3><p>Helm chart or Docker Compose. Your data, your policy,
-    your keys — no account to create.</p></div>
+    <div class="grid">
+      <div class="card"><h3>Compatible where it counts</h3><p>Validated in CI against the real,
+      unmodified <code>gh</code> binary — not a mock, and not a claim of full parity.</p></div>
+      <div class="card"><h3>Additive first</h3><p>Mirror mode lets ADP sit alongside a repository that
+      stays on GitHub, so adopting it is not a migration.</p></div>
+      <div class="card"><h3>Self-hosted</h3><p>Helm chart or Docker Compose. Your data, your policy,
+      your keys — no account to create.</p></div>
+    </div>
   </div>
 </section>
 
-<section class="wrap">
-  <h2>Every change carries its proof</h2>
-  <p class="sub">Git records <em>what</em> changed and discards <em>why</em> and <em>whether anyone
-  checked</em>. ADP records a change as a signed transaction, and the merge is gated on it.</p>
+<section class="wrap sec">
+  <div class="band"><span class="band__n">02</span><span class="band__label">The record</span></div>
+  <div class="flow flow--loose">
+    <h2>Every change carries its proof</h2>
+    <p class="sub">Git records <em>what</em> changed and discards <em>why</em> and <em>whether anyone
+    checked</em>. ADP records a change as a signed transaction, and the merge is gated on it.</p>
 
-  <figure>
-    <svg viewBox="0 0 900 178" role="img" aria-label="A change binds intent, diff, evidence and provenance; policy gates the merge; the operation log records it.">
-      <defs>
-        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-          <path d="M0 0 L10 5 L0 10 z" fill="#8b9098"/>
-        </marker>
-      </defs>
-      <g font-family="IBM Plex Sans, system-ui, sans-serif" font-size="13">
-        <g>
-          <rect x="8" y="30" width="150" height="98" rx="8" fill="#1d2024" stroke="#2a2e33"/>
-          <text x="83" y="55" fill="#e9e7e2" font-size="13.5" font-weight="600" text-anchor="middle">The change</text>
-          <text x="83" y="78" fill="#4fd1d9" text-anchor="middle">intent</text>
-          <text x="83" y="97" fill="#4fd1d9" text-anchor="middle">diff</text>
-          <text x="83" y="116" fill="#4fd1d9" text-anchor="middle">provenance</text>
-        </g>
-        <line x1="164" y1="79" x2="216" y2="79" stroke="#8b9098" stroke-width="1.4" marker-end="url(#ar)"/>
-        <g>
-          <rect x="222" y="30" width="168" height="98" rx="8" fill="#1d2024" stroke="#2a2e33"/>
-          <text x="306" y="55" fill="#e9e7e2" font-size="13.5" font-weight="600" text-anchor="middle">Gates run</text>
-          <text x="306" y="80" fill="#b9bcc1" text-anchor="middle">isolated container,</text>
-          <text x="306" y="99" fill="#b9bcc1" text-anchor="middle">network denied</text>
-          <text x="306" y="118" fill="#8b9098" font-size="12" text-anchor="middle">ADP attests, never executes</text>
-        </g>
-        <line x1="396" y1="79" x2="448" y2="79" stroke="#8b9098" stroke-width="1.4" marker-end="url(#ar)"/>
-        <g>
-          <rect x="454" y="30" width="168" height="98" rx="8" fill="#1d2024" stroke="#2a2e33"/>
-          <text x="538" y="55" fill="#e9e7e2" font-size="13.5" font-weight="600" text-anchor="middle">Signed evidence</text>
-          <text x="538" y="80" fill="#57d9a3" text-anchor="middle">DSSE bundle</text>
-          <text x="538" y="99" fill="#b9bcc1" text-anchor="middle">bound to the change,</text>
-          <text x="538" y="118" fill="#b9bcc1" text-anchor="middle">not to a branch name</text>
-        </g>
-        <line x1="628" y1="79" x2="680" y2="79" stroke="#8b9098" stroke-width="1.4" marker-end="url(#ar)"/>
-        <g>
-          <rect x="686" y="30" width="176" height="98" rx="8" fill="#16181b" stroke="#4fd1d9"/>
-          <text x="774" y="55" fill="#e9e7e2" font-size="13.5" font-weight="600" text-anchor="middle">Policy decides</text>
-          <text x="774" y="80" fill="#b9bcc1" text-anchor="middle">instance ∧ org ∧ repo</text>
-          <text x="774" y="101" fill="#57d9a3" text-anchor="middle">land</text>
-          <text x="774" y="120" fill="#e4695e" text-anchor="middle">or refuse</text>
-        </g>
-        <text x="435" y="163" fill="#8b9098" font-size="12.5" text-anchor="middle">every step written to the append-only operation log, in the same transaction as the change</text>
-      </g>
-    </svg>
-    <figcaption>Requirements are additive and fail closed: an instance floor, an organization floor,
-    and the repository's own <code>adp.yaml</code>. A change that cannot show the evidence does not
-    land — and the refusal is recorded too.</figcaption>
-  </figure>
+    <figure class="flow flow--tight">
+      <div class="plate__scroll">
+        <svg class="diagram diagram--wide" viewBox="0 0 900 178" role="img" aria-label="A change binds intent, diff, evidence and provenance; policy gates the merge; the operation log records it.">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path class="diagram__arrowhead" d="M0 0 L10 5 L0 10 z"/>
+            </marker>
+          </defs>
+          <g>
+            <rect class="diagram__box" x="8" y="30" width="150" height="98"/>
+            <text class="diagram__head" x="83" y="55" text-anchor="middle">The change</text>
+            <text class="diagram__key" x="83" y="78" text-anchor="middle">intent</text>
+            <text class="diagram__key" x="83" y="97" text-anchor="middle">diff</text>
+            <text class="diagram__key" x="83" y="116" text-anchor="middle">provenance</text>
+          </g>
+          <line class="diagram__arrow" x1="164" y1="79" x2="216" y2="79" marker-end="url(#ar)"/>
+          <g>
+            <rect class="diagram__box" x="222" y="30" width="168" height="98"/>
+            <text class="diagram__head" x="306" y="55" text-anchor="middle">Gates run</text>
+            <text class="diagram__t" x="306" y="80" text-anchor="middle">isolated container,</text>
+            <text class="diagram__t" x="306" y="99" text-anchor="middle">network denied</text>
+            <text class="diagram__note" x="306" y="118" font-size="12" text-anchor="middle">ADP attests, never executes</text>
+          </g>
+          <line class="diagram__arrow" x1="396" y1="79" x2="448" y2="79" marker-end="url(#ar)"/>
+          <g>
+            <rect class="diagram__box" x="454" y="30" width="168" height="98"/>
+            <text class="diagram__head" x="538" y="55" text-anchor="middle">Signed evidence</text>
+            <text class="diagram__ok" x="538" y="80" text-anchor="middle">DSSE bundle</text>
+            <text class="diagram__t" x="538" y="99" text-anchor="middle">bound to the change,</text>
+            <text class="diagram__t" x="538" y="118" text-anchor="middle">not to a branch name</text>
+          </g>
+          <line class="diagram__arrow" x1="628" y1="79" x2="680" y2="79" marker-end="url(#ar)"/>
+          <g>
+            <rect class="diagram__box diagram__box--accent" x="686" y="30" width="176" height="98"/>
+            <text class="diagram__head" x="774" y="55" text-anchor="middle">Policy decides</text>
+            <text class="diagram__t" x="774" y="80" text-anchor="middle">instance ∧ org ∧ repo</text>
+            <text class="diagram__ok" x="774" y="101" text-anchor="middle">land</text>
+            <text class="diagram__bad" x="774" y="120" text-anchor="middle">or refuse</text>
+          </g>
+          <text class="diagram__note" x="435" y="163" font-size="12.5" text-anchor="middle">every step written to the append-only operation log, in the same transaction as the change</text>
+        </svg>
+      </div>
+
+      <!-- Below 700px the wide diagram is hidden and this is read instead: the
+           same four steps, top to bottom. #138 chose scroll over squeeze, which
+           was right between those two; stacking is the third option. -->
+      <div class="steps diagram--stacked" role="img" aria-label="A change binds intent, diff, evidence and provenance; policy gates the merge; the operation log records it.">
+        <div class="step"><span class="step__n">Step 01</span><span class="step__h">The change</span><span class="step__b">intent · diff · provenance</span></div>
+        <div class="step"><span class="step__n">Step 02</span><span class="step__h">Gates run</span><span class="step__b">Isolated container, network denied. ADP attests, never executes.</span></div>
+        <div class="step"><span class="step__n">Step 03</span><span class="step__h">Signed evidence</span><span class="step__b">A DSSE bundle bound to the change, not to a branch name.</span></div>
+        <div class="step"><span class="step__n">Step 04</span><span class="step__h">Policy decides</span><span class="step__b">instance ∧ org ∧ repo — land, or refuse.</span></div>
+        <div class="step"><span class="step__n">Throughout</span><span class="step__h">The operation log</span><span class="step__b">Every step written to the append-only log, in the same transaction as the change.</span></div>
+      </div>
+
+      <figcaption>Requirements are additive and fail closed: an instance floor, an organization floor,
+      and the repository's own <code>adp.yaml</code>. A change that cannot show the evidence does not
+      land — and the refusal is recorded too.</figcaption>
+    </figure>
+  </div>
 </section>
 
-<section class="wrap">
-  <h2>What that buys you</h2>
-  <table>
-    <tr><th>Instead of</th><th>You get</th></tr>
-    <tr><td>A transcript in one vendor's format, gone when the session ends</td>
-        <td>Intent, harness, model and session recorded on the change itself</td></tr>
-    <tr><td>CI output that scrolls away</td>
-        <td>A signed attestation bound to the change, verifiable later by anyone</td></tr>
-    <tr><td>An agent that decides for itself when the work is done</td>
-        <td>Merge-time requirements the agent cannot satisfy by editing its own tests</td></tr>
-    <tr><td>“Who changed this, and did anyone check?”</td>
-        <td>An append-only operation log, written in the same transaction as the change</td></tr>
-    <tr><td>A rollback that loses the reasoning</td>
-        <td>Checkpoints, sessions, workspaces and guarded undo as first-class operations</td></tr>
-  </table>
+<section class="wrap sec">
+  <div class="band"><span class="band__n">03</span><span class="band__label">What that buys you</span></div>
+  <div class="flow flow--loose">
+    <h2>What that buys you</h2>
+    <div class="table-scroll">
+      <table class="table--stack">
+        <thead><tr><th>Instead of</th><th>You get</th></tr></thead>
+        <tbody>
+          <tr><td data-th="Instead of">A transcript in one vendor's format, gone when the session ends</td>
+              <td data-th="You get">Intent, harness, model and session recorded on the change itself</td></tr>
+          <tr><td data-th="Instead of">CI output that scrolls away</td>
+              <td data-th="You get">A signed attestation bound to the change, verifiable later by anyone</td></tr>
+          <tr><td data-th="Instead of">An agent that decides for itself when the work is done</td>
+              <td data-th="You get">Merge-time requirements the agent cannot satisfy by editing its own tests</td></tr>
+          <tr><td data-th="Instead of">“Who changed this, and did anyone check?”</td>
+              <td data-th="You get">An append-only operation log, written in the same transaction as the change</td></tr>
+          <tr><td data-th="Instead of">A rollback that loses the reasoning</td>
+              <td data-th="You get">Checkpoints, sessions, workspaces and guarded undo as first-class operations</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </section>
 
-<section class="wrap">
-  <h2>Working today</h2>
-  <table>
-    <tr><th>Capability</th><th>State</th></tr>
-    <tr><td>Git smart-HTTP, REST and GraphQL compat, driven by unmodified <code>gh</code> in CI</td><td class="tick">Shipped</td></tr>
-    <tr><td>Signed change records, DSSE evidence bundles, SBOM per landed change</td><td class="tick">Shipped</td></tr>
-    <tr><td>Three-level land policy, push protection, dependency admission</td><td class="tick">Shipped</td></tr>
-    <tr><td>Operation log with guarded undo; sessions, checkpoints, workspaces, candidate sets</td><td class="tick">Shipped</td></tr>
-    <tr><td>Native plane over REST and MCP; read-only supervision UI</td><td class="tick">Shipped</td></tr>
-    <tr><td>Organizations: isolation, quotas, policy console, audit export, OIDC login</td><td class="tick">Shipped</td></tr>
-    <tr><td>Gate runner — isolated container, network denied, no host mounts</td><td class="tick">Shipped</td></tr>
-    <tr><td>Self-hosting: Helm chart and Docker Compose</td><td class="tick">Shipped</td></tr>
-    <tr><td>Dependency admission beyond npm</td><td class="part">Partial — npm only</td></tr>
-    <tr><td>SCIM provisioning</td><td class="part">Not built</td></tr>
-  </table>
-  <p class="sub" style="margin-top:26px">The wire contract is published and versioned — currently
-  <code>0.5.0</code>, served as <code>ADP-API-Version</code> on every response, with the spec,
-  the image and the git tag moving together. See
-  <a href="https://github.com/DeDuva/adp/blob/main/docs/api-compatibility.md">what a version bump promises</a>.</p>
+<section class="wrap sec">
+  <div class="band"><span class="band__n">04</span><span class="band__label">Status</span></div>
+  <div class="flow flow--loose">
+    <h2>Working today</h2>
+    <div class="table-scroll">
+      <table class="table--stack">
+        <thead><tr><th>Capability</th><th>State</th></tr></thead>
+        <tbody>
+          <tr><td data-th="Capability">Git smart-HTTP, REST and GraphQL compat, driven by unmodified <code>gh</code> in CI</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">Signed change records, DSSE evidence bundles, SBOM per landed change</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">Three-level land policy, push protection, dependency admission</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">Operation log with guarded undo; sessions, checkpoints, workspaces, candidate sets</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">Native plane over REST and MCP; read-only supervision UI</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">Organizations: isolation, quotas, policy console, audit export, OIDC login</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">Gate runner — isolated container, network denied, no host mounts</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">Self-hosting: Helm chart and Docker Compose</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">Dependency admission beyond npm</td><td data-th="State" class="part">Partial — npm only</td></tr>
+          <tr><td data-th="Capability">SCIM provisioning</td><td data-th="State" class="part">Not built</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub">The wire contract is published and versioned — currently
+    <code>0.5.0</code>, served as <code>ADP-API-Version</code> on every response, with the spec,
+    the image and the git tag moving together. See
+    <a href="https://github.com/DeDuva/adp/blob/main/docs/api-compatibility.md">what a version bump promises</a>.</p>
+  </div>
 </section>
 
-<section class="wrap">
-  <h2>Try it</h2>
-  <p class="sub">One command starts a throwaway ADP against an ephemeral PostgreSQL, then uses
-  ordinary <code>git</code> and an unmodified <code>gh</code> to clone, push, propose, gate and land
-  a change — narrating each step. It ends where the point is: the merge is <strong>refused</strong>
-  while the change has no gate result and no approval, and allowed once it does. Then you read the
-  signed evidence bundle and the operation log that record why.</p>
-  <pre>git clone https://github.com/DeDuva/adp.git &amp;&amp; cd adp
+<section class="wrap sec">
+  <div class="band"><span class="band__n">05</span><span class="band__label">Try it</span></div>
+  <div class="flow flow--loose">
+    <h2>Try it</h2>
+    <p class="sub">One command starts a throwaway ADP against an ephemeral PostgreSQL, then uses
+    ordinary <code>git</code> and an unmodified <code>gh</code> to clone, push, propose, gate and land
+    a change — narrating each step. It ends where the point is: the merge is <strong class="em">refused</strong>
+    while the change has no gate result and no approval, and allowed once it does. Then you read the
+    signed evidence bundle and the operation log that record why.</p>
+    <pre>git clone https://github.com/DeDuva/adp.git &amp;&amp; cd adp
 make demo</pre>
-  <p class="sub">Needs Docker and Node 22. Nothing is installed, no account is created, and it all
-  tears down when you press Enter. Under five minutes.</p>
-  <div class="grid">
-    <div class="card"><h3>Run your own instance</h3><p>Helm chart or Docker Compose, with the sharp
-    edges written down — <a href="https://github.com/DeDuva/adp/blob/main/docs/self-hosting.md">self-hosting guide</a>.</p></div>
-    <div class="card"><h3>Read the argument</h3><p>Why verification became the bottleneck, and why
-    git and the forge cannot simply be patched — <a href="./why/">Why ADP exists</a>.</p></div>
-    <div class="card"><h3>Build against it</h3><p>The contract is published as OpenAPI, with a
-    conformance suite — <a href="https://github.com/DeDuva/adp/tree/main/spec">spec/</a>.</p></div>
+    <p class="sub">Needs Docker and Node 22. Nothing is installed, no account is created, and it all
+    tears down when you press Enter. Under five minutes.</p>
+    <div class="grid">
+      <div class="card"><h3>Run your own instance</h3><p>Helm chart or Docker Compose, with the sharp
+      edges written down — <a href="https://github.com/DeDuva/adp/blob/main/docs/self-hosting.md">self-hosting guide</a>.</p></div>
+      <div class="card"><h3>Read the argument</h3><p>Why verification became the bottleneck, and why
+      git and the forge cannot simply be patched — <a href="./why/">Why ADP exists</a>.</p></div>
+      <div class="card"><h3>Build against it</h3><p>The contract is published as OpenAPI, with a
+      conformance suite — <a href="https://github.com/DeDuva/adp/tree/main/spec">spec/</a>.</p></div>
+    </div>
   </div>
 </section>
 
-<footer class="wrap">
+<footer class="wrap sec">
   <div class="foot">
     <a href="https://github.com/DeDuva/adp">GitHub</a>
     <a href="./why/">Why ADP exists</a>

@@ -116,7 +116,7 @@ find the same text rather than a second, drifting copy.
 | `adapters/` | scanner-as-gate adapters (osv-scanner, wizcli) |
 | `runner/` | the gate runner: polls `/api/adp/gate-jobs/claim`, executes in an isolated container (network-deny, no host mounts, no ambient secrets, resource caps), reports via `/complete`. A pure HTTP client like `cli/` — no `server/` import, no DB or signing-key credential |
 | `bench/` | benchmark arms, runs, and the generated report |
-| `dc-runtime/` | the published site's client runtime. Builds `docs/html/support.js` and the React bundles beside it — all committed, because the site itself has no build step |
+| `dc-runtime/` | the published site's client runtime. Builds `docs/html/support.js` and the React bundles beside it — all committed, because the site itself has no build step. `dc-runtime/test/` drives both published pages in a real browser (`make site`) |
 | `spec/` | the published contract: `spec/openapi.yaml`, `spec/schemas/`, `spec/graphql/github.graphql` |
 | `scripts/dev/` | what the Makefile actually runs — `up`, `down`, `doctor`, `verify-clean` |
 | `deploy/`, `infra/` | production compose stack; Terraform for the GCP dev box |
@@ -185,6 +185,18 @@ own directory, ignored by default, and never the place a project rule is written
   all: the runtime was generated from a `dc-runtime/` that was in no repository anyone
   working here could reach, which made a 69 KB dependency of the front page unfixable.
   `dc-runtime/README.md` records how it was recovered and how that recovery was verified.
+
+- **`docs/html/site.css` is the site's only design system, and neither page may grow a
+  second one.** The palette, a seven-step type ramp and an 8-base spacing scale live there;
+  no page declares a colour or a static inline `style=` of its own, and the essay's
+  simulations reach their colours through `var(--sim-*)` rather than hex literals in
+  JavaScript — 91 of those were the reason a restyle used to mean editing a logic class.
+  Two kinds of inline style survive by design, both in `/why/`: a width or an opacity a
+  simulation computes per frame is *state*, not styling, and each is required to carry a
+  `{{ hole }}`. `make site` asserts all of this, along with #163's other exit criteria —
+  five widths with no horizontal scroll on the body, tables readable at 375px, a focus ring
+  on every interactive element. These were checked by looking until 2026-08-29, which is
+  how the site came to have two palettes and thirteen unrelated spacing values.
 
 - **Nothing on the published site may load from a third party except Google Fonts.** The
   runtime used to pull React, ReactDOM and `@babel/standalone` from `unpkg.com` at read

@@ -221,9 +221,12 @@ jobs:
       - run: npm run report
       - run: git diff --exit-code report/
 
-  # The published site ships two build outputs — docs/html/support.js and the React
+  # The published site ships build outputs — docs/html/support.js and the React
   # bundles beside it — and GitHub Pages deploys them straight from the tree, so a
-  # stale artifact is a stale *site*. Before this job existed the runtime was
+  # stale artifact is a stale *site*. This job also drives both published pages in
+  # a real browser and asserts #163's exit criteria: no horizontal scroll at five
+  # widths, tables readable at 375px, a visible focus ring on every interactive
+  # element, one stylesheet owning the palette, and nothing off-origin but fonts. Before this job existed the runtime was
   # generated from a `dc-runtime/` that was not in the repository at all: the file
   # could be served but not rebuilt, fixed or upgraded by anyone working here.
   #
@@ -242,6 +245,10 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run check
+      # The published pages themselves: #163's exit criteria, in a real browser.
+      # No skip path — a missing browser fails the job rather than passing quietly.
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
 
   # Documents that have quietly stopped being true. AGENTS.md names the file carrying
   # each invariant, so a rename turns guidance into a wrong map without anything
