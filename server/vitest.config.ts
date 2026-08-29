@@ -15,6 +15,14 @@ export default defineConfig({
     // e2e suites shell out to real `git` multiple times per test (clone,
     // push, merge) — the 5s default is fine for unit tests but flakes under
     // CI/sandbox disk contention once several suites run concurrently.
+    //
+    // Treat this as the floor for unit and integration tests, not as a budget
+    // that survives contention: **a git-heavy e2e file is expected to set its
+    // own per-test timeout**, and nine of them do (30_000 to 300_000). A file
+    // that spawns `git` several times per test and takes the global will pass
+    // alone and flake in the tier — a different test each run, which reads as
+    // noise rather than as a missing timeout (#169). Raising this number
+    // instead would slow the failure signal for every suite to fix one.
     testTimeout: 20000,
     hookTimeout: 20000,
   },
