@@ -116,6 +116,16 @@ finished and is gone from this table, in the same way 1-2 was: the runtime half 
 pages in a real browser and fails on any of the six exit criteria rather than leaving them
 to inspection. **Release 1d is complete.**
 
+1d's exit criteria are about whether the site *renders*; they say nothing about whether it
+argues the right thing. A positioning review on 2026-08-29, against Anthropic's AI-native
+SDLC playbook and the 2026 field data published alongside it, found the front page making a
+narrower claim than the product: it answered the review stage only, stopped at the merge,
+and carried cross-harness provenance — the one capability an incumbent cannot copy — in a
+single table cell. The page now covers what the record is for after it lands, and why it has
+to be portable across harnesses. That is prose rather than an input moved between the three
+categories above, so it opens no item here; it is recorded because the next person to read
+this section should know the site was measured twice, on two different criteria.
+
 ---
 
 ## Phase 2 — The serial-base-case forward work
