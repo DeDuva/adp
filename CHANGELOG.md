@@ -14,6 +14,35 @@ its spec-coverage guard.
 Until 2026-08-23 only one edge of that rule was enforced, and it was checked on
 the tag push — after publication. Two contract bumps slipped through it.
 
+## Unreleased
+
+**The published site can rebuild what it serves (#163, first half).** `docs/html/support.js`
+is 69 KB of generated JavaScript whose own header named a `dc-runtime/` that was in no
+repository anyone working here could reach. It drives every interaction in the essay at
+`/why/`, and nobody could fix, upgrade, or even read the source of it. #138 saw this and
+confined it to the secondary page rather than resolving it; the decision taken here is to
+vendor.
+
+`dc-runtime/` now holds the source. It was recovered from the artifact itself — an
+unminified `esbuild` bundle that had kept its module markers, identifiers and comments —
+and the recovery is verified the only way that means anything: a fresh build reproduces the
+previously committed file byte for byte, but for the banner and two pairs of redundant
+parentheses that `bun`'s printer keeps and `esbuild`'s drops. `make dc-runtime` and CI's
+`site-runtime` job rebuild and assert, so a hand-edited artifact fails rather than ships.
+
+**The site no longer loads code from a CDN.** The runtime fetched React, ReactDOM and
+`@babel/standalone` from `unpkg.com` on every page load. Because it hides the raw template
+before loading anything, an unreachable unpkg produced a blank page, not a degraded one —
+and it put two packages on a published site that this repository did not contain. React and
+ReactDOM are now vendored under `docs/html/vendor/` by the build, from the pinned
+dependencies, and hash to the same `sha384` SRI values the old code pinned for unpkg: the
+browser executes the same bytes and only the origin changed. `@babel/standalone` is not
+vendored — 2.8 MB reached only by JSX `<x-import>`, which neither page uses — and now fails
+with an explanation instead of a network call. Google Fonts is once again the only external
+asset either page loads.
+
+No contract change; nothing under `server/`, `cli/`, `runner/` or `spec/` moves.
+
 ## v0.5.0 — 2026-08-23
 
 Two contract moves reach a tag here. `0.4.0` was bumped in-tree when M4-5

@@ -116,6 +116,7 @@ find the same text rather than a second, drifting copy.
 | `adapters/` | scanner-as-gate adapters (osv-scanner, wizcli) |
 | `runner/` | the gate runner: polls `/api/adp/gate-jobs/claim`, executes in an isolated container (network-deny, no host mounts, no ambient secrets, resource caps), reports via `/complete`. A pure HTTP client like `cli/` — no `server/` import, no DB or signing-key credential |
 | `bench/` | benchmark arms, runs, and the generated report |
+| `dc-runtime/` | the published site's client runtime. Builds `docs/html/support.js` and the React bundles beside it — all committed, because the site itself has no build step |
 | `spec/` | the published contract: `spec/openapi.yaml`, `spec/schemas/`, `spec/graphql/github.graphql` |
 | `scripts/dev/` | what the Makefile actually runs — `up`, `down`, `doctor`, `verify-clean` |
 | `deploy/`, `infra/` | production compose stack; Terraform for the GCP dev box |
@@ -173,6 +174,25 @@ own directory, ignored by default, and never the place a project rule is written
   names the gate, reports it passing, and links the DSSE evidence bundle behind the
   verdict. The design intent survives inverted: the assertion is what an agent actually
   sees, so regressing the projection breaks the test on purpose.
+- **`docs/html/` is deployed straight from the tree, so a generated file there is a
+  published file.** `pages.yml` uploads the directory wholesale on every push to `main`
+  that touches it — there is no build step between the repository and the site, and that
+  is deliberate (#138): the front door stays editable with a text editor. The cost is that
+  `docs/html/support.js` and `docs/html/vendor/*` are build *outputs* that ship as
+  *inputs*. `make dc-runtime` rebuilds them and asserts they are unchanged, and CI's
+  `site-runtime` job does the same — never hand-edit them, and never commit a `dc-runtime/src`
+  change without the regenerated artifacts. Until #163 the source did not exist here at
+  all: the runtime was generated from a `dc-runtime/` that was in no repository anyone
+  working here could reach, which made a 69 KB dependency of the front page unfixable.
+  `dc-runtime/README.md` records how it was recovered and how that recovery was verified.
+
+- **Nothing on the published site may load from a third party except Google Fonts.** The
+  runtime used to pull React, ReactDOM and `@babel/standalone` from `unpkg.com` at read
+  time; because it hides the raw template before loading them, an unreachable unpkg served
+  a blank page rather than a degraded one. The React bundles are vendored under
+  `docs/html/vendor/` now, from the pinned dependencies and byte-identical to what the CDN
+  served. Adding a script, style or font from anywhere else re-opens that failure mode.
+
 - **The operation log is written in the same database transaction as the change.** Don't
   add a write path that records a change without it.
 - **The gate-job queue is bespoke, and that is a decision — not an omission.** The plan
