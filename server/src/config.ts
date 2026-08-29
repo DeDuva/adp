@@ -19,9 +19,26 @@ const EnvSchema = z.object({
   // admin-owned, non-bypassable by any repo's adp.yaml — repos can only add
   // requirements on top, never remove one of these. Comma-separated
   // "gates_green" and/or "one_approval"; empty string means no floor.
+  //
+  // The default deliberately omits `one_approval` (#174). Since #121 that
+  // requirement is author-independent, and a floor is a *floor*: because
+  // resolveLandRequirements unions the three levels, nothing below the
+  // instance can drop one. Shipping it on by default therefore hands a
+  // developer evaluating ADP alone a refusal they structurally cannot
+  // satisfy — they are the only principal, and the requirement exists to
+  // constrain the person trying to satisfy it. GitHub's own default for a
+  // fresh repository is zero required approvals, so this was stricter than
+  // the incumbent for exactly the audience least able to absorb it.
+  //
+  // `gates_green` stays, and it is the one that carries the argument: a
+  // merge is still refused while the change has no gate result, which is
+  // the beat `make demo` is built on. `one_approval` becomes opt-in — one
+  // env var, one line of adp.yaml, or one line of an org floor — which is
+  // the right shape, since the deployments that want it are the ones that
+  // have a second principal.
   LAND_POLICY_FLOOR: z
     .string()
-    .default("gates_green,one_approval")
+    .default("gates_green")
     .transform((s) => s.split(",").map((r) => r.trim()).filter(Boolean)),
   // At-rest AES-256-GCM key (core/mirror-crypto.ts) — same
   // deterministic-key-from-env shape as SIGNING_KEY. Originally just the

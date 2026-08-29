@@ -16,6 +16,34 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**A fresh instance floors at `gates_green` alone (#174).** `LAND_POLICY_FLOOR`
+defaulted to `gates_green,one_approval`, and since #121 that second
+requirement is author-independent — so the default handed a developer
+evaluating ADP alone a refusal they structurally could not satisfy. They are
+the only principal, and the requirement exists to constrain the person trying
+to satisfy it. Because the three policy levels union, nothing below the
+instance could drop it either: the only way out was an admin-owned env var
+documented in one table row. GitHub's own default for a fresh repository is
+zero required approvals, so this was stricter than the incumbent for exactly
+the audience least able to absorb it.
+
+The refusal that carries the argument is untouched — a merge is still refused
+while the change has no gate result, which is the beat `make demo` is built
+on. `one_approval` becomes opt-in: one env var for an instance, one line of
+`adp.yaml` for a repo, one line of the org floor for a tenant. The
+deployments that want it are the ones that have a second principal.
+
+Nothing about `one_approval` itself changes. An instance that sets it gets
+exactly the behaviour #121 shipped.
+
+**Behavioral, and it loosens rather than tightens**, so no client breaks and
+no contract moves. An instance that wants the old behaviour sets
+`LAND_POLICY_FLOOR=gates_green,one_approval` — as `make demo`, the acceptance
+walkthrough and the conformance run now all do explicitly, rather than
+inheriting a default their assertions depend on. The Helm chart's
+`server.landPolicyFloor` default moves with the code so there is one default
+and not two.
+
 **The published site argues past the merge, and a third page walks the loop.** `make site`
 asserted that the site *rendered*; nothing asserted that it argued the right thing, and read
 cold the front page claimed only that agents write code and ADP checks it — a claim every

@@ -82,7 +82,7 @@ would be the expensive kind of regression here.
 | `persistence.size` | `20Gi` | Your repositories are bigger than that |
 | `persistence.existingClaim` | — | You manage the volume yourself |
 | `secrets.existingSecret` | — | Your secrets come from a manager, not from `--set` |
-| `server.landPolicyFloor` | `gates_green,one_approval` | The instance-wide floor no org or repo can remove |
+| `server.landPolicyFloor` | `gates_green` | The instance-wide floor no org or repo can remove. Add `one_approval` — `"gates_green,one_approval"` — once the instance has a second principal; it is author-independent, so a single-principal instance cannot satisfy it |
 | `runner.*` | disabled | See §4 |
 
 ---

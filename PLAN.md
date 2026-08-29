@@ -141,12 +141,21 @@ in Phase 1 to land in.
 |---|---|---|---|
 | 2-2 | Compensating-revert undo — undo that survives a moved branch, rather than only CAS rollback | #159 | not started. Lands with 1c |
 | 2-3 | Cross-harness checkpoint/resume demo | #160 | not started. Also the instrument for OD-3, which is why it earns its place twice. Waits on 1-10, without which it is a bespoke script rather than evidence of portability |
+| 2-4 | Provenance-priced approval — the approver differs by model, harness or session, not merely by identity | #176 | not started. Blocked on 1-1 (#141), which is what puts `harness`, `model` and `session_id` on a token over the wire |
 
 Item 2-1 — author-independent approval, #121 — shipped and is gone from this table. Its number is
 not reused, for the reason given under 1a. It was the first half of OD-2 below, and the half that
 had to come first: until it landed, `one_approval` was satisfiable by the principal it exists to
 constrain, so no bake-off's "landed" column measured anything and no refusal 1-5 could honestly
 teach a solo evaluator to satisfy.
+
+**2-4 is what it left undone**, and the gap is worth stating because the shipped check reads
+stronger than it is. Comparing principals is a separation-of-*identity* control doing a
+separation-of-*judgment* job, and it is wrong in both directions: it refuses an adversarial
+reviewer agent that shares the author's token, and it accepts two tokens held by one person — or
+two agents running the same model on the same context. Every forge is in the same position and
+none of them can do better, because identity is all they record. ADP records what *produced* the
+change, which is why 2-4 is a differentiator rather than a catch-up.
 
 ---
 
@@ -234,6 +243,7 @@ would change it, and whether that has happened.
 | **M5 — substrate hardening** | Evidence-gated by design: jj-derived change engine, VFS lazy materialization, speculative merge batching, pluggable storage backends, per-path ACLs, structural merge. Each needs a written justification citing telemetry. None has one. The speculative-batching gate stays closed — now because merge-queue batching adoption sits at 6%, not because conflicts are rare, which the co-activity data denies |
 | **#64 — native-plane response schemas** | Frozen debt by design. The recording hot path is typed; the rest sit behind the `server/src/spec-coverage.test.ts` opt-out list, which may only shrink |
 | **Dependency admission beyond npm** | A known work item with a known fix. Admission is real for npm lockfiles and nothing else, so an instance running any other ecosystem gets no dependency gate |
+| **#175 — approval counts, and author-independence as a toggle** | Deferred by decision. `one_approval` is one boolean where GitHub has a 0–6 count and GitLab has an explicit "prevent approval by author" switch, so an instance cannot ask for two approvals or for an approval it does not care who gives. It is a **major** bump — the `require` enum is published in four places in `spec/openapi.yaml` — so it only makes sense inside another breaking batch, the way #97 carried the 0.3.0 moves. And no consumer asks: pre-PMF the audience evaluates alone, whose problem was #174, not the inability to require two |
 
 ---
 

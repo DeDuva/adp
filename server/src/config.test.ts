@@ -20,6 +20,26 @@ describe("loadConfig", () => {
     expect(config.PUBLIC_URL).toBe(validEnv.PUBLIC_URL);
   });
 
+  // #174: the default is the product decision, not an implementation detail —
+  // a solo evaluator is the audience that meets it first, and `one_approval`
+  // being author-independent (#121) means they cannot satisfy it at all. If
+  // this assertion is ever "fixed" by adding one_approval back, read #174
+  // before doing it.
+  it("floors a fresh instance at gates_green alone, without one_approval", () => {
+    const config = loadConfig(validEnv as NodeJS.ProcessEnv);
+    expect(config.LAND_POLICY_FLOOR).toEqual(["gates_green"]);
+  });
+
+  it("still lets an instance opt into one_approval, and an empty string into nothing", () => {
+    expect(
+      loadConfig({ ...validEnv, LAND_POLICY_FLOOR: "gates_green,one_approval" } as NodeJS.ProcessEnv)
+        .LAND_POLICY_FLOOR,
+    ).toEqual(["gates_green", "one_approval"]);
+    expect(
+      loadConfig({ ...validEnv, LAND_POLICY_FLOOR: "" } as NodeJS.ProcessEnv).LAND_POLICY_FLOOR,
+    ).toEqual([]);
+  });
+
   it("coerces a numeric PORT string", () => {
     const config = loadConfig({ ...validEnv, PORT: "4000" } as NodeJS.ProcessEnv);
     expect(config.PORT).toBe(4000);

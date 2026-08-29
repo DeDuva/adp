@@ -301,6 +301,102 @@ describe.skipIf(skipWithoutDb)("M1c: gate runner + land policy", () => {
     expect(contexts.every((c) => c.isRequired === false)).toBe(true);
   }, 120_000);
 
+  // The default floor's promise, end to end (#174): one principal, one token,
+  // nobody to ask. Registered on its own app because this file's shared one
+  // floors at gates_green AND one_approval — and the whole point here is what
+  // a *fresh* instance does, which is the configuration a developer
+  // evaluating ADP actually meets first.
+  //
+  // The refusal that carries the argument has to survive the loosening, so
+  // this asserts both halves: refused while the change has no gate result,
+  // allowed once it has one, with no approval anywhere in the sequence.
+  it("lets a lone principal land under the default floor, but not before a gate is green", async () => {
+    const solo = Fastify({ logger: false });
+    solo.addContentTypeParser(
+      ["application/x-git-upload-pack-request", "application/x-git-receive-pack-request"],
+      (_req, payload, done) => done(null, payload),
+    );
+    await solo.register(authPlugin(db));
+    const soloGit = new GitBackend(gitRoot);
+    registerRepoRoutes(solo, db, soloGit, "https://adp.example.com");
+    // Exactly what config.ts hands main.ts with no LAND_POLICY_FLOOR set.
+    registerProposalRoutes(solo, db, soloGit, "e2e-test-credential-key", ["gates_green"]);
+    registerGateRoutes(solo, db, new Signer("e2e-gates-signing-key"), "https://adp.example.com", "e2e-test-credential-key");
+    registerGitHttpRoutes(solo, repoAccessCheck(db), soloGit);
+    await solo.listen({ host: "127.0.0.1", port: 0 });
+    const soloAddress = solo.server.address();
+    const soloPort = typeof soloAddress === "object" && soloAddress ? soloAddress.port : 0;
+
+    const soloApi = async (pathAndQuery: string, init: RequestInit = {}) => {
+      const res = await fetch(`http://127.0.0.1:${soloPort}${pathAndQuery}`, {
+        ...init,
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...init.headers },
+      });
+      const text = await res.text();
+      let body: unknown;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = text;
+      }
+      return { status: res.status, body };
+    };
+
+    try {
+      const repoName = "solo";
+      await soloApi(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: repoName }) });
+
+      const dir = await mkdtemp(path.join(tmpdir(), "adp-e2e-solo-"));
+      const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${soloPort}/${owner}/${repoName}.git`;
+      await execFileAsync("git", ["clone", cloneUrl, dir]);
+      await execFileAsync("git", ["checkout", "-B", "main"], { cwd: dir });
+      await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: dir });
+      await execFileAsync("git", ["config", "user.name", "Test"], { cwd: dir });
+      // adp.yaml names a gate, so gates_green has something to be about — a
+      // repo with no gates would satisfy it vacuously and prove nothing.
+      await execFileAsync("sh", ["-c", "printf 'gates:\\n  - tests\\nland:\\n  require: []\\n' > adp.yaml"], { cwd: dir });
+      await execFileAsync("git", ["add", "."], { cwd: dir });
+      await execFileAsync("git", ["commit", "-m", "init"], { cwd: dir });
+      await execFileAsync("git", ["push", "origin", "main"], { cwd: dir });
+      await execFileAsync("git", ["checkout", "-b", "feature"], { cwd: dir });
+      await execFileAsync("sh", ["-c", "echo more >> README.md"], { cwd: dir });
+      await execFileAsync("git", ["add", "."], { cwd: dir });
+      await execFileAsync("git", ["commit", "-m", "feature"], { cwd: dir });
+      await execFileAsync("git", ["push", "origin", "feature"], { cwd: dir });
+      const sha = (await execFileAsync("git", ["rev-parse", "feature"], { cwd: dir })).stdout.trim();
+      await rm(dir, { recursive: true, force: true });
+
+      const created = await soloApi(`/api/v3/repos/${owner}/${repoName}/pulls`, {
+        method: "POST",
+        body: JSON.stringify({ title: "solo", head: "feature", base: "main" }),
+      });
+      const number = (created.body as { number: number }).number;
+
+      const refused = await soloApi(`/api/v3/repos/${owner}/${repoName}/pulls/${number}/merge`, {
+        method: "PUT",
+        body: "{}",
+      });
+      expect(refused.status).toBe(422);
+      const unmet = (refused.body as { unmet: string[] }).unmet.join(" ");
+      expect(unmet).toMatch(/gates_green/);
+      // The requirement a lone principal could never clear must not be in play.
+      expect(unmet).not.toMatch(/one_approval/);
+
+      await soloApi(`/api/v3/repos/${owner}/${repoName}/gates`, {
+        method: "POST",
+        body: JSON.stringify({ git_sha: sha, name: "tests", status: "success", summary: "green" }),
+      });
+
+      const landed = await soloApi(`/api/v3/repos/${owner}/${repoName}/pulls/${number}/merge`, {
+        method: "PUT",
+        body: "{}",
+      });
+      expect(landed.status).toBe(200);
+    } finally {
+      await solo.close();
+    }
+  }, 120_000);
+
   // The same requirement over the other merge path. REST and GraphQL both
   // reach `landProposal`, so this is a claim about shared code rather than a
   // second implementation — but "matching GitHub semantics on both merge

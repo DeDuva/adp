@@ -133,6 +133,11 @@ export SIGNING_KEY="conformance-test-key"
 export MIRROR_CREDENTIAL_KEY="conformance-test-mirror-key"
 export PUBLIC_URL="http://localhost:${PORT}"
 export PORT
+# Both requirements, set explicitly rather than inherited. The default floor
+# is `gates_green` alone (#174), so a suite that asserts an approval refusal
+# has to ask for `one_approval` — and a suite whose assertions depend on a
+# default is a suite that silently stops asserting when the default moves.
+export LAND_POLICY_FLOOR="gates_green,one_approval"
 mkdir -p "$GIT_ROOT"
 
 npm run migrate >/dev/null
@@ -199,8 +204,8 @@ echo "-- gh pr view --"
 PR_OUT=$("$GH_BIN" pr view 1 --repo "$REPO") || fail "gh pr view"
 echo "$PR_OUT" | grep -q "conformance pr" || fail "gh pr view: title missing from output"
 
-# The default instance land-policy floor (LAND_POLICY_FLOOR, config.ts) now
-# requires one_approval — confirm an unreviewed PR is genuinely refused,
+# This suite sets LAND_POLICY_FLOOR to include one_approval (above) — confirm
+# an unreviewed PR is genuinely refused,
 # then approve it and confirm the merge succeeds, same as a real workflow.
 PRE_APPROVAL_MERGE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
   "http://localhost:${PORT}/api/v3/repos/${OWNER}/widget/pulls/1/merge" \

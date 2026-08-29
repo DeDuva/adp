@@ -124,6 +124,12 @@ export SIGNING_KEY="demo-$(openssl rand -hex 8)"
 export MIRROR_CREDENTIAL_KEY="demo-$(openssl rand -hex 8)"
 export PUBLIC_URL="http://localhost:${PORT}"
 export PORT
+# The demo instance asks for an approval as well as a green gate. That is NOT
+# the default — since #174 a fresh instance floors at `gates_green` alone, so
+# that a developer evaluating ADP by themselves is never shown a refusal only
+# a second person could clear. The demo turns it on because the refusal is
+# worth watching, and says so when it gets there.
+export LAND_POLICY_FLOOR="gates_green,one_approval"
 mkdir -p "$GIT_ROOT"
 
 ( cd server && npm run migrate ) >"$WORKDIR/migrate.log" 2>&1 || { tail -20 "$WORKDIR/migrate.log"; die "migrations failed"; }
@@ -229,6 +235,12 @@ REFUSED=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
 say "  ${c_y}422 — the land policy refused it.${c_0}"
 info "No gate has reported, and nobody has approved. The change is complete and"
 info "the agent believes it is done; ADP does not accept belief as evidence."
+say ""
+info "This instance requires ${c_c}gates_green${c_0} and ${c_c}one_approval${c_0}. A fresh instance"
+info "requires only ${c_c}gates_green${c_0}, so you are never blocked by a rule that needs"
+info "a second person. This demo opted in with one line:"
+say "    ${c_c}LAND_POLICY_FLOOR=gates_green,one_approval${c_0}"
+info "Per repo it is ${c_c}land: {require: [one_approval]}${c_0} in adp.yaml. Levels only add."
 
 step "Reporting a gate, and landing it"
 
