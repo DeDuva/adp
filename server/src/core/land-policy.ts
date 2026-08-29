@@ -56,7 +56,7 @@ export async function evaluateLandPolicy(
   gitBackend: GitBackend,
   instanceFloor: LandRequirement[],
   repo: { id: string; owner: string; name: string },
-  proposal: { id: string; baseRef: string; headSha: string },
+  proposal: { id: string; baseRef: string; headSha: string; authorId: string },
   org: OrgLandContext | null = null,
 ): Promise<LandPolicyResult> {
   // Checked first and unconditionally: a killed org refuses every land for
@@ -138,12 +138,30 @@ export async function evaluateLandPolicy(
   }
 
   if (required.includes("one_approval")) {
+    // Author-independent by construction (#121): an approval from the
+    // principal that authored the proposal is not an approval. Before this,
+    // `one_approval` counted any approved row, and the M3 arm-2 bench agent
+    // duly satisfied it with `gh pr review --approve` on its own PR in the
+    // same trajectory — the policy met without a second judgment anywhere.
+    // GitHub refuses self-approval outright; the requirement that exists to
+    // bind self-attestation must not be weaker than the incumbent.
+    //
+    // The comparison is on the principal, not on the review row: a proposal
+    // with three approvals all from its author is as unapproved as one with
+    // none, and says so differently, because the two are fixed by different
+    // actions.
     const approvals = await db
-      .select()
+      .select({ reviewerId: reviews.reviewerId })
       .from(reviews)
       .where(and(eq(reviews.proposalId, proposal.id), eq(reviews.state, "approved")));
-    if (approvals.length === 0) {
-      unmet.push("one_approval: no approving review");
+    const independent = approvals.filter((a) => a.reviewerId !== proposal.authorId);
+    if (independent.length === 0) {
+      unmet.push(
+        approvals.length === 0
+          ? "one_approval: no approving review"
+          : "one_approval: the only approving review is the proposal author's own — " +
+            "approval must come from a different principal",
+      );
     }
   }
 

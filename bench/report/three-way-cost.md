@@ -65,6 +65,13 @@ tool surface (no proposal-open tool), not of the native plane's design in genera
   native-plane MCP surface's own future scope, not a verdict on the plane itself.
 - **Local dev server, not production infrastructure.** Same caveat as arm 1: single
   box, single Postgres. Absolute wall-clock numbers are not a capacity claim.
+- **The approvals in these trials were self-approvals** (noted 2026-08-29). Each arm
+  ran as a single principal, so `gh pr review --approve` and `gh pr merge` were the
+  same agent — which `one_approval` accepted at the time, and no longer does (#121,
+  now author-independent). The numbers above are unaffected: the approving call was
+  made and paid for either way, and re-running these arms today would cost the same
+  tool call from a second token. What it does mean is that this run measured the cost
+  of the requirement, never its effect.
 
 ## Run ids
 

@@ -151,6 +151,12 @@ curl -sf "http://localhost:${PORT}/healthz" >/dev/null || { cat "$WORKDIR/server
 OWNER="conformance-$$"
 TOKEN=$(npx tsx src/bootstrap.ts "conformance-actor-$$" --org "$OWNER" 2>&1 | grep '^Token:' | awk '{print $2}')
 [ -n "$TOKEN" ] || fail "bootstrap didn't mint a token"
+# A second principal in the same org. `one_approval` is author-independent
+# (#121), so the actor that opens the PR cannot be the one that approves it —
+# and this suite has to mint the reviewer the same way a real deployment
+# would, rather than reaching into the database.
+REVIEWER_TOKEN=$(npx tsx src/bootstrap.ts "conformance-reviewer-$$" --org "$OWNER" 2>&1 | grep '^Token:' | awk '{print $2}')
+[ -n "$REVIEWER_TOKEN" ] || fail "bootstrap didn't mint a reviewer token"
 
 curl -sf -X POST "http://localhost:${PORT}/api/v3/repos/${OWNER}" \
   -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
@@ -201,8 +207,21 @@ PRE_APPROVAL_MERGE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
   -H "Authorization: Bearer ${TOKEN}")
 [ "$PRE_APPROVAL_MERGE_STATUS" = "422" ] || fail "expected land policy to refuse an unreviewed merge (422), got $PRE_APPROVAL_MERGE_STATUS"
 
+# The author approves its own PR. GitHub refuses this outright; ADP records
+# the review and refuses the *merge* (#121), which is the same guarantee
+# reached one step later. This assertion is why the reviewer above exists —
+# before it, this suite proved a merge that self-approval had unblocked.
 curl -sf -X POST "http://localhost:${PORT}/api/v3/repos/${OWNER}/widget/pulls/1/reviews" \
   -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d '{"state":"approved","body":"lgtm, me"}' >/dev/null \
+  || fail "self-approving review failed"
+SELF_APPROVAL_MERGE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
+  "http://localhost:${PORT}/api/v3/repos/${OWNER}/widget/pulls/1/merge" \
+  -H "Authorization: Bearer ${TOKEN}")
+[ "$SELF_APPROVAL_MERGE_STATUS" = "422" ] || fail "expected land policy to refuse a self-approved merge (422), got $SELF_APPROVAL_MERGE_STATUS"
+
+curl -sf -X POST "http://localhost:${PORT}/api/v3/repos/${OWNER}/widget/pulls/1/reviews" \
+  -H "Authorization: Bearer ${REVIEWER_TOKEN}" -H "Content-Type: application/json" \
   -d '{"state":"approved","body":"looks good"}' >/dev/null \
   || fail "approving review failed"
 

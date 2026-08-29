@@ -156,15 +156,26 @@ at all. That was the shape of the bug this used to document.
 
 **B7. Get a typed review.**
 
+`one_approval` is author-independent, so this needs a *second* principal — mint one the same way
+you minted the first:
+
+```bash
+tsx src/bootstrap.ts reviewer --org <owner>   # a second token, same org
+```
+
 ```bash
 curl -X POST "$PUBLIC_URL/api/v3/repos/<owner>/<repo>/pulls/1/reviews" \
-  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <reviewer-token>" -H "Content-Type: application/json" \
   -d '{"state":"approved","body":"looks good"}'
 
 gh pr view 1
 ```
 
 *Expect:* the review appears. Review states are typed, not parsed out of comment prose.
+
+**Worth doing deliberately once:** approve with the *author's* token instead and try B8. The review
+is recorded and the merge is still refused, naming `one_approval` — the check GitHub performs at
+review time, ADP performs at merge time.
 
 **B8. Land it.**
 

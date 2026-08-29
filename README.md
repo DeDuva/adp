@@ -125,6 +125,10 @@ add requirements, never remove one. Both `gates_green` and `one_approval` are en
 on the REST and GraphQL merge paths, and a malformed `adp.yaml` fails closed. Merges are
 fast-forward only.
 
+`one_approval` is **author-independent**: an approving review from the principal that authored the
+proposal does not satisfy it, so an agent cannot clear the requirement that exists to check it by
+approving its own work. Landing under this floor takes two principals.
+
 ```yaml
 # adp.yaml, read off the base ref — as GitHub reads branch protection off the target branch
 gates: [test, lint]

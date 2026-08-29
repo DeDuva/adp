@@ -16,6 +16,31 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**`one_approval` is author-independent.** An approving review from the
+principal that authored the proposal no longer satisfies it (#121). A merge
+that was previously allowed on the author's own approval is now refused with
+the usual `422` naming `one_approval`, and landing under this floor takes two
+principals.
+
+This is a **behavioral change without a contract bump**, and the distinction is
+worth stating rather than assuming. No request or response shape moved, and a
+client generated against `0.5.0` still works unmodified: it still calls merge,
+and still reads `unmet` off a `422`. What changed is the meaning of a policy
+requirement, and land-policy outcomes were already a function of instance, org
+and repo configuration rather than of the contract version.
+
+It can still break an existing workflow — specifically a single-principal one,
+which is exactly the workflow it exists to break. ADP's own acceptance,
+conformance and `make demo` runs were three of them: each opened a proposal and
+approved it as the same actor, so each now mints a second principal to approve
+with. Anything scripted the same way needs the same change.
+
+GitHub refuses self-approval at review time; ADP records the review and refuses
+the *merge*, because the requirement lives in the resolved land policy rather
+than in the review route — so every level that can name `one_approval` (instance
+floor, org floor, repo `adp.yaml`) inherits the check, and both merge paths
+(REST and GraphQL) enforce it through the one `landProposal` sequence.
+
 **One design system for the published site (#163, second half).** The two pages were
 written months apart by different means and shared no styles: the palette was declared
 twice and identically, the container widths disagreed at `940px` against `1120/760/520`,
