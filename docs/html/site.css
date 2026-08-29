@@ -8,7 +8,25 @@
 
    Direction: "Blueprint" — a specification sheet. Cool paper under a faint
    24px grid, structure drawn in 1px black rather than in grey, section
-   boundaries banded and numbered, figures set as numbered plates.
+   boundaries banded and numbered, figures set as numbered plates with the
+   caption below the rule.
+
+   Chosen on 2026-08-29 from four drawn against the same content — the hero, a
+   section boundary, FIG 01 and a specimen strip, at the same widths:
+
+     Paper       warm off-white, a serif at 19px, a 680px measure; whitespace
+                 doing all the separating. Set aside for losing the technical
+                 identity the simulations were built for.
+     Instrument  the existing dark page rebuilt — three surface tiers, an index
+                 rail, colour demoted to a rule. Set aside as the safe answer.
+     Blueprint   this one.
+     Inversion   argument in ink on paper, every figure a full-bleed black band.
+                 Set aside: seven dark bands is a lot of switching, and it works
+                 only if every figure earns it.
+
+   It won on the specific complaint. The page had no visible section boundary
+   and no scale; Blueprint's whole grammar is drawn structure, so it cannot
+   quietly lose either again — which is what the rules below encode.
    ========================================================================= */
 
 /* ---------------------------------------------------------------- tokens -- */

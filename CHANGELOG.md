@@ -27,8 +27,15 @@ both tables were unreadable on a phone.
 scale for both pages. Neither page declares a colour or a static inline `style=`; the
 essay's simulations reach their colours through `var(--sim-*)` tokens instead of the 91
 hex and `rgba()` literals that used to live in its JavaScript, so the whole site restyles
-from one file. The direction is "Blueprint": cool paper under a faint 24px grid, structure
-drawn in 1px black, section boundaries banded and numbered, figures set as numbered plates.
+from one file.
+
+The direction is **"Blueprint"**: cool paper under a faint 24px grid, structure drawn in
+1px black, section boundaries banded and numbered, figures set as numbered plates. It was
+chosen from four drawn against the same content — Paper (warm, serif, narrow measure),
+Instrument (the dark page rebuilt), Blueprint, and Inversion (ink on paper with full-bleed
+dark figure bands) — and it won on the specific complaint: the page had no visible section
+boundary and no scale, and Blueprint's whole grammar is drawn structure, so it cannot
+quietly lose them again. `docs/html/site.css` carries the shortlist and the reasoning.
 
 What a reader gets: rhythm and gutters that move on three breakpoints, prose tables that
 stack into labelled records below 620px, a core diagram that stacks rather than becoming a
