@@ -135,6 +135,13 @@ landed pull request, and a safe spelling that cries wolf is how people end up ba
 `--force`. What is left of that check is a report: the branch's own state, and whether it
 holds commits no remote does.
 
+It also tears down the worktree's test stack before removing it. `make up` names its
+compose project after the checkout and records it in that checkout's `.env.test`, so
+deleting the worktree deletes the only record of the project — `down.sh` says as much in
+its own comments, and `make worktree-remove` was the thing creating the orphans it warns
+about. Five leaked containers and five leaked networks accumulated over one session before
+anyone ran `verify-clean.sh`.
+
 `ADP_WORKTREE_ROOT` moves the default location — an agent harness that keeps its state
 under a directory of its own points it there, and `DIR=` overrides per invocation.
 

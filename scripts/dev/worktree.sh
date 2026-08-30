@@ -191,6 +191,27 @@ remove() {
   fi
 
   section "removing"
+  # **The stack first, because nothing else will ever find it again.**
+  # `make up` names its compose project after the checkout and records it in
+  # that checkout's `.env.test`; delete the worktree and the only record of the
+  # project goes with it. `down.sh` says as much in its own comments — orphans
+  # from a deleted worktree are invisible to everything except `--all` — and
+  # this command was the thing deleting them. Five leaked containers and five
+  # leaked networks accumulated over one session before anyone looked.
+  #
+  # The worktree's own `down.sh`, so it tears down against the compose file and
+  # repo root it actually used.
+  if [ -f "$abs/.env.test" ]; then
+    if [ -x "$abs/scripts/dev/down.sh" ] || [ -f "$abs/scripts/dev/down.sh" ]; then
+      bash "$abs/scripts/dev/down.sh" >/dev/null 2>&1 && ok "tore down this worktree's test stack" ||
+        warn "could not tear down this worktree's test stack — 'make down-all' sweeps it"
+    else
+      warn "this worktree has a .env.test but no down.sh — 'make down-all' sweeps what it left"
+    fi
+  else
+    ok "no test stack recorded here"
+  fi
+
   # The dependency trees are the only reason plain `git worktree remove`
   # refuses, so clearing them is what makes the safe spelling the working one.
   for pkg in $ADP_DEP_PACKAGES dc-runtime; do
