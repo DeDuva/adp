@@ -12,7 +12,7 @@
 # are not. So this does the three things that have to follow it — validate the
 # branch name against the same rule CI enforces, branch off the *fetched*
 # main rather than whatever the current checkout happens to be at, and install
-# the five dependency trees.
+# every dependency tree.
 #
 # `remove` exists for a smaller reason and a sharper one. `git worktree remove`
 # refuses while node_modules is there, because it is untracked; the spelling
@@ -103,7 +103,7 @@ add() {
     hint "cd $abs && make deps   # to see why"
     exit 1
   }
-  ok "five trees installed"
+  ok "dependency trees installed"
 
   printf '\n'
   info "cd $abs"

@@ -74,7 +74,7 @@ with ADP absent.
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 1-7 | `adp-recorder` — a buffered, replay-safe event producer, out of band | #149 | not started, and **unblocked**: 3-1 (#147), 3-2 (#146), 1-8 (#148) and 1-19 (#199) have all shipped, so nothing stands between here and it. It is built against what 1-19 decided — structure by default — which is the whole reason that decision came first |
+| 1-7 | `adp-recorder` — a buffered, replay-safe event producer, out of band | #149 | **in progress**, landing as three changes because the whole is not reviewable at once. The first has shipped: `recorder/`, the delivery guarantees with no harness knowledge — durable spool, batching shipper, idempotent replay, contiguity recovery, honest backpressure. Next is the Claude Code reader and the CLI, which closes the issue's first three exit criteria end to end; last is the paired cost measurement, which needs vendor spend and therefore a decision. Everything it was blocked on — 3-1 (#147), 3-2 (#146), 1-8 (#148), 1-19 (#199) — has shipped, and it is built against what 1-19 decided: structure by default |
 | 1-9 | Harness readers, two to start, and named in the README | #150 | not started. Translation lives in the recorder, so the server keeps storing `harness` as a string it never branches on |
 | 1-10 | Session lifecycle driven by harness signals | #151 | not started. What turns 2-3 into a demonstration rather than a script that calls two endpoints |
 | 1-11 | `adp connect <harness>` | #154 | not started. Proves itself with a round trip rather than reporting success on having written files |

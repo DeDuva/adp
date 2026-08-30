@@ -97,7 +97,7 @@ session run `make check` while another is mid-edit, and it is the reason `.gitig
 carries a note about dependency trees rather than only a rule.
 
 ```bash
-make worktree BRANCH=fix/92-gate-job-lease   # branch, worktree, and its five dependency trees
+make worktree BRANCH=fix/92-gate-job-lease   # branch, worktree, and every dependency tree
 cd .worktrees/92-gate-job-lease
 make up && make check
 make worktree-remove DIR=.worktrees/92-gate-job-lease   # from somewhere else
@@ -117,7 +117,7 @@ symlink is the obvious shortcut and it is a trap twice over: the link silently s
 other checkout's dependencies whenever the two lockfiles disagree, and two
 machine-specific absolute symlinks reached `main` that way in #128 — which is why
 `.gitignore` matches `node_modules` with no trailing slash, so a *symlink* by that name
-cannot walk past it. `npm ci` across all five trees is about eight seconds against a warm
+cannot walk past it. `npm ci` across every tree is about eight seconds against a warm
 npm cache. That is not the cost worth optimising.
 
 `make worktree-remove` exists because the safe spelling has to be the easy one, the same
@@ -197,6 +197,7 @@ find the same text rather than a second, drifting copy.
 | `cli/` | the `adp` CLI (no database needed to test) |
 | `adapters/` | scanner-as-gate adapters (osv-scanner, wizcli) |
 | `runner/` | the gate runner: polls `/api/adp/gate-jobs/claim`, executes in an isolated container (network-deny, no host mounts, no ambient secrets, resource caps), reports via `/complete`. A pure HTTP client like `cli/` — no `server/` import, no DB or signing-key credential |
+| `recorder/` | `adp-recorder`: the out-of-band trajectory producer (#149). Durable spool, batching shipper, idempotent replay. A pure HTTP client on `runner/`'s terms — no `server/` import, no DB or signing-key credential, and only `repo:write`, so it runs as the developer rather than as infrastructure |
 | `bench/` | benchmark arms, runs, and the generated report |
 | `dc-runtime/` | the published site's client runtime. Builds `docs/html/support.js` and the React bundles beside it — all committed, because the site itself has no build step. `dc-runtime/test/` drives every published page in a real browser (`make site`) |
 | `spec/` | the published contract: `spec/openapi.yaml`, `spec/schemas/`, `spec/graphql/github.graphql` |
@@ -225,7 +226,7 @@ suite, web, cli, adapters, conformance, acceptance) preceded by `make check-docs
 full suite with e2e enforced. `make down-all` and `bash scripts/dev/verify-clean.sh --fix`
 are the recovery paths when a previous run left something behind.
 
-`make deps` installs the five dependency trees and `make check-deps` asserts they are the
+`make deps` installs every dependency tree and `make check-deps` asserts they are the
 ones their lockfiles describe; `make worktree` does both for a new worktree in one step —
 see §A worktree per task.
 

@@ -85,7 +85,7 @@ check_all() {
     esac
   done
   if [ "$ADP_FAILURES" -gt 0 ]; then
-    hint "make deps   # all five trees, about eight seconds against a warm npm cache"
+    hint "make deps   # every tree, about eight seconds against a warm npm cache"
   fi
   adp_summary "deps"
 }
