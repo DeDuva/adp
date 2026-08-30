@@ -16,6 +16,39 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**Arm 2 keeps its escape hatch, and records when the agent uses it.** #144
+gave the native plane the four tools an agent needed and rewrote the `adp-mcp`
+instructions to name them. It also pulled `Bash(curl *)` off that arm's tool
+list, which the issue did not ask for and which was the wrong call twice over.
+
+It makes the re-run a two-variable change: four tools appeared *and* an escape
+hatch closed, so a cost drop could not be split between "the tools are
+cheaper" and "the agent can no longer spend turns on HTTP it was told to
+assemble". And a withdrawn hatch turns a step the tools still fail to cover
+into a *failed trial* rather than an observation — which loses exactly the
+finding worth having.
+
+So `curl` is back on the list, and unadvertised: the instructions teach the
+MCP path and never mention it. What makes that safe rather than sloppy is
+that a fallback is now visible instead of invisible. Every trial records
+`measurement.toolBreakdown` — per-tool counts, with Bash calls labelled by the
+program they actually ran, so `Bash(git)` and `Bash(curl)` are different facts
+— and `measurement.escapeHatchCalls`, a deliberately separate count of raw
+HTTP invocations. Separate because it is the one signal the re-run has to read
+at a glance, and burying it in a per-tool map would repeat the mistake of
+burying it in a total.
+
+The count is by *invocation*, not substring: a `curl` behind an `&&` counts,
+`git log | grep curl` does not. It is a signal rather than a proof — an agent
+holding `Bash(node *)` could reach HTTP through `node -e` unseen — which is
+why the breakdown ships beside it instead of instead of it.
+
+The published pilot records predate both fields, so the report says
+**"fallback use is not measured in these trials"** rather than rendering a
+zero. Those trials were *instructed* to use `curl`; a zero would be positively
+wrong, and reading absence as zero is the same class of error as a skipped
+test that exits green.
+
 **The evidence bundle names the intent by title, and release 1a is complete
 (#189).** `PLAN.md` 1a states its exit criterion as "a commit pushed by a
 plain `git push`, from any harness, resolves to its intent, and the evidence
@@ -149,10 +182,11 @@ to `message`, which says "Land policy not satisfied" and nothing actionable.
 `adp_candidates_resolve` lands its winner through the same land path, so it
 surfaces the refusal the same way now too.
 
-`bench/arms/three-way-cost.mjs` no longer contains a `curl` in the `adp-mcp`
-arm — not in the instructions, and not in `allowedTools` either, so a trial
-cannot quietly fall back to the shape the arm exists to stop measuring.
-**The arm has not been re-run**: it is agent-backed, needs real tokens and a
+`bench/arms/three-way-cost.mjs`'s `adp-mcp` instructions no longer contain a
+`curl`: they name the four tools instead of teaching the agent to
+hand-assemble HTTP. `Bash(curl *)` stays on that arm's tool list, unadvertised
+— see the entry below on why an escape hatch that is available and *visible*
+beats one that is absent. **The arm has not been re-run**: it is agent-backed, needs real tokens and a
 real GitHub PAT, and runs out of band rather than in CI. Per this harness's
 own contract an arm that was not run is reported as not run, so
 `bench/report/three-way-cost.md` now says on its own page that its published

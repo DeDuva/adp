@@ -218,6 +218,11 @@ jobs:
       # The merge-contention measurement itself is enforced separately, by
       # server/test/e2e-merge-contention.test.ts in the `server` job, which
       # drives bench/lib/merge-contention.mjs directly rather than a copy.
+      # The transcript reader's own assertions. `measurement.escapeHatchCalls`
+      # is meant to be read at a glance and acted on, and the shell splitting
+      # under it is exactly the kind of code that looks obviously right and is
+      # not — the first version counted `git log | grep curl` as a curl call.
+      - run: npm test
       - run: npm run report
       - run: git diff --exit-code report/
 

@@ -89,6 +89,27 @@ proxy in front of the plain-HTTP ADP server (same reason and same proxy script a
 `adp-mcp` shells out to `server/src/mcp/server.ts` itself as the MCP server the
 agent's tools are scoped to — no separate process to start by hand.
 
+**The `adp-mcp` arm keeps `Bash(curl *)` on its tool list, and never mentions it
+in the instructions.** Before #144 the native plane had no way to open a proposal
+or read an intent, so the instructions taught the agent to hand-assemble `curl`
+calls; those tools exist now and the instructions name them instead. Withdrawing
+the hatch at the same time would have been a mistake in two directions: it makes
+the next run a two-variable change, so a cost drop could not be split between
+"the tools are cheaper" and "the agent can no longer spend turns on HTTP"; and it
+turns a step the tools still fail to cover into a *failed trial* rather than an
+observation. An available-but-unadvertised hatch measures the tools; an absent
+one measures the prompt.
+
+That only works if the fallback is visible, so every trial records
+`measurement.toolBreakdown` (per-tool counts, Bash calls labelled by the program
+they ran) and `measurement.escapeHatchCalls` (raw-HTTP invocations, counted by
+invocation rather than substring — `curl` behind an `&&` counts,
+`git log | grep curl` does not). `lib/transcript.mjs` does the reading and
+`test/transcript.test.mjs` asserts it, including the blind spot it cannot see:
+an agent holding `Bash(node *)` can reach HTTP through `node -e` uncounted, which
+is why the full breakdown ships beside the single number rather than instead of
+it.
+
 One invocation runs exactly one trial (method × task × rep), same granularity as
 arm 1's driver. `--root` should not be under `~/.claude/` — Claude Code refuses to
 edit files there as a built-in safety guard, which reads as an unexplained,
