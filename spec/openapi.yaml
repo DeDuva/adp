@@ -2175,6 +2175,25 @@ paths:
                 expires_at:
                   type: string
                   format: date-time
+                harness:
+                  type: string
+                  description: >
+                    #141: the harness this credential belongs to
+                    ("claude-code", "codex", …). Carried onto every signed
+                    change the token records, as `provenance.harness`.
+                model:
+                  type: string
+                  description: >
+                    #141: the model the integration this credential belongs
+                    to is built around. This is the credential's grain, not
+                    the attempt's — a harness may switch models mid-session
+                    and the token outlives the switch; which model produced a
+                    particular attempt belongs on `runs.labels`.
+                session_id:
+                  type: string
+                  description: >
+                    #141: the harness session this credential was minted for,
+                    carried onto signed changes as `provenance.session_id`.
       responses:
         "401":
           content:
@@ -3945,7 +3964,8 @@ components:
                 type: string
     MintedToken:
       type: object
-      required: [token, identity_id, principal, scopes, org_id, expires_at]
+      required:
+        [token, identity_id, principal, scopes, org_id, expires_at, harness, model, session_id]
       description: >
         #90: the one-time response of POST /api/adp/tokens. `token` appears
         here and nowhere else — the server stores only its hash, so a lost
@@ -3970,6 +3990,18 @@ components:
         expires_at:
           type: string
           format: date-time
+          nullable: true
+        harness:
+          type: string
+          nullable: true
+          description: >
+            #141: echoed back so a caller can confirm what it was issued.
+            Null unless supplied at mint.
+        model:
+          type: string
+          nullable: true
+        session_id:
+          type: string
           nullable: true
     GateJob:
       type: object

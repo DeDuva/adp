@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { skipWithoutDb } from "./require-db.js";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -16,6 +18,9 @@ import { Signer } from "../src/core/signing.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerTokenRoutes } from "../src/http-rest/tokens.js";
 import { registerGateJobRoutes } from "../src/http-rest/gate-jobs.js";
+import { registerChangeRoutes } from "../src/http-rest/changes.js";
+
+const execFileAsync = promisify(execFile);
 
 // #90: the audit's named proof, both
 // directions — an admin token is REFUSED on the gate-job routes (admin no
@@ -28,6 +33,8 @@ describe.skipIf(skipWithoutDb)("#90: token minting and the runner scope boundary
   let db: Db;
   let pool: import("pg").Pool;
   let gitRoot: string;
+  let gitBackend: GitBackend;
+  let signer: Signer;
   let port: number;
   let adminToken: string;
   let adminIdentityId: string;
@@ -48,14 +55,15 @@ describe.skipIf(skipWithoutDb)("#90: token minting and the runner scope boundary
     await migrate(db, { migrationsFolder: new URL("../drizzle", import.meta.url).pathname });
 
     gitRoot = await mkdtemp(path.join(tmpdir(), "adp-e2e-tokens-git-"));
-    const gitBackend = new GitBackend(gitRoot);
-    const signer = new Signer("e2e-tokens-signing-key");
+    gitBackend = new GitBackend(gitRoot);
+    signer = new Signer("e2e-tokens-signing-key");
 
     app = Fastify({ logger: false });
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend, "https://adp.example.com");
     registerTokenRoutes(app, db);
     registerGateJobRoutes(app, db, gitBackend, signer, "https://adp.example.com", "e2e-test-credential-key");
+    registerChangeRoutes(app, db, gitBackend, signer);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
     const address = app.server.address();
@@ -201,5 +209,77 @@ describe.skipIf(skipWithoutDb)("#90: token minting and the runner scope boundary
     expect(op).toBeDefined();
     expect(op!.actorId).toBe(adminIdentityId);
     expect(JSON.stringify(op!.after)).not.toContain(minted.body!.token as string);
+  });
+
+  // #141: the round trip the columns were built for and nothing could reach.
+  // Mint carries harness/model/session_id -> authenticate() reads them onto
+  // the identity -> provenanceOf() copies them into the provenance ->
+  // the signature covers that provenance. Asserting the whole chain, and
+  // verifying the signature over the provenance that names all three, is
+  // what stops this regressing to three silent nulls again: every field was
+  // already present at every other step, so a partial revert type-checks.
+  it("mint carries harness, model and session_id all the way into signed provenance", async () => {
+    const minted = await api("/api/adp/tokens", adminToken, {
+      method: "POST",
+      body: JSON.stringify({
+        principal: `tok-harness-${Date.now()}`,
+        scopes: ["repo:read", "repo:write"],
+        harness: "claude-code",
+        model: "claude-opus-5",
+        session_id: "sess-141",
+      }),
+    });
+    expect(minted.status).toBe(201);
+    // Echoed back, so a caller can confirm what it was issued.
+    expect(minted.body).toMatchObject({ harness: "claude-code", model: "claude-opus-5", session_id: "sess-141" });
+    const harnessToken = minted.body!.token as string;
+    await grantOwner(db, minted.body!.identity_id as string, owner);
+
+    // A commit written straight into the bare repo with plumbing: this test
+    // is about the token, so it deliberately avoids the push path (whose
+    // post-receive hook would record a change of its own, #142).
+    const repoPath = gitBackend.repoPath(owner, "target");
+    const git = (args: string[]) =>
+      execFileAsync("git", ["-C", repoPath, ...args], {
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "Test",
+          GIT_AUTHOR_EMAIL: "test@example.com",
+          GIT_COMMITTER_NAME: "Test",
+          GIT_COMMITTER_EMAIL: "test@example.com",
+        },
+      });
+    // `hash-object -t tree` over an empty file writes the empty tree without
+    // needing stdin, which promisified execFile has no way to supply.
+    const { stdout: tree } = await git(["hash-object", "-w", "-t", "tree", "/dev/null"]);
+    const { stdout: commit } = await git(["commit-tree", tree.trim(), "-m", "provenance round trip"]);
+    const sha = commit.trim();
+    await git(["update-ref", "refs/heads/provenance-141", sha]);
+
+    const change = await api(`/api/v3/repos/${owner}/target/changes`, harnessToken, {
+      method: "POST",
+      body: JSON.stringify({ git_sha: sha }),
+    });
+    expect(change.status).toBe(201);
+    const provenance = change.body!.provenance as Record<string, unknown>;
+    expect(provenance).toMatchObject({ harness: "claude-code", model: "claude-opus-5", session_id: "sess-141" });
+
+    // The signature covers the provenance, so it is the three fields that
+    // are attested rather than merely stored.
+    expect(
+      signer.verify(
+        { repo: `${owner}/target`, git_sha: sha, intent_id: null, provenance },
+        change.body!.signature as string,
+      ),
+    ).toBe(true);
+  });
+
+  it("a token minted without them leaves provenance carrying only the identity", async () => {
+    const minted = await api("/api/adp/tokens", adminToken, {
+      method: "POST",
+      body: JSON.stringify({ principal: `tok-bare-${Date.now()}`, scopes: ["repo:read", "repo:write"] }),
+    });
+    expect(minted.status).toBe(201);
+    expect(minted.body).toMatchObject({ harness: null, model: null, session_id: null });
   });
 });
