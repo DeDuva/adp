@@ -233,19 +233,17 @@ section "project dependencies"
 if [ "$SKIP_DEPS" = "1" ]; then
   info "skipped (--skip-deps)"
 else
-  # `npm ci` not `npm install`: the lockfile is the pin, and a provisioning
+  # Through deps.sh rather than five `npm ci` lines of its own — it is the same
+  # five trees `make deps` and `make check-deps` speak about, and this file
+  # used to be the third place that list was written down. `npm ci` not
+  # `npm install`, there as here: the lockfile is the pin, and a provisioning
   # script that silently resolves different versions than CI defeats its own
   # purpose.
-  npm ci --prefix "$ADP_REPO_ROOT/server"
-  ok "server dependencies installed"
-  npm ci --prefix "$ADP_REPO_ROOT/server/web"
-  ok "web dependencies installed"
-  npm ci --prefix "$ADP_REPO_ROOT/cli"
-  ok "cli dependencies installed"
-  npm ci --prefix "$ADP_REPO_ROOT/adapters"
-  ok "adapters dependencies installed"
-  npm ci --prefix "$ADP_REPO_ROOT/runner"
-  ok "runner dependencies installed"
+  if bash "$ADP_REPO_ROOT/scripts/dev/deps.sh" install; then
+    ok "project dependencies installed"
+  else
+    fail "npm ci failed — see above"
+  fi
 
   # These `npm ci` calls have no $SUDO prefix, so they normally run as
   # whoever invoked this script — except when that *is* root (either a
@@ -257,12 +255,9 @@ else
   # fix-up above, and the same reasoning: a genuine root shell has no one to
   # chown to and is left alone.
   if [ "$(id -u)" = "0" ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
-    chown -R "$SUDO_USER:$SUDO_USER" \
-      "$ADP_REPO_ROOT/server/node_modules" \
-      "$ADP_REPO_ROOT/server/web/node_modules" \
-      "$ADP_REPO_ROOT/cli/node_modules" \
-      "$ADP_REPO_ROOT/adapters/node_modules" \
-      "$ADP_REPO_ROOT/runner/node_modules"
+    for pkg in $ADP_DEP_PACKAGES; do
+      chown -R "$SUDO_USER:$SUDO_USER" "$ADP_REPO_ROOT/$pkg/node_modules"
+    done
     ok "node_modules ownership handed back to $SUDO_USER"
   fi
 fi

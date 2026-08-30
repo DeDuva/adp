@@ -1,3 +1,9 @@
+# The default home for `make worktree` — a worktree per task is the normal way
+# to work here (AGENTS.md §Worktrees). Overridable with ADP_WORKTREE_ROOT, which
+# is how a harness that keeps its state elsewhere points it at its own directory;
+# the .claude/* rule below already covers that case.
+.worktrees/
+
 # Claude Code local state (agent worktrees, session scratch).
 #
 # Ignored by *contents* rather than as a directory, so that the one file meant to

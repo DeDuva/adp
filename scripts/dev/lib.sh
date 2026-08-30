@@ -30,6 +30,34 @@ hint()    { printf '        %s%s%s\n' "$_c_dim" "$*" "$_c_off"; }
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# The digest of a package's lockfile — what `deps.sh install` stamps into the
+# tree it produces, and what `adp_dep_state` compares against.
+adp_lock_digest() {
+  sha256sum "$ADP_REPO_ROOT/$1/package-lock.json" 2>/dev/null | awk '{print $1}'
+}
+
+# Is this package's dependency tree present, and is it the tree its lockfile
+# describes? One definition, because `make doctor` and the gate in `make
+# test-all` have to agree about it — they differ in what they *do* about the
+# answer, not in what the answer is.
+#
+# Three states, and the third one is the reason this exists:
+#   ok       — present, and stamped with this lockfile's digest
+#   missing  — no node_modules at all; the fresh-worktree case
+#   stale    — stamped with a *different* lockfile's digest
+#
+# A tree with no stamp reports `ok`, deliberately. It means someone ran
+# `npm ci` by hand, which is a fine thing to have done; absence of evidence
+# that a tree is current is not evidence that it is stale, and crying about it
+# would train everyone to ignore this check.
+adp_dep_state() {
+  local pkg="$1" stamp
+  [ -d "$ADP_REPO_ROOT/$pkg/node_modules" ] || { echo missing; return; }
+  stamp="$ADP_REPO_ROOT/$pkg/node_modules/$ADP_DEPS_STAMP"
+  [ -f "$stamp" ] || { echo ok; return; }
+  if [ "$(cat "$stamp")" = "$(adp_lock_digest "$pkg")" ]; then echo ok; else echo stale; fi
+}
+
 # `docker` can exist on PATH while the daemon is unreachable — the common WSL
 # case when Docker Desktop is closed or its WSL integration is off for this
 # distro. Callers need to tell those apart, so this returns distinct codes:

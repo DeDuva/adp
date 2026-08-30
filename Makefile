@@ -22,13 +22,13 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner helm dc-runtime site land local local-status local-down local-destroy measure-ops
+.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps check-deps worktree worktree-remove worktree-list test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner helm dc-runtime site land local local-status local-down local-destroy measure-ops
 
 help: ## Show this help
 	@echo "ADP test environment"
 	@echo
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
-		| awk 'BEGIN{FS=":.*?## "}{printf "  \033[1m%-14s\033[0m %s\n", $$1, $$2}'
+		| awk 'BEGIN{FS=":.*?## "}{printf "  \033[1m%-15s\033[0m %s\n", $$1, $$2}'
 	@echo
 
 bootstrap: ## Provision a bare Debian/Ubuntu machine to run the suite (needs root/sudo)
@@ -53,11 +53,19 @@ down-all: ## Tear down every adp-test-* stack on this machine
 	@bash scripts/dev/down.sh --all
 
 deps: ## Install node dependencies (server, web, cli, adapters, and runner)
-	npm ci --prefix server
-	npm ci --prefix server/web
-	npm ci --prefix cli
-	npm ci --prefix adapters
-	npm ci --prefix runner
+	@bash scripts/dev/deps.sh install
+
+check-deps: ## Assert every dependency tree is present and matches its lockfile
+	@bash scripts/dev/deps.sh check
+
+worktree: ## A worktree per task, ready to run the suite: make worktree BRANCH=fix/x [DIR=...]
+	@bash scripts/dev/worktree.sh add $(BRANCH) $(DIR)
+
+worktree-remove: ## Remove a worktree, refusing while it holds work you would lose: DIR=...
+	@bash scripts/dev/worktree.sh remove $(DIR)
+
+worktree-list: ## Every worktree of this repository
+	@bash scripts/dev/worktree.sh list
 
 test-unit: ## Unit + integration tiers only (no database needed)
 	npm test --prefix server
@@ -149,6 +157,10 @@ bench: ## Test the harness, regenerate the benchmark report, and assert it is un
 
 test-all: ## Everything CI runs: build, full suite, web, cli, adapters, runner, chart, conformance + acceptance
 	$(REQUIRE_ENV)
+	@# Before the first test rather than in the seventh target: a missing
+	@# dependency tree used to surface forty minutes in as `vitest: not found`,
+	@# naming neither the cause nor the remedy. Milliseconds to ask here.
+	@$(MAKE) check-deps
 	@$(LOAD_ENV) npm run typecheck --prefix server
 	@$(LOAD_ENV) npm run build --prefix server
 	@$(LOAD_ENV) npm run migrate --prefix server

@@ -22,6 +22,24 @@ ADP_DEFAULT_DATABASE_URL="postgres://adp:adp@localhost:5432/adp"
 # The Node version the project is pinned to (.nvmrc, CI's setup-node, deploy/Dockerfile).
 ADP_NODE_MAJOR="22"
 
+# The dependency trees a full run needs, in the order `make deps` installs them.
+#
+# Five, not six: `dc-runtime` is deliberately absent because `make dc-runtime`
+# and `make site` each run their own `npm ci --prefix dc-runtime` — that suite
+# must be runnable with none of server's tree installed, since nothing it
+# touches needs a database or a server. `bench` is absent because it has no
+# dependencies at all (`node --test`, zero-dependency by design, same as
+# `adapters`' runtime half).
+ADP_DEP_PACKAGES="server server/web cli adapters runner"
+
+# Written by `deps.sh install` into each tree, holding the digest of the
+# `package-lock.json` that produced it. npm has no answer to "is this tree the
+# one this lockfile describes" that is cheap to ask from a shell —
+# `node_modules/.package-lock.json` is a different format from the lockfile it
+# came from — and the question is the whole point in a worktree, where a tree
+# installed last week outlives the lockfile that justified it.
+ADP_DEPS_STAMP=".adp-deps"
+
 # Every ephemeral test resource carries this prefix, so verify-clean.sh can
 # identify leaked state unambiguously and nothing can collide with the
 # production-shaped `deploy` compose project.

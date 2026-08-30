@@ -114,38 +114,34 @@ else
 fi
 
 section "dependencies"
-if [ -d "$ADP_REPO_ROOT/server/node_modules" ]; then
-  ok "server/node_modules present"
-else
-  fail "server/node_modules missing"
-  hint "npm ci --prefix server"
-fi
-if [ -d "$ADP_REPO_ROOT/server/web/node_modules" ]; then
-  ok "server/web/node_modules present"
-else
-  warn "server/web/node_modules missing — the UI will not build"
-  hint "main.ts silently skips serving /ui/* when server/web/dist is absent, so"
-  hint "web UI checks would pass against a UI that was never built"
-  hint "npm ci --prefix server/web"
-fi
-if [ -d "$ADP_REPO_ROOT/cli/node_modules" ]; then
-  ok "cli/node_modules present"
-else
-  warn "cli/node_modules missing — 'make cli' (part of test-all) will fail"
-  hint "npm ci --prefix cli"
-fi
-if [ -d "$ADP_REPO_ROOT/adapters/node_modules" ]; then
-  ok "adapters/node_modules present"
-else
-  warn "adapters/node_modules missing — 'make adapters' (part of test-all) will fail"
-  hint "npm ci --prefix adapters"
-fi
-if [ -d "$ADP_REPO_ROOT/runner/node_modules" ]; then
-  ok "runner/node_modules present"
-else
-  warn "runner/node_modules missing — 'make runner' (part of test-all) will fail"
-  hint "npm ci --prefix runner"
-fi
+# One definition of "is this tree present and current" (lib.sh), shared with
+# the gate in `make test-all`. What differs is what each does about the answer:
+# here it is advice, there it is a refusal.
+#
+# The severities are not uniform, and were not before this loop existed.
+# `server` is the whole suite; the other four are one target each, and a
+# machine that only ever runs `make test-unit` is fine without them.
+for pkg in $ADP_DEP_PACKAGES; do
+  case "$(adp_dep_state "$pkg")" in
+  ok) ok "$pkg/node_modules present" ;;
+  stale)
+    warn "$pkg/node_modules was installed from a different package-lock.json"
+    hint "'make deps' — CI installs from the lockfile, so this tree is not what CI tests"
+    ;;
+  missing)
+    if [ "$pkg" = "server" ]; then
+      fail "server/node_modules missing"
+    elif [ "$pkg" = "server/web" ]; then
+      warn "server/web/node_modules missing — the UI will not build"
+      hint "main.ts silently skips serving /ui/* when server/web/dist is absent, so"
+      hint "web UI checks would pass against a UI that was never built"
+    else
+      warn "$pkg/node_modules missing — 'make $(basename "$pkg")' (part of test-all) will fail"
+    fi
+    hint "make deps"
+    ;;
+  esac
+done
 
 section "database"
 if [ -n "${DATABASE_URL:-}" ]; then
