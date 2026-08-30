@@ -90,6 +90,54 @@ human would be.
 fails the pull request. It is a check rather than a note for the reason above: by the
 time anyone reads this file, the branch already exists.
 
+### A worktree per task
+
+Work in a worktree rather than switching a shared checkout's branch. It is what lets one
+session run `make check` while another is mid-edit, and it is the reason `.gitignore`
+carries a note about dependency trees rather than only a rule.
+
+```bash
+make worktree BRANCH=fix/92-gate-job-lease   # branch, worktree, and its five dependency trees
+cd .worktrees/92-gate-job-lease
+make up && make check
+make worktree-remove DIR=.worktrees/92-gate-job-lease   # from somewhere else
+```
+
+`scripts/dev/worktree.sh` does the three things a bare `git worktree add` leaves you to
+discover. It checks the branch name against `check-branch.sh` — the same script that
+fails the pull request — so a name that will be rejected is rejected while renaming it is
+still one flag rather than a force-push and an abandoned branch. It branches off the
+*fetched* `origin/main`, because a worktree cut from a stale local `main` fails quietly:
+everything works, the pull request is just built on last week's tree and carries a diff
+nobody asked for. And it installs dependencies, because a fresh worktree shares the
+repository and shares nothing else.
+
+**Install the dependency trees; do not link them.** Sharing one tree between worktrees by
+symlink is the obvious shortcut and it is a trap twice over: the link silently serves the
+other checkout's dependencies whenever the two lockfiles disagree, and two
+machine-specific absolute symlinks reached `main` that way in #128 — which is why
+`.gitignore` matches `node_modules` with no trailing slash, so a *symlink* by that name
+cannot walk past it. `npm ci` across all five trees is about eight seconds against a warm
+npm cache. That is not the cost worth optimising.
+
+`make worktree-remove` exists because the safe spelling has to be the easy one, the same
+lesson `gh pr merge --delete-branch` taught in the section below. Plain
+`git worktree remove` refuses while `node_modules` is there; the next thing anyone reaches
+for is `--force`, which also discards uncommitted changes and unpushed commits without
+mentioning either. So the script checks for work you would lose *first*, clears the
+dependency trees, and then removes the worktree with plain `git`. The branch is left
+alone.
+
+`ADP_WORKTREE_ROOT` moves the default location — an agent harness that keeps its state
+under a directory of its own points it there, and `DIR=` overrides per invocation.
+
+**A worktree that cannot run the suite is the failure this is built around.** A missing
+dependency tree used to surface forty minutes into `make check`, in the seventh target, as
+`sh: 1: vitest: not found` — naming neither the cause nor the remedy, after everything
+expensive had already run. `make test-all` now asks `make check-deps` before the first
+test, which also catches the case a fresh install cannot: a tree installed before a
+dependency change on this branch, which CI would never test against.
+
 ### Landing a stack
 
 **Do not delete a branch another open pull request is based on.** GitHub does not orphan
@@ -145,7 +193,7 @@ find the same text rather than a second, drifting copy.
 | `bench/` | benchmark arms, runs, and the generated report |
 | `dc-runtime/` | the published site's client runtime. Builds `docs/html/support.js` and the React bundles beside it — all committed, because the site itself has no build step. `dc-runtime/test/` drives every published page in a real browser (`make site`) |
 | `spec/` | the published contract: `spec/openapi.yaml`, `spec/schemas/`, `spec/graphql/github.graphql` |
-| `scripts/dev/` | what the Makefile actually runs — `up`, `down`, `doctor`, `verify-clean`, and `local` (a persistent local instance with a certificate `gh` will accept, #158) |
+| `scripts/dev/` | what the Makefile actually runs — `up`, `down`, `doctor`, `verify-clean`, `deps` and `worktree` (§A worktree per task), and `local` (a persistent local instance with a certificate `gh` will accept, #158) |
 | `deploy/`, `infra/` | production compose stack; Terraform for the GCP dev box |
 | `helm/adp/` | the self-host chart (M4-12). `make helm` lints it, renders every branch, and asserts the combinations it must *refuse* still refuse — `scripts/dev/helm-check.sh` |
 
@@ -169,6 +217,10 @@ suite, web, cli, adapters, conformance, acceptance) preceded by `make check-docs
 `make test-unit` runs the unit + integration tiers with no database. `make test` is the
 full suite with e2e enforced. `make down-all` and `bash scripts/dev/verify-clean.sh --fix`
 are the recovery paths when a previous run left something behind.
+
+`make deps` installs the five dependency trees and `make check-deps` asserts they are the
+ones their lockfiles describe; `make worktree` does both for a new worktree in one step —
+see §A worktree per task.
 
 Per-tool configuration lives under that tool's own directory and is not the contract —
 this file is. `.claude/settings.json` is the one such file checked in, holding a shared
