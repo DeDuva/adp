@@ -133,6 +133,7 @@ async function recordCommitsBatch(
   // used to do one DB round-trip per commit; this keeps the per-commit
   // signature and operations row (the append-only spine invariant) but pages
   // the round-trips instead.
+  let recorded = 0;
   await db.transaction(async (tx) => {
     for (const commit of toRecord) {
       const trailers = trailersBySha.get(commit.sha)!;
@@ -156,10 +157,20 @@ async function recordCommitsBatch(
         provenance,
       });
 
+      // The pre-flight `existing` check above is the ordinary dedup; this is
+      // the race it cannot close. Two pushes carrying the same commit can both
+      // read "not recorded" and both insert, and since #143 made
+      // (repo_id, git_sha) unique the loser would raise — inside one
+      // transaction covering the whole batch, so a duplicate on *one* commit
+      // would discard the records for every other commit pushed with it. The
+      // constraint picks the winner; the loser records nothing and says so by
+      // returning no row, which is the right outcome either way.
       const [change] = await tx
         .insert(changes)
         .values({ repoId, gitSha: commit.sha, intentId, provenance, signature })
+        .onConflictDoNothing({ target: [changes.repoId, changes.gitSha] })
         .returning();
+      if (!change) continue;
 
       await recordOperation(tx, {
         repoId,
@@ -167,7 +178,7 @@ async function recordCommitsBatch(
         verb: "change.create",
         target: `${owner}/${name}@${commit.sha}`,
         after: {
-          id: change!.id,
+          id: change.id,
           gitSha: commit.sha,
           via,
           intentId,
@@ -177,10 +188,14 @@ async function recordCommitsBatch(
           ...(trailers.intent && !intentId ? { unresolvedIntentTrailer: noteToken(trailers.intent) } : {}),
         },
       });
+      recorded += 1;
     }
   });
 
-  return toRecord.length;
+  // What was actually written, not what was planned — the caller uses a zero
+  // here to decide it has walked back into already-recorded history and can
+  // stop paging.
+  return recorded;
 }
 
 // Shared by the post-receive hook (a direct push through ADP) and the

@@ -384,8 +384,17 @@ paths:
       summary: >
         Record a typed change: an existing git commit plus intent and
         provenance, server-signed. No GitHub shape — native ADP metadata
-        living beside the commit. Recorded via
-        explicit call; not yet triggered automatically by a git push.
+        living beside the commit.
+
+        Idempotent by `(repo, git_sha)`: a push already auto-records a signed
+        change for every new commit, so calling this for a sha the push
+        recorded *completes* that row — filling in `intent_id` and
+        `workspace_id` and re-signing over the binding — rather than adding a
+        second row beside it. The provenance of an existing row is left as
+        recorded: it names what produced the commit, and this call is a
+        binding, whose actor is in the operation log. `201` on both paths;
+        `created_at` is the push's timestamp when a row was completed rather
+        than created.
       security:
         - bearerAuth: []
       requestBody:
@@ -402,13 +411,24 @@ paths:
                 $ref: "#/components/schemas/Error"
           description: Missing or invalid token
         "201":
-          description: Created
+          description: >
+            The one change record for this sha — created, or completed with
+            the binding this call supplied.
         "404":
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
           description: Repository not found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: >
+            The sha is already bound to a different `intent_id` or
+            `workspace_id`. A binding is a claim about what produced that
+            commit, so it is recorded once and not rewritten.
         "422":
           content:
             application/json:
