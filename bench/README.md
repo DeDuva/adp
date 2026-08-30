@@ -17,6 +17,7 @@ the same kind of measurement, and the report says so on every page.
 | **1 — merge contention** | No | **Yes**, at small N | ✅ Run; see [`report/merge-contention.md`](report/merge-contention.md) |
 | **2 — three-way cost comparison** (GitHub+`gh` vs ADP-MCP vs ADP-via-`gh`) | Yes | No | ✅ Run, pilot scale; see [`report/three-way-cost.md`](report/three-way-cost.md) |
 | **3 — fan-out vs serial** | Yes | No | ✅ Run; squad's duva-bench track — see the [squad PR](https://github.com/DeDuva/squad/pull/119) and `packages/duva-bench/examples/topology-arm3-report/` in that repo |
+| **5 — what recording costs the agent** (recorder on vs off, paired) | Yes | No | ✅ Run, 20 pairs; see [`report/recorder-overhead.md`](report/recorder-overhead.md) |
 
 **Arm 1 is deterministic.** No agent, no LLM call, no tokens spent. It measures
 ADP's land path under contention, which is a property of the server, not of an
@@ -25,7 +26,7 @@ change — `server/test/e2e-merge-contention.test.ts` drives *this exact module*
 not a reimplementation of it, so the code CI checks is the code that produced the
 published numbers.
 
-**Arms 2 and 3 are agent-backed and run out of band, not in CI.** They need a real
+**Arms 2, 3 and 5 are agent-backed and run out of band, not in CI.** They need a real
 agent burning real tokens and, for the GitHub arm, a real GitHub repository and PAT.
 Nothing in CI can run them, and pretending otherwise by substituting a scripted
 stand-in for an agent would produce numbers that look like arm 1's but mean
@@ -114,6 +115,33 @@ One invocation runs exactly one trial (method × task × rep), same granularity 
 arm 1's driver. `--root` should not be under `~/.claude/` — Claude Code refuses to
 edit files there as a built-in safety guard, which reads as an unexplained,
 repeated permission denial if the trial's working directories land inside it.
+
+## Running arm 5
+
+The paired one: the same trial run twice, differing only in whether the agent's
+invocation was wrapped in `adp-recorder wrap`. Needs a real agent, a live ADP
+instance, and the recorder built (`npm run build --prefix recorder`).
+
+```bash
+# a live instance with a certificate gh will accept
+make local && set -a && . .adp-local/env && set +a
+export ADP_SERVER_URL=http://localhost:8420
+
+REPS=10 COHORT=study bash arms/recorder-overhead-study.sh \
+  --adp-owner=local --gh-host=localhost:8443 --cert-file="$SSL_CERT_FILE"
+
+npm run report   # regenerate report/recorder-overhead.md from runs/
+```
+
+**`--root` must point outside any git repository the agent could mistake for its
+project**, which is why the default is a fresh `os.tmpdir()` directory. Pointed
+inside this repo during development, the harness's own permission boundary denied
+the agent's edits eight to twelve times per trial, and the `on` condition failed
+to land three times running while `off` landed twice — which reads exactly like
+"the recorder breaks the agent" and was the instrument reading its own
+scaffolding. The paired design is what made that visible quickly; it is also what
+would have hidden it if only one condition had been affected, so the transcripts
+are kept under `--root` for when the two columns disagree.
 
 ## Reading the numbers honestly
 

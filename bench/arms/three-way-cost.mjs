@@ -43,41 +43,26 @@
 //     [--max-budget-usd=1.5] [--root=/tmp/adp-arm2]
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { adpClient } from "./lib/adp-rest.mjs";
+// The ADP fixture, shared with arms/recorder-overhead.mjs — see that file
+// for why it moved rather than being copied.
+import {
+  checkLanded,
+  loadTask,
+  parseArgs,
+  seedAdpRepo,
+  setupAdpGh,
+  sh,
+  work_placeholder,
+} from "./lib/adp-fixture.mjs";
 import { parseAgentTranscript } from "../lib/transcript.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const benchRoot = path.resolve(here, "..");
-
-function parseArgs(argv) {
-  const args = {};
-  for (const arg of argv) {
-    if (!arg.startsWith("--")) continue;
-    const eq = arg.indexOf("=");
-    if (eq === -1) args[arg.slice(2)] = true;
-    else args[arg.slice(2, eq)] = arg.slice(eq + 1);
-  }
-  return args;
-}
-
-function sh(cmd, args, opts = {}) {
-  const res = execFileSync(cmd, args, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], ...opts });
-  return res.trim();
-}
-
-function loadTask(taskId) {
-  const dir = path.join(benchRoot, "tasks/arm2", taskId);
-  const goal = readFileSync(path.join(dir, "goal.md"), "utf8");
-  const starterDir = path.join(dir, "starter");
-  const outputFile = { clamp: "clamp.js", titlecase: "titlecase.js" }[taskId];
-  if (!outputFile) throw new Error(`unknown task ${taskId}`);
-  return { dir, goal, starterDir, outputFile };
-}
 
 // ─── Fixture setup, per method ─────────────────────────────────────────────
 
@@ -122,49 +107,6 @@ function setupGithub({ owner, repo, taskId, rep, runId, task }) {
       `and land it with \`gh pr merge --repo ${owner}/${repo} --merge <number>\`.`,
     ].join(" "),
   };
-}
-
-/** ADP via gh — the compat plane, unmodified `gh`, GH_HOST pointed at the proxy. */
-async function setupAdpGh({ adpUrl, ghHost, certFile, token, taskId, rep, runId, task }) {
-  const owner = "duvabench";
-  const repo = `arm2-gh-${taskId}-r${rep}-${runId}`;
-  const client = adpClient(adpUrl, token);
-  await client.createRepo(owner, repo);
-  seedAdpRepo({ adpUrl, owner, repo, token, task });
-
-  const issue = await client.createIssue(owner, repo, `arm2 ${taskId} r${rep}`, task.goal);
-  const issueNumber = issue.number;
-
-  return {
-    cloneUrl: client.cloneUrl(owner, repo),
-    owner,
-    repo,
-    base: "main",
-    work: work_placeholder(taskId, rep, runId),
-    issueNumber,
-    issueRef: `${ghHost}/${owner}/${repo}#${issueNumber}`,
-    env: { GH_HOST: ghHost, GH_ENTERPRISE_TOKEN: token, SSL_CERT_FILE: certFile },
-    allowedTools: ["Bash(git *)", "Bash(gh *)", "Bash(node *)", "Bash(npm *)", "Read", "Edit", "Write"],
-    mcpConfig: null,
-    instructions: [
-      `The repo is ${ghHost}/${owner}/${repo}. GH_HOST, GH_ENTERPRISE_TOKEN and SSL_CERT_FILE are`,
-      `already set in your environment — do not export or inspect them, just use \`gh\` directly.`,
-      `Pass \`--repo ${ghHost}/${owner}/${repo}\` on every \`gh\` command below; do not rely on the`,
-      `git remote to pick the host. Read the task with`,
-      `\`gh issue view ${issueNumber} --repo ${ghHost}/${owner}/${repo}\`.`,
-      `You are already on a branch (${work_placeholder(taskId, rep, runId)}) checked out from main.`,
-      `Do the work, commit, and push with \`git push origin ${work_placeholder(taskId, rep, runId)}\`.`,
-      `Open the PR with \`gh pr create --repo ${ghHost}/${owner}/${repo} --base main --head`,
-      `${work_placeholder(taskId, rep, runId)} --title "..." --body "one short paragraph, inline, no`,
-      `--body-file"\`. This instance's land policy requires one approving review before merge (a real`,
-      `constraint of this server, not optional) — approve it yourself with \`gh pr review <number>`,
-      `--repo ${ghHost}/${owner}/${repo} --approve\`, then land it with \`gh pr merge <number> --repo`,
-      `${ghHost}/${owner}/${repo} --merge\`.`,
-    ].join(" "),
-  };
-}
-function work_placeholder(taskId, rep, runId) {
-  return `arm2/work-${taskId}-r${rep}-${runId}`;
 }
 
 /** ADP-MCP — the native plane. git + ADP's own MCP tools, no gh. */
@@ -246,17 +188,6 @@ async function setupAdpMcp({ adpUrl, token, taskId, rep, runId, task }) {
   };
 }
 
-function seedAdpRepo({ owner, repo, task, adpUrl, token }) {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "adp-arm2-seed-"));
-  const url = adpClient(adpUrl, token).cloneUrl(owner, repo);
-  sh("git", ["clone", url, dir]);
-  execFileSync("cp", ["-r", `${task.starterDir}/.`, dir]);
-  sh("git", ["add", "-A"], { cwd: dir });
-  sh("git", ["-c", "user.email=bench@adp.invalid", "-c", "user.name=adp-bench", "commit", "-q", "-m", "seed: starter"], { cwd: dir });
-  sh("git", ["push", "origin", "HEAD:main"], { cwd: dir });
-  rmSync(dir, { recursive: true, force: true });
-}
-
 // ─── stream-json parsing ────────────────────────────────────────────────────
 //
 // In lib/ so it can be tested: this file runs main() on import, so anything
@@ -264,16 +195,6 @@ function seedAdpRepo({ owner, repo, task, adpUrl, token }) {
 // drives that module directly.
 
 // ─── landed check ───────────────────────────────────────────────────────────
-
-function checkLanded({ cloneDir, base, outputFile, env }) {
-  try {
-    execFileSync("git", ["fetch", "origin", base], { cwd: cloneDir, stdio: "pipe", env: { ...process.env, ...env } });
-    execFileSync("git", ["show", `origin/${base}:${outputFile}`], { cwd: cloneDir, stdio: "pipe" });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // ─── main ───────────────────────────────────────────────────────────────────
 

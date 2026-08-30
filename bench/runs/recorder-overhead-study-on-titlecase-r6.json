@@ -1,0 +1,87 @@
+{
+  "recordedAt": "2026-08-30T22:45:18.547Z",
+  "arm": "recorder-overhead",
+  "cohort": "study",
+  "deterministic": false,
+  "condition": "on",
+  "taskId": "titlecase",
+  "rep": 6,
+  "runId": "1adb9d",
+  "environment": {
+    "node": "v24.18.0",
+    "platform": "linux/x64",
+    "model": "claude-haiku-4-5",
+    "adpUrl": "http://localhost:8420",
+    "target": {
+      "owner": "local",
+      "repo": "arm2-gh-titlecase-r6-1adb9d",
+      "issueRef": "localhost:8443/local/arm2-gh-titlecase-r6-1adb9d#1"
+    }
+  },
+  "measurement": {
+    "wallClockMs": 45895,
+    "totalCostUsd": 0.07229015,
+    "usage": {
+      "input_tokens": 114,
+      "cache_creation_input_tokens": 14223,
+      "cache_read_input_tokens": 345554,
+      "output_tokens": 3651,
+      "output_tokens_details": {
+        "thinking_tokens": 1174
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 14223
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 8,
+          "output_tokens": 418,
+          "cache_read_input_tokens": 27618,
+          "cache_creation_input_tokens": 233,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 233,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "numTurns": 14,
+    "toolCalls": 13,
+    "toolErrors": 1,
+    "permissionDenials": 0,
+    "toolBreakdown": {
+      "Bash(find)": 1,
+      "Bash(gh)": 4,
+      "Bash(git)": 4,
+      "Bash(node)": 1,
+      "Read": 1,
+      "Write": 2
+    },
+    "escapeHatchCalls": 0,
+    "isError": false,
+    "terminalReason": "completed",
+    "landed": true
+  },
+  "trajectory": {
+    "runId": "07834a3b-3b6e-4b0c-92da-90e467aebba6",
+    "reachable": true,
+    "ok": true,
+    "chainsOk": true,
+    "emittersOk": true,
+    "sessions": 1,
+    "events": 51
+  },
+  "flush": {
+    "status": 0,
+    "stderr": ""
+  }
+}
