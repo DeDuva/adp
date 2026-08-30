@@ -145,7 +145,7 @@ find the same text rather than a second, drifting copy.
 | `bench/` | benchmark arms, runs, and the generated report |
 | `dc-runtime/` | the published site's client runtime. Builds `docs/html/support.js` and the React bundles beside it — all committed, because the site itself has no build step. `dc-runtime/test/` drives every published page in a real browser (`make site`) |
 | `spec/` | the published contract: `spec/openapi.yaml`, `spec/schemas/`, `spec/graphql/github.graphql` |
-| `scripts/dev/` | what the Makefile actually runs — `up`, `down`, `doctor`, `verify-clean` |
+| `scripts/dev/` | what the Makefile actually runs — `up`, `down`, `doctor`, `verify-clean`, and `local` (a persistent local instance with a certificate `gh` will accept, #158) |
 | `deploy/`, `infra/` | production compose stack; Terraform for the GCP dev box |
 | `helm/adp/` | the self-host chart (M4-12). `make helm` lints it, renders every branch, and asserts the combinations it must *refuse* still refuse — `scripts/dev/helm-check.sh` |
 
@@ -245,6 +245,13 @@ own directory, ignored by default, and never the place a project rule is written
 
 ## Gotchas
 
+- **There are three compose files and they are not interchangeable.**
+  `deploy/docker-compose.yml` is the production stack, `docker-compose.test.yml` is the
+  ephemeral one `make up` uses, and `docker-compose.local.yml` (#158) is the middle case:
+  Postgres on a *named volume* and a fixed port, for an instance you come back to. Its
+  project name is `adp-local`, deliberately outside `verify-clean.sh`'s `adp-test-*` sweep —
+  it is not leaked state, it is state someone asked to keep. `make local-destroy` is the
+  only thing that deletes it.
 - **Never use `deploy/docker-compose.yml` for local dev or test.** It is the production
   stack: `restart: unless-stopped` containers resurrect themselves, bind fixed ports, and
   collide across worktrees on the shared project name `deploy`. `deploy-server-1` in

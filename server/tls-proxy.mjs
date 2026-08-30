@@ -1,8 +1,19 @@
 // `gh` refuses plain HTTP for any non-github.com host — no override exists.
-// This is a bare TLS-terminating reverse proxy in front of the plain-HTTP
-// ADP server, purely so the real `gh` binary (conformance/run.sh) has
-// something it will talk to. Not a production concern: real deployments
-// terminate TLS at Caddy (deploy/Caddyfile), same idea, different tool.
+// This is a bare TLS-terminating reverse proxy in front of the plain-HTTP ADP
+// server, so that the real `gh` binary has something it will talk to.
+//
+// #158 moved it out of `conformance/`. It was a test fixture there, used by
+// three harnesses, and a person setting up a *persistent* local instance got
+// none of it — which made "the fiddliest part of the walkthrough", in the
+// manual test plan's own words, something the repo had already solved four
+// times and shipped zero times. `scripts/dev/local.sh` is the supported mode
+// it now backs, and a supported mode must not depend on a file that lives in
+// a test tier.
+//
+// Still not a production TLS story, and `docs/self-hosting.md` says so where
+// it matters: a real deployment terminates at Caddy with a real certificate
+// (deploy/Caddyfile). This is for evaluation and development, where the
+// hostname is `localhost` and no CA will ever issue for it.
 import https from "node:https";
 import http from "node:http";
 import fs from "node:fs";

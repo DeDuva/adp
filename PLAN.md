@@ -42,19 +42,27 @@ that a human is supplying is a defect. Each item below moves exactly one.
 No new services and no new concepts. Exit criterion: a commit pushed by a plain `git push`, from
 any harness, resolves to its intent, and the evidence bundle names that intent by title.
 
+**Half of that criterion holds now, and the other half is the only thing left in this release.** A
+commit pushed by a plain `git push` resolves to its intent; the evidence bundle names that intent
+by *id* rather than by title. Every item this section originally tracked has shipped, so what
+remains is the criterion itself — which was nobody's issue until the six that closed left it
+standing alone.
+
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 1-6 | Local TLS as a supported mode rather than a test fixture | #158 | not started. `gh` refuses plain HTTP for any other host, and `server/acceptance/run.sh` already solves this for tests alone |
+| 1-18 | The evidence bundle names the intent by title, not only by id | #189 | not started. `getEvidenceBundle` returns `intent_id` and nothing else about the intent, so a reader holding the artifact the whole product points at cannot answer "what was this change for" without a second round trip against a route they have to already know exists |
 
-Items 1-1 through 1-5 are gone from this table on the same terms, because this file records what
-is left: 1-2 was commit trailers binding a pushed change to its intent, #142; 1-1 was the token
-mint carrying `harness`, `model` and `session_id`, #141, which makes the provenance block on a
-signed change name the harness that produced it; 1-3 was the second `changes` row the documented
-push-then-bind sequence used to leave behind, #143, which the database now refuses; 1-4 was the
-missing native-plane proposal tools, #144, for which an agent used to pay a raw `curl`; 1-5 was
-the refusal that named the unmet requirement and stopped one step short of the command that
-satisfies it, #145. Their numbers are not reused — the issues filed against this phase cite these
-numbers, and a recycled 1-2 would point two of them at different work.
+The six that shipped are gone from this table, because this file records what is left. For the
+record of which number was which: 1-1 was the token mint carrying `harness`, `model` and
+`session_id`, #141, which makes the provenance block on a signed change name the harness that
+produced it; 1-2 was commit trailers binding a pushed change to its intent, #142; 1-3 was the
+second `changes` row the documented push-then-bind sequence used to leave behind, #143, which the
+database now refuses; 1-4 was the missing native-plane proposal tools, #144, for which an agent
+used to pay a raw `curl`; 1-5 was the refusal that named the unmet requirement and stopped one
+step short of the command that satisfies it, #145; 1-6 was local TLS, #158, which lived only
+inside the acceptance script and is `make local` now. Their numbers are not reused — the issues
+filed against this phase cite these numbers, and a recycled 1-2 would point two of them at
+different work.
 
 1-5's suggested remedy for `one_approval` is `gh pr review --approve`, which became honest advice
 only when 2-1 shipped: before it, a developer evaluating ADP alone was both author and approver, so

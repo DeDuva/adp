@@ -17,7 +17,7 @@ system that hosts git repositories and executes other people's code has none.
 | **server** | yes | The Fastify process: git wire protocol, `/api/v3`, `/api/graphql`, `/api/adp`, and the supervision UI at `/ui/` |
 | **Postgres** | yes | Every record that is not a git object. The chart bundles one for evaluation; real deployments point at a managed instance |
 | **git storage** | yes | Bare repositories on a filesystem. This is the instance's primary data |
-| **ingress / TLS** | in practice | `gh` refuses plain HTTP for any host but github.com, so the GitHub-compatible surface needs a real certificate |
+| **ingress / TLS** | in practice | `gh` refuses plain HTTP for any host but github.com, so the GitHub-compatible surface needs a real certificate. On a laptop, §3b gets you a self-signed one and a proxy in front of it |
 | **gate runner** | no | Executes `adp.yaml` gates in isolated containers. Off by default; see §4 |
 
 Two properties are worth knowing before you start, because both are products of the design rather
@@ -105,6 +105,56 @@ Two notes carried over from the rest of the repo. `deploy/docker-compose.yml` is
 stack and must never be used for local development (`AGENTS.md` explains what breaks). And the
 server's port is published on `127.0.0.1` only, so the Ops Agent can scrape `/metrics` without
 exposing it to the internet — [`docs/observability.md`](observability.md) §2.
+
+---
+
+## 3b. A local instance, for evaluation
+
+Neither path above is what you want on a laptop, and until #158 there was nothing that was.
+`make demo` is ephemeral by design and correct to be — five narrated minutes that install nothing
+and leave nothing — but a visitor who liked it had nowhere to go except the Helm chart.
+
+```bash
+make local
+```
+
+That brings up Postgres on a named volume, the server from source, and a TLS proxy in front of it
+with a self-signed certificate for `localhost`, then prints the token, the URL, and how to trust
+the certificate. `make local-down` stops it and keeps the data; `make local` brings it back with
+the same keys, the same certificate and the same token. `make local-destroy` is the only thing
+that deletes anything.
+
+**The certificate is the reason this exists.** `gh` refuses plain HTTP for any host but
+github.com, and no override exists — so the GitHub-compatible plane, which is the whole point of
+the compat surface, cannot be exercised against a local instance without one. The machinery had
+been written three times (acceptance, conformance, `make demo`) and shipped zero times, because
+all three were test fixtures.
+
+Trusting it takes one of two forms, and the script prints both for your platform:
+
+```bash
+# per-tool, no root — enough for gh, git and curl
+export SSL_CERT_FILE=$PWD/.adp-local/tls/cert.pem
+export GIT_SSL_CAINFO=$PWD/.adp-local/tls/cert.pem
+
+# or machine-wide, so browsers accept it too (Debian/Ubuntu)
+sudo cp .adp-local/tls/cert.pem /usr/local/share/ca-certificates/adp-local.crt && sudo update-ca-certificates
+```
+
+**This is not a production TLS story and must not be read as one.** The certificate is self-signed
+for `localhost`, because no CA will ever issue for `localhost`. The server runs from source under
+your own user, there is no ingress, no backup, and no second replica. §2 and §3 are the real
+deployments; this is a convenience for evaluation and development, and deploying it is not a
+supported configuration.
+
+One thing it shares with a real deployment, and the reason it is worth calling out: **the signing
+key is minted once and kept**. It is what every signature in that instance's history verifies
+against, so an instance that rotated it on each restart would silently orphan every change already
+landed on it. `.adp-local/env` holds it, mode 600, and is gitignored.
+
+`scripts/dev/local-smoke.sh` drives the whole thing in CI — up, a landed and evidenced change
+through real `gh`, a stop, a restart, and the evidence read back from the restarted instance —
+because a supported mode nobody runs is a supported mode that rots.
 
 ---
 
