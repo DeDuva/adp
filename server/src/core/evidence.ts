@@ -1,12 +1,29 @@
 import { and, asc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { changes, gateResults } from "../db/schema.js";
+import { changes, gateResults, intents } from "../db/schema.js";
 
 export interface EvidenceBundle {
   git_sha: string;
   change: {
     id: string;
     intent_id: string | null;
+    /**
+     * #189: the intent itself, not only its id — the unmet half of PLAN.md
+     * 1a's exit criterion ("the evidence bundle names that intent by title").
+     * A reader holding the artifact the whole product points at could not
+     * answer "what was this change for" without a second round trip against a
+     * route they had to already know existed.
+     *
+     * Title, deliberately not body. An evidence bundle is read to answer why
+     * a line exists, and a title answers that; the body is the intent's own
+     * record, belongs behind its own read where it can be paginated, and
+     * would inflate every bundle for a question most readers are not asking.
+     *
+     * Null when the change is unbound — which is an ordinary state, not an
+     * error: a commit pushed without an intent trailer and never bound
+     * afterwards has no intent to name.
+     */
+    intent: { id: string; title: string } | null;
     provenance: unknown;
     signature: string;
     created_at: string;
@@ -39,6 +56,14 @@ export async function getEvidenceBundle(db: Db, repoId: string, gitSha: string):
     .orderBy(asc(changes.createdAt), asc(changes.id))
     .limit(1);
 
+  // One extra query, and only when there is something to look up. Joining it
+  // into the select above would mean a left join on the hot path for a field
+  // that is null whenever the change is unbound, which is the common shape on
+  // a repo that does not use trailers.
+  const [intent] = change?.intentId
+    ? await db.select({ id: intents.id, title: intents.title }).from(intents).where(eq(intents.id, change.intentId))
+    : [];
+
   const gateRows = await db
     .select()
     .from(gateResults)
@@ -50,6 +75,7 @@ export async function getEvidenceBundle(db: Db, repoId: string, gitSha: string):
       ? {
           id: change.id,
           intent_id: change.intentId,
+          intent: intent ?? null,
           provenance: change.provenance,
           signature: change.signature,
           created_at: change.createdAt.toISOString(),

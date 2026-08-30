@@ -197,14 +197,53 @@ describe.skipIf(skipWithoutDb)("#143: one change row per sha, and a deterministi
   // two rows for the sha, one bound and one not, the unordered read could
   // legitimately return either — so the bundle either showed the intent or
   // did not, and nothing in the code said which.
-  it("the evidence bundle names that intent, deterministically", async () => {
+  it("the evidence bundle names that intent, deterministically and by title", async () => {
     const [row] = await rowsForSha();
     const bundle = await api(`/api/adp/repos/${owner}/${repoName}/evidence/${sha}`);
     expect(bundle.status).toBe(200);
-    const change = bundle.body!.change as { id: string; intent_id: string | null };
+    const change = bundle.body!.change as {
+      id: string;
+      intent_id: string | null;
+      intent: { id: string; title: string } | null;
+    };
     expect(change.id).toBe(row!.id);
     expect(change.intent_id).toBe(row!.intentId);
     expect(change.intent_id).not.toBeNull();
+
+    // #189: by title, which is the half of 1a's exit criterion an id never
+    // satisfied. "bind me" is the issue this sha was bound to above.
+    expect(change.intent).toEqual({ id: row!.intentId, title: "bind me" });
+  });
+
+  // Unbound is an ordinary state, not an error: a commit pushed with no intent
+  // trailer and never bound afterwards has no intent to name, and the bundle
+  // says so rather than omitting the field or inventing one.
+  it("an unbound change's bundle carries a null intent rather than no answer", async () => {
+    const repoPath = new GitBackend(gitRoot).repoPath(owner, repoName);
+    const git = (args: string[]) =>
+      execFileAsync("git", ["-C", repoPath, ...args], {
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "Test",
+          GIT_AUTHOR_EMAIL: "test@example.com",
+          GIT_COMMITTER_NAME: "Test",
+          GIT_COMMITTER_EMAIL: "test@example.com",
+        },
+      });
+    const { stdout: tree } = await git(["hash-object", "-w", "-t", "tree", "/dev/null"]);
+    const { stdout: commit } = await git(["commit-tree", tree.trim(), "-m", "unbound"]);
+    const unbound = commit.trim();
+
+    const created = await api(`/api/v3/repos/${owner}/${repoName}/changes`, {
+      method: "POST",
+      body: JSON.stringify({ git_sha: unbound }),
+    });
+    expect(created.status).toBe(201);
+
+    const bundle = await api(`/api/adp/repos/${owner}/${repoName}/evidence/${unbound}`);
+    const change = bundle.body!.change as { intent_id: string | null; intent: unknown };
+    expect(change.intent_id).toBeNull();
+    expect(change.intent).toBeNull();
   });
 
   it("re-posting the same binding is a no-op success, not a second row", async () => {
