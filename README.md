@@ -36,6 +36,18 @@ log that record why.
 
 Needs Docker and Node 22 (`make doctor` checks). Under five minutes.
 
+Liked it and want one that is still there tomorrow?
+
+```bash
+make local     # then make local-down / make local-destroy
+```
+
+Same server, same proxy, longer lifetime: Postgres on a named volume, a self-signed certificate for
+`localhost` written where you can add it to your trust store, and the token printed. `gh` will talk
+to it, which plain HTTP never allows for a non-github.com host. It is for evaluation and
+development, not a deployment — [`docs/self-hosting.md`](docs/self-hosting.md) §3b says exactly
+where that line is.
+
 <details>
 <summary>Or run the full verification suite</summary>
 
@@ -49,7 +61,7 @@ make up && make test-all && make down
 ```
 </details>
 
-For a persistent instance, see [`docs/self-hosting.md`](docs/self-hosting.md); to run from source,
+For a real deployment, see [`docs/self-hosting.md`](docs/self-hosting.md); to run from source,
 [Running it](#running-it).
 
 ---
@@ -227,7 +239,8 @@ data here. The `issue create/view` and `pr create/view/merge` paths are driven b
 | Command | Status | Notes |
 |---|---|---|
 | `gh auth status` | Functional | |
-| `gh repo view` / `clone` / `create` | Functional | |
+| `gh repo view` / `clone` | Functional | |
+| `gh repo create` | Not supported | it resolves the owner through `GET /api/v3/users/{owner}` before creating, and that route is not served. Create repositories with `POST /api/v3/repos/{owner}` — which is what the walkthrough, `make demo` and every harness here do |
 | `gh issue create` / `list` / `view` / `close` | Functional | |
 | `gh issue comment` | Functional | |
 | `gh pr create` / `list` / `view [--json]` | Functional | |

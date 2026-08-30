@@ -74,8 +74,11 @@ export GH_ENTERPRISE_TOKEN=<token>
 *Expect:* `gh auth status` reports the host.
 
 > `gh` refuses plain HTTP for any non-`github.com` host, so a local run needs TLS in front of the
-> server. `acceptance/run.sh` mints a throwaway self-signed cert and runs a proxy for exactly this
-> reason; by hand, that is the fiddliest part of the walkthrough.
+> server. This used to be the fiddliest part of the walkthrough by hand, and the machinery to solve
+> it existed only inside `acceptance/run.sh`. Since #158 it is a supported mode: `make local` mints
+> a long-lived self-signed certificate for `localhost`, runs the proxy, prints the token and tells
+> you how to add the certificate to your trust store. `.adp-local/env` carries `GH_HOST`,
+> `GH_ENTERPRISE_TOKEN` and `SSL_CERT_FILE` ready to source.
 
 **B2. Clone.**
 

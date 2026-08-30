@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner helm dc-runtime site land
+.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner helm dc-runtime site land local local-status local-down local-destroy
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -168,6 +168,18 @@ check-release: ## Assert the version surfaces agree: spec, chart, packages, CHAN
 
 demo: ## The test drive: land a change and read its signed evidence, then tear down
 	@bash scripts/dev/demo.sh
+
+local: ## A persistent local instance with a certificate gh will accept
+	@bash scripts/dev/local.sh up
+
+local-status: ## Is the local instance up, and on what
+	@bash scripts/dev/local.sh status
+
+local-down: ## Stop the local instance, keeping its data
+	@bash scripts/dev/local.sh down
+
+local-destroy: ## Stop the local instance and delete its data
+	@bash scripts/dev/local.sh destroy
 
 check-branch: ## Assert the current branch is named feat/, fix/ or docs/ (no-op on main)
 	@bash scripts/dev/check-branch.sh

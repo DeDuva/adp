@@ -16,6 +16,73 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**A persistent local instance, with a certificate `gh` will accept (#158).**
+`gh` refuses plain HTTP for any host but github.com and no override exists, so
+the GitHub-compatible plane — the whole point of the compat surface — could
+not be exercised against a local instance without a real certificate. The
+manual test plan called doing that by hand "the fiddliest part of the
+walkthrough".
+
+The machinery already existed, three times over: the acceptance suite,
+the conformance run and `make demo` each mint a throwaway certificate and run
+a proxy in front of the server, with port selection below the kernel's
+ephemeral floor and log-line readiness rather than port probes — both of which
+exist because something failed in a way that cost a debugging session. All
+three were test fixtures. A person setting up an instance they could come back
+to got none of it.
+
+```bash
+make local            # up, idempotent, prints how to reach it
+make local-down       # stop, keep the data
+make local-destroy    # stop and delete the data
+```
+
+It brings up Postgres on a named volume, the server from source, and the TLS
+proxy, then prints the token, the URL, and the trust-store command for the
+platform it is running on — per-tool (`SSL_CERT_FILE`, no root) and
+machine-wide, including the extra import a browser on the Windows side of WSL
+needs. `.adp-local/env` carries `GH_HOST`, `GH_ENTERPRISE_TOKEN` and
+`SSL_CERT_FILE` ready to source, at mode 600 and gitignored.
+
+**The demo/instance split is the point.** `make demo` is ephemeral by design
+and correct to be; the gap was that a visitor who liked it had nowhere to go
+but the Helm chart. This is the same server, the same proxy and the same
+bootstrap with a longer lifetime, rather than a separate code path with
+different affordances. Three things follow from "persistent" rather than being
+decoration on it: the ports are fixed, because `PUBLIC_URL` is part of the
+signed record rather than a display string; the certificate is good for 825
+days rather than one; and **the signing key is minted once and kept**, because
+it is what every signature in that instance's history verifies against and an
+instance that rotated it per restart would silently orphan every change
+already landed on it.
+
+`deploy/docker-compose.local.yml` is a third compose file and the middle case
+between the two that existed: a named volume and a fixed port, unlike the
+ephemeral test stack, with no server image and no `restart:` policy, unlike
+the production one. Its project name sits deliberately outside
+`verify-clean.sh`'s `adp-test-*` sweep — it is not leaked state, it is state
+someone asked to keep. `server/tls-proxy.mjs` moved out of `conformance/` for
+the same reason: a supported mode must not depend on a file that lives in a
+test tier.
+
+**Not a production TLS story**, and `docs/self-hosting.md` §3b says where the
+line is rather than blurring into it. Self-signed for `localhost`, because no
+CA will ever issue for `localhost`; server from source under your own user; no
+ingress, no backup, no second replica.
+
+`scripts/dev/local-smoke.sh` drives all of it in CI on every push — up, `gh`
+reaching it over TLS, a refused merge, a gate, a landed change, a stop, a
+restart, and the evidence bundle read back from the restarted instance. The
+restart is the assertion that matters: a supported mode nobody runs is a
+supported mode that rots, and "the data is still there" is exactly the
+property a script can lose silently.
+
+**One thing this found:** `gh repo create` does not work against ADP and the
+README said it did. It resolves the owner through `GET /api/v3/users/{owner}`
+before creating, and that route is not served — which is why every harness
+here creates repositories with `POST /api/v3/repos/{owner}` instead. The
+compatibility table says so now.
+
 **The native plane can open, review and merge a proposal (#144).**
 `server/src/mcp/server.ts` registered 17 tools covering workspaces, the
 operation log, undo, evidence, candidate sets, sessions, checkpoints,

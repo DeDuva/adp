@@ -1,0 +1,56 @@
+# Postgres for a *persistent* local instance — `scripts/dev/local.sh`, `make local`.
+#
+# There were two compose files here and neither fits this case, which is the
+# gap #158 is about.
+#
+#   docker-compose.yml       a deployment. Builds and runs a server image,
+#                            binds well-known ports, restarts itself, fetches a
+#                            real Let's Encrypt certificate for a real DNS
+#                            name. AGENTS.md forbids it for local use and is
+#                            right to: a stale `deploy-server-1` resurrecting
+#                            itself turns a route that provably exists into a
+#                            phantom 404.
+#   docker-compose.test.yml  the inverse, on purpose: tmpfs PGDATA, no restart,
+#                            ephemeral port, per-run project name. Nothing may
+#                            survive the run that created it.
+#
+# A local instance you can come back to tomorrow needs the middle: state that
+# survives, on a port that does not move, without a deployment's self-resurrecting
+# image or its DNS requirement. So:
+#
+#   - Postgres only, like the test stack. The server still runs from source, so
+#     it cannot go stale relative to the checkout — the failure mode that made
+#     the production stack unusable here in the first place.
+#   - A named volume, unlike the test stack. That is the whole point: `make
+#     local-down` stops the instance and the data is still there.
+#   - A fixed host port, because `PUBLIC_URL` is part of the signed record
+#     (docs/self-hosting.md §1) and an instance whose URL moves on every restart
+#     is not persistent in the way that matters. Overridable via
+#     ADP_LOCAL_PG_PORT for a machine that already has 5432 or 5433 in use.
+#   - `restart: unless-stopped` is deliberately ABSENT. A local instance should
+#     come back when you ask for it, not when Docker feels like it.
+#   - Its own project name, so verify-clean.sh's adp-test-* sweep does not
+#     consider it leaked state — it isn't; it is state you asked to keep.
+name: adp-local
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: adp
+      POSTGRES_PASSWORD: adp
+      POSTGRES_DB: adp
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${ADP_LOCAL_PG_PORT:-5434}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adp -d adp"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+      start_period: 2s
+
+volumes:
+  pgdata:

@@ -318,6 +318,32 @@ jobs:
         if: always()
         run: bash scripts/dev/verify-clean.sh
 
+  # #158 made a persistent local instance a supported mode rather than a test
+  # fixture, and a supported mode nobody runs is a supported mode that rots.
+  # Its own job rather than part of `make check`: it binds fixed ports and a
+  # named docker volume, so it would collide with a developer's own local
+  # instance and with a second worktree running the suite. Same bargain the
+  # `demo` job strikes.
+  local-instance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci --prefix server
+      - run: bash scripts/dev/local-smoke.sh
+      # The smoke script destroys its own instance on every exit path. If it
+      # can leak a container, a named volume or a daemon, so can every laptop
+      # that runs `make local`.
+      - name: nothing leaked
+        if: always()
+        run: |
+          bash scripts/dev/local.sh destroy >/dev/null 2>&1 || true
+          bash scripts/dev/verify-clean.sh
+
   # AGENTS.md §Branches names three prefixes and the reason this is a check rather than
   # a note: a web agent session names its branch after the harness before the agent has
   # read the file that would have told it not to. 24 of the last 30 PRs held the

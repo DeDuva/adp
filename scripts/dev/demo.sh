@@ -147,7 +147,7 @@ ok "ADP serving on :$PORT"
 # in front of the server with a throwaway self-signed cert.
 openssl req -x509 -newkey rsa:2048 -keyout "$WORKDIR/key.pem" -out "$WORKDIR/cert.pem" \
   -days 1 -nodes -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost" >/dev/null 2>&1
-( cd server && node conformance/tls-proxy.mjs "$WORKDIR/cert.pem" "$WORKDIR/key.pem" "$TLS_PORT" "$PORT" ) \
+( cd server && node tls-proxy.mjs "$WORKDIR/cert.pem" "$WORKDIR/key.pem" "$TLS_PORT" "$PORT" ) \
   >"$WORKDIR/tls-proxy.log" 2>&1 &
 PROXY_PID=$!
 # Wait for the proxy's own startup line rather than probing the port: the line

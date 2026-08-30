@@ -46,3 +46,9 @@ deploy/.env
 *.tfvars
 !*.tfvars.example
 crash.log
+
+# A persistent local instance — scripts/dev/local.sh. Holds this instance's
+# signing key, its first token, its self-signed certificate and its git root.
+# All four are per-machine secrets or per-machine state; none of them is an
+# input to anyone else's checkout.
+.adp-local/

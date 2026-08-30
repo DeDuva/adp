@@ -147,7 +147,7 @@ fi
 # `gh` refuses plain HTTP for any non-github.com host (B1 in the manual plan).
 openssl req -x509 -newkey rsa:2048 -keyout "$WORKDIR/key.pem" -out "$WORKDIR/cert.pem" \
   -days 1 -nodes -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost" >/dev/null 2>&1
-node conformance/tls-proxy.mjs "$WORKDIR/cert.pem" "$WORKDIR/key.pem" "$TLS_PORT" "$PORT" \
+node tls-proxy.mjs "$WORKDIR/cert.pem" "$WORKDIR/key.pem" "$TLS_PORT" "$PORT" \
   > "$WORKDIR/tls-proxy.log" 2>&1 &
 PROXY_PID=$!
 # This `pass` used to be printed the instant the process was backgrounded,
