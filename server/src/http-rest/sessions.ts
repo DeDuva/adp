@@ -8,6 +8,11 @@ import { requireScope } from "../auth/plugin.js";
 import { findRepoAuthorized } from "../core/repos-lookup.js";
 import { checkStorageQuota, storageQuotaMessage } from "../core/storage-usage.js";
 import {
+  checkCheckpointState,
+  checkEventPayloads,
+  INGEST_BODY_LIMIT_BYTES,
+} from "../core/payload-limits.js";
+import {
   appendEvents,
   listEvents,
   serializeEvent,
@@ -196,12 +201,23 @@ export function registerSessionRoutes(
 
   app.post(
     "/api/adp/repos/:owner/:repo/sessions/:id/checkpoints",
-    { preHandler: requireScope("repo:write") },
+    // #146: above Fastify's 1 MiB default so the typed refusal below is what a
+    // producer meets, rather than a bare 413 from the transport naming nothing.
+    { preHandler: requireScope("repo:write"), bodyLimit: INGEST_BODY_LIMIT_BYTES },
     async (req, reply) => {
       const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
       const parsed = CheckpointBody.safeParse(req.body);
       if (!parsed.success) {
         reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
+        return;
+      }
+      // #146: before the quota read and before anything is written. Refused,
+      // not truncated — a truncated payload that is still hash-chained is
+      // worse than a rejected one, because it is a durable record that looks
+      // complete.
+      const stateSize = checkCheckpointState(parsed.data.state);
+      if (!stateSize.ok) {
+        reply.code(422).send({ message: "Validation failed", errors: stateSize.errors });
         return;
       }
       const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
@@ -332,12 +348,22 @@ export function registerSessionRoutes(
   // handoff, commit, and test result, hash-chained in order (core/trajectory.ts).
   app.post(
     "/api/adp/repos/:owner/:repo/sessions/:id/events",
-    { preHandler: requireScope("repo:write") },
+    // #146: see the checkpoint route — the typed refusal has to be reachable.
+    { preHandler: requireScope("repo:write"), bodyLimit: INGEST_BODY_LIMIT_BYTES },
     async (req, reply) => {
       const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
       const parsed = AppendEventsBody.safeParse(req.body);
       if (!parsed.success) {
         reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
+        return;
+      }
+      // #146: the batch is checked as a batch and refused as a batch, before
+      // any of it is chained — appendEvents is all-or-nothing by design, and a
+      // refusal that let the earlier events through would leave a chain the
+      // producer cannot reason about.
+      const payloadSize = checkEventPayloads(parsed.data.events);
+      if (!payloadSize.ok) {
+        reply.code(422).send({ message: "Validation failed", errors: payloadSize.errors });
         return;
       }
       const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);

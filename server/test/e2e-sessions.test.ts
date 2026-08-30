@@ -16,6 +16,11 @@ import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { Signer } from "../src/core/signing.js";
 import { findRepo } from "../src/core/repos-lookup.js";
+import {
+  MAX_BATCH_PAYLOAD_BYTES,
+  MAX_CHECKPOINT_STATE_BYTES,
+  MAX_EVENT_PAYLOAD_BYTES,
+} from "../src/core/payload-limits.js";
 import { verifyChain } from "../src/core/trajectory.js";
 import { verifyEnvelope, decodeStatement, type DsseEnvelope } from "../src/core/dsse.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
@@ -389,5 +394,104 @@ describe.skipIf(skipWithoutDb)("M3: cross-harness checkpoint and resume (D2)", (
     expect(rows[0]!.payload).toEqual({});
 
     expect((await verifyChain(db, sessionId)).ok).toBe(true);
+  }, 60_000);
+
+  // #146: the ceilings, through the real route. The unit tests
+  // (src/core/payload-limits.test.ts) cover the arithmetic; what this asserts
+  // is the thing a producer actually meets — a typed 422 it can act on, and a
+  // chain that was not touched on the way to it.
+  it("refuses an oversized event and leaves the chain untouched", async () => {
+    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code" }),
+    });
+    const sessionId = started.body.id as string;
+
+    // One legal event first, so there is a chain to leave alone.
+    const seeded = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/events`, {
+      method: "POST",
+      body: JSON.stringify({ events: [{ kind: "message", client_event_id: "evt-before" }] }),
+    });
+    expect(seeded.status).toBe(201);
+
+    const refused = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/events`, {
+      method: "POST",
+      body: JSON.stringify({
+        events: [
+          { kind: "message", client_event_id: "evt-fine" },
+          { kind: "message", client_event_id: "evt-huge", payload: { blob: "x".repeat(MAX_EVENT_PAYLOAD_BYTES + 1) } },
+        ],
+      }),
+    });
+    expect(refused.status).toBe(422);
+    const errors = refused.body.errors as { path: (string | number)[]; message: string; code: string }[];
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.path).toEqual(["events", 1, "payload"]);
+    expect(errors[0]!.message).toContain("evt-huge");
+    expect(errors[0]!.message).toContain(String(MAX_EVENT_PAYLOAD_BYTES));
+
+    // Refused as a *batch*: the legal event that shared the request is not
+    // there either. appendEvents is all-or-nothing, and a refusal that let the
+    // earlier events through would leave a chain the producer cannot reason
+    // about.
+    const stored = await db.select().from(sessionEvents).where(eq(sessionEvents.sessionId, sessionId));
+    expect(stored.map((r) => r.clientEventId)).toEqual(["evt-before"]);
+    expect((await verifyChain(db, sessionId)).ok).toBe(true);
+  }, 60_000);
+
+  // The transport used to answer first: Fastify's default 1 MiB body limit sat
+  // *below* the batch ceiling, so an oversized batch got a bare 413 naming
+  // nothing — the "discover the limit rather than respect it" failure the
+  // ceiling exists to remove.
+  it("answers an oversized batch with the typed refusal rather than a bare 413", async () => {
+    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code" }),
+    });
+    const sessionId = started.body.id as string;
+
+    // Individually legal, collectively over: the case only the batch ceiling
+    // catches, and the one that crosses Fastify's old limit on the way.
+    const each = MAX_EVENT_PAYLOAD_BYTES - 1024;
+    const count = Math.ceil(MAX_BATCH_PAYLOAD_BYTES / each) + 1;
+    const res = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/events`, {
+      method: "POST",
+      body: JSON.stringify({
+        events: Array.from({ length: count }, (_, i) => ({
+          kind: "message",
+          client_event_id: `evt-bulk-${i}`,
+          payload: { blob: "x".repeat(each) },
+        })),
+      }),
+    });
+
+    expect(res.status).toBe(422);
+    const errors = res.body.errors as { path: (string | number)[]; message: string }[];
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.path).toEqual(["events"]);
+    expect(errors[0]!.message).toContain(String(MAX_BATCH_PAYLOAD_BYTES));
+
+    const stored = await db.select().from(sessionEvents).where(eq(sessionEvents.sessionId, sessionId));
+    expect(stored).toHaveLength(0);
+  }, 60_000);
+
+  it("refuses an oversized checkpoint state, naming the limit", async () => {
+    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code" }),
+    });
+    const sessionId = started.body.id as string;
+    // Any commit the repo actually has; the ceiling is about the state blob,
+    // not the sha.
+    const sha = mainSha;
+
+    const res = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/checkpoints`, {
+      method: "POST",
+      body: JSON.stringify({ git_sha: sha, state: { blob: "x".repeat(MAX_CHECKPOINT_STATE_BYTES + 1) } }),
+    });
+    expect(res.status).toBe(422);
+    const errors = res.body.errors as { path: (string | number)[]; message: string }[];
+    expect(errors[0]!.path).toEqual(["state"]);
+    expect(errors[0]!.message).toContain(String(MAX_CHECKPOINT_STATE_BYTES));
   }, 60_000);
 });

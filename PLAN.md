@@ -191,8 +191,13 @@ events and found the first failures are cheap to fix and the expensive ones are 
 So the cheap fixes land first, then the measurement, then the architecture — in that order,
 because this project does not build on a model when it can build on a number.
 
-Item 3-1 — indexing `operations` for the queries actually run, #147 — shipped and is gone from
-this table. Its number is not reused, per the rule under 1a. Two findings are worth carrying. The
+Items 3-1 and 3-2 — indexing `operations` (#147) and bounding trajectory payloads (#146) — shipped
+and are gone from this table, which clears **every prerequisite of 1-7**: `adp-recorder` (#149) is
+unblocked, and 1b with it. 3-2 pinned the question the recorder will be built against: an oversized
+event is **refused**, not dropped and not accepted with its payload replaced by a digest. The
+digest option belongs to retention (3-6), where "verified, payload not retained" describes a
+payload that *was* accepted and later aged out; using the same state for something never accepted
+would make the one honest third verification state ambiguous exactly where it has to be precise. Its number is not reused, per the rule under 1a. Two findings are worth carrying. The
 fix the issue proposed for the audit export (two indexed reads unioned) was measured and *does not
 work*: Postgres will not turn `repo_id = ANY(…)` into an ordered scan, so a LATERAL that gives each
 repo its own walk is what replaced it. And the faster answer — carrying `org_id` on every operation,
@@ -210,7 +215,6 @@ popular. 3-4 moves for the same reason, one release later.
 
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
-| 3-2 | Bound trajectory payloads | #146 | not started. The last prerequisite of 1-7 | `payload` and `state` are both `z.unknown()`. Measured mean is 833 B/event, but nothing in the code prevents the 85 KB/turn the industry anchor suggests — a 20× range with no ceiling |
 | 3-3 | Make the SBOM deterministic so identical dependency sets dedup | #194 | not started | `randomUUID()` and a fresh timestamp per land make ~8 KB of every ~12 KB landed change un-dedupable and ~100% redundant. Pure win; needs no object store |
 | 3-4 | Stream or bound `verifyChain` | #152 | not started. Lands with 1c | It loads an entire session into memory, and `/runs/:id/verify` does `Promise.all` over every session at once, behind a plain `repo:read` token. Checkpoints already sign the chain head, so incremental verification is available and unused |
 | 3-5 | Bench arm 4 — `storage-growth` | #195 | not started | Deterministic, no model, no tokens, CI-runnable like arm 1: bytes per unit on a real Postgres, realised vs batched compression, dedup yield, ingest cliff, peak RSS on `/verify` |
