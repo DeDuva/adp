@@ -191,6 +191,16 @@ events and found the first failures are cheap to fix and the expensive ones are 
 So the cheap fixes land first, then the measurement, then the architecture — in that order,
 because this project does not build on a model when it can build on a number.
 
+Item 3-1 — indexing `operations` for the queries actually run, #147 — shipped and is gone from
+this table. Its number is not reused, per the rule under 1a. Two findings are worth carrying. The
+fix the issue proposed for the audit export (two indexed reads unioned) was measured and *does not
+work*: Postgres will not turn `repo_id = ANY(…)` into an ordered scan, so a LATERAL that gives each
+repo its own walk is what replaced it. And the faster answer — carrying `org_id` on every operation,
+which makes the export a single indexed read — was tried and **reverted**, because that column
+carries a foreign key and filling it everywhere puts a `FOR KEY SHARE` lock on one row per tenant
+into the write path of every change. The 50-way fan-out test deadlocked on it. `make measure-ops`
+reproduces all of it.
+
 **What changed on 2026-08-24:** 3-1 and 3-2 stopped being cheap fixes taken early and became
 *prerequisites*. Their urgency was correctly judged low while nothing wrote to these tables at
 volume; 1-7 is the thing that writes to them, and it is the first real load this schema has seen.
@@ -200,11 +210,10 @@ popular. 3-4 moves for the same reason, one release later.
 
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
-| 3-1 | Index `operations` for the queries actually run against it | #147 | not started. Prerequisite of 1-7 | One index (`repo_id`) exists while the history endpoint and the org audit export both filter and sort on `created_at`, `actor_id`, `verb` and `org_id`. The export's `OR(repoId …, orgId …)` cannot use it at all and buffers in memory |
-| 3-2 | Bound trajectory payloads | #146 | not started. Prerequisite of 1-7 | `payload` and `state` are both `z.unknown()`. Measured mean is 833 B/event, but nothing in the code prevents the 85 KB/turn the industry anchor suggests — a 20× range with no ceiling |
-| 3-3 | Make the SBOM deterministic so identical dependency sets dedup | — | not started | `randomUUID()` and a fresh timestamp per land make ~8 KB of every ~12 KB landed change un-dedupable and ~100% redundant. Pure win; needs no object store |
+| 3-2 | Bound trajectory payloads | #146 | not started. The last prerequisite of 1-7 | `payload` and `state` are both `z.unknown()`. Measured mean is 833 B/event, but nothing in the code prevents the 85 KB/turn the industry anchor suggests — a 20× range with no ceiling |
+| 3-3 | Make the SBOM deterministic so identical dependency sets dedup | #194 | not started | `randomUUID()` and a fresh timestamp per land make ~8 KB of every ~12 KB landed change un-dedupable and ~100% redundant. Pure win; needs no object store |
 | 3-4 | Stream or bound `verifyChain` | #152 | not started. Lands with 1c | It loads an entire session into memory, and `/runs/:id/verify` does `Promise.all` over every session at once, behind a plain `repo:read` token. Checkpoints already sign the chain head, so incremental verification is available and unused |
-| 3-5 | Bench arm 4 — `storage-growth` | — | not started | Deterministic, no model, no tokens, CI-runnable like arm 1: bytes per unit on a real Postgres, realised vs batched compression, dedup yield, ingest cliff, peak RSS on `/verify` |
+| 3-5 | Bench arm 4 — `storage-growth` | #195 | not started | Deterministic, no model, no tokens, CI-runnable like arm 1: bytes per unit on a real Postgres, realised vs batched compression, dedup yield, ingest cliff, peak RSS on `/verify` |
 | 3-6 | Retention and tiering as org policy | — | blocked on 3-5 | The intended shape — hot/extended tiers with promote-on-reference, attestations committing to digests never payloads, "verified, payload not retained" as an honest third verification state — is settled; the numbers that justify it come from 3-5. 1-16 covers the interval. The object-store half also waits on decision 2 |
 
 ---

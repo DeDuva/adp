@@ -6,7 +6,8 @@ import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
-import { identities, orgMemberships, orgs } from "../src/db/schema.js";
+import { identities, operations, orgMemberships, orgs, repos } from "../src/db/schema.js";
+import { eq } from "drizzle-orm";
 import { mintToken } from "../src/auth/tokens.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
@@ -34,7 +35,7 @@ describe.skipIf(skipWithoutDb)("M4-3: audit-log export", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     const text = await res.text();
-    return { status: res.status, text };
+    return { status: res.status, text, cursor: res.headers.get("adp-next-cursor") };
   }
 
   beforeAll(async () => {
@@ -127,6 +128,111 @@ describe.skipIf(skipWithoutDb)("M4-3: audit-log export", () => {
     const exported = res.text.trim().split("\n").map((l) => JSON.parse(l) as { id: string; target: string });
     expect(exported).toHaveLength(2);
     expect(new Set(exported.map((e) => e.target))).toEqual(new Set([`${orgName}/repo-a`, `${orgName}/repo-b`]));
+  });
+
+  // #147 replaced `repo_id IN (…) OR org_id = …` — which no index can serve —
+  // with a LATERAL that gives each of the org's repos its own indexed,
+  // limited scan, unioned with the org-level branch. The risk of that shape is
+  // an operation losing its way into the export, and there are two ways in, so
+  // this asserts both arrive and that filters are applied *inside* each branch
+  // rather than after the merge.
+  it("finds both repo-scoped and org-level operations, with filters applied per branch", async () => {
+    const [filterActor] = await db
+      .insert(identities)
+      .values({ kind: "agent", principal: `audit-branch-${Date.now()}` })
+      .returning();
+
+    // A repo-scoped operation, deliberately old, behind a wall of newer rows
+    // in the same repo. A branch that took its newest N and filtered
+    // afterwards would miss it — which is the bug the per-branch filter
+    // exists to prevent.
+    // Scoped to *this* org's repos — the suite shares a database with every
+    // other e2e file, so "any repo.create operation" is any test's repo.
+    const [orgRepo] = await db.select({ id: repos.id }).from(repos).where(eq(repos.orgId, orgId)).limit(1);
+    const someRepoId = orgRepo!.id;
+    await db.insert(operations).values({
+      repoId: someRepoId,
+      actorId: filterActor!.id,
+      verb: "audit.branch.repo",
+      target: "buried",
+      createdAt: new Date(Date.now() - 86_400_000),
+    });
+    await db.insert(operations).values(
+      Array.from({ length: 40 }, (_, i) => ({
+        repoId: someRepoId,
+        actorId: filterActor!.id,
+        verb: "audit.branch.noise",
+        target: `noise-${i}`,
+      })),
+    );
+
+    // And an org-level one, with no repo at all.
+    await db.insert(operations).values({
+      repoId: null,
+      orgId,
+      actorId: filterActor!.id,
+      verb: "audit.branch.org",
+      target: "org-level",
+    });
+
+    const both = await api(`/api/adp/orgs/${orgId}/audit-log?actor=${filterActor!.id}&limit=1000`, orgToken);
+    const verbs = both.text.trim().split("\n").map((l) => (JSON.parse(l) as { verb: string }).verb);
+    expect(verbs).toContain("audit.branch.repo");
+    expect(verbs).toContain("audit.branch.org");
+
+    // The buried row survives a narrow filter and a small page, which it only
+    // can if the verb predicate is inside the LATERAL rather than outside it.
+    const narrow = await api(`/api/adp/orgs/${orgId}/audit-log?verb=audit.branch.repo&limit=5`, orgToken);
+    const found = narrow.text.trim().split("\n").map((l) => JSON.parse(l) as { target: string });
+    expect(found).toHaveLength(1);
+    expect(found[0]!.target).toBe("buried");
+  });
+
+  // The export's page size is its own; `since`/`until` was the only way past
+  // it, and that is lossy across rows sharing a timestamp — which operations
+  // recorded in one transaction do.
+  it("pages with a keyset cursor, without repeating or skipping a row", async () => {
+    // Seeded here rather than relying on what earlier tests happened to
+    // leave behind — and seeded with **one shared timestamp**, because that
+    // is the case the cursor exists for. Operations written in a single
+    // transaction share `created_at` to the microsecond, so paging on the
+    // timestamp alone either repeats them or skips them; only the (created_at,
+    // id) pair is a total order.
+    const sharedInstant = new Date();
+    const [seedActor] = await db
+      .insert(identities)
+      .values({ kind: "agent", principal: `audit-pager-${Date.now()}` })
+      .returning();
+    await db.insert(operations).values(
+      Array.from({ length: 7 }, (_, i) => ({
+        repoId: null,
+        orgId,
+        actorId: seedActor!.id,
+        verb: "audit.pager.probe",
+        target: `probe-${i}`,
+        createdAt: sharedInstant,
+      })),
+    );
+
+    const all = await api(`/api/adp/orgs/${orgId}/audit-log?verb=audit.pager.probe&limit=1000`, orgToken);
+    const everything = all.text.trim().split("\n").map((l) => (JSON.parse(l) as { id: string }).id);
+    expect(everything).toHaveLength(7);
+
+    const paged: string[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < 50; page++) {
+      const qs: string = `/api/adp/orgs/${orgId}/audit-log?verb=audit.pager.probe&limit=2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+      const res = await api(qs, orgToken);
+      const ids = res.text.trim() ? res.text.trim().split("\n").map((l) => (JSON.parse(l) as { id: string }).id) : [];
+      paged.push(...ids);
+      cursor = res.cursor;
+      if (!cursor) break;
+    }
+
+    // Same rows, same order, no duplicates — the three ways keyset paging
+    // goes wrong.
+    expect(paged).toEqual(everything);
+    expect(new Set(paged).size).toBe(paged.length);
   });
 
   // #97: org administration writes are audited AND exported. The quota
