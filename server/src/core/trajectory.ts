@@ -36,6 +36,10 @@ export interface EventInput {
   // The emitter's own contiguous counter (see schema.ts). Optional, but
   // all-or-nothing within a batch.
   producerSeq?: number | null;
+  // #148: set by the ingest route from the secret detector, never by a
+  // producer. It travels with the event so the chain commits to it, and it is
+  // absent — not empty — on the ordinary event nothing fired on.
+  redactions?: { path: string; pattern: string }[] | null;
   occurredAt?: Date;
 }
 
@@ -85,6 +89,8 @@ export function eventHash(
     relatedSessionId: string | null;
     producerSeq?: number | null;
     producerId?: string | null;
+    // #148: present only on an event the secret detector actually touched.
+    redactions?: unknown;
     occurredAt: Date;
   },
 ): string {
@@ -110,6 +116,13 @@ export function eventHash(
           ? { producerSeq: event.producerSeq }
           : {}),
         ...(event.producerId !== null && event.producerId !== undefined ? { producerId: event.producerId } : {}),
+        // #148, on exactly the terms `producerSeq` set above: the key is
+        // omitted entirely when nothing was redacted, so every event written
+        // before this column existed hashes to what it always did. Included
+        // when it is set, because a redaction that the chain did not commit to
+        // could be edited away afterwards — and the whole point of recording
+        // one is that it survives.
+        ...(event.redactions !== null && event.redactions !== undefined ? { redactions: event.redactions } : {}),
         occurredAt: event.occurredAt.toISOString(),
       }),
       "utf8",
@@ -292,6 +305,9 @@ export async function appendEvents(
         // that was stored. No existing row is affected — the not-null
         // constraint means none of them has a null payload to re-hash.
         payload: (input.payload ?? {}) as object,
+        // Null rather than [] when nothing fired: `eventHash` keys off "is it
+        // set", and an empty array is set.
+        redactions: input.redactions && input.redactions.length > 0 ? input.redactions : null,
         status: input.status ?? null,
         model: input.model ?? null,
         tokensIn: input.tokensIn ?? null,
@@ -480,6 +496,11 @@ export function serializeEvent(row: SessionEventRow) {
     client_event_id: row.clientEventId,
     producer_seq: row.producerSeq,
     producer_id: row.producerId,
+    // #148: null on an event nothing fired on, which is most of them. Surfaced
+    // rather than kept server-side because a reader looking at a trajectory
+    // needs to know the difference between "the agent never saw a secret" and
+    // "the agent saw one and this is what is left of it".
+    redactions: row.redactions,
     occurred_at: row.occurredAt.toISOString(),
     hash: row.hash,
     prev_hash: row.prevHash,

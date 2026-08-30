@@ -475,6 +475,127 @@ describe.skipIf(skipWithoutDb)("M3: cross-harness checkpoint and resume (D2)", (
     expect(stored).toHaveLength(0);
   }, 60_000);
 
+  // #148: the Done-when, end to end. The unit tests cover the walker; this is
+  // the thing that has to be true of the stored record.
+  it("stores an event with its secret redacted, visibly, and the chain still verifies", async () => {
+    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code" }),
+    });
+    const sessionId = started.body.id as string;
+
+    // The exact shape push protection cannot see: a file the agent *read* and
+    // correctly declined to commit. It is in no diff, so nothing else in the
+    // system would ever look at it.
+    const awsKey = "AKIAABCDEFGHIJKLMNOP";
+    const res = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/events`, {
+      method: "POST",
+      body: JSON.stringify({
+        events: [
+          {
+            kind: "tool_call",
+            type: "read_file",
+            client_event_id: "evt-read-env",
+            payload: { path: ".env", output: `AWS_ACCESS_KEY_ID=${awsKey}\nDEBUG=true` },
+          },
+        ],
+      }),
+    });
+    expect(res.status).toBe(201);
+
+    const [row] = await db
+      .select()
+      .from(sessionEvents)
+      .where(and(eq(sessionEvents.sessionId, sessionId), eq(sessionEvents.clientEventId, "evt-read-env")));
+
+    // The secret is not in the durable record, and what replaced it says so.
+    const stored = JSON.stringify(row!.payload);
+    expect(stored).not.toContain(awsKey);
+    expect(stored).toContain("[redacted:aws-access-key-id]");
+    // Surgical, not destructive: the rest of the event is still worth reading.
+    expect((row!.payload as { path: string }).path).toBe(".env");
+    expect(stored).toContain("DEBUG=true");
+
+    // Recorded as a redaction, machine-readably, so a reader sees it happened
+    // without having to spot it in the text.
+    expect(row!.redactions).toEqual([{ path: "$.output", pattern: "aws-access-key-id" }]);
+
+    // And the chain commits to the redacted form — the redaction is part of
+    // what verifies, not an edit applied to a record that already vouched for
+    // the original.
+    expect((await verifyChain(db, sessionId)).ok).toBe(true);
+  }, 60_000);
+
+  it("leaves a clean event's redactions null, so old rows keep hashing as they did", async () => {
+    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code" }),
+    });
+    const sessionId = started.body.id as string;
+    await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/events`, {
+      method: "POST",
+      body: JSON.stringify({ events: [{ kind: "message", client_event_id: "evt-clean", payload: { text: "hello" } }] }),
+    });
+
+    const [row] = await db
+      .select()
+      .from(sessionEvents)
+      .where(and(eq(sessionEvents.sessionId, sessionId), eq(sessionEvents.clientEventId, "evt-clean")));
+    // Null, not []. `eventHash` keys off "is it set", so an empty array would
+    // change what every ordinary event hashes to.
+    expect(row!.redactions).toBeNull();
+    expect((await verifyChain(db, sessionId)).ok).toBe(true);
+  }, 60_000);
+
+  // The other half of the policy, and the reason `redact` is the default:
+  // refusing loses the trajectory, and a lost trajectory teaches a user to
+  // turn recording off. A deployment can opt into that trade; it does not get
+  // it by accident.
+  it("refuses the batch instead, when the repo's adp.yaml says to", async () => {
+    const strictRepo = "strict";
+    await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: strictRepo }) });
+
+    const seed = await mkdtemp(path.join(tmpdir(), "adp-e2e-sessions-strict-"));
+    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/${strictRepo}.git`;
+    await execFileAsync("git", ["clone", cloneUrl, seed]);
+    await execFileAsync("git", ["checkout", "-B", "main"], { cwd: seed });
+    await execFileAsync("git", ["config", "user.email", "seed@example.com"], { cwd: seed });
+    await execFileAsync("git", ["config", "user.name", "Seed"], { cwd: seed });
+    await writeFile(path.join(seed, "adp.yaml"), "trajectory:\n  on_secret: refuse\n");
+    await execFileAsync("git", ["add", "."], { cwd: seed });
+    await execFileAsync("git", ["commit", "-m", "strict trajectory policy"], { cwd: seed });
+    await execFileAsync("git", ["push", "origin", "main"], { cwd: seed });
+    await rm(seed, { recursive: true, force: true });
+
+    const started = await api(`/api/adp/repos/${owner}/${strictRepo}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code" }),
+    });
+    const sessionId = started.body.id as string;
+
+    const res = await api(`/api/adp/repos/${owner}/${strictRepo}/sessions/${sessionId}/events`, {
+      method: "POST",
+      body: JSON.stringify({
+        events: [
+          { kind: "message", client_event_id: "evt-ok", payload: { text: "fine" } },
+          { kind: "tool_call", client_event_id: "evt-leak", payload: { out: "AKIAABCDEFGHIJKLMNOP" } },
+        ],
+      }),
+    });
+    expect(res.status).toBe(422);
+    const errors = res.body.errors as { path: (string | number)[]; message: string; code: string }[];
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.code).toBe("secret_detected");
+    expect(errors[0]!.message).toContain("aws-access-key-id");
+    // Located in the batch the producer sent, so it can find what to fix.
+    expect(errors[0]!.path).toEqual(["events", 1, "out"]);
+
+    // Refused as a batch: the clean event that shared the request is not
+    // stored either, for the same reason #146's ceiling refuses as a batch.
+    const stored = await db.select().from(sessionEvents).where(eq(sessionEvents.sessionId, sessionId));
+    expect(stored).toHaveLength(0);
+  }, 120_000);
+
   it("refuses an oversized checkpoint state, naming the limit", async () => {
     const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
       method: "POST",

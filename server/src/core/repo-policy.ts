@@ -56,8 +56,25 @@ const RunnerPolicySchema = z.object({
 
 export type RunnerPolicy = z.infer<typeof RunnerPolicySchema>;
 
+// #148: what happens when the secret detector fires on a trajectory event.
+//
+// Defaults to `redact`, and that default is the decision rather than a
+// convenience. Refusing the batch loses the trajectory, and a lost trajectory
+// teaches a user to turn recording off — which costs the record everything and
+// costs the secret nothing, since it was already on their disk. Redaction
+// keeps the trajectory, removes the secret from the durable copy, and says so
+// where a reader will see it. `refuse` exists for the deployment that would
+// rather have the gap than the risk, and is opt-in because that is a trade
+// only they can price.
+const TrajectoryPolicySchema = z.object({
+  on_secret: z.enum(["redact", "refuse"]).default("redact"),
+});
+
+export type TrajectoryPolicy = z.infer<typeof TrajectoryPolicySchema>;
+
 const RepoPolicySchema = z.object({
   gates: z.array(z.string().min(1)).default([]),
+  trajectory: TrajectoryPolicySchema.default({}),
   land: z
     .object({
       require: z.array(LandRequirement).default([]),
@@ -70,14 +87,34 @@ const RepoPolicySchema = z.object({
 export interface RepoPolicy {
   gates: string[];
   land: { require: LandRequirement[]; statistical: StatisticalPolicy };
+  trajectory: TrajectoryPolicy;
   runner?: RunnerPolicy;
 }
 
 export const DEFAULT_STATISTICAL_POLICY: StatisticalPolicy = StatisticalPolicySchema.parse({});
 
+export const DEFAULT_TRAJECTORY_POLICY: TrajectoryPolicy = TrajectoryPolicySchema.parse({});
+
+// A malformed `adp.yaml` fails closed on land — every known requirement — for
+// the reason stated below: a broken policy file must not quietly stop
+// enforcing anything.
+//
+// #148: it does *not* fail closed to `refuse` on the trajectory side, and the
+// asymmetry is the point. Both modes remove the secret — `redact` stores the
+// event with the match replaced, `refuse` stores nothing — so there is no
+// safety to buy by failing closed here, only a trajectory to lose. Failing
+// closed is for a choice between "enforced" and "not enforced"; this is a
+// choice between two enforced outcomes.
+const MALFORMED_POLICY: RepoPolicy = {
+  gates: [],
+  land: { require: [...LandRequirement.options], statistical: DEFAULT_STATISTICAL_POLICY },
+  trajectory: DEFAULT_TRAJECTORY_POLICY,
+};
+
 export const EMPTY_POLICY: RepoPolicy = {
   gates: [],
   land: { require: [], statistical: DEFAULT_STATISTICAL_POLICY },
+  trajectory: DEFAULT_TRAJECTORY_POLICY,
 };
 
 // `adp.yaml` is optional — a repo with none just runs under the instance
@@ -99,12 +136,12 @@ export async function loadRepoPolicy(
   try {
     parsed = parseYaml(raw.toString("utf8"));
   } catch {
-    return { gates: [], land: { require: [...LandRequirement.options], statistical: DEFAULT_STATISTICAL_POLICY } };
+    return MALFORMED_POLICY;
   }
 
   const result = RepoPolicySchema.safeParse(parsed ?? {});
   if (!result.success) {
-    return { gates: [], land: { require: [...LandRequirement.options], statistical: DEFAULT_STATISTICAL_POLICY } };
+    return MALFORMED_POLICY;
   }
   return result.data;
 }

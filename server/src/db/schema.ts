@@ -566,6 +566,17 @@ export const sessionEvents = pgTable(
     // from incomplete.
     producerSeq: bigint("producer_seq", { mode: "number" }),
     producerId: text("producer_id"),
+    // #148: what the secret detector replaced in this event's payload, as
+    // `[{ path, pattern }]`. Null when nothing fired, which is the ordinary
+    // case and the reason it is null rather than an empty array — see
+    // core/trajectory.ts's eventHash for why an unset field must stay *absent*
+    // rather than become an explicit empty value.
+    //
+    // Recorded separately from the inline `[redacted:…]` marker on purpose: a
+    // reader should see that an event was redacted without having to notice it
+    // in the text, and a query for "which sessions hit the detector" should not
+    // be a full-text search over every payload in the corpus.
+    redactions: jsonb("redactions"),
     // When it happened, per the orchestrator, versus when ADP received it. Both,
     // because clock skew is real and neither answers the other's question.
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),

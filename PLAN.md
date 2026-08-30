@@ -74,8 +74,8 @@ with ADP absent.
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 1-7 | `adp-recorder` — a buffered, replay-safe event producer, out of band | #149 | not started. Blocked on 3-1, 3-2 and 1-8, in that order. A sibling to `runner/` on the same terms: a pure HTTP client, no server import, no signing key |
-| 1-8 | Secret detection at the trajectory ingest path | #148 | not started. Push protection scans the diff; a trajectory holds everything the agent *read*, including files no diff ever touched |
+| 1-7 | `adp-recorder` — a buffered, replay-safe event producer, out of band | #149 | not started. 3-1 (#147), 3-2 (#146) and 1-8 (#148) have all shipped, so the original chain is clear. One new blocker took their place: 1-19 below, which decides what a recorder records by default and is therefore what this is built against |
+| 1-19 | The trajectory payload default: structure by default, full payloads opt-in | #199 | not started, and the last thing between here and 1-7. Raised by 1-8 as a related decision and deliberately not bundled into it — #148 governs what a *detector* recognises, this governs what is stored when nothing is detected, which is the larger surface. Free to decide now because nothing writes to these tables yet; a migration and an apology once #149 has |
 | 1-9 | Harness readers, two to start, and named in the README | #150 | not started. Translation lives in the recorder, so the server keeps storing `harness` as a string it never branches on |
 | 1-10 | Session lifecycle driven by harness signals | #151 | not started. What turns 2-3 into a demonstration rather than a script that calls two endpoints |
 | 1-11 | `adp connect <harness>` | #154 | not started. Proves itself with a round trip rather than reporting success on having written files |

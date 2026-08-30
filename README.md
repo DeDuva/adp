@@ -130,6 +130,26 @@ Two mechanisms run at the point where code enters the system, both as real git h
   push at the wire with a typed error naming the line and pattern. Because `pre-receive` runs while
   pushed objects are still in git's per-push object quarantine, the hook computes its diff locally
   and ships the text to the server, rather than shipping shas the server cannot yet resolve.
+
+  **That guards the diff, and a trajectory is a different object.** It records what the agent
+  *read* — file contents pulled into context, environment inspected, tool output returned. A `.env`
+  the agent opened and correctly decided not to commit never appears in any diff, and would appear
+  verbatim in a `tool_call` payload. So the same scanner runs at the trajectory ingest path too,
+  before anything is hash-chained: a detected secret has its span replaced by a visible
+  `[redacted:<pattern>]` marker, the event records `redactions` naming where and what fired, and
+  the chain commits to the redacted form — so what verifies is what is stored, and a redaction can
+  never be edited away afterwards. It is the same engine in a second place, not a second engine.
+
+  Per repository, `adp.yaml` chooses what a detection does:
+
+  ```yaml
+  trajectory:
+    on_secret: redact   # the default; `refuse` rejects the whole batch instead
+  ```
+
+  `redact` is the default deliberately. Both modes keep the secret out of the database — `refuse`
+  additionally throws the trajectory away, and a lost trajectory teaches a user to turn recording
+  off, which costs the record everything and costs the secret nothing.
 - **`post-receive`** records a signed change per new commit, deduplicated by `(repo, sha)`. A
   commit that carries an `ADP-Intent` trailer — the intent's id, or the issue number as `#41` —
   is bound to that intent, and `ADP-Session` links it to a session; both are covered by the

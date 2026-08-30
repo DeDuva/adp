@@ -225,6 +225,13 @@
       "when": 1787682503334,
       "tag": "0031_fix_147_operations_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1787768903334,
+      "tag": "0032_feat_148_event_redactions",
+      "breakpoints": true
     }
   ]
 }

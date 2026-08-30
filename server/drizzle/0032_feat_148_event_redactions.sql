@@ -1,0 +1,20 @@
+-- #148: what the secret detector replaced in a trajectory event's payload.
+--
+-- Push protection guards the diff. A trajectory records what the agent *read*,
+-- so a `.env` it opened and correctly declined to commit never reaches any
+-- diff and would land verbatim in a `tool_call` payload. The detector runs at
+-- this ingest path now, and a redaction is recorded as a redaction: the
+-- payload carries a visible `[redacted:<pattern>]` marker where the secret
+-- was, and this column carries the machine-readable `[{ path, pattern }]`
+-- beside it.
+--
+-- Two facts rather than one duplicated: a reader should see that an event was
+-- redacted without having to spot it in the text, and "which sessions hit the
+-- detector" should not be a full-text search over every payload in the corpus.
+--
+-- Nullable, and left null when nothing fired. That is load-bearing for the
+-- chain: `eventHash` includes this key only when set, exactly as it does for
+-- `producer_seq`, so every row written before this column existed hashes to
+-- what it always did and `verifyChain` does not report the whole corpus as
+-- tampered. No backfill, for the same reason.
+ALTER TABLE "session_events" ADD COLUMN IF NOT EXISTS "redactions" jsonb;
