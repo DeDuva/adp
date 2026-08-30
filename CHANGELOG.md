@@ -16,6 +16,69 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**A trajectory stores a payload's structure by default; full payloads are
+opt-in per repository (#199).** #148 put the secret detector at this ingest
+path, and that is a real reduction in blast radius — but a detector removes
+what it *recognises*. This governs the larger surface: source no pattern
+covers, customer data in a tool result, a prompt a human typed. Ambient capture
+(#149) is what makes every connected session a producer of it, by default,
+without anyone asking — so the default had to be decided before the recorder is
+built against it. Decided now it is free, because nothing writes to these
+tables yet; decided after #149 it is a migration and an apology, owed to
+exactly the early adopters whose first trajectories were taken under the wrong
+default.
+
+**Structure means the shape, not a stub.** Under `trajectory.payloads:
+structure` the stored payload keeps its objects, its arrays, its keys, its
+numbers and booleans, and each string becomes `[adp:str bytes=N]` — the length
+in UTF-8 bytes, which is the unit #146's ceilings already speak and the only
+one a verifier that is not JavaScript reproduces. Everything that answers *what
+did the agent do* is a typed column and is untouched: the kind, the tool name
+in `type`, the outcome, the model, the token counts, the duration, the commit
+sha, the handoff edge. A reader sees a `read_file` that returned 14 KB from
+`$.output` and succeeded in 12 ms. They do not see the file.
+
+**`payload_digest` is the commitment, and the chain covers it.** sha256 of the
+canonical JSON of the payload as supplied, so a producer holding its own copy
+can prove the record corresponds to it — "verified, payload not retained" as a
+real verification state rather than a hole, which is the state retention
+(`PLAN.md` 3-6) is built around. It joins `eventHash` on the terms `producerSeq`
+and `redactions` set: omitted from the hash when null, so a `full`-mode event
+and every row written before the column existed hash to exactly what they
+always did. Null is therefore also the answer to "is this payload verbatim",
+which is why there is no second column naming the mode.
+
+One digest over the payload rather than one per string leaf, and that is a size
+decision taken deliberately: a per-leaf sha256 costs ~89 bytes in place of each
+string, so a payload of a few hundred short strings — a structured tool result,
+a message array — would come out *larger* structured than whole. A default that
+inflates the common case is not a default anyone keeps. What is lost is
+leaf-level comparison, which nothing asks for yet.
+
+**The asymmetry is the whole argument for making it the default**, rather than
+any judgement about how much anyone should record. A repo widens to
+`payloads: full` after reading what a trajectory holds; nobody unsends what
+already arrived. A malformed `adp.yaml` needs no carve-out here — it leaves
+this at `structure`, so failing closed and falling back to the default
+coincide, which is the shape a default should have.
+
+The projection runs **after** #148's redaction and before anything is chained.
+After, because the digest has to name what `full` would have stored, and under
+`on_secret: redact` that is the redacted text — a digest over the original
+would be a durable commitment to the value #148 exists to keep out of this
+table. The detector still runs and still records `redactions` under the
+default, on a payload whose content is no longer kept: "a secret was in this
+session" is a fact about the developer's environment they need to hear, and
+that column is now the only place to hear it. #146's ceilings are re-checked on
+the projected form, because "no stored event exceeds the ceiling" has to hold
+unconditionally, and a payload built from thousands of very short strings is
+the rare case where the projection is not the smaller one.
+
+The walk itself is shared with #148 rather than written twice
+(`core/json-leaves.ts`): two definitions of "where the strings are" would
+drift, and the first payload shape one handled and the other did not would be a
+silent hole in whichever was behind.
+
 **Secret detection runs at the trajectory ingest path (#148).** ADP already
 runs push protection at the wire: `pre-receive` computes the diff, ships the
 text, and a regex-plus-entropy engine refuses the push naming the line and
@@ -74,9 +137,9 @@ having written a different document.
 The issue's related question — whether full payloads should be recorded by
 default at all — is **filed as #199 rather than bundled here**. #148 governs
 what a detector recognises; that governs what is stored when nothing is
-detected, which is the larger surface and a different argument. It is free to
-decide while nothing writes to these tables, and it now blocks #149 in
-#148's place.
+detected, which is the larger surface and a different argument. It took #148's
+place as the last thing blocking #149, and is the entry at the top of this
+section.
 
 **Trajectory payloads and checkpoint state are bounded (#146).**
 `session_events.payload` and `checkpoints.state` are `z.unknown()` by design —

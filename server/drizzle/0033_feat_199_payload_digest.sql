@@ -1,0 +1,19 @@
+-- #199: the trajectory payload default — structure by default, full payloads
+-- opt-in per repository (`trajectory.payloads` in `adp.yaml`).
+--
+-- Under the default, `session_events.payload` holds the payload's *shape* —
+-- its objects, arrays, keys, numbers, and how long each string was — with the
+-- string content gone. This column holds sha256 (hex) of the canonical JSON of
+-- the payload as supplied, so a producer keeping its own copy can still prove
+-- the record corresponds to it. That is the commitment half of the "verified,
+-- payload not retained" state retention (PLAN.md 3-6) is built around.
+--
+-- It doubles as the answer to "is this payload verbatim": null means stored
+-- exactly as it arrived, which is what a repo that set `payloads: full` gets.
+--
+-- Nullable, no backfill, and load-bearing for the chain on exactly the terms
+-- `redactions` set: `eventHash` includes this key only when set, so every row
+-- written before this column existed — and every `full`-mode row after it —
+-- hashes to what it always did, and `verifyChain` does not report the corpus
+-- as tampered.
+ALTER TABLE "session_events" ADD COLUMN IF NOT EXISTS "payload_digest" text;

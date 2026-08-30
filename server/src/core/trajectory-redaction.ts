@@ -23,6 +23,7 @@
 // still needs no ADP change — the walker does not know or care what the format
 // means.
 import { redactText } from "./secret-scan.js";
+import { mapStringLeaves } from "./json-leaves.js";
 
 /** Where a redaction happened, and what fired. Stored beside the event. */
 export interface Redaction {
@@ -36,34 +37,18 @@ export interface RedactionResult<T> {
   redactions: Redaction[];
 }
 
-// Object keys are deliberately not scanned or rewritten. A key is structure,
-// and rewriting one would change the shape of a payload ADP promises not to
-// interpret — the redaction would be indistinguishable from the harness having
-// written a different document.
-function walk(value: unknown, path: string, redactions: Redaction[]): unknown {
-  if (typeof value === "string") {
-    const { text, patterns } = redactText(value);
-    for (const pattern of patterns) redactions.push({ path, pattern });
-    return text;
-  }
-  if (Array.isArray(value)) {
-    return value.map((entry, index) => walk(entry, `${path}[${index}]`, redactions));
-  }
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = walk(entry, `${path}.${key}`, redactions);
-    }
-    return out;
-  }
-  // Numbers, booleans and null cannot carry a secret the engine recognises,
-  // and round-trip unchanged.
-  return value;
-}
-
+// The walk itself lives in `json-leaves.ts`, shared with #199's structural
+// projection: two definitions of "where the strings are" would drift, and the
+// first payload shape one handled and the other did not would be a silent hole
+// in whichever was behind. Object keys are not scanned or rewritten there, for
+// the reason given in that file.
 export function redactPayload(payload: unknown): RedactionResult<unknown> {
   const redactions: Redaction[] = [];
-  const value = walk(payload, "$", redactions);
+  const value = mapStringLeaves(payload, (leaf, path) => {
+    const { text, patterns } = redactText(leaf);
+    for (const pattern of patterns) redactions.push({ path, pattern });
+    return text;
+  });
   return { value, redactions };
 }
 

@@ -140,16 +140,31 @@ Two mechanisms run at the point where code enters the system, both as real git h
   the chain commits to the redacted form — so what verifies is what is stored, and a redaction can
   never be edited away afterwards. It is the same engine in a second place, not a second engine.
 
-  Per repository, `adp.yaml` chooses what a detection does:
+  **A detector removes what it recognises, and the larger surface is everything else** — source
+  no pattern covers, customer data in a tool result, a prompt someone typed. So a trajectory
+  stores the *shape* of a payload by default and not its content: objects, arrays, keys, numbers
+  and booleans survive, and each string becomes `[adp:str bytes=N]`. The event carries
+  `payload_digest`, sha256 of the canonical JSON of what was supplied, so a producer holding its
+  own copy can still prove the record corresponds to it — "verified, payload not retained" as a
+  real verification state rather than a hole. What answers *what the agent did* is untouched: the
+  kind, the tool name, the outcome, the model, the token counts, the timings, the commit sha.
+
+  Both settings live in `adp.yaml`, per repository:
 
   ```yaml
   trajectory:
     on_secret: redact   # the default; `refuse` rejects the whole batch instead
+    payloads: structure # the default; `full` stores payloads as supplied
   ```
 
   `redact` is the default deliberately. Both modes keep the secret out of the database — `refuse`
   additionally throws the trajectory away, and a lost trajectory teaches a user to turn recording
   off, which costs the record everything and costs the secret nothing.
+
+  `structure` is the default on a different argument, and it is an asymmetry rather than a
+  judgement about how much anyone should record: widening to `full` is available to a repo that
+  has read what a trajectory holds, and unsending what already arrived is available to nobody.
+  A `full` event carries no `payload_digest` — null is what says the payload is verbatim.
 - **`post-receive`** records a signed change per new commit, deduplicated by `(repo, sha)`. A
   commit that carries an `ADP-Intent` trailer — the intent's id, or the issue number as `#41` —
   is bound to that intent, and `ADP-Session` links it to a session; both are covered by the
