@@ -74,10 +74,22 @@ with ADP absent.
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 1-7 | `adp-recorder` — a buffered, replay-safe event producer, out of band | #149 | **in progress**, landing as three changes because the whole is not reviewable at once. Two have shipped: `recorder/`'s delivery guarantees — durable spool, batching shipper, idempotent replay, contiguity recovery, honest backpressure — and then the harness reader and the CLI (`tail`, `wrap`, `flush`), which close the issue's first three exit criteria end to end against the real routes. **What is left is the fourth: the paired cost measurement**, recorder on versus off by arm 2's method. It is a bench arm against a real model rather than an assertion, so it needs vendor spend and therefore a decision rather than a commit. Everything it was blocked on — 3-1 (#147), 3-2 (#146), 1-8 (#148), 1-19 (#199) — has shipped, and it is built against what 1-19 decided: structure by default |
 | 1-9 | Harness readers, two to start, and named in the README | #150 | not started. Translation lives in the recorder, so the server keeps storing `harness` as a string it never branches on |
 | 1-10 | Session lifecycle driven by harness signals | #151 | not started. What turns 2-3 into a demonstration rather than a script that calls two endpoints |
 | 1-11 | `adp connect <harness>` | #154 | not started. Proves itself with a round trip rather than reporting success on having written files |
+
+Item 1-7 — `adp-recorder`, #149 — is finished and is gone from this table. It landed as
+three changes, because a Size-L flagship is not reviewable at once: the delivery guarantees
+(durable spool, batching shipper, idempotent replay, contiguity recovery, honest
+backpressure), then the harness reader and the CLI, then the measurement. All four exit
+criteria hold, and the fourth is worth restating here because it is the thesis:
+**recording costs the agent nothing, and that is now a number.** 20 paired trials,
+$0.0752/trial with the recorder off against $0.0730 with it on — paired mean difference
+−$0.0022, 95% interval [−$0.0073, +$0.0029] — and 20/20 of the recorded trajectories
+verified, so it is a measurement of the recorder rather than of its absence.
+
+**1b is not finished with 1-7.** What is left is harness *breadth* and the lifecycle:
+1-9, 1-10 and 1-11 above. The recorder reads one harness's stream today.
 
 Item 1-19 — the trajectory payload default, #199 — is finished and is gone from this table, on
 the terms 1a's items left: what shipped is in `CHANGELOG.md`, and the number is not reused. It

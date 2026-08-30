@@ -26,6 +26,14 @@ async function loadRuns(arm) {
     if (record.arm === arm) records.push({ file, ...record });
   }
   if (arm === "merge-contention") return records.sort((a, b) => a.result.config.writers - b.result.config.writers);
+  // Arm 5 has a `condition` where arm 2 has a `method`; sorting on the field
+  // that exists keeps a stable order rather than an "undefined" prefix on
+  // every key.
+  if (arm === "recorder-overhead") {
+    return records.sort((a, b) =>
+      `${a.taskId}${a.rep}${a.condition}`.localeCompare(`${b.taskId}${b.rep}${b.condition}`),
+    );
+  }
   return records.sort((a, b) => (a.method + a.taskId + a.rep).localeCompare(b.method + b.taskId + b.rep));
 }
 
@@ -494,6 +502,148 @@ where the native plane's *capabilities* are the point rather than its cost.
 `;
 }
 
+// ─── arm 5: what recording costs the agent ─────────────────────────────────
+
+const CONDITION_LABEL = { off: "Recorder off", on: "Recorder on" };
+
+/**
+ * The paired difference, which is the whole point of this arm.
+ *
+ * A difference of means over two independent columns would answer a weaker
+ * question and answer it worse: the agent is stochastic, so the between-trial
+ * spread is far larger than any effect a wrapper could have, and it would
+ * swamp the comparison. Pairing on (task, rep) subtracts that spread out —
+ * each pair is the same task run twice under the same conditions, differing
+ * only in whether the recorder was attached.
+ */
+function pairs(records) {
+  const byKey = new Map();
+  for (const r of records) {
+    const key = `${r.taskId}-r${r.rep}`;
+    const entry = byKey.get(key) ?? {};
+    entry[r.condition] = r;
+    byKey.set(key, entry);
+  }
+  return [...byKey.entries()]
+    .filter(([, e]) => e.off && e.on)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([key, e]) => ({ key, off: e.off, on: e.on }));
+}
+
+const mean = (xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
+
+function stdev(xs) {
+  if (xs.length < 2) return 0;
+  const m = mean(xs);
+  return Math.sqrt(xs.reduce((s, x) => s + (x - m) ** 2, 0) / (xs.length - 1));
+}
+
+/**
+ * A 95% interval on the paired mean difference, from the t distribution.
+ *
+ * Reported rather than a p-value, because the claim being tested is
+ * *equivalence* — "indistinguishable" — and a p-value cannot express that. An
+ * interval that contains zero and is narrow relative to the cost of a trial
+ * says what this arm needs to say; a p-value above 0.05 would only say the
+ * experiment failed to find something.
+ */
+const T95 = { 5: 2.776, 6: 2.571, 7: 2.447, 8: 2.365, 9: 2.306, 10: 2.262, 12: 2.201, 15: 2.145, 20: 2.093, 30: 2.045 };
+function t95For(df) {
+  const keys = Object.keys(T95).map(Number).sort((a, b) => a - b);
+  const k = keys.find((x) => x >= df) ?? keys[keys.length - 1];
+  return T95[k];
+}
+
+function pairedInterval(deltas) {
+  const n = deltas.length;
+  const m = mean(deltas);
+  if (n < 2) return { n, mean: m, low: NaN, high: NaN };
+  const se = stdev(deltas) / Math.sqrt(n);
+  const t = t95For(n - 1);
+  return { n, mean: m, low: m - t * se, high: m + t * se };
+}
+
+function recorderOverheadReport(records) {
+  const cohorts = groupBy(records, cohortOf);
+  const sections = [...cohorts.entries()].sort().map(([cohort, list]) => {
+    const paired = pairs(list);
+    const metrics = [
+      ["Cost per trial (USD)", (r) => r.measurement.totalCostUsd ?? 0, 4],
+      ["Tokens in", (r) => tokensIn(r.measurement), 0],
+      ["Tokens out", (r) => r.measurement.usage.output_tokens, 0],
+      ["Tool calls", (r) => r.measurement.toolCalls, 1],
+      ["Wall clock (s)", (r) => r.measurement.wallClockMs / 1000, 1],
+    ];
+
+    const rows = metrics.map(([label, f, digits]) => {
+      const deltas = paired.map((p) => f(p.on) - f(p.off));
+      const ci = pairedInterval(deltas);
+      const offMean = mean(paired.map((p) => f(p.off)));
+      const onMean = mean(paired.map((p) => f(p.on)));
+      const interval = Number.isNaN(ci.low) ? "—" : `${fmt(ci.low, digits)} to ${fmt(ci.high, digits)}`;
+      return `| ${label} | ${fmt(offMean, digits)} | ${fmt(onMean, digits)} | ${fmt(ci.mean, digits)} | ${interval} |`;
+    });
+
+    const landedOff = list.filter((r) => r.condition === "off" && r.measurement.landed).length;
+    const landedOn = list.filter((r) => r.condition === "on" && r.measurement.landed).length;
+    const nOff = list.filter((r) => r.condition === "off").length;
+    const nOn = list.filter((r) => r.condition === "on").length;
+
+    const recorded = list.filter((r) => r.condition === "on" && r.trajectory);
+    const verified = recorded.filter((r) => r.trajectory.chainsOk && r.trajectory.emittersOk).length;
+    const events = recorded.reduce((s, r) => s + (r.trajectory.events ?? 0), 0);
+
+    return `### Cohort \`${cohort}\`
+
+${paired.length} pair(s); ${nOff} trial(s) with the recorder off, ${nOn} with it on.
+
+| Measure | Off | On | Paired mean Δ | 95% CI on Δ |
+|---|---|---|---|---|
+${rows.join("\n")}
+
+**Landed:** ${landedOff}/${nOff} off, ${landedOn}/${nOn} on.
+
+**What the recorder actually captured.** ${verified}/${recorded.length} recorded trial(s)
+verified with \`chains_ok\` and \`emitters_ok\` both true, over ${events} event(s) in total.
+That column is what stops this from being a measurement of the recorder's *absence*: a
+trial that attached the recorder and captured nothing would cost exactly the same as one
+without it, and would be worthless.`;
+  });
+
+  return `# What recording costs the agent — arm 5 results
+
+*Generated by \`bench/report/build-report.mjs\` from the run records in
+[\`bench/runs/\`](../runs). Do not edit by hand: re-run the script.*
+
+**Agent-backed and paired.** #149's fourth exit criterion asks whether "measured agent
+cost with the recorder attached is indistinguishable from a run without it". Each pair is
+the same task, the same model, the same tool boundary and the same ADP-via-\`gh\` fixture
+arm 2 uses; the only difference is whether the \`claude\` invocation was wrapped in
+\`adp-recorder wrap\`.
+
+**Pairing is the design, not a presentation choice.** The agent is stochastic — arm 2's own
+per-trial costs vary by more than any wrapper could — so a difference of means over two
+independent columns would drown the effect in that spread. Differencing within a pair
+subtracts it.
+
+**The interval, not a p-value.** The claim under test is *equivalence*. A 95% interval on
+the paired difference can say "any effect is smaller than this"; a p-value above 0.05 can
+only say the experiment failed to find one.
+
+${sections.join("\n\n")}
+
+## What this does not show
+
+The recorder is out of band by construction: it reads a stream the harness already
+produces, and the agent emits nothing about recording, so no token of it enters the context
+window. This arm tests that construction rather than establishing it — a result here
+compatible with zero is the expected one, and its value is that it was measured rather than
+asserted. It says nothing about the cost of an *in-band* recorder, which is the design this
+one exists instead of, and nothing about a harness whose stream the reader does not yet
+understand.
+`;
+}
+
 async function main() {
   const mergeRecords = await loadRuns("merge-contention");
   const mergeTarget = path.join(here, "merge-contention.md");
@@ -504,6 +654,15 @@ async function main() {
   const costTarget = path.join(here, "three-way-cost.md");
   await writeFile(costTarget, threeWayCostReport(costRecords));
   console.error(`wrote ${path.relative(process.cwd(), costTarget)} from ${costRecords.length} run record(s)`);
+
+  const recorderRecords = await loadRuns("recorder-overhead");
+  if (recorderRecords.length > 0) {
+    const recorderTarget = path.join(here, "recorder-overhead.md");
+    await writeFile(recorderTarget, recorderOverheadReport(recorderRecords));
+    console.error(
+      `wrote ${path.relative(process.cwd(), recorderTarget)} from ${recorderRecords.length} run record(s)`,
+    );
+  }
 }
 
 main().catch((err) => {

@@ -1,0 +1,76 @@
+{
+  "recordedAt": "2026-08-30T22:42:16.582Z",
+  "arm": "recorder-overhead",
+  "cohort": "study",
+  "deterministic": false,
+  "condition": "off",
+  "taskId": "clamp",
+  "rep": 6,
+  "runId": "ab35be",
+  "environment": {
+    "node": "v24.18.0",
+    "platform": "linux/x64",
+    "model": "claude-haiku-4-5",
+    "adpUrl": "http://localhost:8420",
+    "target": {
+      "owner": "local",
+      "repo": "arm2-gh-clamp-r6-ab35be",
+      "issueRef": "localhost:8443/local/arm2-gh-clamp-r6-ab35be#1"
+    }
+  },
+  "measurement": {
+    "wallClockMs": 47511,
+    "totalCostUsd": 0.07296005000000001,
+    "usage": {
+      "input_tokens": 122,
+      "cache_creation_input_tokens": 14179,
+      "cache_read_input_tokens": 367973,
+      "output_tokens": 3353,
+      "output_tokens_details": {
+        "thinking_tokens": 943
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 14179
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 8,
+          "output_tokens": 302,
+          "cache_read_input_tokens": 27427,
+          "cache_creation_input_tokens": 380,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 380,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "numTurns": 16,
+    "toolCalls": 15,
+    "toolErrors": 3,
+    "permissionDenials": 0,
+    "toolBreakdown": {
+      "Bash(gh)": 5,
+      "Bash(git)": 4,
+      "Bash(ls)": 1,
+      "Bash(node)": 1,
+      "Read": 2,
+      "Write": 2
+    },
+    "escapeHatchCalls": 0,
+    "isError": false,
+    "terminalReason": "completed",
+    "landed": true
+  },
+  "trajectory": null,
+  "flush": null
+}

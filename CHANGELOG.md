@@ -16,6 +16,47 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**Recording costs the agent nothing, measured rather than argued (#149).** The
+last of three, and the one the design's central claim rests on. Arm 5 is paired:
+the same task, model, tool boundary and ADP-via-`gh` fixture arm 2 uses, run
+twice, differing only in whether the agent's invocation was wrapped in
+`adp-recorder wrap`.
+
+**20 pairs. Cost per trial $0.0752 with the recorder off and $0.0730 with it on
+— a paired mean difference of −$0.0022, 95% CI [−$0.0073, +$0.0029].** The
+interval contains zero and bounds any effect below a tenth of a trial's cost.
+20/20 landed in each condition. Tokens in, tokens out, tool calls and wall clock
+all come out the same way.
+
+**And the recorder was actually recording**, which is the column that stops this
+being a measurement of its absence: 20/20 recorded trials verified with
+`chains_ok` and `emitters_ok` both true, over 1,100 events. A trial that attached
+the recorder and captured nothing would have cost exactly the same and meant
+nothing.
+
+The claim was always structural — the recorder reads a stream the harness already
+produces, so no token of it enters the context window — and this arm tests that
+construction rather than establishing it. It is worth the spend because the
+project has been wrong about its own bets before with a first-party number to
+prove it: arm 2's first sitting measured the native plane at $0.1435/trial
+against $0.0848 via `gh`, contradicting the bet the plane was built on.
+
+**Two reader faults surfaced only against a real transcript.** A denied tool call
+was being stored as an opaque `custom` event; it is a `tool_call` with status
+`rejected` now, which is what ADP's status vocabulary has that value for, and in
+the first session recorded there were twelve of them explaining exactly why a
+trial had failed. And the harness emits a `thinking_tokens` telemetry tick
+continuously — 138 of them against 21 real tool calls — each carrying a running
+estimate the next supersedes; they are counted and summarised once at
+end-of-stream rather than hash-chained one row each. Neither was reachable from
+unit tests over synthetic input.
+
+The shared ADP fixture arm 2 and arm 5 both need moved to
+`bench/arms/lib/adp-fixture.mjs` rather than being copied — it could not be
+imported from `three-way-cost.mjs`, which runs `main()` on import. The published
+arm 2 report regenerates byte-identical from the same records, which is what
+makes that a move rather than a rewrite.
+
 **`adp-recorder` records a real session, out of band (#149).** The second of
 three: the spool and the shipper landed with no harness knowledge at all, and
 this is the part that gives them something to carry. `session_events` now has a

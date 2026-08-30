@@ -146,6 +146,42 @@ describe("ClaudeCodeReader", () => {
     expect(event!.payload).toMatchObject({ num_turns: 9, is_error: false });
   });
 
+  it("records a denied tool call as a rejected tool call, not as an opaque system line", () => {
+    // Found by running against a real transcript: twelve of these were the
+    // reason a bench trial did not land, and as `custom` events they were
+    // buried under a type nobody queries. ADP's status vocabulary has
+    // `rejected` for exactly this.
+    const reader = new ClaudeCodeReader();
+    const [event] = reader.read(
+      line({
+        type: "system",
+        subtype: "permission_denied",
+        tool_name: "Bash",
+        tool_use_id: "call-9",
+        decision_reason: "Bash(gh *) is not on the allowed list",
+      }),
+    );
+    expect(event).toMatchObject({ kind: "tool_call", type: "Bash", status: "rejected" });
+    expect(event!.payload).toMatchObject({ reason: "Bash(gh *) is not on the allowed list" });
+  });
+
+  it("counts telemetry ticks instead of recording one event each", () => {
+    // The first real session this reader recorded held 138 `thinking_tokens`
+    // ticks against 21 actual tool calls — each carrying a running estimate the
+    // next one supersedes. Hash-chaining all of them would make most of a
+    // trajectory a counter's history. The count survives, which is what keeps
+    // this a summary rather than a silent drop.
+    const reader = new ClaudeCodeReader();
+    for (let i = 0; i < 5; i += 1) {
+      expect(
+        reader.read(line({ type: "system", subtype: "thinking_tokens", estimated_tokens: i * 7 })),
+      ).toEqual([]);
+    }
+    const [summary] = reader.end();
+    expect(summary).toMatchObject({ kind: "custom", type: "recorder.telemetry_ticks" });
+    expect(summary!.payload).toMatchObject({ count: 5 });
+  });
+
   it("records a line it cannot parse instead of skipping it", () => {
     // A reader that silently ignores what it does not understand is how a
     // format change becomes a quiet loss of half a trajectory.

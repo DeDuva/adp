@@ -45,6 +45,10 @@ interface StreamLine {
   is_error?: boolean;
   usage?: { input_tokens?: number; output_tokens?: number };
   permission_denials?: unknown[];
+  // Present on `system` lines: a denial names the tool and why.
+  tool_name?: string;
+  tool_use_id?: string;
+  decision_reason?: string;
 }
 
 interface ContentBlock {
@@ -75,6 +79,8 @@ export class ClaudeCodeReader {
   private facts: SessionFacts = {};
   /** Tool calls whose result never arrived, counted so `end()` can say so. */
   private unresolved = 0;
+  /** Telemetry ticks collapsed rather than recorded — see `readSystem`. */
+  private telemetryTicks = 0;
 
   /**
    * Feed one line; get back the events it completes.
@@ -125,6 +131,36 @@ export class ClaudeCodeReader {
   }
 
   private readSystem(line: StreamLine): TrajectoryEvent[] {
+    // A denied tool call is a **tool call with an outcome**, not an opaque
+    // system line. ADP's status vocabulary has `rejected` for exactly this, and
+    // the harness gives the tool's name and the reason — so recording it as
+    // `custom` would bury, under a type nobody queries, the single most useful
+    // thing a trajectory can say about a run that failed. The first real
+    // transcript this reader saw had twelve of them, and they were the reason
+    // that trial did not land.
+    if (line.subtype === "permission_denied") {
+      return [
+        {
+          kind: "tool_call",
+          type: line.tool_name ?? "unknown",
+          status: "rejected",
+          payload: { reason: line.decision_reason ?? line.message, tool_use_id: line.tool_use_id },
+        },
+      ];
+    }
+
+    // Telemetry ticks, counted rather than recorded. `thinking_tokens` is a
+    // running estimate the harness emits continuously — 138 of them in the
+    // first real session recorded, against 21 actual tool calls — and each one
+    // carries a number that the *next* one supersedes. Hash-chaining every
+    // tick would make 60% of a trajectory a counter's history, and the counter
+    // is already in the result line's usage. The count survives, reported once
+    // at `end()`, so this is a summary rather than a silent drop.
+    if (line.subtype === "thinking_tokens") {
+      this.telemetryTicks += 1;
+      return [];
+    }
+
     if (line.subtype !== "init") {
       return [{ kind: "custom", type: `claude-code.system.${line.subtype ?? "unknown"}`, payload: line as unknown }];
     }
@@ -248,6 +284,16 @@ export class ClaudeCodeReader {
       });
     }
     this.pending.clear();
+    if (this.telemetryTicks > 0) {
+      events.push({
+        kind: "custom",
+        type: "recorder.telemetry_ticks",
+        payload: {
+          count: this.telemetryTicks,
+          reason: "harness telemetry ticks were counted rather than recorded one event each",
+        },
+      });
+    }
     if (this.unresolved > 0) {
       events.push({
         kind: "custom",
