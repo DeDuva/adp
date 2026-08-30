@@ -15,13 +15,26 @@
 //              as its own stdio process) instead of gh. Until #144 the native
 //              plane had no MCP tool that opened a proposal — only
 //              candidate-set open/select/resolve, which act on a proposal
-//              that already exists — and none that read the intent, so this
-//              arm allowed scoped `curl` calls for those steps and the report
-//              called the gap out rather than hiding it. Those tools exist
-//              now (adp_intent_get, adp_proposal_open, adp_proposal_review,
-//              adp_proposal_merge), so `curl` is off the tool list entirely
-//              and the arm measures the native plane rather than the native
-//              plane plus a hand-assembled HTTP request.
+//              that already exists — and none that read the intent, so the
+//              instructions told the agent how to hand-assemble `curl` calls
+//              for those steps, and the report called the gap out rather than
+//              hiding it. Those tools exist now (adp_intent_get,
+//              adp_proposal_open, adp_proposal_review, adp_proposal_merge)
+//              and the instructions name them instead.
+//
+//              `curl` stays on the tool list, and that is a deliberate
+//              reversal. Removing it alongside the new tools would have
+//              changed two things at once: the re-run could show a cost drop
+//              without separating "the tools are cheaper" from "the agent can
+//              no longer burn turns on HTTP it was told to assemble". Worse,
+//              a withdrawn escape hatch turns a step the tools still do not
+//              cover into a failed trial rather than an observation. So the
+//              hatch stays open and unadvertised — the instructions teach the
+//              MCP path and never mention curl — and every trial records what
+//              the agent actually reached for (measurement.toolBreakdown,
+//              measurement.escapeHatchCalls). An agent that reaches for curl
+//              anyway is then a finding about the tools, which is the useful
+//              version of this experiment.
 //
 //   ADP_SERVER_URL=... ADP_TOKEN=... node arms/three-way-cost.mjs \
 //     --method=github-gh|adp-gh|adp-mcp --task=clamp|titlecase --rep=1 \
@@ -36,6 +49,7 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { adpClient } from "./lib/adp-rest.mjs";
+import { parseAgentTranscript } from "../lib/transcript.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const benchRoot = path.resolve(here, "..");
@@ -189,12 +203,14 @@ async function setupAdpMcp({ adpUrl, token, taskId, rep, runId, task }) {
     issueNumber,
     issueRef: `${adpUrl}/repos/${owner}/${repo}#${issueNumber}`,
     env: {},
-    // No `Bash(curl *)`. Not an oversight and not a tightening for its own
-    // sake: with the proposal tools in place no step needs it, and leaving it
-    // allowed would let a trial quietly fall back to the shape this arm exists
-    // to stop measuring.
+    // `Bash(curl *)` is here on purpose and is not taught. See the header:
+    // the arm needs the fallback to be *available and visible*, not absent —
+    // absent makes an uncovered step look like a failed trial, and makes the
+    // re-run a two-variable change. `measurement.escapeHatchCalls` is what
+    // turns "available" into "visible".
     allowedTools: [
       "Bash(git *)",
+      "Bash(curl *)",
       "Bash(node *)",
       "Bash(npm *)",
       "Read",
@@ -242,35 +258,10 @@ function seedAdpRepo({ owner, repo, task, adpUrl, token }) {
 }
 
 // ─── stream-json parsing ────────────────────────────────────────────────────
-
-function parseAgentTranscript(stdout) {
-  let toolCalls = 0;
-  let toolErrors = 0;
-  let permissionDenials = 0;
-  let finalResult = null;
-  for (const line of stdout.split("\n")) {
-    if (!line.trim()) continue;
-    let event;
-    try {
-      event = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (event.type === "assistant") {
-      for (const block of event.message?.content ?? []) {
-        if (block.type === "tool_use") toolCalls++;
-      }
-    } else if (event.type === "user") {
-      for (const block of event.message?.content ?? []) {
-        if (block.type === "tool_result" && block.is_error) toolErrors++;
-      }
-    } else if (event.type === "result") {
-      finalResult = event;
-      permissionDenials = (event.permission_denials ?? []).length;
-    }
-  }
-  return { toolCalls, toolErrors, permissionDenials, finalResult };
-}
+//
+// In lib/ so it can be tested: this file runs main() on import, so anything
+// that needs assertions has to live beside it. bench/test/transcript.test.mjs
+// drives that module directly.
 
 // ─── landed check ───────────────────────────────────────────────────────────
 
@@ -350,7 +341,8 @@ async function main() {
 
   writeFileSync(path.join(trialDir, "transcript.jsonl"), proc.stdout ?? "");
   writeFileSync(path.join(trialDir, "stderr.log"), proc.stderr ?? "");
-  const { toolCalls, toolErrors, permissionDenials, finalResult } = parseAgentTranscript(proc.stdout ?? "");
+  const { toolCalls, toolErrors, permissionDenials, escapeHatchCalls, toolBreakdown, finalResult } =
+    parseAgentTranscript(proc.stdout ?? "");
   const landed = checkLanded({ cloneDir: trialDir, base: target.base, outputFile: task.outputFile, env: target.env });
 
   const record = {
@@ -376,6 +368,12 @@ async function main() {
       toolCalls,
       toolErrors,
       permissionDenials,
+      // What the agent actually reached for, not just how often. The published
+      // pilot records predate these two fields; anything reading them has to
+      // treat absence as "not measured" rather than as zero, which is what the
+      // report does.
+      toolBreakdown,
+      escapeHatchCalls,
       isError: finalResult?.is_error ?? proc.status !== 0,
       terminalReason: finalResult?.terminal_reason ?? null,
       landed,

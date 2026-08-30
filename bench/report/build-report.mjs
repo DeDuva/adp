@@ -157,6 +157,31 @@ function threeWayCostReport(records) {
   const totalCost = records.reduce((s, r) => s + (r.measurement.totalCostUsd ?? 0), 0);
   const totalLanded = records.filter((r) => r.measurement.landed).length;
 
+  // Absence is "not measured", never zero. The pilot records predate the field
+  // and reading them as zero would report a fallback rate that was never
+  // observed — which is the same class of error as a skipped test that exits
+  // green.
+  const measured = records.filter((r) => r.measurement.escapeHatchCalls !== undefined);
+  const fallbackNote =
+    measured.length === 0
+      ? `**Fallback use is not measured in these trials.** \`measurement.escapeHatchCalls\` and
+\`measurement.toolBreakdown\` were added after they ran, so the records above say how many
+tool calls each trial made and not which tools they were. The absence is reported rather
+than read as a zero: these trials were *instructed* to use \`curl\`, so a zero would be
+positively wrong.`
+      : (() => {
+          const rows = [...byMethod.entries()].map(([method, list]) => {
+            const seen = list.filter((r) => r.measurement.escapeHatchCalls !== undefined);
+            if (seen.length === 0) return `- **${METHOD_LABEL[method] ?? method}** — not measured`;
+            const total = seen.reduce((sum, r) => sum + r.measurement.escapeHatchCalls, 0);
+            const trials = seen.filter((r) => r.measurement.escapeHatchCalls > 0).length;
+            return `- **${METHOD_LABEL[method] ?? method}** — ${total} raw-HTTP call(s) across ${seen.length} trial(s); ${trials} trial(s) reached for one`;
+          });
+          return `**Did the agent fall back to raw HTTP?** Counted per trial from the transcript
+(\`measurement.escapeHatchCalls\`), with the full per-tool breakdown beside it in each run
+record:\n\n${rows.join("\n")}`;
+        })();
+
   const runIds = records
     .map((r) => `\`${r.method}/${r.taskId}/r${r.rep}\` → \`${r.environment.target.owner}/${r.environment.target.repo}\` (run \`${r.runId}\`)`)
     .join("\n- ");
@@ -214,13 +239,25 @@ plane's design in general.
 
 **The gap is closed in the code, and these numbers predate the fix (#144).** The
 native plane now has \`adp_intent_get\`, \`adp_proposal_open\`, \`adp_proposal_review\`
-and \`adp_proposal_merge\`, and \`bench/arms/three-way-cost.mjs\` no longer allows
-\`curl\` in the \`adp-mcp\` arm at all. **The arm has not been re-run since**, so
-everything above still describes the pre-fix tool surface — which is the accurate
-thing for it to describe, because these are the trials that produced the numbers.
-Per this harness's own contract, an arm that was not run is reported as not run
-rather than quietly restated: whether the fix moves the \`adp-mcp\` figure is an open
-question until the re-run happens, and it will be published whichever way it points.
+and \`adp_proposal_merge\`, and the \`adp-mcp\` instructions name those tools instead
+of teaching the agent to hand-assemble \`curl\` calls. **The arm has not been re-run
+since**, so everything above still describes the pre-fix tool surface — which is the
+accurate thing for it to describe, because these are the trials that produced the
+numbers. Per this harness's own contract, an arm that was not run is reported as not
+run rather than quietly restated: whether the fix moves the \`adp-mcp\` figure is an
+open question until the re-run happens, and it will be published whichever way it
+points.
+
+**\`curl\` is still on the \`adp-mcp\` arm's tool list, and that is deliberate.**
+Withdrawing it alongside the new tools would change two things at once, so a cost
+drop in the re-run could not be split between "the tools are cheaper" and "the agent
+can no longer spend turns on HTTP it was told to assemble" — and a withdrawn escape
+hatch turns a step the tools still fail to cover into a failed trial rather than an
+observation. So the hatch stays open and unadvertised: the instructions teach the MCP
+path and never mention \`curl\`, and an agent that reaches for it anyway is a finding
+about the tools rather than noise in the measurement.
+
+${fallbackNote}
 
 ## What this does not show, and should not be read as showing
 

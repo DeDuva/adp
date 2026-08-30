@@ -138,7 +138,8 @@ site: ## Assert the published pages meet #163's exit criteria, in a real browser
 	fi
 	npm test --prefix dc-runtime
 
-bench: ## Regenerate the benchmark report from bench/runs/ and assert it is unchanged
+bench: ## Test the harness, regenerate the benchmark report, and assert it is unchanged
+	npm test --prefix bench
 	npm run report --prefix bench
 	@git diff --exit-code bench/report/ || { \
 		echo "bench/report/ is stale — commit the regenerated report"; exit 1; }
