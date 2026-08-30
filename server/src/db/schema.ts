@@ -252,7 +252,15 @@ export const changes = pgTable(
   // recording) and the evidence-bundle read (core/evidence.ts) both filter on
   // exactly this pair — a sequential scan here is the first thing a mirrored,
   // multi-thousand-commit repo makes slow.
-  (table) => [index("changes_repo_id_git_sha_idx").on(table.repoId, table.gitSha)],
+  //
+  // #143: unique, not merely indexed. Two write paths record a change for the
+  // same commit — the push hook, and the explicit POST that binds an intent —
+  // and while it was only an index, the documented push-then-bind sequence
+  // left two rows for one sha, one bound and one not. The evidence read chose
+  // between them with no ORDER BY. A signed record of a commit is a fact about
+  // that commit, so there is exactly one of it, and the database is where that
+  // is said rather than in the four call sites that must not violate it.
+  (table) => [uniqueIndex("changes_repo_id_git_sha_idx").on(table.repoId, table.gitSha)],
 );
 
 // PR-shaped: the unit review and landing attach to. Numbered independently

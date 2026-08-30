@@ -16,6 +16,62 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**One `changes` row per sha, and a deterministic evidence read (#143).** Three
+individually defensible facts were jointly a bug. `post-receive` auto-records a
+signed change per new commit with a null intent (#142); `POST
+/api/v3/repos/{owner}/{repo}/changes` — the documented way to record a change
+*with* an intent — inserted unconditionally; and `changes` carried an ordinary
+index on `(repo_id, git_sha)` rather than a unique constraint. So the
+documented path to an intent-bound change, push then bind, left **two rows for
+the same sha**: one auto-recorded and unbound, one explicit and bound. Then
+`getEvidenceBundle` selected with no `ORDER BY` and no `LIMIT`, so which of the
+two backed the evidence bundle — and therefore whether the bundle showed the
+intent at all — was not pinned by the code. The index that made the lookup fast
+made the plan likely to be stable in practice and no less unspecified.
+
+`(repo_id, git_sha)` is unique now, and the route is an upsert: a call for a
+sha the push already recorded *completes* that row, filling in `intent_id` and
+`workspace_id` and **re-signing** — the signature covers `intent_id`, so a row
+that gains a binding must gain a signature over the binding or the two
+disagree. The provenance of an existing row is left as recorded: it names what
+produced the commit, and this call is a binding, whose actor belongs in the
+operation log — where the update is now recorded as `change.update`, with a
+`before`, exactly as the create already was.
+
+**Rebinding is refused, not performed.** A change whose intent moved would mean
+the signed record said one thing yesterday and another today about the same
+commit, verifiably both times, which is worse than having no signature at all.
+Filling a null is not rebinding — it is the second half of a sequence that was
+always meant to produce one record — so re-posting the same intent is a no-op
+success, while a *different* non-null intent (or workspace) gets a typed `409`
+naming what the sha is already bound to. `docs/api-compatibility.md` prices
+tightened validation as a major bump; this is deliberately taken as a bug fix
+instead, because the request it now refuses did not previously succeed at
+anything — it produced two rows for one sha and an evidence bundle that chose
+between them unordered. The status code for the working path does not move:
+`201` on create and on completion alike, since flipping the documented
+push-then-bind sequence to `200` to report an implementation detail of a fix is
+the one part of this that *would* be a major break. `created_at` distinguishes
+them for anyone who needs it.
+
+The migration resolves existing duplicates rather than failing the deploy on
+them — the opposite call from 0025's, and for a reason: there, duplicate repos
+could have history hanging off both ids and choosing between them was an
+operator decision, whereas here the duplicates are a known shape from a known
+bug and the survivor rule is the one the fixed code applies. The bound row
+wins, ties break oldest-first, and the one FK into the table
+(`proposals.change_id`) is repointed at the survivor before the delete. It is
+proven against a database that already holds duplicates: a throwaway database
+migrated to the state before this migration, seeded with the exact shape the
+bug produced, then migrated the rest of the way — running the migration that
+ships rather than a transcription of it.
+
+The push recorder gained `ON CONFLICT DO NOTHING` for the race its pre-flight
+dedup cannot close. Two pushes carrying the same commit could both read "not
+recorded"; before, that made a duplicate, and after the constraint it would
+raise inside the one transaction covering the whole batch — discarding the
+records for every other commit pushed alongside it.
+
 **Token mint carries `harness`, `model` and `session_id`, so signed provenance
 can name them (#141).** `README.md` promised provenance carrying "the pushing
 identity, plus harness / model / session where supplied", and three of those

@@ -44,17 +44,17 @@ any harness, resolves to its intent, and the evidence bundle names that intent b
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 1-3 | One change row per sha, and a deterministic evidence read | #143 | not started. The explicit create neither dedups nor is constrained unique, so a commit already recorded by the push path gains a second row when the explicit route is called for the same sha, and the evidence read picks between them unordered |
 | 1-4 | Native-plane tools to open, review and merge a proposal | #144 | not started. The first step of OD-1's experiment, tracked here because this is where the work is |
 | 1-5 | Refusals name the command that satisfies them | #145 | not started. The refusal is what a first-time user came to see; it names the unmet requirement and stops one step short |
 | 1-6 | Local TLS as a supported mode rather than a test fixture | #158 | not started. `gh` refuses plain HTTP for any other host, and `server/acceptance/run.sh` already solves this for tests alone |
 
-Items 1-1 and 1-2 are gone from this table on the same terms, because this file records what
+Items 1-1, 1-2 and 1-3 are gone from this table on the same terms, because this file records what
 is left: 1-2 was commit trailers binding a pushed change to its intent, #142; 1-1 was the token
 mint carrying `harness`, `model` and `session_id`, #141, which makes the provenance block on a
-signed change name the harness that produced it. Their numbers are not reused — the issues filed
-against this phase cite these numbers, and a recycled 1-2 would point two of them at different
-work.
+signed change name the harness that produced it; 1-3 was the second `changes` row the documented
+push-then-bind sequence used to leave behind, #143, which the database now refuses. Their numbers
+are not reused — the issues filed against this phase cite these numbers, and a recycled 1-2 would
+point two of them at different work.
 
 1-5's suggested remedy for `one_approval` is `gh pr review --approve`, which became honest advice
 only when 2-1 shipped: before it, a developer evaluating ADP alone was both author and approver, so
