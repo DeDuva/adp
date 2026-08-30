@@ -93,6 +93,11 @@ export SIGNING_KEY="acceptance-$(openssl rand -hex 8)"
 export MIRROR_CREDENTIAL_KEY="acceptance-$(openssl rand -hex 8)"
 export PUBLIC_URL="http://localhost:${PORT}"
 export PORT
+# Both requirements, set explicitly rather than inherited. The default floor
+# is `gates_green` alone (#174), so a suite that asserts an approval refusal
+# has to ask for `one_approval` — and a suite whose assertions depend on a
+# default is a suite that silently stops asserting when the default moves.
+export LAND_POLICY_FLOOR="gates_green,one_approval"
 mkdir -p "$GIT_ROOT" "$ARTIFACTS"
 note "workdir $WORKDIR"
 note "artifacts $ARTIFACTS"

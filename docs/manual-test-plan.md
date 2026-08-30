@@ -156,8 +156,10 @@ at all. That was the shape of the bug this used to document.
 
 **B7. Get a typed review.**
 
-`one_approval` is author-independent, so this needs a *second* principal — mint one the same way
-you minted the first:
+This step needs `one_approval` in the floor, which a fresh instance does **not** have — start the
+server with `LAND_POLICY_FLOOR=gates_green,one_approval`, or put `land: {require: [one_approval]}`
+in the repo's `adp.yaml`. It is also author-independent, so it needs a *second* principal — mint
+one the same way you minted the first:
 
 ```bash
 tsx src/bootstrap.ts reviewer --org <owner>   # a second token, same org
@@ -183,8 +185,8 @@ review time, ADP performs at merge time.
 gh pr merge 1 --merge
 ```
 
-*Expect:* success — but only because B6 and B7 happened first. The instance land-policy floor is
-`gates_green,one_approval`. **Worth doing deliberately once:** try the merge before approving and
+*Expect:* success — but only because B6 and B7 happened first. A fresh instance floors at
+`gates_green` alone, so B7 matters here only if you raised the floor as it describes. **Worth doing deliberately once:** try the merge before approving and
 confirm it is refused with a `422` naming the unmet requirement. A policy that has never been seen
 to refuse anything has not been tested.
 

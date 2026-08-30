@@ -131,9 +131,29 @@ add requirements, never remove one. Both `gates_green` and `one_approval` are en
 on the REST and GraphQL merge paths, and a malformed `adp.yaml` fails closed. Merges are
 fast-forward only.
 
+**A fresh instance floors at `gates_green` alone.** A merge is refused until the change has a
+green gate result, and that is the whole default — so one developer with one token can clone,
+push, gate and land without arranging anything. Turn approval on when there is somebody to give
+it, at whichever level owns the decision:
+
+```bash
+LAND_POLICY_FLOOR=gates_green,one_approval   # the whole instance, admin-owned
+```
+
+```yaml
+land:
+  require: [one_approval]                     # one repo's adp.yaml, or an org's policy repo
+```
+
+Because the three levels union, a repo or an org can add `one_approval` to an instance that does
+not require it — but nothing below the instance can take it away again.
+
 `one_approval` is **author-independent**: an approving review from the principal that authored the
 proposal does not satisfy it, so an agent cannot clear the requirement that exists to check it by
-approving its own work. Landing under this floor takes two principals.
+approving its own work. Landing under it takes two principals, which is why it is not the default —
+a solo evaluator has one, and would be shown a refusal only somebody else could clear. Mint a second
+with `tsx src/bootstrap.ts reviewer --org <owner>`; an agent acting as an independent reviewer wants
+its own token for the same reason.
 
 ```yaml
 # adp.yaml, read off the base ref — as GitHub reads branch protection off the target branch
@@ -308,7 +328,7 @@ would.
 | `PUBLIC_URL` | — | externally reachable base URL |
 | `PORT` | `3000` | listen port |
 | `GIT_MAX_PACK_BYTES` | `500 MB` | bounds the git smart-HTTP request body only |
-| `LAND_POLICY_FLOOR` | `gates_green,one_approval` | instance floor; empty string disables |
+| `LAND_POLICY_FLOOR` | `gates_green` | instance floor; add `one_approval` for an instance with a second principal, empty string disables |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | — | OpenID Connect login. Both client values must be present or the routes do not mount at all |
 | `OIDC_ALLOWED_DOMAINS` | empty | empty means **no auto-provisioning**: a verified account with no existing link is refused, not welcomed |
 | `STORAGE_METER_INTERVAL_MS` | `600000` | how often each org's storage is re-measured; also the overshoot an org can achieve past its quota |

@@ -28,7 +28,9 @@ server:
 
   # The instance-level land-policy floor: requirements no org and no repo can
   # remove (server/src/core/repo-policy.ts). Empty string means no floor.
-  landPolicyFloor: "gates_green,one_approval"
+  # Matches config.ts's default (#174). Add "one_approval" here for an
+  # instance with more than one principal: "gates_green,one_approval".
+  landPolicyFloor: "gates_green"
 
   # Bounds the git smart-HTTP request body. Real repositories push real-sized
   # packs; the framework default 413s them.
