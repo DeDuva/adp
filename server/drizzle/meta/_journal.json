@@ -232,6 +232,13 @@
       "when": 1787768903334,
       "tag": "0032_feat_148_event_redactions",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1787855303334,
+      "tag": "0033_feat_199_payload_digest",
+      "breakpoints": true
     }
   ]
 }

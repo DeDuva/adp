@@ -13,6 +13,7 @@ import {
   INGEST_BODY_LIMIT_BYTES,
 } from "../core/payload-limits.js";
 import { redactEventPayloads } from "../core/trajectory-redaction.js";
+import { structureEventPayloads } from "../core/trajectory-structure.js";
 import { loadRepoPolicy } from "../core/repo-policy.js";
 import {
   appendEvents,
@@ -412,7 +413,47 @@ export function registerSessionRoutes(
         });
         return;
       }
-      const events = scanned.events;
+      // #199: what is stored when the detector fired on *nothing*, which is
+      // the larger surface — source no pattern covers, customer data in a tool
+      // result, a prompt a human typed. The default is `structure`: the
+      // payload's shape is kept and its string content is replaced by a marker
+      // naming how many bytes were there, with a digest of what was supplied
+      // recorded beside the event. A repo opts into `full` when it has read
+      // what a trajectory holds and wants all of it.
+      //
+      // After redaction, never before. The digest has to name what `full`
+      // would have stored, and under `on_secret: redact` that is the redacted
+      // text — a digest over the original would be a durable commitment to the
+      // secret #148 exists to keep out of this table.
+      let structured: { events: typeof scanned.events; digests: (string | null)[] } = {
+        events: scanned.events,
+        digests: scanned.events.map(() => null),
+      };
+      if (repoPolicy.trajectory.payloads === "structure") {
+        structured = structureEventPayloads(scanned.events);
+
+        // #146's ceiling, re-checked on the form that will actually be stored.
+        // The projection is nearly always far smaller than what arrived, but
+        // it is not smaller for a payload built from thousands of very short
+        // strings, where a ~19-byte marker replaces a 3-byte one. That is rare
+        // and it is not impossible, and "no stored event exceeds the ceiling"
+        // has to hold unconditionally or #146 bounds nothing. Only here: under
+        // `full` the check above already measured what will be stored.
+        const storedSize = checkEventPayloads(structured.events);
+        if (!storedSize.ok) {
+          reply.code(422).send({
+            // Named as the stored form, because the producer's own bytes were
+            // under the ceiling and a refusal it cannot account for is one it
+            // cannot act on.
+            message:
+              "Validation failed: under this repository's trajectory.payloads: structure, " +
+              "the stored form of this batch exceeds the payload ceiling",
+            errors: storedSize.errors,
+          });
+          return;
+        }
+      }
+      const events = structured.events;
 
       const result = await appendEvents(
         db,
@@ -425,6 +466,7 @@ export function registerSessionRoutes(
           redactions: scanned.redactions
             .filter((r) => r.index === index)
             .map((r) => ({ path: r.path, pattern: r.pattern })),
+          payloadDigest: structured.digests[index] ?? null,
           status: e.status ?? null,
           model: e.model ?? null,
           tokensIn: e.tokens_in ?? null,

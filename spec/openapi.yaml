@@ -2978,6 +2978,20 @@ paths:
         stored. Per repository, `trajectory.on_secret` in `adp.yaml` chooses
         `redact` (the default) or `refuse`; under `refuse` the whole batch is
         rejected with `code: secret_detected` and nothing is chained.
+
+        #199: **payloads are stored as their structure by default.** A detector
+        removes what it recognises; the larger surface is everything else, and
+        ambient capture makes every connected session a producer of it. Under
+        `trajectory.payloads: structure` — the default — the stored payload
+        keeps its objects, arrays, keys, numbers and booleans, and each string
+        becomes `[adp:str bytes=N]`; the event carries `payload_digest`, sha256
+        of the canonical JSON of the payload as supplied, so a producer holding
+        its own copy can still prove the record corresponds to it. A repo sets
+        `payloads: full` to store payloads as supplied, and its events carry no
+        `payload_digest`. The projection is applied *after* redaction and
+        before anything is chained, so the digest names what `full` would have
+        stored rather than the secret, and the ceilings above are re-checked on
+        the projected form — no stored event exceeds them either way.
       security:
         - bearerAuth: []
       requestBody:
@@ -3721,7 +3735,39 @@ components:
           description: >
             Opaque to ADP, and never parsed by it. Defaults to `{}` when the
             event carried none — the endpoint declares only `kind` as required.
+
+            Read it together with `payload_digest`: under the default
+            `trajectory.payloads: structure` this is the *shape* of what the
+            producer sent, with each string replaced by `[adp:str bytes=N]`.
           additionalProperties: true
+        payload_digest:
+          type: string
+          nullable: true
+          description: >
+            #199. Null means `payload` above is exactly what the producer sent.
+            Non-null means it is that payload's structure with the string
+            content removed, and this is sha256 (hex) of the canonical JSON of
+            what was sent — the commitment that makes "verified, payload not
+            retained" a verification state rather than a hole. Covered by
+            `hash`, like every other field here.
+        redactions:
+          type: array
+          nullable: true
+          description: >
+            #148. Null on the ordinary event nothing fired on. Where the secret
+            detector did fire, one entry per replaced span, so a reader sees
+            that an event was redacted without having to spot the
+            `[redacted:<pattern>]` marker in the text — and, under
+            `payloads: structure`, without any text left to spot it in.
+          items:
+            type: object
+            required: [path, pattern]
+            properties:
+              path:
+                type: string
+                description: A JSON path into the payload, e.g. `$.messages[2].text`.
+              pattern:
+                type: string
         status:
           type: string
           nullable: true

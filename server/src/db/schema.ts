@@ -577,6 +577,19 @@ export const sessionEvents = pgTable(
     // in the text, and a query for "which sessions hit the detector" should not
     // be a full-text search over every payload in the corpus.
     redactions: jsonb("redactions"),
+    // #199: sha256 of the canonical JSON of the payload **as supplied**, set
+    // when `payload` above is a structural projection rather than that payload
+    // — which is the default (`trajectory.payloads: structure` in `adp.yaml`).
+    // Null means the payload is stored exactly as it arrived, so this column
+    // is both the commitment and the answer to "is this verbatim".
+    //
+    // It is the commitment half of "verified, payload not retained": ADP no
+    // longer holds the string content, and a producer holding its own copy can
+    // still prove the record corresponds to it. Nullable and left null on the
+    // `full` path for the same chain reason `redactions` is — `eventHash`
+    // includes the key only when set, so a `full`-mode event and every row
+    // written before this column existed hash to what they always did.
+    payloadDigest: text("payload_digest"),
     // When it happened, per the orchestrator, versus when ADP received it. Both,
     // because clock skew is real and neither answers the other's question.
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),

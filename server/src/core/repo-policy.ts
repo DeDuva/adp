@@ -66,8 +66,19 @@ export type RunnerPolicy = z.infer<typeof RunnerPolicySchema>;
 // where a reader will see it. `refuse` exists for the deployment that would
 // rather have the gap than the risk, and is opt-in because that is a trade
 // only they can price.
+//
+// #199: what is stored when the detector fires on *nothing*, which is the
+// larger surface. `structure` keeps the payload's shape — its objects, arrays,
+// keys, numbers and how long each string was — and drops the string content,
+// recording a digest of what was supplied so a producer holding its own copy
+// can still prove correspondence. `full` stores payloads as supplied.
+//
+// Defaults to `structure`, and the asymmetry is the whole argument: a repo can
+// widen this to `full` after reading what a trajectory holds, and cannot
+// unsend what already arrived.
 const TrajectoryPolicySchema = z.object({
   on_secret: z.enum(["redact", "refuse"]).default("redact"),
+  payloads: z.enum(["structure", "full"]).default("structure"),
 });
 
 export type TrajectoryPolicy = z.infer<typeof TrajectoryPolicySchema>;
@@ -105,6 +116,11 @@ export const DEFAULT_TRAJECTORY_POLICY: TrajectoryPolicy = TrajectoryPolicySchem
 // safety to buy by failing closed here, only a trajectory to lose. Failing
 // closed is for a choice between "enforced" and "not enforced"; this is a
 // choice between two enforced outcomes.
+//
+// #199's `payloads` needs no such carve-out: a malformed file leaves it at
+// `structure`, which is both the default and the narrower of the two. Failing
+// closed and falling back to the default coincide here, which is the shape a
+// default should have.
 const MALFORMED_POLICY: RepoPolicy = {
   gates: [],
   land: { require: [...LandRequirement.options], statistical: DEFAULT_STATISTICAL_POLICY },

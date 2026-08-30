@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { skipWithoutDb } from "./require-db.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -88,6 +88,13 @@ describe.skipIf(skipWithoutDb)("M4-3: per-org storage quota", () => {
     await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
     await execFileAsync("git", ["config", "user.name", "Test"], { cwd: cloneDir });
     await execFileAsync("sh", ["-c", "echo hi > f.txt"], { cwd: cloneDir });
+    // #199: this file measures *bytes*, and under the default a trajectory
+    // payload is stored as its shape rather than its content — 20 events of
+    // ~1.4 KB each would come to a few hundred bytes, and every assertion here
+    // about what an org is billed for would be measuring the projection
+    // instead of the payload. The ceiling and the quota exist for repos that
+    // keep what they record, so that is the repo this seeds.
+    await writeFile(path.join(cloneDir, "adp.yaml"), "trajectory:\n  payloads: full\n");
     await execFileAsync("git", ["add", "."], { cwd: cloneDir });
     await execFileAsync("git", ["commit", "-m", "init"], { cwd: cloneDir });
     await execFileAsync("git", ["push", "origin", "main"], { cwd: cloneDir });

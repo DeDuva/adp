@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { skipWithoutDb } from "./require-db.js";
+import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -21,6 +22,7 @@ import {
   MAX_CHECKPOINT_STATE_BYTES,
   MAX_EVENT_PAYLOAD_BYTES,
 } from "../src/core/payload-limits.js";
+import { canonicalJson } from "../src/core/canonical.js";
 import { verifyChain } from "../src/core/trajectory.js";
 import { verifyEnvelope, decodeStatement, type DsseEnvelope } from "../src/core/dsse.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
@@ -73,6 +75,24 @@ describe.skipIf(skipWithoutDb)("M3: cross-harness checkpoint and resume (D2)", (
       body = text;
     }
     return { status: res.status, body: body as Record<string, unknown> };
+  }
+
+  // #148 and #199 both hang off `adp.yaml`, and both need a repo whose policy
+  // differs from the default. Seeding one is a clone, a commit and a push over
+  // the real git wire — which was written inline when only one test needed it.
+  async function seedRepoWithPolicy(name: string, adpYaml: string): Promise<void> {
+    await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name }) });
+    const seed = await mkdtemp(path.join(tmpdir(), `adp-e2e-sessions-${name}-`));
+    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/${name}.git`;
+    await execFileAsync("git", ["clone", cloneUrl, seed]);
+    await execFileAsync("git", ["checkout", "-B", "main"], { cwd: seed });
+    await execFileAsync("git", ["config", "user.email", "seed@example.com"], { cwd: seed });
+    await execFileAsync("git", ["config", "user.name", "Seed"], { cwd: seed });
+    await writeFile(path.join(seed, "adp.yaml"), adpYaml);
+    await execFileAsync("git", ["add", "."], { cwd: seed });
+    await execFileAsync("git", ["commit", "-m", `${name} trajectory policy`], { cwd: seed });
+    await execFileAsync("git", ["push", "origin", "main"], { cwd: seed });
+    await rm(seed, { recursive: true, force: true });
   }
 
   beforeAll(async () => {
@@ -477,8 +497,15 @@ describe.skipIf(skipWithoutDb)("M3: cross-harness checkpoint and resume (D2)", (
 
   // #148: the Done-when, end to end. The unit tests cover the walker; this is
   // the thing that has to be true of the stored record.
+  //
+  // Against a repo that opted into `payloads: full` (#199), because that is
+  // what this test is about: the redaction marker is visible *in the payload*,
+  // and under the default the payload keeps no string content for it to be
+  // visible in. The default's own behaviour on a secret is the test below.
   it("stores an event with its secret redacted, visibly, and the chain still verifies", async () => {
-    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+    const verbatimRepo = "verbatim";
+    await seedRepoWithPolicy(verbatimRepo, "trajectory:\n  payloads: full\n");
+    const started = await api(`/api/adp/repos/${owner}/${verbatimRepo}/sessions`, {
       method: "POST",
       body: JSON.stringify({ harness: "claude-code" }),
     });
@@ -488,7 +515,7 @@ describe.skipIf(skipWithoutDb)("M3: cross-harness checkpoint and resume (D2)", (
     // correctly declined to commit. It is in no diff, so nothing else in the
     // system would ever look at it.
     const awsKey = "AKIAABCDEFGHIJKLMNOP";
-    const res = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/events`, {
+    const res = await api(`/api/adp/repos/${owner}/${verbatimRepo}/sessions/${sessionId}/events`, {
       method: "POST",
       body: JSON.stringify({
         events: [
@@ -520,11 +547,15 @@ describe.skipIf(skipWithoutDb)("M3: cross-harness checkpoint and resume (D2)", (
     // without having to spot it in the text.
     expect(row!.redactions).toEqual([{ path: "$.output", pattern: "aws-access-key-id" }]);
 
+    // #199: null on the `full` path, which is what makes it the answer to "is
+    // this payload verbatim" rather than a second name for the mode.
+    expect(row!.payloadDigest).toBeNull();
+
     // And the chain commits to the redacted form — the redaction is part of
     // what verifies, not an edit applied to a record that already vouched for
     // the original.
     expect((await verifyChain(db, sessionId)).ok).toBe(true);
-  }, 60_000);
+  }, 120_000);
 
   it("leaves a clean event's redactions null, so old rows keep hashing as they did", async () => {
     const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
@@ -547,25 +578,181 @@ describe.skipIf(skipWithoutDb)("M3: cross-harness checkpoint and resume (D2)", (
     expect((await verifyChain(db, sessionId)).ok).toBe(true);
   }, 60_000);
 
+  // #199: the Done-when, end to end. The unit tests cover the projection; this
+  // is what has to be true of the stored record when nobody configured
+  // anything — which is the case that matters, because it is the one every
+  // adopter gets.
+  it("keeps a payload's shape and drops its content by default, and still verifies", async () => {
+    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code" }),
+    });
+    const sessionId = started.body.id as string;
+
+    // Nothing a detector recognises, which is the surface this governs: source
+    // no pattern covers, a customer name in a tool result, a prompt someone
+    // typed.
+    const contents = "function chargeCard(customer) { return stripe.charge(customer.ssn); }";
+    const res = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/events`, {
+      method: "POST",
+      body: JSON.stringify({
+        events: [
+          {
+            kind: "tool_call",
+            type: "read_file",
+            status: "success",
+            duration_ms: 12,
+            client_event_id: "evt-structure",
+            payload: { path: "billing.js", output: contents, bytes: 69, truncated: false },
+          },
+        ],
+      }),
+    });
+    expect(res.status).toBe(201);
+
+    const [row] = await db
+      .select()
+      .from(sessionEvents)
+      .where(and(eq(sessionEvents.sessionId, sessionId), eq(sessionEvents.clientEventId, "evt-structure")));
+
+    // The content is not in the durable record — neither leaf of it.
+    const stored = JSON.stringify(row!.payload);
+    expect(stored).not.toContain("chargeCard");
+    expect(stored).not.toContain("billing.js");
+
+    // The shape is, and so is what each string cost. A reader sees a
+    // `read_file` that returned 69 bytes from `$.output` and succeeded in
+    // 12ms; the typed columns are untouched, which is where "what did the
+    // agent do" is actually answered.
+    expect(row!.payload).toEqual({
+      path: `[adp:str bytes=${Buffer.byteLength("billing.js", "utf8")}]`,
+      output: `[adp:str bytes=${Buffer.byteLength(contents, "utf8")}]`,
+      bytes: 69,
+      truncated: false,
+    });
+    expect(row!.type).toBe("read_file");
+    expect(row!.status).toBe("success");
+    expect(row!.durationMs).toBe(12);
+
+    // The commitment: a producer holding its own copy can prove the record
+    // corresponds to it, which is what makes "payload not retained" a
+    // verification state rather than a hole.
+    expect(row!.payloadDigest).toBe(
+      createHash("sha256")
+        .update(canonicalJson({ path: "billing.js", output: contents, bytes: 69, truncated: false }), "utf8")
+        .digest("hex"),
+    );
+
+    // And it is covered by the chain, so it cannot be swapped afterwards for
+    // one matching a payload that was never sent.
+    expect((await verifyChain(db, sessionId)).ok).toBe(true);
+    await db.update(sessionEvents).set({ payloadDigest: createHash("sha256").update("elsewhere").digest("hex") })
+      .where(eq(sessionEvents.id, row!.id));
+    expect((await verifyChain(db, sessionId)).ok).toBe(false);
+    await db.update(sessionEvents).set({ payloadDigest: row!.payloadDigest }).where(eq(sessionEvents.id, row!.id));
+  }, 60_000);
+
+  it("serves the digest beside the payload, so a reader can tell projection from verbatim", async () => {
+    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code" }),
+    });
+    const sessionId = started.body.id as string;
+    await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/events`, {
+      method: "POST",
+      body: JSON.stringify({ events: [{ kind: "message", type: "user", payload: { text: "ship it" } }] }),
+    });
+
+    const listed = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/events`);
+    const [event] = listed.body.events as { payload: unknown; payload_digest: string | null }[];
+    expect(event!.payload).toEqual({ text: "[adp:str bytes=7]" });
+    expect(event!.payload_digest).toEqual(expect.stringMatching(/^[0-9a-f]{64}$/));
+  }, 60_000);
+
+  it("stores payloads as supplied when the repo opts into full, and claims no digest", async () => {
+    // The asymmetry the default rests on: this is available to a repo that has
+    // read what a trajectory holds and wants all of it. What is not available
+    // is unsending what already arrived.
+    const fullRepo = "full-payloads";
+    await seedRepoWithPolicy(fullRepo, "trajectory:\n  payloads: full\n");
+    const started = await api(`/api/adp/repos/${owner}/${fullRepo}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code" }),
+    });
+    const sessionId = started.body.id as string;
+
+    await api(`/api/adp/repos/${owner}/${fullRepo}/sessions/${sessionId}/events`, {
+      method: "POST",
+      body: JSON.stringify({
+        events: [
+          { kind: "message", type: "user", client_event_id: "evt-full", payload: { text: "keep every word" } },
+        ],
+      }),
+    });
+
+    const [row] = await db
+      .select()
+      .from(sessionEvents)
+      .where(and(eq(sessionEvents.sessionId, sessionId), eq(sessionEvents.clientEventId, "evt-full")));
+    expect(row!.payload).toEqual({ text: "keep every word" });
+    // Null, not the digest of a payload that was retained: null is what says
+    // "this is verbatim", and a `full` event has to go on hashing exactly as
+    // it did before this column existed.
+    expect(row!.payloadDigest).toBeNull();
+    expect((await verifyChain(db, sessionId)).ok).toBe(true);
+  }, 120_000);
+
+  it("still records that the detector fired, on a payload it is no longer keeping", async () => {
+    // The two mechanisms are not the same mechanism. Under the default the
+    // secret's *content* was never going to be stored — but "a secret was in
+    // this session" is a fact about the developer's environment that they need
+    // to hear, and the `redactions` column is the only place left to hear it.
+    const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ harness: "claude-code" }),
+    });
+    const sessionId = started.body.id as string;
+
+    const awsKey = "AKIAABCDEFGHIJKLMNOP";
+    await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/events`, {
+      method: "POST",
+      body: JSON.stringify({
+        events: [
+          {
+            kind: "tool_call",
+            type: "read_file",
+            client_event_id: "evt-structured-secret",
+            payload: { output: `AWS_ACCESS_KEY_ID=${awsKey}` },
+          },
+        ],
+      }),
+    });
+
+    const [row] = await db
+      .select()
+      .from(sessionEvents)
+      .where(and(eq(sessionEvents.sessionId, sessionId), eq(sessionEvents.clientEventId, "evt-structured-secret")));
+    expect(JSON.stringify(row!.payload)).not.toContain(awsKey);
+    expect(row!.redactions).toEqual([{ path: "$.output", pattern: "aws-access-key-id" }]);
+
+    // The digest names what `full` would have stored — the redacted text — and
+    // not the secret. A digest over the original would be a durable commitment
+    // to exactly the value #148 exists to keep out of this table.
+    expect(row!.payloadDigest).toBe(
+      createHash("sha256")
+        .update(canonicalJson({ output: "AWS_ACCESS_KEY_ID=[redacted:aws-access-key-id]" }), "utf8")
+        .digest("hex"),
+    );
+    expect((await verifyChain(db, sessionId)).ok).toBe(true);
+  }, 60_000);
+
   // The other half of the policy, and the reason `redact` is the default:
   // refusing loses the trajectory, and a lost trajectory teaches a user to
   // turn recording off. A deployment can opt into that trade; it does not get
   // it by accident.
   it("refuses the batch instead, when the repo's adp.yaml says to", async () => {
     const strictRepo = "strict";
-    await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: strictRepo }) });
-
-    const seed = await mkdtemp(path.join(tmpdir(), "adp-e2e-sessions-strict-"));
-    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/${strictRepo}.git`;
-    await execFileAsync("git", ["clone", cloneUrl, seed]);
-    await execFileAsync("git", ["checkout", "-B", "main"], { cwd: seed });
-    await execFileAsync("git", ["config", "user.email", "seed@example.com"], { cwd: seed });
-    await execFileAsync("git", ["config", "user.name", "Seed"], { cwd: seed });
-    await writeFile(path.join(seed, "adp.yaml"), "trajectory:\n  on_secret: refuse\n");
-    await execFileAsync("git", ["add", "."], { cwd: seed });
-    await execFileAsync("git", ["commit", "-m", "strict trajectory policy"], { cwd: seed });
-    await execFileAsync("git", ["push", "origin", "main"], { cwd: seed });
-    await rm(seed, { recursive: true, force: true });
+    await seedRepoWithPolicy(strictRepo, "trajectory:\n  on_secret: refuse\n");
 
     const started = await api(`/api/adp/repos/${owner}/${strictRepo}/sessions`, {
       method: "POST",

@@ -74,11 +74,17 @@ with ADP absent.
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 1-7 | `adp-recorder` — a buffered, replay-safe event producer, out of band | #149 | not started. 3-1 (#147), 3-2 (#146) and 1-8 (#148) have all shipped, so the original chain is clear. One new blocker took their place: 1-19 below, which decides what a recorder records by default and is therefore what this is built against |
-| 1-19 | The trajectory payload default: structure by default, full payloads opt-in | #199 | not started, and the last thing between here and 1-7. Raised by 1-8 as a related decision and deliberately not bundled into it — #148 governs what a *detector* recognises, this governs what is stored when nothing is detected, which is the larger surface. Free to decide now because nothing writes to these tables yet; a migration and an apology once #149 has |
+| 1-7 | `adp-recorder` — a buffered, replay-safe event producer, out of band | #149 | not started, and **unblocked**: 3-1 (#147), 3-2 (#146), 1-8 (#148) and 1-19 (#199) have all shipped, so nothing stands between here and it. It is built against what 1-19 decided — structure by default — which is the whole reason that decision came first |
 | 1-9 | Harness readers, two to start, and named in the README | #150 | not started. Translation lives in the recorder, so the server keeps storing `harness` as a string it never branches on |
 | 1-10 | Session lifecycle driven by harness signals | #151 | not started. What turns 2-3 into a demonstration rather than a script that calls two endpoints |
 | 1-11 | `adp connect <harness>` | #154 | not started. Proves itself with a round trip rather than reporting success on having written files |
+
+Item 1-19 — the trajectory payload default, #199 — is finished and is gone from this table, on
+the terms 1a's items left: what shipped is in `CHANGELOG.md`, and the number is not reused. It
+decided that a payload is stored as its *structure* by default and in full only where a repo asks,
+which is the shape 1-7 is now built against. The asymmetry that settled it is worth carrying,
+because every later retention question meets it again: a repo widens the setting after reading
+what a trajectory holds, and nobody unsends what already arrived.
 
 **Recording is out of band, and that is the thesis rather than an optimisation of it.** Arm 2's
 MCP arm recorded no trajectory at all and still cost $0.1435/trial against $0.0848 for the same
@@ -218,7 +224,7 @@ popular. 3-4 moves for the same reason, one release later.
 | 3-3 | Make the SBOM deterministic so identical dependency sets dedup | #194 | not started | `randomUUID()` and a fresh timestamp per land make ~8 KB of every ~12 KB landed change un-dedupable and ~100% redundant. Pure win; needs no object store |
 | 3-4 | Stream or bound `verifyChain` | #152 | not started. Lands with 1c | It loads an entire session into memory, and `/runs/:id/verify` does `Promise.all` over every session at once, behind a plain `repo:read` token. Checkpoints already sign the chain head, so incremental verification is available and unused |
 | 3-5 | Bench arm 4 — `storage-growth` | #195 | not started | Deterministic, no model, no tokens, CI-runnable like arm 1: bytes per unit on a real Postgres, realised vs batched compression, dedup yield, ingest cliff, peak RSS on `/verify` |
-| 3-6 | Retention and tiering as org policy | — | blocked on 3-5 | The intended shape — hot/extended tiers with promote-on-reference, attestations committing to digests never payloads, "verified, payload not retained" as an honest third verification state — is settled; the numbers that justify it come from 3-5. 1-16 covers the interval. The object-store half also waits on decision 2 |
+| 3-6 | Retention and tiering as org policy | — | blocked on 3-5 | The intended shape — hot/extended tiers with promote-on-reference, attestations committing to digests never payloads, "verified, payload not retained" as an honest third verification state — is settled; the numbers that justify it come from 3-5. 1-19 (#199) built the commitment half already: an event whose payload is stored as structure carries `payload_digest`, covered by the chain. 1-16 covers the interval. The object-store half also waits on decision 2 |
 
 ---
 

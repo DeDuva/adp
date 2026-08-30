@@ -40,6 +40,11 @@ export interface EventInput {
   // producer. It travels with the event so the chain commits to it, and it is
   // absent — not empty — on the ordinary event nothing fired on.
   redactions?: { path: string; pattern: string }[] | null;
+  // #199: set by the ingest route when `payload` above is the structural
+  // projection of what the producer sent rather than what it sent — sha256 of
+  // the canonical JSON of the payload as supplied. Null on the `full` path,
+  // and on an event that carried no payload to project.
+  payloadDigest?: string | null;
   occurredAt?: Date;
 }
 
@@ -91,6 +96,8 @@ export function eventHash(
     producerId?: string | null;
     // #148: present only on an event the secret detector actually touched.
     redactions?: unknown;
+    // #199: present only on an event whose payload is a structural projection.
+    payloadDigest?: string | null;
     occurredAt: Date;
   },
 ): string {
@@ -123,6 +130,14 @@ export function eventHash(
         // could be edited away afterwards — and the whole point of recording
         // one is that it survives.
         ...(event.redactions !== null && event.redactions !== undefined ? { redactions: event.redactions } : {}),
+        // #199, on the same terms again, and for a sharper reason than either:
+        // this digest is the only thing left committing to the content the
+        // projection removed. A digest the chain did not cover could be
+        // swapped for one matching a payload that was never sent, which would
+        // turn "verified, payload not retained" into a claim about nothing.
+        ...(event.payloadDigest !== null && event.payloadDigest !== undefined
+          ? { payloadDigest: event.payloadDigest }
+          : {}),
         occurredAt: event.occurredAt.toISOString(),
       }),
       "utf8",
@@ -308,6 +323,9 @@ export async function appendEvents(
         // Null rather than [] when nothing fired: `eventHash` keys off "is it
         // set", and an empty array is set.
         redactions: input.redactions && input.redactions.length > 0 ? input.redactions : null,
+        // #199: null rather than "" when the payload is stored as supplied —
+        // `eventHash` keys off "is it set", and an empty string is set.
+        payloadDigest: input.payloadDigest ?? null,
         status: input.status ?? null,
         model: input.model ?? null,
         tokensIn: input.tokensIn ?? null,
@@ -501,6 +519,12 @@ export function serializeEvent(row: SessionEventRow) {
     // needs to know the difference between "the agent never saw a secret" and
     // "the agent saw one and this is what is left of it".
     redactions: row.redactions,
+    // #199: null means the payload above is exactly what the producer sent.
+    // Non-null means it is that payload's shape with the string content
+    // removed, and this is sha256 of the canonical JSON of what was sent — so
+    // a reader can tell the two apart, and a producer holding its own copy can
+    // prove the record corresponds to it.
+    payload_digest: row.payloadDigest,
     occurred_at: row.occurredAt.toISOString(),
     hash: row.hash,
     prev_hash: row.prevHash,
