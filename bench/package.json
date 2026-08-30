@@ -2,6 +2,7 @@
   "name": "@adp/bench",
   "version": "0.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "ADP benchmark harness (D4 / A1). Zero runtime dependencies, same as adapters/.",
   "//test": "No 'test' script on purpose. There is no bench/test/ — this package's assertions live in server/test/e2e-merge-contention.test.ts (which drives bench/lib/ directly) and in `npm run report` plus the git-diff check that follows it in CI and in the Makefile's bench target. A 'test': 'node --test test/' script pointed at a directory that has never existed, so anyone wiring bench into a test sweep got a failure with nothing behind it.",

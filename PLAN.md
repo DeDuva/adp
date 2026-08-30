@@ -129,6 +129,18 @@ recorded because the next person to read this section should know the site was m
 twice, on two different criteria — and because `make site` now gates three pages, which is
 the number a fourth has to join rather than quietly skip.
 
+A third pass on 2026-08-30 measured the site for launch, finishing what the positioning
+review began. The loop the playbooks describe is drawn now rather than only described — the
+six stages, their committed artifacts, and the layer underneath, as one figure leading
+`/sdlc/` with a compact variant opening the front page — and a second figure places ADP
+among the tools around it, which is the picture that answers the rip-and-replace fear. The
+three pages carry one masthead, so the reading order (front page, then the SDLC, then the
+argument) is visible from any of them, and the license the pages advertise moved to MIT
+with the tree it describes. Prose and drawings again, so it opens no item here; `make site`
+still gates all three pages, with both new figures held to the same criteria as everything
+else — no horizontal scroll at any width, structure from `docs/html/site.css` alone, and a
+stacked reading below 700 px.
+
 ---
 
 ## Phase 2 — The serial-base-case forward work
