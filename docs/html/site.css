@@ -188,6 +188,17 @@ p { margin: 0; max-width: var(--measure); text-wrap: pretty; }
 .masthead__meta { color: var(--on-dark-dim); letter-spacing: .12em; }
 .masthead a { color: var(--paper); }
 
+/* The masthead's navigation: the three pages declaring each other. Added with
+   the 2026-08-30 positioning pass — the site reads as one argument only if
+   every page shows the same three doors, and until then /why/ had no masthead
+   at all. `aria-current="page"` is the marker, so the state the reader sees is
+   the one assistive tech announces. */
+.masthead__nav { display: flex; gap: var(--s3); flex-wrap: wrap; }
+.masthead__nav a { color: var(--on-dark-dim); }
+.masthead__nav a:hover { color: var(--paper); }
+.masthead__nav a[aria-current="page"] { color: var(--paper);
+  border-bottom: 1px solid var(--accent); padding-bottom: 2px; }
+
 /* -------------------------------------------------------------- controls -- */
 .cta { display: flex; gap: var(--s2); flex-wrap: wrap; }
 .btn { display: inline-flex; align-items: center; justify-content: center;
@@ -305,7 +316,13 @@ figcaption { color: var(--dim); font-size: var(--t3); line-height: 1.6; }
 .diagram { display: block; width: 100%; height: auto; }
 .diagram--wide { min-width: 640px; }
 @media (max-width: 700px) { .diagram--wide { display: none; } }
-@media (min-width: 701px) { .diagram--stacked { display: none; } }
+/* `.steps.diagram--stacked` and not just `.diagram--stacked`: the stacked
+   fallbacks are `.steps` blocks, and `.steps { display: flex }` is declared
+   later in this file — at equal specificity the later rule wins, so the plain
+   selector lost the cascade and every fallback rendered on desktop too,
+   duplicating the diagram above it. Found 2026-08-30 while adding the second
+   and third diagrams; it had shipped that way with the first. */
+@media (min-width: 701px) { .diagram--stacked, .steps.diagram--stacked { display: none; } }
 
 /* ---------------------------------------------------------------- footer -- */
 .foot { display: flex; gap: var(--s4); flex-wrap: wrap;
@@ -335,6 +352,26 @@ figcaption { color: var(--dim); font-size: var(--t3); line-height: 1.6; }
 .diagram__bad   { fill: var(--bad); font-weight: 500; }
 .diagram__note  { fill: var(--dim); }
 .diagram text   { font-family: var(--sans); font-size: 13px; }
+
+/* The loop-and-layer and ecosystem diagrams (2026-08-30) share the grammar
+   above — structure in 1px black, meaning in the tokens — plus these. They are
+   denser than the change-record diagram, so below 700px each page shows its
+   stacked equivalent, and between 700px and the frame they scroll inside
+   `.plate__scroll` rather than shrinking their type below the readable floor
+   (#138's scroll-over-squeeze call, applied one more time). */
+.diagram--wider { min-width: 860px; }
+@media (max-width: 700px) { .diagram--wider { display: none; } }
+.diagram__cell     { fill: var(--plate); stroke: var(--rule); stroke-width: 1; }
+.diagram__band     { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; }
+.diagram__tie      { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; }
+.diagram__return   { stroke: var(--rule-strong); stroke-width: 1.4; fill: none; }
+.diagram__arrowhead--ink { fill: var(--rule-strong); }
+.diagram__divider  { stroke: var(--rule); stroke-width: 1; }
+/* Text sizes carry the `.diagram` prefix on purpose: the base rule above is
+   `.diagram text`, and a bare class loses that specificity contest silently. */
+.diagram .diagram__keyhead { fill: var(--accent); font: 500 12.5px var(--mono); letter-spacing: .08em; }
+.diagram .diagram__n       { fill: var(--dim); font: 500 10px var(--mono); letter-spacing: .1em; }
+.diagram .diagram__t--sm   { font-size: 12px; }
 
 /* Its narrow-screen equivalent: the same four steps, read top to bottom. */
 .steps { display: flex; flex-direction: column; gap: 1px;

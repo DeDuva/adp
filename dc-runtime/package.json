@@ -4,7 +4,7 @@
   "private": true,
   "description": "The client runtime for the interactive essay at docs/html/why/. Builds docs/html/support.js.",
   "type": "module",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "scripts": {
     "build": "node build.mjs",
     "check": "node build.mjs --check",

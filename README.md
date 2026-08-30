@@ -14,7 +14,7 @@ land a change that does not meet your evidence requirements.
 [why it exists](https://deduva.github.io/adp/why/), and
 [the AI-native SDLC stage by stage](https://deduva.github.io/adp/sdlc/).
 
-Apache-2.0 · TypeScript · Fastify · PostgreSQL · the real `git` binary for all plumbing.
+MIT · TypeScript · Fastify · PostgreSQL · the real `git` binary for all plumbing.
 
 ---
 
@@ -396,4 +396,5 @@ environment is brought up and torn down.
 
 ## License
 
-[Apache-2.0](LICENSE) for code, spec, and conformance suites; CC-BY for prose.
+[MIT](LICENSE) — code, spec, conformance suites, and prose alike. Nothing in this
+repository needs a second look from legal before you run it, fork it, or build on it.

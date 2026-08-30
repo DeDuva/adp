@@ -15,7 +15,14 @@
 <body>
 
 <div class="mastband">
-  <p class="masthead"><span><a href="../">ADP · the agent-native forge</a></span><span class="masthead__meta">Spec 0.5.0 · Apache-2.0</span></p>
+  <div class="masthead"><span><a href="../">ADP · the agent-native forge</a></span>
+    <nav class="masthead__nav" aria-label="Site">
+      <a href="../">Overview</a>
+      <a href="./" aria-current="page">The SDLC</a>
+      <a href="../why/">Why ADP</a>
+      <a href="https://github.com/DeDuva/adp">GitHub</a>
+    </nav>
+    <span class="masthead__meta">Spec 0.5.0 · MIT</span></div>
 </div>
 
 <header class="wrap sec sec--top">
@@ -49,20 +56,123 @@
     writing something down, and the next stage begins by reading it. That is what removes the handoff
     delay, and it is also what makes the process auditable in principle.</p>
 
-    <div class="steps">
-      <div class="step"><span class="step__n">Stage 01 · Plan</span><span class="step__h">The intent</span><span class="step__b">What the change is for, written before the work, approved by whoever owns the outcome.</span></div>
-      <div class="step"><span class="step__n">Stage 02 · Design</span><span class="step__h">The spec</span><span class="step__b">Requirements and design in one pass, shaped by the organization's own policy.</span></div>
-      <div class="step"><span class="step__n">Stage 03 · Build</span><span class="step__h">The plan, then the diff</span><span class="step__b">No implementation without a written plan; conventions and guardrails held in the repository.</span></div>
-      <div class="step"><span class="step__n">Stage 04 · Test</span><span class="step__h">The evidence</span><span class="step__b">The session verifies itself before a human sees it, and the configuration is regression-tested too.</span></div>
-      <div class="step"><span class="step__n">Stage 05 · Deploy</span><span class="step__h">The findings, and the approval</span><span class="step__b">Policy-based review ranked by severity; a named person still authorizes the release.</span></div>
-      <div class="step"><span class="step__n">Stage 06 · Maintain</span><span class="step__h">The incident record</span><span class="step__b">Production breaches diagnose back into the loop, and the finding becomes the next intent.</span></div>
-    </div>
+    <figure class="flow flow--tight">
+      <div class="plate__scroll">
+        <svg class="diagram diagram--wider" viewBox="0 0 960 288" role="img" aria-label="The six stages of the AI-native SDLC as a loop — Plan, Design, Build, Test, Deploy, Maintain — each committing an artifact; beneath them, the ADP layer that binds and enforces every artifact on the change.">
+          <defs>
+            <marker id="sa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path class="diagram__arrowhead" d="M0 0 L10 5 L0 10 z"/>
+            </marker>
+            <marker id="sb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path class="diagram__arrowhead--ink" d="M0 0 L10 5 L0 10 z"/>
+            </marker>
+          </defs>
+          <path class="diagram__return" d="M 936 66 L 952 66 L 952 22 L 12 22 L 12 66 L 18 66" marker-end="url(#sb)"/>
+          <text class="diagram__note diagram__t--sm" x="480" y="15" text-anchor="middle">the incident record becomes the next intent — the loop closes</text>
+          <g>
+            <rect class="diagram__box" x="24" y="40" width="132" height="52"/>
+            <text class="diagram__n" x="90" y="58" text-anchor="middle">STAGE 01</text>
+            <text class="diagram__head" x="90" y="78" text-anchor="middle">Plan</text>
+            <rect class="diagram__box" x="180" y="40" width="132" height="52"/>
+            <text class="diagram__n" x="246" y="58" text-anchor="middle">STAGE 02</text>
+            <text class="diagram__head" x="246" y="78" text-anchor="middle">Design</text>
+            <rect class="diagram__box" x="336" y="40" width="132" height="52"/>
+            <text class="diagram__n" x="402" y="58" text-anchor="middle">STAGE 03</text>
+            <text class="diagram__head" x="402" y="78" text-anchor="middle">Build</text>
+            <rect class="diagram__box" x="492" y="40" width="132" height="52"/>
+            <text class="diagram__n" x="558" y="58" text-anchor="middle">STAGE 04</text>
+            <text class="diagram__head" x="558" y="78" text-anchor="middle">Test</text>
+            <rect class="diagram__box" x="648" y="40" width="132" height="52"/>
+            <text class="diagram__n" x="714" y="58" text-anchor="middle">STAGE 05</text>
+            <text class="diagram__head" x="714" y="78" text-anchor="middle">Deploy</text>
+            <rect class="diagram__box" x="804" y="40" width="132" height="52"/>
+            <text class="diagram__n" x="870" y="58" text-anchor="middle">STAGE 06</text>
+            <text class="diagram__head" x="870" y="78" text-anchor="middle">Maintain</text>
+          </g>
+          <g>
+            <line class="diagram__arrow" x1="158" y1="66" x2="174" y2="66" marker-end="url(#sa)"/>
+            <line class="diagram__arrow" x1="314" y1="66" x2="330" y2="66" marker-end="url(#sa)"/>
+            <line class="diagram__arrow" x1="470" y1="66" x2="486" y2="66" marker-end="url(#sa)"/>
+            <line class="diagram__arrow" x1="626" y1="66" x2="642" y2="66" marker-end="url(#sa)"/>
+            <line class="diagram__arrow" x1="782" y1="66" x2="798" y2="66" marker-end="url(#sa)"/>
+          </g>
+          <g>
+            <line class="diagram__tie" x1="90" y1="92" x2="90" y2="103"/><line class="diagram__tie" x1="90" y1="120" x2="90" y2="130"/>
+            <line class="diagram__tie" x1="246" y1="92" x2="246" y2="103"/><line class="diagram__tie" x1="246" y1="120" x2="246" y2="130"/>
+            <line class="diagram__tie" x1="402" y1="92" x2="402" y2="103"/><line class="diagram__tie" x1="402" y1="120" x2="402" y2="130"/>
+            <line class="diagram__tie" x1="558" y1="92" x2="558" y2="103"/><line class="diagram__tie" x1="558" y1="120" x2="558" y2="130"/>
+            <line class="diagram__tie" x1="714" y1="92" x2="714" y2="103"/><line class="diagram__tie" x1="714" y1="120" x2="714" y2="130"/>
+            <line class="diagram__tie" x1="870" y1="92" x2="870" y2="103"/><line class="diagram__tie" x1="870" y1="120" x2="870" y2="130"/>
+          </g>
+          <text class="diagram__key" x="90" y="115" text-anchor="middle">intent</text>
+          <text class="diagram__key" x="246" y="115" text-anchor="middle">spec</text>
+          <text class="diagram__key" x="402" y="115" text-anchor="middle">plan + diff</text>
+          <text class="diagram__key" x="558" y="115" text-anchor="middle">evidence</text>
+          <text class="diagram__key" x="714" y="115" text-anchor="middle">approval</text>
+          <text class="diagram__key" x="870" y="115" text-anchor="middle">incident record</text>
+          <rect class="diagram__band" x="24" y="130" width="912" height="26"/>
+          <text class="diagram__keyhead" x="480" y="147" text-anchor="middle">ADP — EVERY ARTIFACT, BOUND AND ENFORCED ON THE CHANGE</text>
+          <g>
+            <rect class="diagram__cell" x="24" y="156" width="132" height="96"/>
+            <text class="diagram__t diagram__t--sm" x="90" y="176" text-anchor="middle">typed intent, resolved</text>
+            <text class="diagram__t diagram__t--sm" x="90" y="192" text-anchor="middle">from a plain git push —</text>
+            <text class="diagram__bad diagram__t--sm" x="90" y="210" text-anchor="middle">a change without one</text>
+            <text class="diagram__bad diagram__t--sm" x="90" y="226" text-anchor="middle">can be refused</text>
+            <rect class="diagram__cell" x="180" y="156" width="132" height="96"/>
+            <text class="diagram__t diagram__t--sm" x="246" y="176" text-anchor="middle">artifacts carried on</text>
+            <text class="diagram__t diagram__t--sm" x="246" y="192" text-anchor="middle">the change, versioned</text>
+            <text class="diagram__t diagram__t--sm" x="246" y="208" text-anchor="middle">with it — attached when</text>
+            <text class="diagram__t diagram__t--sm" x="246" y="224" text-anchor="middle">the branch is gone</text>
+            <rect class="diagram__cell" x="336" y="156" width="132" height="96"/>
+            <text class="diagram__t diagram__t--sm" x="402" y="176" text-anchor="middle">ordinary git objects,</text>
+            <text class="diagram__t diagram__t--sm" x="402" y="192" text-anchor="middle">plus provenance —</text>
+            <text class="diagram__t diagram__t--sm" x="402" y="208" text-anchor="middle">harness, model, session</text>
+            <text class="diagram__t diagram__t--sm" x="402" y="224" text-anchor="middle">as fields, not a transcript</text>
+            <rect class="diagram__cell" x="492" y="156" width="132" height="96"/>
+            <text class="diagram__t diagram__t--sm" x="558" y="176" text-anchor="middle">gates run isolated;</text>
+            <text class="diagram__ok diagram__t--sm" x="558" y="192" text-anchor="middle">a DSSE-signed bundle</text>
+            <text class="diagram__t diagram__t--sm" x="558" y="208" text-anchor="middle">bound to the state</text>
+            <text class="diagram__t diagram__t--sm" x="558" y="224" text-anchor="middle">that ships</text>
+            <rect class="diagram__cell" x="648" y="156" width="132" height="96"/>
+            <text class="diagram__t diagram__t--sm" x="714" y="176" text-anchor="middle">land policy — instance</text>
+            <text class="diagram__t diagram__t--sm" x="714" y="192" text-anchor="middle">∧ org ∧ repo,</text>
+            <text class="diagram__t diagram__t--sm" x="714" y="208" text-anchor="middle">author-independent:</text>
+            <text class="diagram__t--sm" x="714" y="226" text-anchor="middle"><tspan class="diagram__ok">land</tspan> <tspan class="diagram__bad">or refuse</tspan></text>
+            <rect class="diagram__cell" x="804" y="156" width="132" height="96"/>
+            <text class="diagram__t diagram__t--sm" x="870" y="176" text-anchor="middle">append-only operation</text>
+            <text class="diagram__t diagram__t--sm" x="870" y="192" text-anchor="middle">log, guarded undo —</text>
+            <text class="diagram__t diagram__t--sm" x="870" y="208" text-anchor="middle">the rollback is on</text>
+            <text class="diagram__t diagram__t--sm" x="870" y="224" text-anchor="middle">the record too</text>
+          </g>
+          <rect class="diagram__box" x="24" y="252" width="912" height="26"/>
+          <text class="diagram__note diagram__t--sm" x="480" y="269" text-anchor="middle">every binding written to the append-only operation log, in the same transaction as the change</text>
+        </svg>
+      </div>
+
+      <!-- Below 700px the loop is read top to bottom instead: the same six
+           stages and artifacts, plus the layer as a seventh row — the pattern
+           the front page's change-record diagram established. -->
+      <div class="steps diagram--stacked" role="img" aria-label="The six stages of the AI-native SDLC, each committing an artifact, and the ADP layer that binds and enforces every artifact on the change.">
+        <div class="step"><span class="step__n">Stage 01 · Plan</span><span class="step__h">The intent</span><span class="step__b">What the change is for, written before the work, approved by whoever owns the outcome.</span></div>
+        <div class="step"><span class="step__n">Stage 02 · Design</span><span class="step__h">The spec</span><span class="step__b">Requirements and design in one pass, shaped by the organization's own policy.</span></div>
+        <div class="step"><span class="step__n">Stage 03 · Build</span><span class="step__h">The plan, then the diff</span><span class="step__b">No implementation without a written plan; conventions and guardrails held in the repository.</span></div>
+        <div class="step"><span class="step__n">Stage 04 · Test</span><span class="step__h">The evidence</span><span class="step__b">The session verifies itself before a human sees it, and the configuration is regression-tested too.</span></div>
+        <div class="step"><span class="step__n">Stage 05 · Deploy</span><span class="step__h">The findings, and the approval</span><span class="step__b">Policy-based review ranked by severity; a named person still authorizes the release.</span></div>
+        <div class="step"><span class="step__n">Stage 06 · Maintain</span><span class="step__h">The incident record</span><span class="step__b">Production breaches diagnose back into the loop, and the finding becomes the next intent.</span></div>
+        <div class="step"><span class="step__n">Underneath · ADP</span><span class="step__h">Every artifact, bound and enforced on the change</span><span class="step__b">Typed intent · artifacts versioned with the change · provenance as fields · DSSE-signed evidence · land policy · operation log with undo.</span></div>
+      </div>
+
+      <figcaption>The loop is the playbooks' — their stages, their artifacts, verbatim. The band is the
+      layer this page is about: each artifact typed, signed, and enforced where changes are admitted,
+      rather than held by agreement inside the tool that wrote the code.</figcaption>
+    </figure>
 
     <p class="sub">Every one of those artifacts is a file in a repository. Everything that keeps them
-    honest — the hook that blocks an edit to a protected path, the policy encoded as a skill, the review
-    pass that ranks findings, the gate that pauses for an approval — <strong>runs inside the harness that
-    also wrote the code.</strong> That is not a flaw in the playbooks. It is the boundary of what a
-    playbook can reach.</p>
+    honest — the hook that blocks an edit to a protected path, the policy encoded as a skill — the
+    playbooks' deterministic guardrails and advisory ones — the review pass that ranks findings, the
+    gate that pauses for an approval — <strong>runs inside the harness that also wrote the
+    code.</strong> That is not a flaw in the playbooks. It is the boundary of what a playbook can
+    reach.</p>
   </div>
 </section>
 
@@ -103,7 +213,7 @@
           </tr>
           <tr>
             <td data-th="Stage"><strong>05 Deploy</strong> — the findings, and the approval</td>
-            <td data-th="What holds it today">Hooks pause an action until a named person approves; the pull request is the audit record; autonomy is tiered by environment. All correct — and all enforced by the tool whose behaviour is being constrained.</td>
+            <td data-th="What holds it today">Hooks pause an action until a named person approves — the agent runs to the production gate and never crosses it; the pull request is the audit record; autonomy is tiered by environment. All correct — and all enforced by the tool whose behaviour is being constrained.</td>
             <td data-th="What a typed record makes of it">Requirements evaluated where changes are admitted, over an instance floor, an organization floor and the repository's own rules, returning a typed verdict the authoring agent can act on. A refusal is recorded as carefully as an admission.</td>
           </tr>
           <tr>
@@ -259,7 +369,8 @@ make demo</pre>
     <a href="../why/">Why ADP exists</a>
     <a href="https://github.com/DeDuva/adp">GitHub</a>
     <a href="https://github.com/DeDuva/adp/blob/main/docs/self-hosting.md">Self-hosting</a>
-    <span>Apache-2.0 code · CC-BY prose</span>
+    <a href="https://github.com/DeDuva/adp/blob/main/CHANGELOG.md">Changelog</a>
+    <span>MIT · code and prose alike</span>
   </div>
 </footer>
 

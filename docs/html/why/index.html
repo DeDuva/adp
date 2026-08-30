@@ -5,9 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Why ADP exists — code got cheap, trust didn't</title>
 <meta name="description" content="Agents now write most new code at the frontier — mostly one capable agent iterating on CI until it believes the work is done, then merging. Belief is not evidence: every change needs a signed record of intent, diff, evidence, provenance, enforced where changes land. Why, with simulations and a defensible landscape analysis.">
+<!-- site.css is linked here as well as in the helmet: the masthead below sits
+     outside the x-dc template (never name that tag literally in a comment —
+     the runtime finds its template by scanning the raw source for it), so it
+     renders before the runtime boots and needs its styles immediately. The
+     second link resolves to the same cached file. -->
+<link rel="stylesheet" href="../site.css">
 <script src="../support.js"></script>
 </head>
 <body>
+
+<div class="mastband">
+  <div class="masthead"><span><a href="../">ADP · the agent-native forge</a></span>
+    <nav class="masthead__nav" aria-label="Site">
+      <a href="../">Overview</a>
+      <a href="../sdlc/">The SDLC</a>
+      <a href="./" aria-current="page">Why ADP</a>
+      <a href="https://github.com/DeDuva/adp">GitHub</a>
+    </nav>
+    <span class="masthead__meta">Spec 0.5.0 · MIT</span></div>
+</div>
+
 <x-dc>
 <helmet>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -55,7 +73,7 @@
 <div class="foot">
 <span>Created by Dov Zimring, with lots of help from Claude</span>
 <a href="https://github.com/DeDuva/adp">github.com/DeDuva/adp</a>
-<a href="https://github.com/DeDuva/adp/blob/main/LICENSE">Apache-2.0 licensed</a>
+<a href="https://github.com/DeDuva/adp/blob/main/LICENSE">MIT licensed</a>
 </div>
 </div>
 </header>
@@ -514,7 +532,7 @@
 <div class="mx__n" onClick="{{ r3Tog }}"><span class="acc__arrow">{{ r3Arrow }}</span>Entire</div>
 <div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c part">◐</div><div class="mx__c full">●</div><div class="mx__c none">○</div><div class="mx__c none">○</div><div class="mx__c part">◐</div>
 <sc-if value="{{ r3Open }}" hint-placeholder-val="{{ false }}">
-<div class="mx__d">Founded by Thomas Dohmke (ex-GitHub CEO); record $60M seed<a class="ref" href="#ref-10">10</a>. Checkpoints version agent sessions, prompts, tool calls, and reasoning traces as git-native objects — the intent/provenance half of our thesis, nearly verbatim, and the strongest capture story shipping. Distributed git network in public preview since July 2026, with ForgeMark, an open push-throughput benchmark. The gap is the other half: capture without merge-time evidence binding is the audit half without the trust half — and the business model centers on hosting the agent-session data layer, so labs would rent their own provenance.</div>
+<div class="mx__d">Founded by Thomas Dohmke (ex-GitHub CEO); record $60M seed<a class="ref" href="#ref-10">10</a>. Checkpoints version agent sessions, prompts, tool calls, and reasoning traces as git-native objects — the intent/provenance half of our thesis, nearly verbatim, and the strongest capture story shipping. Distributed git network in public preview since July 2026, with ForgeMark, an open push-throughput benchmark; native repositories are announced, not yet shipped. The gap is the other half: capture without merge-time evidence binding is the audit half without the trust half — and the business model centers on hosting the agent-session data layer, so labs would rent their own provenance.</div>
 </sc-if>
 
 <div class="mx__n" onClick="{{ r4Tog }}"><span class="acc__arrow">{{ r4Arrow }}</span>Diversion</div>
@@ -550,7 +568,7 @@
 <div class="mx__n" onClick="{{ r9Tog }}" class="quote"><span class="acc__arrow">{{ r9Arrow }}</span><span class="k">ADP</span></div>
 <div class="mx__c part">◐</div><div class="mx__c part">◐</div><div class="mx__c full">●</div><div class="mx__c full">●</div><div class="mx__c full">●</div><div class="mx__c full">●</div><div class="mx__c part">◐</div><div class="mx__c full">●</div>
 <sc-if value="{{ r9Open }}" hint-placeholder-val="{{ false }}">
-<div class="mx__d">Scored with the same standard of evidence, against the working reference implementation (CI-verified end to end, validated against the real unmodified <span class="mono fine">gh</span> binary). Shipped: candidate sets (the fan-out object no one else has), append-only operation log with undo written in the same transaction as every mutation, typed Ed25519-signed changes binding commit to intent and provenance, DSSE-signed in-toto evidence bundles gated by a two-level land policy, and push protection at the receive path. Honest partials: the store is real git today — working-set virtualization is roadmap; conflicts-as-objects and the speculative eval-gated merge queue are specified, not shipped; the trust plane's org policy plane, dependency admission, scanner-as-gate adapters and isolated gate execution (network-denied, resource-capped Docker) have all shipped; what remains is SSO/SCIM, and dependency admission's breadth — it covers npm today. Apache-2.0, open spec, designed for multi-vendor implementation; governance moves to a neutral foundation once two independent implementations exist.</div>
+<div class="mx__d">Scored with the same standard of evidence, against the working reference implementation (CI-verified end to end, validated against the real unmodified <span class="mono fine">gh</span> binary). Shipped: candidate sets (the fan-out object no one else has), append-only operation log with undo written in the same transaction as every mutation, typed Ed25519-signed changes binding commit to intent and provenance, DSSE-signed in-toto evidence bundles gated by a two-level land policy, and push protection at the receive path. Honest partials: the store is real git today — working-set virtualization is roadmap; conflicts-as-objects and the speculative eval-gated merge queue are specified, not shipped; the trust plane's org policy plane, dependency admission, scanner-as-gate adapters and isolated gate execution (network-denied, resource-capped Docker) have all shipped; what remains is SSO/SCIM, and dependency admission's breadth — it covers npm today. MIT, open spec, designed for multi-vendor implementation; governance moves to a neutral foundation once two independent implementations exist.</div>
 </sc-if>
 </div>
 </div>
@@ -585,7 +603,7 @@
 <a href="https://github.com/DeDuva/adp#readme">README</a>
 <a href="https://github.com/DeDuva/adp/blob/main/docs/self-hosting.md">docs/self-hosting.md</a>
 <a href="https://github.com/DeDuva/adp/blob/main/docs/server-stack-tutorial.md">docs/server-stack-tutorial.md</a>
-<span>Apache-2.0 code · CC-BY prose</span>
+<span>MIT · code and prose alike</span>
 </div>
 <div class="label">REFERENCES</div>
 <ol class="refs">
