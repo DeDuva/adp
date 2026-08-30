@@ -16,6 +16,36 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**Token mint carries `harness`, `model` and `session_id`, so signed provenance
+can name them (#141).** `README.md` promised provenance carrying "the pushing
+identity, plus harness / model / session where supplied", and three of those
+four were unreachable over HTTP. Everything else existed: the columns, the
+`mintToken()` options, the `authenticate()` reader that puts them on the
+identity, and the `provenanceOf()` that copies them into the signed block.
+`POST /api/adp/tokens` accepted none of the three, and its only other caller —
+`bootstrap.ts` — sets none, so every token in existence held null for all three
+and every signed change omitted the fields that make its provenance worth
+having.
+
+The three are optional fields on the mint body now, echoed back in the response
+so a caller can confirm what it was issued rather than minting blind — they are
+unreadable afterwards except by using the token, and a typo in `harness` is
+otherwise invisible until a signed change carries the wrong one. The
+`token.mint` operation records them too, still without the token itself.
+
+The grain question the fields raise is answered in the route rather than left
+to the next reader: `model` on a *token* says which model the integration this
+credential belongs to is built around — "this is the Codex integration's
+token". It is not a claim about which model produced a particular attempt,
+because a harness can switch models mid-session and the credential outlives the
+switch. That claim is `runs.labels`, per attempt. Both, not either.
+
+**Additive**: new optional request fields and new response fields, so a client
+generated against 0.5.0 keeps working untouched. An e2e test drives the whole
+chain — mint, authenticate, provenance, signature — and verifies the signature
+over the provenance that names all three, because every field was already
+present at every other step and a partial revert would otherwise type-check.
+
 **A fresh instance floors at `gates_green` alone (#174).** `LAND_POLICY_FLOOR`
 defaulted to `gates_green,one_approval`, and since #121 that second
 requirement is author-independent — so the default handed a developer

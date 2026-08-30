@@ -26,6 +26,23 @@ const MintTokenBody = z.object({
   kind: z.enum(["human", "agent"]).default("agent"),
   scopes: z.array(z.enum(["repo:read", "repo:write", "runner"])).nonempty(),
   expires_at: z.string().datetime({ offset: true }).optional(),
+  // #141: the three provenance fields. The columns, mintToken(), the
+  // authenticate() reader and provenanceOf() (http-rest/changes.ts) all
+  // carried these already; this route accepted none of them, so every token
+  // in existence held null for all three and every signed change omitted the
+  // fields that make its provenance worth having.
+  //
+  // The grain question, answered here so the next reader does not collapse
+  // the two: `model` on a *token* says which model the integration this
+  // credential belongs to is built around — "this is the Codex integration's
+  // token". It is not a claim about which model produced any particular
+  // attempt, because a harness can switch models mid-session and the token
+  // outlives the switch. That claim belongs on `runs.labels`, per attempt.
+  // Both, not either: the token answers "whose credential is this", the run
+  // answers "what actually ran".
+  harness: z.string().min(1).max(200).optional(),
+  model: z.string().min(1).max(200).optional(),
+  session_id: z.string().min(1).max(200).optional(),
 });
 
 export function registerTokenRoutes(app: FastifyInstance, db: Db) {
@@ -35,7 +52,7 @@ export function registerTokenRoutes(app: FastifyInstance, db: Db) {
       reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
       return;
     }
-    const { principal, kind, scopes, expires_at } = parsed.data;
+    const { principal, kind, scopes, expires_at, harness, model, session_id } = parsed.data;
 
     // Org-scoped by construction: the minted token carries the *caller's*
     // org, not one named in the request — an org-scoped admin can only mint
@@ -57,6 +74,9 @@ export function registerTokenRoutes(app: FastifyInstance, db: Db) {
       const token = await mintToken(tx, identityId, [...scopes], {
         orgId: orgId ?? undefined,
         expiresAt: expires_at ? new Date(expires_at) : undefined,
+        harness,
+        model,
+        sessionId: session_id,
       });
       await recordOperation(tx, {
         repoId: null,
@@ -64,7 +84,14 @@ export function registerTokenRoutes(app: FastifyInstance, db: Db) {
         actorId: req.identity!.identityId,
         verb: "token.mint",
         target: principal,
-        after: { identity_id: identityId, scopes: [...scopes], org_id: orgId },
+        after: {
+          identity_id: identityId,
+          scopes: [...scopes],
+          org_id: orgId,
+          harness: harness ?? null,
+          model: model ?? null,
+          session_id: session_id ?? null,
+        },
       });
       return token;
     });
@@ -76,6 +103,13 @@ export function registerTokenRoutes(app: FastifyInstance, db: Db) {
       scopes,
       org_id: orgId,
       expires_at: expires_at ?? null,
+      // Echoed back so a caller can confirm what it was issued rather than
+      // minting blind: these are unreadable afterwards except by using the
+      // token, and a typo in `harness` is otherwise invisible until a signed
+      // change carries the wrong one.
+      harness: harness ?? null,
+      model: model ?? null,
+      session_id: session_id ?? null,
     });
   });
 }
