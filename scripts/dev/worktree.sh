@@ -16,12 +16,12 @@
 #
 # `remove` exists for a smaller reason and a sharper one. `git worktree remove`
 # refuses while node_modules is there, because it is untracked; the spelling
-# everyone reaches for next is `--force`, which also discards uncommitted work
-# and unpushed commits without mentioning either. That is the same trap
-# `gh pr merge --delete-branch` set for stacked pull requests (AGENTS.md
-# §Landing a stack): the destructive step became the default spelling of the
-# safe one. So this checks for work you would lose *first*, and only then
-# clears the dependency trees and removes the worktree with plain `git`.
+# everyone reaches for next is `--force`, which discards uncommitted work
+# without mentioning it. That is the same trap `gh pr merge --delete-branch`
+# set for stacked pull requests (AGENTS.md §Landing a stack): the destructive
+# step became the default spelling of the safe one. So this checks for what you
+# would lose *first*, and only then clears the dependency trees and removes the
+# worktree with plain `git`.
 set -uo pipefail
 
 # shellcheck source=scripts/dev/lib.sh
@@ -137,40 +137,57 @@ remove() {
     exit 1
   fi
 
+  # **Uncommitted changes to tracked files are the only thing this destroys.**
+  # The branch is never deleted here — see the last line of this function — so
+  # its commits survive the worktree, pushed or not. Refusing over unpushed
+  # commits, which is what this did at first, is a false alarm on the single
+  # most common call: you have just landed a pull request and are cleaning up.
+  # A safe spelling that cries wolf is how people end up back on `--force`,
+  # which is the thing this exists to stop them needing.
   section "work you would lose"
-  local blocked=0
   if [ -n "$(git -C "$abs" status --porcelain --untracked-files=no)" ]; then
     fail "uncommitted changes to tracked files"
     git -C "$abs" status --short --untracked-files=no | sed 's/^/        /'
-    blocked=1
-  else
-    ok "no uncommitted changes"
-  fi
-
-  local branch upstream
-  branch="$(git -C "$abs" rev-parse --abbrev-ref HEAD)"
-  upstream="$(git -C "$abs" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
-  if [ "$branch" = "HEAD" ]; then
-    ok "detached HEAD — no branch to strand"
-  elif [ -z "$upstream" ]; then
-    fail "'$branch' has never been pushed"
-    hint "git -C $abs push -u origin HEAD   # see AGENTS.md for the WSL credential-helper form"
-    blocked=1
-  else
-    local ahead
-    ahead="$(git -C "$abs" rev-list --count "$upstream..HEAD")"
-    if [ "$ahead" != "0" ]; then
-      fail "'$branch' is $ahead commit(s) ahead of $upstream"
-      blocked=1
-    else
-      ok "'$branch' is pushed to $upstream"
-    fi
-  fi
-
-  if [ "$blocked" != "0" ]; then
     hint "nothing was removed"
     adp_summary "worktree"
     exit 1
+  fi
+  ok "no uncommitted changes"
+
+  # Everything below is reported rather than enforced: it is what you would
+  # want to know before walking away from the branch, not a reason to keep a
+  # directory. Untracked files are the one thing neither this nor `git` will
+  # discard silently — `git worktree remove` refuses over them below.
+  local branch landed
+  branch="$(git -C "$abs" rev-parse --abbrev-ref HEAD)"
+  if [ "$branch" = "HEAD" ]; then
+    info "detached HEAD — no branch to leave behind"
+  else
+    # `@{upstream}` is not usable here: after a landed pull request the remote
+    # branch is gone, and `git rev-parse --abbrev-ref --symbolic-full-name`
+    # answers a deleted upstream by printing the string `@{upstream}` back on
+    # *stdout* and exiting 128 — so a `|| true` around it captures the literal
+    # and every comparison after it is nonsense. Ask git something that is
+    # still true instead.
+    landed=""
+    git -C "$abs" fetch --quiet origin main 2>/dev/null || true
+    if git -C "$abs" diff --quiet HEAD origin/main 2>/dev/null; then
+      # A squash merge puts this work on main under a *new* sha, so the branch
+      # commits are reachable from no remote and every ancestry test calls them
+      # unmerged. The trees agreeing is what actually answers "did this land".
+      landed=1
+      ok "'$branch' has landed — its tree is origin/main's"
+    fi
+    if [ -z "$landed" ]; then
+      local local_only
+      local_only="$(git -C "$abs" rev-list --count HEAD --not --remotes 2>/dev/null || echo 0)"
+      if [ "$local_only" != "0" ]; then
+        warn "'$branch' has $local_only commit(s) that are on no remote"
+        hint "they stay on the branch, which this does not delete — but they are only here"
+      else
+        ok "'$branch' is on a remote"
+      fi
+    fi
   fi
 
   section "removing"

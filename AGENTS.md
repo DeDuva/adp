@@ -123,10 +123,17 @@ npm cache. That is not the cost worth optimising.
 `make worktree-remove` exists because the safe spelling has to be the easy one, the same
 lesson `gh pr merge --delete-branch` taught in the section below. Plain
 `git worktree remove` refuses while `node_modules` is there; the next thing anyone reaches
-for is `--force`, which also discards uncommitted changes and unpushed commits without
-mentioning either. So the script checks for work you would lose *first*, clears the
-dependency trees, and then removes the worktree with plain `git`. The branch is left
-alone.
+for is `--force`, which also discards uncommitted changes without mentioning it. So the
+script checks first, clears the dependency trees, and then removes the worktree with plain
+`git`.
+
+**Uncommitted changes to tracked files are the only thing it refuses over**, because they
+are the only thing removing a worktree destroys: the branch is never deleted, so its
+commits survive whether or not a remote has them. Refusing over unpushed commits — which
+this did at first — is a false alarm on the most common call of all, cleaning up after a
+landed pull request, and a safe spelling that cries wolf is how people end up back on
+`--force`. What is left of that check is a report: the branch's own state, and whether it
+holds commits no remote does.
 
 `ADP_WORKTREE_ROOT` moves the default location — an agent harness that keeps its state
 under a directory of its own points it there, and `DIR=` overrides per invocation.
