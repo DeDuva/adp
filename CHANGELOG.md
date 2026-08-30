@@ -16,6 +16,56 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**Trajectory payloads and checkpoint state are bounded (#146).**
+`session_events.payload` and `checkpoints.state` are `z.unknown()` by design —
+ADP never parses them, which is what makes the protocol harness-neutral rather
+than harness-aware — and neither had a ceiling. The 2026-08-22 storage
+analysis measured a mean of **833 B/event** across 1,930 real events and noted
+that nothing prevented the **~85 KB/turn** the industry anchor suggests: a 20×
+range with no upper bound. Harmless only because nothing writes to these tables
+yet; the moment ambient capture (#149) ships, every connected session is a
+producer and the first person to enjoy the feature is the first to fill their
+own disk.
+
+Three numbers, documented in `spec/openapi.yaml` so a producer can respect them
+rather than discover them: **128 KiB per event payload** (~1.5× the industry
+anchor, ~157× the measured mean), **1 MiB summed across a batch** (a full
+1000-event batch at the measured mean is ~833 KB, so the realistic maximum fits
+and the pathological one does not), and **1 MiB per checkpoint state** — the
+batch allowance rather than the event one, because a checkpoint is a whole
+harness's resumable state rather than one turn of it.
+
+**Measuring a size is not reading a value**, so the opaqueness invariant holds:
+nothing inspects the payload's shape, only what it will cost to store.
+
+**Refused, never truncated, and never silently digested.** A truncated payload
+that is still hash-chained is worse than a rejected one — it is a durable
+record that looks complete — and for a checkpoint it would mean a DSSE
+signature over a state the harness never wrote. The batch is refused *as a
+batch*, before anything is chained, because `appendEvents` is all-or-nothing
+and a refusal that let the earlier events through would leave a chain the
+producer cannot reason about. Each refusal names the offending event by index
+*and* by its `client_event_id`: an emitter retrying identifies its events by
+id, not by position, and a refusal it cannot map back is one it cannot act on.
+
+The issue asked which of drop / reject / digest-substitute to pin, since the
+recorder will be built against the answer. **Reject.** The digest option
+belongs to retention (`PLAN.md` 3-6), where "verified, payload not retained"
+describes a payload that *was* accepted and later aged out; using the same
+state for one that was never accepted would make the one honest third
+verification state ambiguous exactly where it needs to be precise.
+
+One thing this found: **Fastify's default 1 MiB body limit sat below the batch
+ceiling**, so an oversized batch was already being refused — by the transport,
+with a bare 413 naming nothing. That is precisely the "discover the limit
+rather than respect it" failure the ceiling exists to remove, so the two ingest
+routes raise their own limit to 2 MiB. The typed 422 is now what a producer
+meets; the transport guard stays, an order of magnitude out, for anything
+absurd.
+
+With this, **every prerequisite of 1-7 is cleared** and `adp-recorder` (#149)
+is unblocked.
+
 **`operations` is indexed for the queries actually run against it (#147).**
 The operation log is written in the same database transaction as every change
 — a stated invariant — so it grows with everything else in the system. It

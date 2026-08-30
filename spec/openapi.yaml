@@ -2812,6 +2812,13 @@ paths:
         a SHA-256 digest of `state` — see spec/schemas/checkpoint.json. `state`
         is never parsed by ADP, so a harness storing its own format needs no
         protocol change.
+
+        #146: bounded at **1048576 bytes (1 MiB)** once serialized — the batch
+        allowance rather than the per-event one, because a checkpoint is a
+        whole harness's resumable state rather than one turn of it. A breach is
+        a 422 naming the limit, never a truncation: the DSSE envelope commits
+        to a digest of `state`, so a silently shortened state would produce a
+        signature over something the harness never wrote.
       security:
         - bearerAuth: []
       requestBody:
@@ -2827,7 +2834,10 @@ paths:
                   pattern: "^[0-9a-f]{40}$"
                 harness:
                   type: string
-                state: {}
+                state:
+                  description: >
+                    Opaque to ADP. Bounded at 1048576 bytes once serialized
+                    (#146).
       responses:
         "401":
           content:
@@ -2942,6 +2952,21 @@ paths:
         run attestations commit to, so recording stays cheap enough to always
         happen while tampering anywhere in the sequence stays detectable.
         Batched, and idempotent under retry when `client_event_id` is supplied.
+
+        #146: two byte ceilings apply, so a producer can respect them rather
+        than discover them. **131072 bytes (128 KiB) per event `payload`** and
+        **1048576 bytes (1 MiB) summed across a batch** — measured on the JSON
+        as it will be stored, not on the request body. Either breach is a 422
+        naming the offending event by index and by its `client_event_id`, and
+        the batch is refused *as a batch*: nothing is chained, because a
+        partially-appended batch is what this endpoint's all-or-nothing rule
+        exists to prevent.
+
+        Oversized events are **refused, never truncated and never silently
+        digested**. A truncated payload that is still hash-chained is worse
+        than a rejected one — it is a durable record that looks complete — and
+        only the producer can decide what to emit instead, which it cannot do
+        if it is not told.
       security:
         - bearerAuth: []
       requestBody:
@@ -2968,7 +2993,11 @@ paths:
                         type: string
                         description: The harness's own name within that kind. Never branched on.
                       payload:
-                        description: Opaque to ADP — never parsed, never validated beyond "it is JSON".
+                        description: >
+                          Opaque to ADP — never parsed, never validated beyond
+                          "it is JSON". Bounded at 131072 bytes once serialized
+                          (#146); measuring a size is not reading a value, so
+                          the opaqueness holds.
                       status:
                         type: string
                         enum: [success, failure, error, rejected, skipped]
