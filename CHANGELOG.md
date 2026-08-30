@@ -16,6 +16,53 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**The native plane can open, review and merge a proposal (#144).**
+`server/src/mcp/server.ts` registered 17 tools covering workspaces, the
+operation log, undo, evidence, candidate sets, sessions, checkpoints,
+trajectories, runs and evals — and nothing that opened, reviewed or merged a
+proposal. An agent driving ADP through the native plane had to break out to a
+raw `curl` mid-task, which the project's own benchmark instructions spelled
+out at length. That is the leading hypothesis for the measurement that
+contradicts our own bet: **ADP-MCP at $0.1435/trial against $0.0848 via `gh`
+and $0.0850 on real GitHub** (arm 2, pilot scale, n=12). `gh pr create` is one
+command; the native plane's equivalent was a hand-assembled HTTP request the
+agent had to be told how to build, in a prompt, correctly, every time.
+
+Four tools, thin wrappers over the REST routes that already exist — same
+discipline as every tool beside them, no domain logic in the MCP layer:
+`adp_proposal_open` (including `candidate_set_id`, so a candidate joins its
+set at creation, the only moment it can), `adp_proposal_review`,
+`adp_proposal_merge`, and `adp_intent_get`. The fourth is not on the issue's
+list and is what its exit criterion actually needs:
+`docs/api-compatibility.md` states plainly that the native plane is not
+self-sufficient — nothing under `/api/adp` mints an intent, and an issue is
+where one comes from — so closing the proposal loop while leaving that open
+would have left the benchmark instructions carrying a `curl` regardless.
+
+These wrap `/api/v3` rather than `/api/adp` because that is where the routes
+are: a proposal *is* the GitHub-shaped object and an intent comes from an
+issue, so a second native spelling of either would be a fidelity problem
+rather than a feature.
+
+**The refusal shape matters more here than anywhere else.** A refused land is
+the one response an agent is guaranteed to see on a well-configured instance,
+and an agent that cannot read it burns a turn guessing. `adp_proposal_merge`
+returns the typed policy result intact — each unmet requirement with what is
+missing and the command that satisfies it (#145) — rather than flattening it
+to `message`, which says "Land policy not satisfied" and nothing actionable.
+`adp_candidates_resolve` lands its winner through the same land path, so it
+surfaces the refusal the same way now too.
+
+`bench/arms/three-way-cost.mjs` no longer contains a `curl` in the `adp-mcp`
+arm — not in the instructions, and not in `allowedTools` either, so a trial
+cannot quietly fall back to the shape the arm exists to stop measuring.
+**The arm has not been re-run**: it is agent-backed, needs real tokens and a
+real GitHub PAT, and runs out of band rather than in CI. Per this harness's
+own contract an arm that was not run is reported as not run, so
+`bench/report/three-way-cost.md` now says on its own page that its published
+figure predates this fix and that the re-run's result will be published
+whichever way it points.
+
 **A refusal names the command that satisfies it (#145).** The refusal is the
 product — `make demo` is built around reaching it, and the manual test plan
 calls it out as worth doing deliberately: *"a policy that has never been seen

@@ -12,12 +12,16 @@
 //   adp-gh     git + gh, unmodified, pointed at ADP via GH_HOST (the compat
 //              plane) — the MVP's own success criterion.
 //   adp-mcp    git + ADP's native MCP tools (server/src/mcp/server.ts, run
-//              as its own stdio process) instead of gh. The native plane has
-//              no MCP tool that opens a proposal (only candidate-set
-//              open/select/resolve, which act on a proposal that already
-//              exists) so this arm also allows one scoped `curl` for that one
-//              REST call — everything else goes through MCP. That gap is
-//              real and is called out in the report, not hidden.
+//              as its own stdio process) instead of gh. Until #144 the native
+//              plane had no MCP tool that opened a proposal — only
+//              candidate-set open/select/resolve, which act on a proposal
+//              that already exists — and none that read the intent, so this
+//              arm allowed scoped `curl` calls for those steps and the report
+//              called the gap out rather than hiding it. Those tools exist
+//              now (adp_intent_get, adp_proposal_open, adp_proposal_review,
+//              adp_proposal_merge), so `curl` is off the tool list entirely
+//              and the arm measures the native plane rather than the native
+//              plane plus a hand-assembled HTTP request.
 //
 //   ADP_SERVER_URL=... ADP_TOKEN=... node arms/three-way-cost.mjs \
 //     --method=github-gh|adp-gh|adp-mcp --task=clamp|titlecase --rep=1 \
@@ -185,14 +189,20 @@ async function setupAdpMcp({ adpUrl, token, taskId, rep, runId, task }) {
     issueNumber,
     issueRef: `${adpUrl}/repos/${owner}/${repo}#${issueNumber}`,
     env: {},
+    // No `Bash(curl *)`. Not an oversight and not a tightening for its own
+    // sake: with the proposal tools in place no step needs it, and leaving it
+    // allowed would let a trial quietly fall back to the shape this arm exists
+    // to stop measuring.
     allowedTools: [
       "Bash(git *)",
-      "Bash(curl *)",
       "Bash(node *)",
       "Bash(npm *)",
       "Read",
       "Edit",
       "Write",
+      "mcp__adp-native__adp_intent_get",
+      "mcp__adp-native__adp_proposal_open",
+      "mcp__adp-native__adp_proposal_review",
       "mcp__adp-native__adp_candidates_open",
       "mcp__adp-native__adp_candidates_resolve",
       "mcp__adp-native__adp_candidates_select",
@@ -200,23 +210,22 @@ async function setupAdpMcp({ adpUrl, token, taskId, rep, runId, task }) {
       "mcp__adp-native__adp_evidence_get",
     ],
     mcpConfig,
+    // Every step is one named tool call now. What this used to say — how to
+    // hand-assemble three curl invocations, with headers and a JSON body,
+    // correctly, every time — is the cost #144 was filed against.
     instructions: [
       `The repo lives on ADP at ${adpUrl}, owner "${owner}", repo "${repo}". Do not use \`gh\` — it is`,
-      `not available for this task. Read the task by fetching`,
-      `\`curl -s -H "Authorization: Bearer ${token}" ${adpUrl}/api/v3/repos/${owner}/${repo}/issues/${issueNumber}\`.`,
+      `not available for this task. Read the task with adp_intent_get, owner="${owner}" repo="${repo}"`,
+      `number=${issueNumber}; its "intent_id" field is what the next step needs.`,
       `You are already on a branch (${work}) checked out from main.`,
       `Do the work, commit, and push with git. To land it, use the ADP native-plane MCP tools:`,
-      `call adp_candidates_open with owner="${owner}" repo="${repo}" intent_id="${intentId ?? "(read it off the issue you fetched above)"}"`,
-      `to get a candidate_set_id. There is no MCP tool to open the proposal itself, so open it with one`,
-      `REST call: \`curl -s -X POST -H "Authorization: Bearer ${token}" -H "Content-Type: application/json"`,
-      `-d '{"title":"...","head":"${work}","base":"main","candidate_set_id":"<id>"}'`,
-      `${adpUrl}/api/v3/repos/${owner}/${repo}/pulls\` — the response's "number" field is the proposal`,
-      `number. This instance's land policy requires one approving review before a candidate can resolve`,
-      `(a real constraint of this server, not optional): submit one yourself with`,
-      `\`curl -s -X POST -H "Authorization: Bearer ${token}" -H "Content-Type: application/json"`,
-      `-d '{"state":"approved","body":"looks good"}'`,
-      `${adpUrl}/api/v3/repos/${owner}/${repo}/pulls/<number>/reviews\`. Only then call adp_candidates_resolve`,
-      `with the candidate_set_id to land it. Make no further tool calls once it has landed.`,
+      `call adp_candidates_open with owner="${owner}" repo="${repo}" intent_id="${intentId ?? "(the intent_id you just read)"}"`,
+      `to get a candidate_set_id. Then adp_proposal_open with title, head="${work}", base="main" and that`,
+      `candidate_set_id — the response's "number" field is the proposal number. This instance's land`,
+      `policy requires one approving review before a candidate can resolve (a real constraint of this`,
+      `server, not optional): submit one with adp_proposal_review for that number, state="approved".`,
+      `Only then call adp_candidates_resolve with the candidate_set_id to land it. Make no further tool`,
+      `calls once it has landed.`,
     ].join(" "),
   };
 }

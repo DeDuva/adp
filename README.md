@@ -256,7 +256,7 @@ from being worse than none, since `gh`'s queries validate against the real schem
 
 ### Native plane
 
-REST under `/api/adp`, and the same operations over MCP — 17 tools:
+REST under `/api/adp`, and the same operations over MCP — 21 tools:
 
 | Capability | REST | MCP tool |
 |---|---|---|
@@ -268,6 +268,8 @@ REST under `/api/adp`, and the same operations over MCP — 17 tools:
 | Sessions and checkpoints | `POST .../sessions`, `.../sessions/{id}/checkpoints`, `.../sessions/{id}/resume` | `adp_session_start`, `adp_session_get`, `adp_checkpoint_create`, `adp_session_resume` |
 | Trajectories | `POST .../sessions/{id}/events`, `GET .../runs/{id}/trajectory` | `adp_trajectory_append`, `adp_run_trajectory` |
 | Runs and evals | `GET .../runs/{id}/stats`, `GET .../runs/compare` | `adp_run_stats`, `adp_runs_compare` |
+| Proposals | `POST /api/v3/.../pulls`, `.../pulls/{n}/reviews`, `PUT .../pulls/{n}/merge` | `adp_proposal_open`, `adp_proposal_review`, `adp_proposal_merge` |
+| Intents | `GET /api/v3/.../issues/{n}` | `adp_intent_get` |
 
 The operation log is filterable by actor, verb, date range, and file path — path filtering resolves
 the commit behind an operation and asks git which paths it touched. Undo currently covers reverting
@@ -282,6 +284,18 @@ mechanism. Destroying one deletes the ref and marks the row destroyed, so the lo
 single intent. A set is opened against an intent, proposals join it by passing `candidate_set_id`
 at creation, and one is eventually selected as the winner — the fan-out/compare/pick shape a fleet
 of agents actually produces, which a merge queue does not express.
+
+The last two rows wrap `/api/v3` rather than `/api/adp`, and that is deliberate: a proposal *is*
+the GitHub-shaped object, and an intent comes from an issue — nothing under `/api/adp` mints one.
+Giving either a second native spelling would be a fidelity problem, not a feature. Without these
+tools an agent driving the native plane had to break out to a raw `curl` to open a proposal or read
+its own task, which is one command against `gh`'s one command and a hand-assembled HTTP request
+against the native plane's.
+
+`adp_proposal_merge` returns a refused land as the typed policy result — each unmet requirement
+with what is missing and the command that satisfies it — rather than an error string. A refusal is
+the one response an agent is guaranteed to see on a well-configured instance, and an agent that
+cannot read it burns a turn guessing.
 
 The MCP server is a thin wrapper over these same REST endpoints, so behavior is defined in one
 place rather than duplicated per protocol. Run it over stdio:

@@ -208,8 +208,19 @@ Every \`adp-mcp\` trial needed the same \`git\` plumbing as the other two arms *
 MCP round trip to open the candidate set, a \`curl\` call to open the proposal (the one
 gap noted above), a second \`curl\` call to submit the required approving review, and an
 MCP round trip to resolve — four extra tool calls with no \`gh\`-equivalent single
-command standing in for any of them. That gap is a property of today's native MCP
-tool surface (no proposal-open tool), not of the native plane's design in general.
+command standing in for any of them. That gap is a property of the native MCP tool
+surface as it stood when these trials ran (no proposal-open tool), not of the native
+plane's design in general.
+
+**The gap is closed in the code, and these numbers predate the fix (#144).** The
+native plane now has \`adp_intent_get\`, \`adp_proposal_open\`, \`adp_proposal_review\`
+and \`adp_proposal_merge\`, and \`bench/arms/three-way-cost.mjs\` no longer allows
+\`curl\` in the \`adp-mcp\` arm at all. **The arm has not been re-run since**, so
+everything above still describes the pre-fix tool surface — which is the accurate
+thing for it to describe, because these are the trials that produced the numbers.
+Per this harness's own contract, an arm that was not run is reported as not run
+rather than quietly restated: whether the fix moves the \`adp-mcp\` figure is an open
+question until the re-run happens, and it will be published whichever way it points.
 
 ## What this does not show, and should not be read as showing
 

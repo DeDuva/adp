@@ -25,6 +25,21 @@ export function buildMcpServer(client: AdpClient): McpServer {
     return { content: [{ type: "text" as const, text: message }], isError: true };
   }
 
+  // #144: a land refusal is the one response an agent is guaranteed to see on
+  // a well-configured instance, and an agent that cannot read it burns a turn
+  // guessing. `message` alone is "Land policy not satisfied" — the requirement
+  // and the command that satisfies it (#145) live in `unmet` / `unmet_detail`,
+  // so the typed body goes through intact rather than being flattened to a
+  // string. Every other failure still reads as prose, because for those the
+  // message *is* the whole answer.
+  function landErr(res: { body: unknown; message: string }) {
+    const body = res.body;
+    if (body && typeof body === "object" && "unmet" in body) {
+      return { content: [{ type: "text" as const, text: JSON.stringify(body, null, 2) }], isError: true };
+    }
+    return err(res.message);
+  }
+
   server.registerTool(
     "adp_workspace_create",
     {
@@ -189,6 +204,114 @@ export function buildMcpServer(client: AdpClient): McpServer {
       const res = await client.post(`/api/adp/repos/${owner}/${repo}/candidate-sets/${candidate_set_id}/resolve`, {
         proposal_id: candidate_id,
       });
+      // Resolution lands the winner through the same land path a merge takes,
+      // so it produces the same refusal and must surface it the same way.
+      return res.ok ? ok(res.body) : landErr(res);
+    },
+  );
+
+  // #144: proposals over the native plane. Until this, `server/src/mcp/`
+  // registered 17 tools covering workspaces, the operation log, undo,
+  // evidence, candidate sets, sessions, checkpoints, trajectories, runs and
+  // evals — and nothing that opened, reviewed or merged a proposal. An agent
+  // driving ADP through the native plane had to break out to a raw `curl`
+  // mid-task, which the project's own benchmark instructions spelled out at
+  // length, and which is the leading hypothesis for arm 2's ADP-MCP trials
+  // costing $0.1435 against $0.0848 via `gh`: `gh pr create` is one command,
+  // and the native plane's equivalent was a hand-assembled HTTP request the
+  // agent had to be told how to build, in a prompt, correctly, every time.
+  //
+  // These wrap `/api/v3` rather than `/api/adp` because that is where the
+  // routes are: the proposal *is* the GitHub-shaped object, and a second
+  // native spelling of it would be a fidelity problem, not a feature. Same
+  // discipline as every tool above — no domain logic here, only translation.
+  server.registerTool(
+    "adp_proposal_open",
+    {
+      description:
+        "Open a proposal (a pull request) from a pushed branch. Pass candidate_set_id to have it join " +
+        "a fan-out set at creation — that is the only moment a proposal can join one.",
+      inputSchema: {
+        owner: z.string(),
+        repo: z.string(),
+        title: z.string(),
+        head: z.string().describe("The branch holding the change, already pushed"),
+        base: z.string().describe("The branch to land into, e.g. 'main'"),
+        body: z.string().optional(),
+        candidate_set_id: z.string().uuid().optional().describe("Join this candidate set (from adp_candidates_open)"),
+      },
+    },
+    async ({ owner, repo, ...proposal }) => {
+      const res = await client.post(`/api/v3/repos/${owner}/${repo}/pulls`, proposal);
+      return res.ok ? ok(res.body) : err(res.message);
+    },
+  );
+
+  server.registerTool(
+    "adp_proposal_review",
+    {
+      description:
+        "Submit a typed review on a proposal. Note that an 'approved' review from the proposal's own " +
+        "author does not satisfy the one_approval land requirement — approval has to come from a " +
+        "different principal.",
+      inputSchema: {
+        owner: z.string(),
+        repo: z.string(),
+        number: z.number().int().positive().describe("The proposal number, as returned by adp_proposal_open"),
+        state: z.enum(["approved", "changes_requested", "commented"]),
+        body: z.string().optional(),
+      },
+    },
+    async ({ owner, repo, number, state, body }) => {
+      const res = await client.post(`/api/v3/repos/${owner}/${repo}/pulls/${number}/reviews`, { state, body });
+      return res.ok ? ok(res.body) : err(res.message);
+    },
+  );
+
+  server.registerTool(
+    "adp_proposal_merge",
+    {
+      description:
+        "Land a proposal, subject to the land policy. A refusal comes back as the typed policy result — " +
+        "each unmet requirement with what is missing and the command that satisfies it — not as an " +
+        "opaque error string.",
+      inputSchema: {
+        owner: z.string(),
+        repo: z.string(),
+        number: z.number().int().positive(),
+        merge_method: z
+          .enum(["merge", "squash"])
+          .optional()
+          .describe("Defaults to 'merge', matching GitHub. 'rebase' is not implemented and is refused."),
+      },
+    },
+    async ({ owner, repo, number, merge_method }) => {
+      const res = await client.put(`/api/v3/repos/${owner}/${repo}/pulls/${number}/merge`, { merge_method });
+      return res.ok ? ok(res.body) : landErr(res);
+    },
+  );
+
+  // The fourth tool the issue's exit criterion needs but its list does not
+  // name. `docs/api-compatibility.md` states plainly that the native plane is
+  // not self-sufficient — nothing under `/api/adp` mints an intent, and an
+  // issue is where one comes from — so an agent restricted to native-plane
+  // tools could not read its own task without a `curl`. Closing the proposal
+  // loop and leaving that open would have left the benchmark instructions
+  // carrying a `curl` anyway, which is the thing being measured.
+  server.registerTool(
+    "adp_intent_get",
+    {
+      description:
+        "Read an issue and the intent it carries. The issue is where an intent_id comes from: nothing " +
+        "under /api/adp mints one, so this is the native plane's way in to a task.",
+      inputSchema: {
+        owner: z.string(),
+        repo: z.string(),
+        number: z.number().int().positive().describe("The issue number"),
+      },
+    },
+    async ({ owner, repo, number }) => {
+      const res = await client.get(`/api/v3/repos/${owner}/${repo}/issues/${number}`);
       return res.ok ? ok(res.body) : err(res.message);
     },
   );

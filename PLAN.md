@@ -44,17 +44,17 @@ any harness, resolves to its intent, and the evidence bundle names that intent b
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 1-4 | Native-plane tools to open, review and merge a proposal | #144 | not started. The first step of OD-1's experiment, tracked here because this is where the work is |
 | 1-6 | Local TLS as a supported mode rather than a test fixture | #158 | not started. `gh` refuses plain HTTP for any other host, and `server/acceptance/run.sh` already solves this for tests alone |
 
-Items 1-1, 1-2, 1-3 and 1-5 are gone from this table on the same terms, because this file records
-what is left: 1-2 was commit trailers binding a pushed change to its intent, #142; 1-1 was the
-token mint carrying `harness`, `model` and `session_id`, #141, which makes the provenance block on
-a signed change name the harness that produced it; 1-3 was the second `changes` row the documented
-push-then-bind sequence used to leave behind, #143, which the database now refuses; 1-5 was the
-refusal that named the unmet requirement and stopped one step short of the command that satisfies
-it, #145. Their numbers are not reused — the issues filed against this phase cite these numbers,
-and a recycled 1-2 would point two of them at different work.
+Items 1-1 through 1-5 are gone from this table on the same terms, because this file records what
+is left: 1-2 was commit trailers binding a pushed change to its intent, #142; 1-1 was the token
+mint carrying `harness`, `model` and `session_id`, #141, which makes the provenance block on a
+signed change name the harness that produced it; 1-3 was the second `changes` row the documented
+push-then-bind sequence used to leave behind, #143, which the database now refuses; 1-4 was the
+missing native-plane proposal tools, #144, for which an agent used to pay a raw `curl`; 1-5 was
+the refusal that named the unmet requirement and stopped one step short of the command that
+satisfies it, #145. Their numbers are not reused — the issues filed against this phase cite these
+numbers, and a recycled 1-2 would point two of them at different work.
 
 1-5's suggested remedy for `one_approval` is `gh pr review --approve`, which became honest advice
 only when 2-1 shipped: before it, a developer evaluating ADP alone was both author and approver, so
@@ -211,7 +211,7 @@ Three decisions are open. Each is answerable, and each has an experiment.
 
 | # | Decision | Experiment | State |
 |---|---|---|---|
-| 4-1 | **OD-1** — what is the native plane for, and what does it cost? | Close the MCP tool gap — 1-4, so the agent stops paying a round-trip `gh` bundles into one command — then re-run arm 2 at study scale and add the long-trajectory and novel-CLI-from-docs arms | not started. Arm 2 measured ADP-MCP at $0.1435/trial against $0.0848 via `gh` and $0.0850 on real GitHub — a first-party number that contradicts our own bet |
+| 4-1 | **OD-1** — what is the native plane for, and what does it cost? | The MCP tool gap is closed (1-4, #144): `curl` is off the `adp-mcp` arm's tool list entirely. What is left is to **re-run arm 2** and then take it to study scale, adding the long-trajectory and novel-CLI-from-docs arms | in progress. Arm 2 measured ADP-MCP at $0.1435/trial against $0.0848 via `gh` and $0.0850 on real GitHub — a first-party number that contradicts our own bet, and one taken against a tool surface that no longer exists. The re-run is agent-backed and costs real tokens, so it is scheduled work rather than something CI can do; until it happens `bench/report/three-way-cost.md` says on its own page that the published figure predates the fix |
 | 4-2 | **OD-2** — can a gate detect an agent that has satisfied its own tests? | A held-out-vs-visible pass-rate bench arm, same shape as arms 2 and 3 | not started. Two of its three halves shipped: flakiness (Wilson-lower-bound `gates_confident`, quarantine as an operation) and self-approval (#121, author-independent `one_approval`). The reward-hacking half — an agent editing the tests that judge it — is the one still open, and the one the arm measures |
 | 4-3 | **OD-3** — will a harness vendor adopt, and what is the minimum portable slice? | Register ADP as a reverse-DNS MCP extension; take 2-3's demo to two harness teams | not started. MCP 2026-07-28 removed protocol sessions and told servers to mint explicit handles — the technical path is now a namespace registration. Most of the open positions wait on the design partner this produces |
 

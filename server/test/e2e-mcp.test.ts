@@ -22,6 +22,7 @@ import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerChangeRoutes } from "../src/http-rest/changes.js";
 import { registerIssueRoutes } from "../src/http-rest/issues.js";
 import { registerProposalRoutes } from "../src/http-rest/proposals.js";
+import { registerReviewRoutes } from "../src/http-rest/reviews.js";
 import { registerOperationRoutes } from "../src/http-rest/operations.js";
 import { registerWorkspaceRoutes } from "../src/http-rest/workspaces.js";
 import { registerEvidenceRoutes } from "../src/http-rest/evidence.js";
@@ -72,6 +73,7 @@ describe.skipIf(skipWithoutDb)("M1c: MCP native plane", () => {
     registerChangeRoutes(app, db, gitBackend, new Signer("e2e-mcp-signing-key"));
     registerIssueRoutes(app, db);
     registerProposalRoutes(app, db, gitBackend, "e2e-test-credential-key", []);
+    registerReviewRoutes(app, db);
     registerOperationRoutes(app, db, gitBackend);
     registerWorkspaceRoutes(app, db, gitBackend);
     registerEvidenceRoutes(app, db);
@@ -159,6 +161,13 @@ describe.skipIf(skipWithoutDb)("M1c: MCP native plane", () => {
         "adp_run_trajectory",
         "adp_runs_compare",
         "adp_trajectory_append",
+        // #144: the proposal loop, and the intent read that starts it. Before
+        // these, an agent restricted to the native plane had to break out to a
+        // raw `curl` to open a proposal at all.
+        "adp_intent_get",
+        "adp_proposal_open",
+        "adp_proposal_review",
+        "adp_proposal_merge",
       ].sort(),
     );
   });
@@ -246,6 +255,152 @@ describe.skipIf(skipWithoutDb)("M1c: MCP native plane", () => {
     const body = JSON.parse(textOf(undone as never)) as { verb: string };
     expect(body.verb).toBe("proposal.merge.undo");
   });
+
+  // #144: the whole loop over the native plane and nothing else. `gh pr
+  // create` is one command; the native plane's equivalent used to be a
+  // hand-assembled HTTP request an agent had to be told how to build, in a
+  // prompt, correctly, every time — which is the leading hypothesis for arm
+  // 2's ADP-MCP trials costing $0.1435 against $0.0848 via `gh`. Every step
+  // below is an MCP tool call, deliberately: a `fetch` slipped in here would
+  // be the exact gap this closes.
+  it("opens, reviews and merges a proposal through MCP alone, starting from the intent", async () => {
+    const issueRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/${repoName}/issues`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Describe the widget", body: "It only has a heading." }),
+    });
+    const issue = (await issueRes.json()) as { number: number; intent_id: string };
+
+    // The way in: nothing under /api/adp mints an intent, so without this the
+    // agent needs a curl before it can start.
+    const read = await mcp.callTool({
+      name: "adp_intent_get",
+      arguments: { owner, repo: repoName, number: issue.number },
+    });
+    expect(read.isError).toBeFalsy();
+    const intent = JSON.parse(textOf(read as never)) as { intent_id: string; title: string };
+    expect(intent.intent_id).toBe(issue.intent_id);
+    expect(intent.title).toBe("Describe the widget");
+
+    const branch = `mcp-loop-${Date.now()}`;
+    const cloneDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-mcp-loop-"));
+    const cloneUrl = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/${repoName}.git`;
+    await execFileAsync("git", ["clone", cloneUrl, cloneDir]);
+    await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: cloneDir });
+    await execFileAsync("git", ["config", "user.name", "Test"], { cwd: cloneDir });
+    await execFileAsync("git", ["checkout", "-b", branch], { cwd: cloneDir });
+    await execFileAsync("sh", ["-c", "echo 'A widget, described.' >> README.md"], { cwd: cloneDir });
+    await execFileAsync("git", ["commit", "-am", "describe the widget"], { cwd: cloneDir });
+    await execFileAsync("git", ["push", "origin", branch], { cwd: cloneDir });
+    await rm(cloneDir, { recursive: true, force: true });
+
+    const opened = await mcp.callTool({
+      name: "adp_proposal_open",
+      arguments: { owner, repo: repoName, title: "Describe the widget", head: branch, base: "main" },
+    });
+    expect(opened.isError).toBeFalsy();
+    const proposal = JSON.parse(textOf(opened as never)) as { number: number };
+    expect(proposal.number).toBeGreaterThan(0);
+
+    const reviewed = await mcp.callTool({
+      name: "adp_proposal_review",
+      arguments: { owner, repo: repoName, number: proposal.number, state: "approved", body: "lgtm" },
+    });
+    expect(reviewed.isError).toBeFalsy();
+    expect((JSON.parse(textOf(reviewed as never)) as { state: string }).state).toBe("approved");
+
+    const merged = await mcp.callTool({
+      name: "adp_proposal_merge",
+      arguments: { owner, repo: repoName, number: proposal.number },
+    });
+    expect(merged.isError).toBeFalsy();
+    expect((JSON.parse(textOf(merged as never)) as { merged: boolean }).merged).toBe(true);
+  }, 120_000);
+
+  // The refusal shape matters more here than anywhere else: it is the one
+  // response an agent is guaranteed to see on a well-configured instance, and
+  // an agent that cannot read it burns a turn guessing. `message` alone says
+  // "Land policy not satisfied" and nothing an agent can act on, so the typed
+  // body goes through intact.
+  it("adp_proposal_merge surfaces the typed land-policy refusal, not a flattened error string", async () => {
+    const gatedRepo = "gated";
+    const gated = Fastify({ logger: false });
+    gated.addContentTypeParser(
+      ["application/x-git-upload-pack-request", "application/x-git-receive-pack-request"],
+      (_req, payload, done) => done(null, payload),
+    );
+    await gated.register(authPlugin(db));
+    const gatedGit = new GitBackend(gitRoot);
+    registerRepoRoutes(gated, db, gatedGit, "https://adp.example.com");
+    registerProposalRoutes(gated, db, gatedGit, "e2e-test-credential-key", ["gates_green"]);
+    registerGitHttpRoutes(gated, repoAccessCheck(db), gatedGit);
+    await gated.listen({ host: "127.0.0.1", port: 0 });
+    const gatedAddress = gated.server.address();
+    const gatedPort = typeof gatedAddress === "object" && gatedAddress ? gatedAddress.port : 0;
+
+    const gatedMcp = new Client({ name: "test-client-gated", version: "0.0.0" });
+    try {
+      await fetch(`http://127.0.0.1:${gatedPort}/api/v3/repos/${owner}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: gatedRepo }),
+      });
+
+      const dir = await mkdtemp(path.join(tmpdir(), "adp-e2e-mcp-gated-"));
+      const url = `http://x-access-token:${token}@127.0.0.1:${gatedPort}/${owner}/${gatedRepo}.git`;
+      await execFileAsync("git", ["clone", url, dir]);
+      await execFileAsync("git", ["checkout", "-B", "main"], { cwd: dir });
+      await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: dir });
+      await execFileAsync("git", ["config", "user.name", "Test"], { cwd: dir });
+      // A repo declaring no gates satisfies gates_green vacuously and would
+      // prove nothing here.
+      await execFileAsync("sh", ["-c", "printf 'gates:\\n  - test\\nland:\\n  require: []\\n' > adp.yaml"], { cwd: dir });
+      await execFileAsync("git", ["add", "."], { cwd: dir });
+      await execFileAsync("git", ["commit", "-m", "init"], { cwd: dir });
+      await execFileAsync("git", ["push", "origin", "main"], { cwd: dir });
+      await execFileAsync("git", ["checkout", "-b", "feature"], { cwd: dir });
+      await execFileAsync("sh", ["-c", "echo more >> README.md"], { cwd: dir });
+      await execFileAsync("git", ["add", "."], { cwd: dir });
+      await execFileAsync("git", ["commit", "-m", "feature"], { cwd: dir });
+      await execFileAsync("git", ["push", "origin", "feature"], { cwd: dir });
+      const sha = (await execFileAsync("git", ["rev-parse", "feature"], { cwd: dir })).stdout.trim();
+      await rm(dir, { recursive: true, force: true });
+
+      const gatedClient = createAdpClient(`http://127.0.0.1:${gatedPort}`, token);
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      await Promise.all([gatedMcp.connect(clientTransport), buildMcpServer(gatedClient).connect(serverTransport)]);
+
+      const opened = await gatedMcp.callTool({
+        name: "adp_proposal_open",
+        arguments: { owner, repo: gatedRepo, title: "gated", head: "feature", base: "main" },
+      });
+      expect(opened.isError).toBeFalsy();
+      const number = (JSON.parse(textOf(opened as never)) as { number: number }).number;
+
+      const refused = await gatedMcp.callTool({
+        name: "adp_proposal_merge",
+        arguments: { owner, repo: gatedRepo, number },
+      });
+      expect(refused.isError).toBe(true);
+
+      // Parseable, not prose: an agent reads the requirement and the command
+      // off the response rather than pattern-matching an error message.
+      const body = JSON.parse(textOf(refused as never)) as {
+        message: string;
+        unmet: string[];
+        unmet_detail: { requirement: string; command?: string }[];
+      };
+      expect(body.message).toMatch(/Land policy/);
+      const gate = body.unmet_detail.find((u) => u.requirement === "gates_green")!;
+      expect(gate.command).toBe(
+        `adp gate report --repo ${owner}/${gatedRepo} --sha ${sha} --name test --status success`,
+      );
+      expect(body.unmet.join(" ")).toContain("adp gate report");
+    } finally {
+      await gatedMcp.close().catch(() => {});
+      await gated.close();
+    }
+  }, 120_000);
 
   it("adp_candidates_open and adp_candidates_select fan out proposals against one intent and pick a winner", async () => {
     const issueRes = await fetch(`http://127.0.0.1:${port}/api/v3/repos/${owner}/${repoName}/issues`, {

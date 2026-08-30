@@ -8,6 +8,9 @@ export interface AdpClientResult<T = unknown> {
 export interface AdpClient {
   get(path: string, query?: Record<string, unknown>): Promise<AdpClientResult>;
   post(path: string, body: unknown): Promise<AdpClientResult>;
+  // #144: the merge route is a PUT, matching GitHub's own shape, so the
+  // native plane could not reach it at all until this existed.
+  put(path: string, body: unknown): Promise<AdpClientResult>;
   delete(path: string): Promise<AdpClientResult>;
 }
 
@@ -59,6 +62,9 @@ export function createAdpClient(baseUrl: string, token: string): AdpClient {
     },
     post(path, body) {
       return request("POST", path, body);
+    },
+    put(path, body) {
+      return request("PUT", path, body);
     },
     delete(path) {
       return request("DELETE", path);
