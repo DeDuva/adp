@@ -39,25 +39,56 @@
       change, in any harness, years later.</p>
     </div>
 
-    <!-- The serial loop, animated: the same CSS-only stage the essay opens
-         with, because it is the product's whole story in one strip — iterate,
-         gate, land attested, stay on the record. No script behind it. -->
-    <div class="stage">
-      <span class="stage__lab stage__lab--agent">One agent — iterates until it believes it's done</span>
-      <span class="stage__lab stage__lab--loop">edit → test → red → edit → test → green</span>
-      <span class="stage__lab stage__lab--gate">Gate — belief becomes signed evidence</span>
-      <span class="stage__lab stage__lab--main">Main — every change attested</span>
-      <span class="stage__lab stage__lab--log">Operation log — rejections and rollbacks stay on the record</span>
-      <div class="stage__loop"></div>
-      <div class="stage__gate"></div>
-      <div class="stage__trunk"></div>
-      <div class="stage__log"></div>
-      <div class="dot dot--d0"></div>
-      <div class="dot dot--d1"></div>
-      <div class="dot dot--drop dot--d2"></div>
-      <div class="dot dot--d3"></div>
-      <div class="dot dot--undo dot--d4"></div>
-      <div class="dot dot--d5"></div>
+    <!-- The stage: one change assembling its record through the lifecycle,
+         the gate refusing and landing it, the ledger keeping everything.
+         The markup below is the finished tableau, which is what renders when
+         scripts are off; the inline script at the foot of the page clears it,
+         reveals the button bar, and lets the reader perform the moves. -->
+    <div class="stage-wrap">
+      <div class="stage" id="stage" aria-label="An interactive sketch of ADP. Changes assemble their record — intent, diff, provenance, evidence — through the lifecycle stages. The gate refuses a change without evidence, with a typed verdict; a landed change can be undone without losing its reasoning; a session can be handed to a different agent and the record keeps the same shape. Every operation appends to the log.">
+        <div class="stage__life">
+          <span class="stage__st stage__st--plan" data-st="plan">Plan</span>
+          <span class="stage__st stage__st--design" data-st="design">Design</span>
+          <span class="stage__st stage__st--build" data-st="build">Build</span>
+          <span class="stage__st stage__st--test" data-st="test">Test</span>
+          <span class="stage__st stage__st--deploy" data-st="deploy">Deploy</span>
+          <span class="stage__st stage__st--maintain" data-st="maintain">Maintain</span>
+        </div>
+        <span class="stage__lab stage__lab--ws">One intent · any agent — the record assembles as it works</span>
+        <div class="stage__gate" id="stGate"></div>
+        <span class="stage__lab stage__lab--gate">The gate — policy reads the record</span>
+        <div class="stage__trunk"></div>
+        <span class="stage__lab stage__lab--main">Main — every change attested</span>
+        <div class="stage__ticks" id="stTicks">
+          <div class="stage__tick stage__tick--s1"></div>
+          <div class="stage__tick stage__tick--s2 stage__tick--undone"><span class="stage__ticklab">reverted</span></div>
+          <div class="stage__tick stage__tick--s3"></div>
+        </div>
+        <div class="stage__card at-main" id="stCard">
+          <div class="stage__cardt" id="stCardT">change ch_413 · signed</div>
+          <div class="stage__row stage__row--intent is-done" id="stRowIntent"><span class="stage__k">intent</span><span class="stage__v">issue #413 ✓</span></div>
+          <div class="stage__row is-done" id="stRowDiff"><span class="stage__k">diff</span><span class="stage__v">+61 −18 ✓</span></div>
+          <div class="stage__row is-done" id="stRowProv"><span class="stage__k">provenance</span><span class="stage__v">codex · s_45 ✓</span></div>
+          <div class="stage__row stage__row--evid is-done" id="stRowEvid"><span class="stage__k">evidence</span><span class="stage__v">DSSE 412/412 ✓</span></div>
+        </div>
+        <span class="stage__ban stage__ban--bad" id="stBanBad">refused · 422 gates_green unmet</span>
+        <span class="stage__ban stage__ban--ok is-on" id="stBanOk">landed · attested</span>
+        <span class="stage__ban stage__ban--ac" id="stBanAc"></span>
+        <span class="stage__lab stage__lab--log">Operation log — append-only, same transaction</span>
+        <div class="stage__ledger" id="stLedger" aria-live="polite">
+          <div class="stage__lrow is-in"><span class="dim">op_0117</span> <span class="ok">land ch_411 · evidence e_968 (DSSE) · signed</span> · claude-code</div>
+          <div class="stage__lrow is-in"><span class="dim">op_0118</span> <span class="bad">refuse ch_412 · unmet: gates_green</span> — on the record</div>
+          <div class="stage__lrow is-in"><span class="dim">op_0119</span> <span class="ok">land ch_412 · evidence e_970 (DSSE) · signed</span> · claude-code</div>
+          <div class="stage__lrow is-in"><span class="dim">op_0120</span> <span class="warn">undo op_0119 · main → 4c1e77a</span> · reasoning kept — the log only grows</div>
+          <div class="stage__lrow is-in"><span class="dim">op_0121</span> <span class="ok">land ch_413 · evidence e_971 (DSSE) · signed</span> · codex</div>
+        </div>
+      </div>
+      <div class="stage-bar" id="stBar">
+        <span class="stage-bar__lab">Try the moves —</span>
+        <button class="btn" type="button" id="stBtnRefuse">Push without evidence</button>
+        <button class="btn" type="button" id="stBtnUndo">Undo the last merge</button>
+        <button class="btn" type="button" id="stBtnSwap">Hand off to another agent</button>
+      </div>
     </div>
 
     <div class="cta">
@@ -451,6 +482,223 @@ make demo</pre>
     <span>MIT · code and prose alike</span>
   </div>
 </footer>
+
+<!-- The hero stage's script: plain, buildless, third-party-free, and small
+     enough to read — see the note above .stage-wrap in site.css. Everything
+     visual it does is a class toggle or text swap; positions it computes
+     (tick offsets) are state, not styling. -->
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var stage = $('stage');
+  if (!stage) return;
+  var card = $('stCard'), gate = $('stGate'), ledger = $('stLedger'), ticksBox = $('stTicks');
+  var rows = { intent: $('stRowIntent'), diff: $('stRowDiff'), prov: $('stRowProv'), evid: $('stRowEvid') };
+  var sts = {};
+  stage.querySelectorAll('.stage__st').forEach(function (e) { sts[e.getAttribute('data-st')] = e; });
+
+  var state = {
+    op: 118, ch: 412, ev: 969,
+    harness: 'claude-code', model: 'opus', session: 44,
+    head: '4c1e77a', ticks: [], busy: false
+  };
+  function sha() { return Math.random().toString(16).slice(2, 9); }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  function log(html) {
+    var d = document.createElement('div');
+    d.className = 'stage__lrow';
+    d.innerHTML = html;
+    ledger.appendChild(d);
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { d.classList.add('is-in'); });
+    });
+    while (ledger.children.length > 5) ledger.removeChild(ledger.firstChild);
+  }
+  function setVal(row, txt, done) {
+    row.querySelector('.stage__v').textContent = txt;
+    row.classList.toggle('is-done', !!done);
+  }
+  function hot(name, ms) {
+    var e = sts[name];
+    if (!e) return;
+    e.classList.add('is-hot');
+    setTimeout(function () { e.classList.remove('is-hot'); }, ms);
+  }
+  function reflowTicks() {
+    state.ticks.forEach(function (t, i) { t.style.left = (62 + i * 3.4) + '%'; });
+  }
+  function addTick() {
+    var t = document.createElement('div');
+    t.className = 'stage__tick';
+    t.innerHTML = '<span class="stage__ticklab"></span>';
+    t.setAttribute('data-prev', state.head);
+    state.head = sha();
+    ticksBox.appendChild(t);
+    state.ticks.push(t);
+    if (state.ticks.length > 9) { ticksBox.removeChild(state.ticks.shift()); }
+    reflowTicks();
+    return t;
+  }
+  function resetCard() {
+    card.classList.add('is-hidden');
+    card.classList.remove('at-gate', 'at-main', 'is-bounced');
+    setVal(rows.intent, '—', false);
+    setVal(rows.diff, '—', false);
+    setVal(rows.prov, '—', false);
+    setVal(rows.evid, 'missing', false);
+  }
+  function provText() {
+    return state.harness + ' · ' + state.model + ' · s_' + state.session + ' ✓';
+  }
+  function landRow() {
+    state.op += 1; state.ev += 1;
+    log('<span class="dim">op_0' + state.op + '</span> <span class="ok">land ch_' + state.ch +
+        ' · evidence e_' + state.ev + ' (DSSE) · signed</span> · ' + state.harness);
+    return state.op;
+  }
+
+  function assemble(withEvidence) {
+    state.ch += 1;
+    $('stCardT').textContent = 'change ch_' + state.ch + ' · signed';
+    resetCard();
+    card.classList.remove('is-hidden');
+    hot('plan', 900);
+    return sleep(420).then(function () {
+      setVal(rows.intent, 'issue ' + '#' + state.ch + ' ✓', true);
+      hot('design', 900); return sleep(380);
+    }).then(function () {
+      hot('build', 1000); return sleep(380);
+    }).then(function () {
+      setVal(rows.diff, '+61 −18 ✓', true); return sleep(320);
+    }).then(function () {
+      setVal(rows.prov, provText(), true);
+      if (!withEvidence) return sleep(350);
+      hot('test', 1000);
+      return sleep(500).then(function () {
+        setVal(rows.evid, 'DSSE 412/412 ✓', true); return sleep(350);
+      });
+    });
+  }
+
+  function passGateAndLand(tickOwner) {
+    hot('deploy', 1200);
+    card.classList.remove('is-bounced');
+    card.classList.add('at-gate');
+    return sleep(800).then(function () {
+      gate.classList.add('is-ok'); return sleep(450);
+    }).then(function () {
+      card.classList.remove('at-gate'); card.classList.add('at-main'); return sleep(800);
+    }).then(function () {
+      gate.classList.remove('is-ok');
+      var t = addTick();
+      t.setAttribute('data-op', String(landRow()));
+      $('stBanOk').classList.add('is-on');
+      return sleep(1500);
+    }).then(function () {
+      $('stBanOk').classList.remove('is-on');
+      card.classList.add('is-hidden');
+      return sleep(500);
+    }).then(resetCard);
+  }
+
+  function seqLand() { return assemble(true).then(passGateAndLand); }
+
+  function seqRefuse() {
+    return assemble(false).then(function () {
+      card.classList.add('at-gate'); return sleep(800);
+    }).then(function () {
+      gate.classList.add('is-bad');
+      $('stBanBad').classList.add('is-on');
+      state.op += 1;
+      log('<span class="dim">op_0' + state.op + '</span> <span class="bad">refuse ch_' + state.ch +
+          ' · unmet: gates_green</span> — on the record');
+      return sleep(1500);
+    }).then(function () {
+      card.classList.remove('at-gate'); card.classList.add('is-bounced');
+      hot('test', 1400); return sleep(900);
+    }).then(function () {
+      gate.classList.remove('is-bad'); $('stBanBad').classList.remove('is-on');
+      setVal(rows.evid, 'DSSE 412/412 ✓', true); return sleep(700);
+    }).then(passGateAndLand);
+  }
+
+  function seqUndo() {
+    var live = state.ticks.filter(function (t) { return !t.classList.contains('stage__tick--undone'); });
+    var t = live[live.length - 1];
+    var ac = $('stBanAc');
+    if (!t) {
+      ac.textContent = 'nothing to undo — the log is already the history.';
+      ac.classList.add('is-on');
+      return sleep(1500).then(function () { ac.classList.remove('is-on'); });
+    }
+    hot('maintain', 1600);
+    t.classList.add('stage__tick--undone');
+    t.querySelector('.stage__ticklab').textContent = 'reverted';
+    state.op += 1;
+    ac.textContent = 'undone — guarded, and on the record. checkpoints intact: any agent can resume.';
+    ac.classList.add('is-on');
+    log('<span class="dim">op_0' + state.op + '</span> <span class="warn">undo op_0' + t.getAttribute('data-op') +
+        ' · main → ' + t.getAttribute('data-prev') + '</span> · reasoning kept — the log only grows');
+    return sleep(2400).then(function () { ac.classList.remove('is-on'); });
+  }
+
+  function seqSwap() {
+    var pool = [['claude-code', 'opus'], ['codex', 'gpt'], ['cursor-agent', 'composer']];
+    var i = 0;
+    pool.forEach(function (p, n) { if (p[0] === state.harness) i = n; });
+    var next = pool[(i + 1) % pool.length];
+    state.harness = next[0]; state.model = next[1]; state.session += 1;
+    var ac = $('stBanAc');
+    ac.textContent = 'handed off → ' + state.harness + ' · same intent, same record, new provenance';
+    ac.classList.add('is-on');
+    return sleep(1400).then(function () {
+      ac.classList.remove('is-on');
+      return seqLand();
+    });
+  }
+
+  function wire(id, fn) {
+    $(id).addEventListener('click', function () {
+      if (state.busy) return;
+      state.busy = true;
+      var btns = document.querySelectorAll('.stage-bar .btn');
+      btns.forEach(function (b) { b.disabled = true; });
+      fn().catch(function () {}).then(function () {
+        state.busy = false;
+        btns.forEach(function (b) { b.disabled = false; });
+      });
+    });
+  }
+
+  /* boot: clear the static tableau, seed the live state, wake the bar */
+  ticksBox.innerHTML = '';
+  ledger.innerHTML = '';
+  resetCard();
+  $('stBanOk').classList.remove('is-on');
+  addTick(); addTick();
+  log('<span class="dim">op_0117</span> <span class="ok">land ch_411 · evidence e_968 (DSSE) · signed</span> · claude-code');
+  log('<span class="dim">op_0118</span> <span class="ok">land ch_412 · evidence e_969 (DSSE) · signed</span> · claude-code');
+  $('stBar').classList.add('is-live');
+  wire('stBtnRefuse', seqRefuse);
+  wire('stBtnUndo', seqUndo);
+  wire('stBtnSwap', seqSwap);
+
+  function ambient() {
+    if (state.busy || document.visibilityState !== 'visible') return;
+    state.busy = true;
+    var btns = document.querySelectorAll('.stage-bar .btn');
+    btns.forEach(function (b) { b.disabled = true; });
+    seqLand().catch(function () {}).then(function () {
+      state.busy = false;
+      btns.forEach(function (b) { b.disabled = false; });
+    });
+  }
+  setTimeout(ambient, 1200);
+  setInterval(ambient, 32000);
+})();
+</script>
 
 </body>
 </html>

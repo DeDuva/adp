@@ -45,24 +45,6 @@
 <p class="lede">ADP is an open protocol for making machine-written software trustworthy at machine speed: a gate that converts an agent's belief into checkable proof. Every change lands as one signed, typed record — <span class="mono em">intent → diff → evidence → provenance</span> — tested as the state that actually ships, reversible when it lands wrong, and legible to whoever picks the work up next: an auditor, a human, or a different agent.</p>
 </div>
 
-<div class="stage">
-<span class="stage__lab stage__lab--agent">One agent — iterates until it believes it's done</span>
-<span class="stage__lab stage__lab--loop">edit → test → red → edit → test → green</span>
-<span class="stage__lab stage__lab--gate">Gate — belief becomes signed evidence</span>
-<span class="stage__lab stage__lab--main">Main — every change attested</span>
-<span class="stage__lab stage__lab--log">Operation log — rejections and rollbacks stay on the record</span>
-<div class="stage__loop"></div>
-<div class="stage__gate"></div>
-<div class="stage__trunk"></div>
-<div class="stage__log"></div>
-<div class="dot dot--d0"></div>
-<div class="dot dot--d1"></div>
-<div class="dot dot--drop dot--d2"></div>
-<div class="dot dot--d3"></div>
-<div class="dot dot--undo dot--d4"></div>
-<div class="dot dot--d5"></div>
-</div>
-
 <div class="grid grid--4">
 <div class="stat"><div class="stat__v">~75%</div><div class="stat__k">of new code at Google is AI-generated and engineer-approved (April 2026)<a class="ref" href="#ref-1">1</a></div></div>
 <div class="stat"><div class="stat__v warn">5.3×</div><div class="stat__k">longer wait for reviewer pickup on agent-authored PRs — 1,055 vs 201 minutes<a class="ref" href="#ref-2">2</a></div></div>

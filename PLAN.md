@@ -141,6 +141,13 @@ still gates all three pages, with both new figures held to the same criteria as 
 else — no horizontal scroll at any width, structure from `docs/html/site.css` alone, and a
 stacked reading below 700 px.
 
+The hero followed the same day: the strip of anonymous dots became a stage the reader
+operates — three buttons that refuse a change without evidence, undo a merge, and hand the
+session to a different agent, each writing the ledger in front of them — scripted by a few
+kilobytes of inline vanilla JavaScript so the page stays a file (#138), and rendering as a
+finished tableau when scripts are off. The essay's copy of the old strip went with it: one
+argument, one stage.
+
 ---
 
 ## Phase 2 — The serial-base-case forward work
