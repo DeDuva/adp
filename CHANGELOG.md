@@ -16,6 +16,68 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**Secret detection runs at the trajectory ingest path (#148).** ADP already
+runs push protection at the wire: `pre-receive` computes the diff, ships the
+text, and a regex-plus-entropy engine refuses the push naming the line and
+pattern. That is the only in-tree detector by design, and it is well placed
+for what it guards — **the diff**.
+
+A trajectory is a different object. It records what the agent *read*: file
+contents pulled into context, environment inspected, tool output returned,
+prompts a human typed. A `.env` the agent opened and correctly decided not to
+commit never appears in any diff and would appear verbatim in a `tool_call`
+payload. Push protection cannot see it, because it was never pushed — and
+under ambient capture (#149) the failure mode is durable, hash-chained, and
+readable by anyone holding a `repo:read` token.
+
+The same engine now runs at that second path, before anything is chained.
+"Adapters, never scanners" is untouched: this is *where* the detector runs,
+not a new detector.
+
+**A redaction is recorded as a redaction.** The matched span is replaced by a
+visible `[redacted:<pattern>]` marker — surgical, so what surrounded the
+secret stays legible and the trajectory stays worth keeping — and the event
+carries a `redactions` array of `{ path, pattern }` naming where and what
+fired. Two facts rather than one: a reader should see that an event was
+redacted without having to spot it in the text, and "which sessions hit the
+detector" should not be a full-text search over every payload in the corpus.
+
+**The chain commits to the redacted form.** Scanning happens before the hash,
+never after, so what verifies is what is stored and a redaction cannot be
+edited away afterwards. `redactions` joins the hash on exactly the terms
+`producerSeq` set: the key is *omitted* when nothing fired, so every event
+written before the column existed hashes to what it always did and
+`verifyChain` does not report the whole corpus as tampered. The column is null
+rather than `[]` for the same reason — an empty array is set.
+
+**Per repository, `trajectory.on_secret` chooses `redact` (default) or
+`refuse`.** The default is the decision, not a convenience: refusing loses the
+trajectory, and a lost trajectory teaches a user to turn recording off — which
+costs the record everything and costs the secret nothing, since it was already
+on their disk. `refuse` is there for the deployment that would rather have the
+gap, and is opt-in because only they can price that trade. A malformed
+`adp.yaml` fails closed on *land* and deliberately does **not** fail closed
+here: both modes remove the secret, so there is no safety to buy by refusing,
+only a trajectory to lose. Failing closed is for a choice between enforced and
+not enforced; this is a choice between two enforced outcomes.
+
+**What this costs, stated plainly.** #146 kept the opaqueness invariant by
+noting that measuring a size is not reading a value. This *does* read the
+value — there is no way to detect a secret without looking at one. What is
+preserved is the half that makes the protocol harness-neutral: nothing
+branches on the payload's shape. The walker descends to the string leaves of
+an arbitrary JSON value and scans each one, so a harness storing its own
+format still needs no ADP change. Object keys are left alone: a key is
+structure, and rewriting one would be indistinguishable from the harness
+having written a different document.
+
+The issue's related question — whether full payloads should be recorded by
+default at all — is **filed as #199 rather than bundled here**. #148 governs
+what a detector recognises; that governs what is stored when nothing is
+detected, which is the larger surface and a different argument. It is free to
+decide while nothing writes to these tables, and it now blocks #149 in
+#148's place.
+
 **Trajectory payloads and checkpoint state are bounded (#146).**
 `session_events.payload` and `checkpoints.state` are `z.unknown()` by design —
 ADP never parses them, which is what makes the protocol harness-neutral rather

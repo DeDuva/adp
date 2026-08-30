@@ -2967,6 +2967,17 @@ paths:
         than a rejected one — it is a durable record that looks complete — and
         only the producer can decide what to emit instead, which it cannot do
         if it is not told.
+
+        #148: **payloads are scanned for secrets before anything is chained.**
+        Push protection guards the diff; a trajectory records what the agent
+        *read*, so a `.env` it opened and correctly declined to commit reaches
+        no diff and would land here verbatim. A detected secret has its span
+        replaced by a visible `[redacted:<pattern>]` marker, and the event
+        carries a `redactions` array of `{ path, pattern }` naming where. The
+        chain commits to the redacted form, so what verifies is what is
+        stored. Per repository, `trajectory.on_secret` in `adp.yaml` chooses
+        `redact` (the default) or `refuse`; under `refuse` the whole batch is
+        rejected with `code: secret_detected` and nothing is chained.
       security:
         - bearerAuth: []
       requestBody:

@@ -12,6 +12,8 @@ import {
   checkEventPayloads,
   INGEST_BODY_LIMIT_BYTES,
 } from "../core/payload-limits.js";
+import { redactEventPayloads } from "../core/trajectory-redaction.js";
+import { loadRepoPolicy } from "../core/repo-policy.js";
 import {
   appendEvents,
   listEvents,
@@ -366,6 +368,7 @@ export function registerSessionRoutes(
         reply.code(422).send({ message: "Validation failed", errors: payloadSize.errors });
         return;
       }
+
       const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
@@ -383,14 +386,45 @@ export function registerSessionRoutes(
         return;
       }
 
+      // #148: the secret detector, at the second path by which untrusted text
+      // enters the system. Push protection guards the diff; a trajectory
+      // records what the agent *read*, so a `.env` it opened and correctly
+      // declined to commit never reaches a diff and would land here verbatim.
+      //
+      // Before the chain, never after: what gets hashed has to be what gets
+      // stored, or the redaction is an edit to a record that already vouched
+      // for the original.
+      //
+      // One `adp.yaml` read per *batch*, not per event — this endpoint is
+      // batched precisely because an emitter that has to choose between
+      // recording and going fast stops recording, and a git read amortised
+      // over up to 1000 events does not change that arithmetic.
+      const repoPolicy = await loadRepoPolicy(gitBackend, owner, repoName, repo.defaultBranch);
+      const scanned = redactEventPayloads(parsed.data.events);
+      if (scanned.redactions.length > 0 && repoPolicy.trajectory.on_secret === "refuse") {
+        reply.code(422).send({
+          message: "Trajectory rejected: a secret was detected and this repository's adp.yaml sets trajectory.on_secret: refuse",
+          errors: scanned.redactions.map((r) => ({
+            path: ["events", r.index, ...r.path.replace(/^\$\.?/, "").split(/[.[\]]+/).filter(Boolean)],
+            message: `${r.pattern} detected; the batch was refused rather than redacted, per adp.yaml`,
+            code: "secret_detected",
+          })),
+        });
+        return;
+      }
+      const events = scanned.events;
+
       const result = await appendEvents(
         db,
         repo.id,
         id,
-        parsed.data.events.map((e) => ({
+        events.map((e, index) => ({
           kind: e.kind,
           type: e.type,
           payload: e.payload,
+          redactions: scanned.redactions
+            .filter((r) => r.index === index)
+            .map((r) => ({ path: r.path, pattern: r.pattern })),
           status: e.status ?? null,
           model: e.model ?? null,
           tokensIn: e.tokens_in ?? null,
