@@ -202,7 +202,18 @@ remove() {
     exit 1
   }
   ok "removed $abs"
-  info "the branch itself is untouched: git branch -d $branch"
+  # `-d` or `-D`, and it is the tree-versus-ancestry distinction again rather
+  # than a matter of taste: `git branch -d` refuses a squash-merged branch,
+  # because none of its commits is an ancestor of the main it landed on. So a
+  # branch this function has just called landed needs `-D`, and printing `-d`
+  # for it — which is what this said at first — is advice that cannot work.
+  # `-d` stays the suggestion everywhere else, where its refusal is the point.
+  if [ -n "${landed:-}" ]; then
+    info "the branch itself is untouched: git branch -D $branch"
+    hint "-D because the squash merge left none of its commits on main; -d would refuse"
+  elif [ "$branch" != "HEAD" ]; then
+    info "the branch itself is untouched: git branch -d $branch"
+  fi
   adp_summary "worktree"
 }
 
