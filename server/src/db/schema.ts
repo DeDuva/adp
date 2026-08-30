@@ -13,7 +13,7 @@ import {
   uniqueIndex,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
+import { desc, sql } from "drizzle-orm";
 
 // M4-0: the tenancy boundary every other M4
 // item hangs off — scoped tokens, the org policy plane, quotas, audit export.
@@ -734,6 +734,22 @@ export const operations = pgTable(
     // ops leave it null — their org is reachable through the repo — but an
     // op with repoId null and orgId null is invisible to the org audit-log
     // export, which is exactly what happened to the kill switch.
+    // #97: the org an org-LEVEL operation belongs to (org.kill_switch,
+    // org.create, org.quota_update, an org-scoped token.mint). Repo-scoped
+    // ops leave it null — their org is reachable through the repo — but an
+    // op with repoId null and orgId null is invisible to the org audit-log
+    // export, which is exactly what happened to the kill switch.
+    //
+    // #147 tried widening this to "the org of *every* operation", so the
+    // export could ask one indexed question instead of an un-indexable OR.
+    // It works and it was reverted: the column carries a foreign key, so
+    // filling it on every row makes every operation insert take a
+    // `FOR KEY SHARE` lock on the org — one row per tenant, on the write path
+    // of every push, merge and gate result. Against `repos`, whose FK is
+    // locked by the same insert, that is a lock-order inversion:
+    // `e2e-candidate-fanout`'s 50-way fan-out deadlocked on it immediately.
+    // The export gets its index a different way, with no schema change at
+    // all — see http-rest/audit-log.ts.
     orgId: uuid("org_id").references(() => orgs.id),
     actorId: uuid("actor_id").notNull().references(() => identities.id),
     verb: text("verb").notNull(),
@@ -743,10 +759,21 @@ export const operations = pgTable(
     parentOp: uuid("parent_op"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  // Replaces the `target` LIKE-prefix scan http-rest/operations.ts's
-  // repoTargetFilter used to do — every op in
-  // this table is repo-scoped in practice, this just makes that queryable.
-  (table) => [index("operations_repo_id_idx").on(table.repoId)],
+  // #147: the leading column is the always-present predicate and the rest is
+  // the sort key, so each reader's filter *and* its ORDER BY are one ordered
+  // index walk that stops at LIMIT. Both readers previously planned a Sort
+  // over the whole matching slice; see 0031's migration for the numbers.
+  //
+  // Deliberately two indexes and not four. A third on (repo_id, verb, …)
+  // measured 2.2 ms -> 0.2 ms on the selective-verb history query, which is a
+  // real improvement over an already-acceptable number, bought with permanent
+  // write amplification on a table written inside the transaction of every
+  // change in the system. Revisit with the ingest numbers 3-5 (#195) produces,
+  // not on principle.
+  (table) => [
+    index("operations_repo_id_created_at_idx").on(table.repoId, desc(table.createdAt), desc(table.id)),
+    index("operations_org_id_created_at_idx").on(table.orgId, desc(table.createdAt), desc(table.id)),
+  ],
 );
 
 // M4-9a: the gate runner's job queue —

@@ -16,6 +16,77 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**`operations` is indexed for the queries actually run against it (#147).**
+The operation log is written in the same database transaction as every change
+— a stated invariant — so it grows with everything else in the system. It
+carried one index, on `repo_id` alone, while both of its readers filter *and
+sort*. Every plan contained a `Sort` over the whole matching slice, and the
+org audit export could not use the index at all.
+
+Measured at 1M rows, reproducible with `make measure-ops`:
+
+| Query | Before | After |
+|---|---|---|
+| history: repo + sort | 46.3 ms / 19353 blocks | **0.1 ms / 23** |
+| history: repo + verb + sort | 48.5 ms / 19321 blocks | **2.2 ms / 1134** |
+| history: repo + actor + since | 46.3 ms / 19321 blocks | **0.2 ms / 197** |
+| export: the org's operations | 73.8 ms / 21367 blocks | **4.2 ms / 8211** |
+
+Two indexes, `(repo_id, created_at DESC, id DESC)` and
+`(org_id, created_at DESC, id DESC)`: the leading column is the always-present
+predicate and the rest is the sort key, so each reader's filter and its
+`ORDER BY` become one ordered walk that stops at `LIMIT`.
+
+**The fix the issue proposed for the export does not work, and that is worth
+recording.** It suggested restructuring `repo_id IN (…) OR org_id = …` into
+two indexed reads unioned. Measured: 71.8 ms against 73.8 — no improvement,
+because Postgres will not turn `repo_id = ANY(…)` into an *ordered* scan; one
+index walk cannot yield rows for many leading-column values in sorted order,
+so the planner falls back to a sequential scan and a sort of the whole table.
+
+What works is a **LATERAL**, which gives each of the org's repos its own
+`repo_id = <const>` walk that the new index serves directly and `LIMIT` stops
+early — R+1 bounded reads, merged and re-limited.
+
+**The faster answer was tried and reverted, and that is the more useful
+finding.** Carrying `org_id` on every operation makes the export a single
+indexed read: 17 blocks, against the LATERAL's 8211. It is also wrong here.
+`operations.org_id` carries a foreign key, so filling it on every row makes
+every operation insert take a `FOR KEY SHARE` lock on the org — *one row per
+tenant*, on the write path of every push, merge and gate result. Against
+`repos`, whose foreign key the same insert already locks, that is a lock-order
+inversion: `e2e-candidate-fanout`'s 50-way workspace fan-out deadlocked on it
+immediately, and would have gone on doing so in production under exactly the
+concurrency this project is built for. The schema is unchanged, there is no
+backfill, and the export still goes from 73.8 ms to 4.2.
+
+**Deliberately two indexes and not four.** A third on `(repo_id, verb, …)`
+measured 2.2 ms → 0.2 ms on the selective-verb history query — a real
+improvement on an already-acceptable number, bought with permanent write
+amplification on the hottest write path in the system. Recorded rather than
+taken, so it can be revisited with the ingest numbers 3-5 (#195) produces
+instead of re-argued.
+
+**Both readers gained a keyset cursor**, the same idiom and the same
+`ADP-Next-Cursor` header every other native-plane list uses. The sort key
+gained `id` as a tie-break, which is the load-bearing half: operations written
+in one transaction share a `created_at` to the microsecond, so paging on the
+timestamp alone either repeats them or skips them. Both tests seed rows
+sharing an instant and assert a full paged walk equals the unpaged one, with
+no duplicates. On a `path`-filtered request the cursor marks the last
+operation *examined* rather than the last returned — path matching happens
+outside SQL, so a page can stop before the end of the rows it fetched, and
+resuming from the last match would skip everything in between.
+
+`server/scripts/measure-operations-plans.mjs` ships with it, behind
+`make measure-ops`, so the numbers above are reproducible and the next person
+to touch these indexes can re-run rather than re-argue. Its seeding is
+deliberate in two ways the first attempt got wrong: repo, actor and verb are
+assigned randomly rather than by modulo (which correlated them, so the
+"selective verb" shape was measuring a query that could never match), and
+verbs are skewed 90/10 toward one hot verb, because a uniform distribution
+makes every filter look selective and flatters the index.
+
 **Arm 2 re-run: the native plane's cost gap is gone at pilot scale.** The
 benchmark's whole job is to gate our own investment, and its most
 uncomfortable number was first-party: ADP-MCP at **$0.1435/trial** against

@@ -1,10 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { validationErrors } from "./validation-errors.js";
-import { and, desc, eq, gte, inArray, lte, or } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { operations, repos } from "../db/schema.js";
 import { requireScope, requireOrgAccess } from "../auth/plugin.js";
+import { decodeCursor, encodeCursor, NEXT_CURSOR_HEADER } from "./pagination.js";
 
 const AuditLogQuery = z.object({
   actor: z.string().uuid().optional(),
@@ -15,6 +16,7 @@ const AuditLogQuery = z.object({
   // job is exporting, not paging an interactive view, and since/until is the
   // pagination mechanism for anything bigger than one page.
   limit: z.coerce.number().int().positive().max(1000).default(200),
+  cursor: z.string().optional(),
   format: z.enum(["ndjson", "csv"]).default("ndjson"),
 });
 
@@ -50,43 +52,97 @@ export function registerAuditLogRoutes(app: FastifyInstance, db: Db) {
         return;
       }
 
-      const orgRepos = await db.select({ id: repos.id }).from(repos).where(eq(repos.orgId, orgId));
-      const orgRepoIds = orgRepos.map((r) => r.id);
+      // #147: R+1 indexed reads, not one predicate no index can serve.
+      //
+      // "Belongs to this org" is two facts — through one of the org's repos,
+      // or directly for an org-LEVEL verb (#97) — and spelling that
+      // `repo_id IN (…) OR org_id = …` measured at 1M rows as a sequential
+      // scan plus a sort of the whole table: 73.8 ms, 21367 blocks. Rewriting
+      // it as two indexed reads unioned does not help either (71.8 ms,
+      // measured): Postgres will not turn `repo_id = ANY(…)` into an ordered
+      // scan, because one index walk cannot yield rows for many leading-column
+      // values in sorted order.
+      //
+      // A LATERAL makes each repo its own `repo_id = <const>` walk, which the
+      // (repo_id, created_at DESC, id DESC) index serves directly and which
+      // LIMIT stops early. R+1 bounded reads, merged and re-limited: 4.2 ms
+      // and 8211 blocks, with no schema change and no denormalized column.
+      // (Carrying `org_id` on every row is faster still — 17 blocks — and was
+      // tried and reverted; see this route's migration, 0031. It puts a
+      // foreign-key lock on one row per tenant into the write path of every
+      // push.)
+      //
+      // Every filter and the cursor go *inside* each branch, not outside: a
+      // branch that took its newest 200 rows and then filtered would return
+      // nothing for a repo whose recent operations are all the wrong verb.
+      const pos = decodeCursor(parsed.data.cursor);
+      const narrow = (alias: string) => {
+        const parts = [sql.raw("TRUE")];
+        if (parsed.data.actor) parts.push(sql`${sql.raw(alias)}.actor_id = ${parsed.data.actor}`);
+        if (parsed.data.verb) parts.push(sql`${sql.raw(alias)}.verb = ${parsed.data.verb}`);
+        if (parsed.data.since) parts.push(sql`${sql.raw(alias)}.created_at >= ${new Date(parsed.data.since)}`);
+        if (parsed.data.until) parts.push(sql`${sql.raw(alias)}.created_at <= ${new Date(parsed.data.until)}`);
+        if (pos) {
+          parts.push(
+            sql`(${sql.raw(alias)}.created_at, ${sql.raw(alias)}.id) < (${pos.createdAt}, ${pos.id})`,
+          );
+        }
+        return sql.join(parts, sql` AND `);
+      };
 
-      // Two ways an operation belongs to this org (#97): through one of its
-      // repos, or directly — org-LEVEL verbs (org.kill_switch, org.create,
-      // org.quota_update, org-scoped token.mint) carry operations.org_id and
-      // no repo. The export used to see only the repo-scoped kind, which
-      // made the kill switch — the single op an org's audit reviewer most
-      // wants — invisible here. (An org with no repos still has its
-      // org-level rows; the empty-inArray guard drizzle needs is why the
-      // membership test is built conditionally.)
-      const rows = await db
-        .select()
-        .from(operations)
-        .where(
-          and(
-            orgRepoIds.length > 0
-              ? or(inArray(operations.repoId, orgRepoIds), eq(operations.orgId, orgId))
-              : eq(operations.orgId, orgId),
-            parsed.data.actor ? eq(operations.actorId, parsed.data.actor) : undefined,
-            parsed.data.verb ? eq(operations.verb, parsed.data.verb) : undefined,
-            parsed.data.since ? gte(operations.createdAt, new Date(parsed.data.since)) : undefined,
-            parsed.data.until ? lte(operations.createdAt, new Date(parsed.data.until)) : undefined,
-          ),
-        )
-        .orderBy(desc(operations.createdAt))
-        .limit(parsed.data.limit);
+      const limit = parsed.data.limit;
+      const { rows } = await db.execute<typeof operations.$inferSelect & { created_at: Date }>(sql`
+        SELECT * FROM (
+          SELECT scoped.* FROM (SELECT id FROM repos WHERE org_id = ${orgId}) r
+          CROSS JOIN LATERAL (
+            SELECT * FROM operations o
+            WHERE o.repo_id = r.id AND ${narrow("o")}
+            ORDER BY o.created_at DESC, o.id DESC
+            LIMIT ${limit}
+          ) scoped
+          UNION ALL
+          SELECT ol.* FROM operations ol
+          WHERE ol.org_id = ${orgId} AND ${narrow("ol")}
+          ORDER BY created_at DESC, id DESC
+          LIMIT ${limit}
+        ) u
+        ORDER BY u.created_at DESC, u.id DESC
+        LIMIT ${limit}
+      `);
+
+      // Raw SQL, so the rows come back snake_cased and dates come back as
+      // dates — normalised here rather than at each of the two call sites
+      // below.
+      const serialized = rows.map((r) => ({
+        id: r.id as string,
+        repoId: (r as Record<string, unknown>).repo_id as string | null,
+        actorId: (r as Record<string, unknown>).actor_id as string,
+        verb: r.verb as string,
+        target: r.target as string,
+        before: r.before,
+        after: r.after,
+        parentOp: (r as Record<string, unknown>).parent_op as string | null,
+        createdAt: new Date((r as Record<string, unknown>).created_at as string),
+      }));
+
+      // #147: an export bigger than one page had only since/until to page
+      // with, which is lossy across rows sharing a timestamp. The cursor is
+      // the same keyset idiom every other native-plane list uses, in the same
+      // header, so the body shape is unchanged.
+      if (serialized.length === limit) {
+        const last = serialized[serialized.length - 1]!;
+        reply.header(NEXT_CURSOR_HEADER, encodeCursor({ createdAt: last.createdAt, id: last.id }));
+      }
 
       if (parsed.data.format === "csv") {
-        const body = rows
+        const body = serialized
           .map((r) => csvRow([r.id, r.repoId ?? "", r.actorId, r.verb, r.target, r.createdAt.toISOString()]))
           .join("");
         reply.type("text/csv").send(csvRow(CSV_HEADER) + body);
         return;
       }
 
-      const body = rows
+      const body = serialized
         .map((r) =>
           JSON.stringify({
             id: r.id,
@@ -101,7 +157,7 @@ export function registerAuditLogRoutes(app: FastifyInstance, db: Db) {
           }),
         )
         .join("\n");
-      reply.type("application/x-ndjson").send(rows.length ? `${body}\n` : "");
+      reply.type("application/x-ndjson").send(serialized.length ? `${body}\n` : "");
     },
   );
 }

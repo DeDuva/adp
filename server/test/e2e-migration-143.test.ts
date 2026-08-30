@@ -37,9 +37,18 @@ describe.skipIf(skipWithoutDb)("#143: the unique index migrates a database that 
       await cp(MIGRATIONS, staging, { recursive: true });
       const journalPath = path.join(staging, "meta", "_journal.json");
       const journal = JSON.parse(await readFile(journalPath, "utf8")) as { entries: { tag: string }[] };
-      const withoutTarget = journal.entries.filter((entry) => entry.tag !== TAG);
-      expect(withoutTarget).toHaveLength(journal.entries.length - 1);
-      await writeFile(journalPath, JSON.stringify({ ...journal, entries: withoutTarget }, null, 2));
+      const targetAt = journal.entries.findIndex((entry) => entry.tag === TAG);
+      expect(targetAt).toBeGreaterThan(-1);
+      // *Truncate* at the target rather than filtering it out. Removing only
+      // this one entry worked until a later migration existed, and then stopped
+      // silently: drizzle applies migrations whose timestamp is newer than the
+      // last one applied, so a run that reached 0031 would never come back for
+      // 0030 — the staged database would arrive already "past" the migration
+      // under test, and this test would assert against a table it had never
+      // touched. Truncating is also what "the state before this migration"
+      // actually means.
+      const priorEntries = journal.entries.slice(0, targetAt);
+      await writeFile(journalPath, JSON.stringify({ ...journal, entries: priorEntries }, null, 2));
 
       const before = createDb(target.toString());
       await migrate(before.db, { migrationsFolder: staging });

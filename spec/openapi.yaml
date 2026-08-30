@@ -1730,11 +1730,27 @@ paths:
       - $ref: "#/components/parameters/owner"
       - $ref: "#/components/parameters/repo"
     get:
+      parameters:
+        - name: cursor
+          in: query
+          description: >
+            #147: opaque keyset cursor from a previous page's ADP-Next-Cursor
+            response header. Ordering is `(created_at, id)` descending — the
+            id is the tie-break, and it is what makes paging total across
+            operations written in the same transaction, which share a
+            `created_at` to the microsecond.
+
+            On a `path`-filtered request the cursor marks the last operation
+            *examined* rather than the last one returned: path matching happens
+            outside SQL, so a page can stop before the end of the rows it
+            fetched, and resuming from the last match would skip everything in
+            between.
+          schema: { type: string }
       x-required-scope: "repo:read"
       summary: >
         The append-only operation log — every mutation, written in the same
         transaction as the state change it describes. Filterable by `verb`,
-        `actor`, `path`, `since`, `until`, `limit`.
+        `actor`, `path`, `since`, `until`, `limit`, and pageable with `cursor`.
       security:
         - bearerAuth: []
       responses:
@@ -2019,13 +2035,24 @@ paths:
     parameters:
       - $ref: "#/components/parameters/orgId"
     get:
+      parameters:
+        - name: cursor
+          in: query
+          description: >
+            #147: opaque keyset cursor from a previous page's ADP-Next-Cursor
+            response header, ordered on `(created_at, id)` descending. Before
+            this, an export larger than one page could only be walked with
+            `since`/`until`, which is lossy across rows sharing a timestamp —
+            and operations written in one transaction do.
+          schema: { type: string }
       x-required-scope: "repo:read"
       summary: >
         M4-3: the operation log across every repo in an org — a projection of
         `operations`, not a second system. Filterable by `verb`, `actor`,
-        `since`, `until`, `limit`; `format=ndjson` (default) or `format=csv`
-        for direct ingestion by a compliance tool. Requires a token scoped to
-        this org (auth/plugin.ts's requireOrgAccess), not just repo:read.
+        `since`, `until`, `limit`, pageable with `cursor`; `format=ndjson`
+        (default) or `format=csv` for direct ingestion by a compliance tool.
+        Requires a token scoped to this org (auth/plugin.ts's
+        requireOrgAccess), not just repo:read.
       security:
         - bearerAuth: []
       responses:

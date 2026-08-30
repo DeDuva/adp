@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner helm dc-runtime site land local local-status local-down local-destroy
+.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner helm dc-runtime site land local local-status local-down local-destroy measure-ops
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -137,6 +137,9 @@ site: ## Assert the published pages meet #163's exit criteria, in a real browser
 		npx --prefix dc-runtime playwright install chromium; \
 	fi
 	npm test --prefix dc-runtime
+
+measure-ops: ## EXPLAIN the operations-log reads at volume (#147); needs 'make up'
+	@node server/scripts/measure-operations-plans.mjs
 
 bench: ## Test the harness, regenerate the benchmark report, and assert it is unchanged
 	npm test --prefix bench

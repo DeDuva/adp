@@ -8,13 +8,13 @@ import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
-import { identities } from "../src/db/schema.js";
+import { identities, operations } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
-import { repoAccessCheck } from "../src/core/repos-lookup.js";
+import { repoAccessCheck, findRepo } from "../src/core/repos-lookup.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerProposalRoutes } from "../src/http-rest/proposals.js";
 import { registerOperationRoutes } from "../src/http-rest/operations.js";
@@ -47,7 +47,7 @@ describe.skipIf(skipWithoutDb)("M1c: operations log + undo", () => {
     } catch {
       body = text;
     }
-    return { status: res.status, body };
+    return { status: res.status, body, cursor: res.headers.get("adp-next-cursor") };
   }
 
   beforeAll(async () => {
@@ -159,6 +159,51 @@ describe.skipIf(skipWithoutDb)("M1c: operations log + undo", () => {
       body: "{}",
     });
     expect(secondUndo.status).toBe(422);
+  });
+
+  // #147: the history endpoint's sort key gained `id` as a tie-break and the
+  // endpoint gained a keyset cursor. The tie-break is the load-bearing half —
+  // operations written in one transaction share a `created_at` to the
+  // microsecond, and this endpoint is the one that shows a person "what
+  // happened", so a page boundary landing inside such a group must not repeat
+  // or drop any of them.
+  it("pages the op log with a keyset cursor across operations sharing a timestamp", async () => {
+    const repoName = "pager";
+    const created = await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: repoName }) });
+    expect(created.status).toBe(201);
+    const row = await findRepo(db, owner, repoName);
+
+    const [actor] = await db
+      .insert(identities)
+      .values({ kind: "agent", principal: `ops-pager-${Date.now()}` })
+      .returning();
+    const sharedInstant = new Date();
+    await db.insert(operations).values(
+      Array.from({ length: 7 }, (_, i) => ({
+        repoId: row!.id,
+        actorId: actor!.id,
+        verb: "ops.pager.probe",
+        target: `probe-${i}`,
+        createdAt: sharedInstant,
+      })),
+    );
+
+    const all = await api(`/api/adp/repos/${owner}/${repoName}/operations?verb=ops.pager.probe&limit=200`);
+    const everything = (all.body as { id: string }[]).map((o) => o.id);
+    expect(everything).toHaveLength(7);
+
+    const paged: string[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < 50; page++) {
+      const qs: string = `/api/adp/repos/${owner}/${repoName}/operations?verb=ops.pager.probe&limit=2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+      const res = await api(qs);
+      paged.push(...(res.body as { id: string }[]).map((o) => o.id));
+      cursor = res.cursor;
+      if (!cursor) break;
+    }
+
+    expect(paged).toEqual(everything);
+    expect(new Set(paged).size).toBe(paged.length);
   });
 
   it("refuses to undo a merge once the branch has moved since (would silently drop later work)", async () => {
