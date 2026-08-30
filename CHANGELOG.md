@@ -16,6 +16,65 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**`adp-recorder` records a real session, out of band (#149).** The second of
+three: the spool and the shipper landed with no harness knowledge at all, and
+this is the part that gives them something to carry. `session_events` now has a
+producer.
+
+**Recording is out of band, and that is the thesis rather than an optimisation
+of it.** Nothing here runs inside the agent's context window — the recorder is
+a separate process reading a stream the harness was already producing, so the
+only thing on the agent's path is a pipe. Arm 2 measured what the alternative
+costs without even paying it: its MCP arm recorded *no* trajectory and still
+cost $0.1435/trial against $0.0848 via `gh`, and that gap is protocol
+round-trips. Per-event recording through an agent-visible tool is the one
+workload that would multiply it.
+
+**Three verbs.** `tail` follows a transcript the harness is writing — the
+primary way to attach, because the harness needs no flag, no hook and no
+knowledge that anything is watching. `wrap` runs the harness and tees its
+stream, for when something does know where the session ends. `flush` finishes
+spools a previous recorder left behind, which is what makes "survives its
+shell" true rather than aspirational: undelivered events are indistinguishable
+from events that never happened.
+
+**Mapping is the recorder's job**, so the server goes on storing `harness` as a
+string it never branches on. The first reader takes Claude Code's
+`--output-format stream-json`, the same stream `bench/lib/transcript.mjs` has
+parsed since arm 2. A tool call becomes **one** event assembled from the two
+lines the harness emits for it — ADP has one `tool_call` kind carrying a status
+and no field that would let two events point at each other, so emitting one per
+line would double every tool-call count in the corpus and leave half of them
+with no outcome. What that costs is stated rather than hidden: a call still in
+flight when the stream ends is recorded with no status, and counted, so the
+session says how many rather than leaving a reader to guess why some events
+have no status.
+
+**A session survives ADP being down at the moment it starts.** The spool is
+keyed by a locally-generated handle rather than by the server's session id, so
+recording begins immediately and `POST /sessions` is retried until it succeeds;
+a sidecar beside each spool records the repository and the harness so a later
+`flush` can finish a session this process never got an id for.
+
+Two bugs worth recording, both found by tests rather than by users. A signal
+handler that drained and then called `process.exit(0)` **raced the stream loop
+it was ending** — the exit could win, taking the undelivered tail of the
+session with it. A signal only asks to stop now; the drain happens once, on the
+ordinary path. And the tail's poll interval was `unref`'d on the reasoning that
+a poll loop should not hold a process open, which is exactly backwards when
+following the file *is* the work: with nothing else pending, Node exited
+immediately and the recorder recorded nothing while looking like a clean run.
+
+`server/test/e2e-recorder.test.ts` drives the **built** CLI as a subprocess
+against the real routes, which keeps `recorder/`'s no-`server/`-import boundary
+from becoming mutual through the test door — and proves the artifact someone
+actually runs, signal handling included. The issue's first three exit criteria
+hold: a recorded session verifies with `chains_ok` and `emitters_ok` both true,
+a killed recorder's spool is finished by a later `flush` with no duplicates,
+and a session recorded against an unreachable ADP arrives whole when it
+returns. The fourth is a bench arm against a real model and is deliberately not
+faked.
+
 **`adp-recorder`, the durable half (#149).** `session_events` has been a
 well-built store with no producer: a fixed cross-harness kind vocabulary, typed
 columns for model and tokens and cost, a hash chain, idempotent retry through

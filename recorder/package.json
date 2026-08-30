@@ -4,6 +4,9 @@
   "private": true,
   "license": "MIT",
   "type": "module",
+  "bin": {
+    "adp-recorder": "dist/main.js"
+  },
   "engines": {
     "node": ">=22"
   },

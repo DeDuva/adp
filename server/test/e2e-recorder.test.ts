@@ -1,0 +1,332 @@
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { skipWithoutDb } from "./require-db.js";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { appendFileSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import Fastify, { type FastifyInstance } from "fastify";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { createDb, type Db } from "../src/db/client.js";
+import { identities } from "../src/db/schema.js";
+import { mintToken } from "../src/auth/tokens.js";
+import { grantOwner } from "./org-fixture.js";
+import { authPlugin } from "../src/auth/plugin.js";
+import { GitBackend } from "../src/core/git-backend.js";
+import { Signer } from "../src/core/signing.js";
+import { repoAccessCheck } from "../src/core/repos-lookup.js";
+import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
+import { registerRepoRoutes } from "../src/http-rest/repos.js";
+import { registerIssueRoutes } from "../src/http-rest/issues.js";
+import { registerSessionRoutes } from "../src/http-rest/sessions.js";
+import { registerRunRoutes } from "../src/http-rest/runs.js";
+
+const execFileAsync = promisify(execFile);
+const SIGNING_KEY = "e2e-recorder-signing-key";
+const PUBLIC_URL = "https://adp.example.com";
+
+// The recorder as a *process*, not as an imported module.
+//
+// `recorder/` is a pure HTTP client with no `server/` import, and importing it
+// from here would quietly make the dependency mutual — the exact coupling that
+// rule exists to prevent, arriving through the test door. Spawning the CLI
+// keeps the boundary real and has the better property besides: what is proven
+// is the artifact someone actually runs, argument parsing and signal handling
+// and all.
+//
+// The *built* artifact, run under plain `node`, rather than the sources under
+// a loader. That is not fastidiousness: `npx tsx main.ts` puts one or two
+// wrapper processes between the test and the recorder, and `child.kill()` then
+// signals the wrapper. The live-transcript test below ends its recorder with
+// SIGINT and asserts that the tail of the session still arrives, which is a
+// test of nothing at all if the signal never reaches the process that handles
+// it — as it did not, the first time this was written.
+const RECORDER_ROOT = fileURLToPath(new URL("../../recorder", import.meta.url));
+const RECORDER_MAIN = path.join(RECORDER_ROOT, "dist", "main.js");
+
+// #149's exit criteria, against the real routes:
+//
+//   1. a session recorded end to end verifies, chains_ok and emitters_ok both true
+//   2. killing the recorder mid-session and restarting produces a complete
+//      chain with no duplicates
+//   3. pointing it at an unreachable server, then restoring it, produces the same
+//
+// The fourth — that the agent cost is indistinguishable with the recorder
+// attached — is a bench arm against a real model rather than an assertion, and
+// is deliberately not faked here.
+describe.skipIf(skipWithoutDb)("#149: adp-recorder against a live ADP", () => {
+  let app: FastifyInstance;
+  let db: Db;
+  let pool: import("pg").Pool;
+  let gitRoot: string;
+  let port: number;
+  let token: string;
+  let spoolDir: string;
+  let transcripts: string;
+  const owner = `recorder-owner-${Date.now()}`;
+  const repoName = "widget";
+
+  async function api(pathAndQuery: string, init: RequestInit = {}) {
+    const res = await fetch(`http://127.0.0.1:${port}${pathAndQuery}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...init.headers,
+      },
+    });
+    const text = await res.text();
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+    return { status: res.status, body: body as Record<string, unknown> };
+  }
+
+  /** Run the recorder CLI, with the environment it reads its configuration from. */
+  function recorder(args: string[], env: Record<string, string> = {}) {
+    return execFileAsync(process.execPath, [RECORDER_MAIN, ...args], {
+      cwd: RECORDER_ROOT,
+      env: {
+        ...process.env,
+        ADP_SERVER_URL: `http://127.0.0.1:${port}`,
+        ADP_TOKEN: token,
+        ADP_RECORDER_SPOOL: spoolDir,
+        ADP_RECORDER_ID: "e2e-recorder",
+        ...env,
+      },
+    });
+  }
+
+  const init = () => JSON.stringify({ type: "system", subtype: "init", session_id: "harness-1", model: "test-model" });
+  const say = (text: string) =>
+    JSON.stringify({
+      type: "assistant",
+      message: { model: "test-model", content: [{ type: "text", text }], usage: { input_tokens: 3, output_tokens: 4 } },
+    });
+  const call = (id: string, command: string) =>
+    JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id, name: "Bash", input: { command } }] },
+    });
+  const result = (id: string, output: string) =>
+    JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content: output }] } });
+
+  beforeAll(async () => {
+    // Built here rather than relied on: `make test-all` runs the server suite
+    // before `make recorder`, so a dist from a previous run — or none at all —
+    // is what this would otherwise find.
+    await execFileAsync("npm", ["run", "build", "--prefix", RECORDER_ROOT], { cwd: RECORDER_ROOT });
+
+    ({ db, pool } = createDb(process.env.DATABASE_URL!));
+    await migrate(db, { migrationsFolder: new URL("../drizzle", import.meta.url).pathname });
+
+    gitRoot = await mkdtemp(path.join(tmpdir(), "adp-e2e-recorder-git-"));
+    const gitBackend = new GitBackend(gitRoot);
+    const signer = new Signer(SIGNING_KEY);
+
+    app = Fastify({ logger: false });
+    app.addContentTypeParser(
+      ["application/x-git-upload-pack-request", "application/x-git-receive-pack-request"],
+      (_req, payload, done) => done(null, payload),
+    );
+    await app.register(authPlugin(db));
+    registerRepoRoutes(app, db, gitBackend, PUBLIC_URL);
+    registerIssueRoutes(app, db);
+    registerSessionRoutes(app, db, gitBackend, signer, PUBLIC_URL);
+    registerRunRoutes(app, db, gitBackend, signer, PUBLIC_URL);
+    registerGitHttpRoutes(app, repoAccessCheck(db), gitBackend);
+
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const address = app.server.address();
+    port = typeof address === "object" && address ? address.port : 0;
+    gitBackend.setInternalUrl(`http://127.0.0.1:${port}`);
+
+    const [identity] = await db
+      .insert(identities)
+      .values({ kind: "agent", principal: `recorder-e2e-${Date.now()}` })
+      .returning();
+    token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
+    await grantOwner(db, identity!.id, owner);
+    await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: repoName }) });
+
+    spoolDir = mkdtempSync(path.join(tmpdir(), "adp-e2e-recorder-spool-"));
+    transcripts = mkdtempSync(path.join(tmpdir(), "adp-e2e-recorder-tx-"));
+  }, 120_000);
+
+  afterAll(async () => {
+    await app.close();
+    await pool.end();
+    await rm(gitRoot, { recursive: true, force: true });
+    await rm(spoolDir, { recursive: true, force: true });
+    await rm(transcripts, { recursive: true, force: true });
+  });
+
+  /** Open a run so the trajectory has something to verify against. */
+  async function openRun(): Promise<{ runId: string; intentId: string }> {
+    const issue = await api(`/api/v3/repos/${owner}/${repoName}/issues`, {
+      method: "POST",
+      body: JSON.stringify({ title: "record me", body: "the trajectory is the point" }),
+    });
+    const intentId = issue.body.intent_id as string;
+    const run = await api(`/api/adp/repos/${owner}/${repoName}/runs`, {
+      method: "POST",
+      body: JSON.stringify({ intent_id: intentId, orchestrator: "e2e" }),
+    });
+    return { runId: run.body.id as string, intentId };
+  }
+
+  it("records a finished transcript end to end, and the run verifies", async () => {
+    // Exit criterion 1. `--from-start` is the finished-transcript case: the
+    // file is complete before the recorder is pointed at it, which is exactly
+    // how the bench's own trials leave a transcript behind today.
+    const { runId } = await openRun();
+    const file = path.join(transcripts, "complete.jsonl");
+    writeFileSync(
+      file,
+      [
+        init(),
+        say("looking at the repo"),
+        call("c1", "npm test"),
+        result("c1", "4 passing"),
+        say("done"),
+        JSON.stringify({ type: "result", subtype: "success", total_cost_usd: 0.0021, num_turns: 3, is_error: false }),
+      ].join("\n") + "\n",
+    );
+
+    await recorder(["wrap", "--repo", `${owner}/${repoName}`, "--run", runId, "--", "cat", file]);
+
+    const verify = await api(`/api/adp/repos/${owner}/${repoName}/runs/${runId}/verify`);
+    expect(verify.status).toBe(200);
+    // The two the issue names, and the single answer above them.
+    expect(verify.body.chains_ok).toBe(true);
+    expect(verify.body.emitters_ok).toBe(true);
+    expect(verify.body.ok).toBe(true);
+
+    const sessions = verify.body.sessions as { session_id: string; event_count: number }[];
+    expect(sessions).toHaveLength(1);
+    // init, message, tool_call, message, result — the tool call assembled from
+    // its two lines rather than counted twice.
+    expect(sessions[0]!.event_count).toBe(5);
+
+    const events = await api(
+      `/api/adp/repos/${owner}/${repoName}/sessions/${sessions[0]!.session_id}/events`,
+    );
+    const kinds = (events.body.events as { kind: string; type: string }[]).map((e) => `${e.kind}:${e.type}`);
+    expect(kinds).toEqual([
+      "custom:claude-code.init",
+      "message:assistant",
+      "tool_call:Bash",
+      "message:assistant",
+      "custom:claude-code.result",
+    ]);
+  }, 120_000);
+
+  it("finishes a session a killed recorder left behind, with no duplicates", async () => {
+    // Exit criterion 2. The kill is modelled by a recorder that spools without
+    // delivering — ADP_SERVER_URL points nowhere — and then dies. `flush` is
+    // the next run cleaning up after the last one, which is what makes
+    // "survives its shell" true rather than aspirational.
+    const { runId } = await openRun();
+    const file = path.join(transcripts, "interrupted.jsonl");
+    writeFileSync(file, [init(), say("first half"), call("c1", "ls")].join("\n") + "\n");
+
+    // Port 9 is discard: reliably refused, never listening.
+    await recorder(["wrap", "--repo", `${owner}/${repoName}`, "--run", runId, "--", "cat", file], {
+      ADP_SERVER_URL: "http://127.0.0.1:9",
+    }).catch(() => undefined);
+
+    // Nothing reached ADP yet.
+    const before = await api(`/api/adp/repos/${owner}/${repoName}/runs/${runId}/verify`);
+    expect((before.body.sessions as unknown[]).length).toBe(0);
+
+    // A later recorder finishes the job, twice — the second call proves the
+    // replay is idempotent rather than merely working once.
+    await recorder(["flush", "--repo", `${owner}/${repoName}`]);
+    await recorder(["flush", "--repo", `${owner}/${repoName}`]);
+
+    const verify = await api(`/api/adp/repos/${owner}/${repoName}/runs/${runId}/verify`);
+    expect(verify.body.chains_ok).toBe(true);
+    expect(verify.body.emitters_ok).toBe(true);
+    const sessions = verify.body.sessions as { session_id: string; event_count: number }[];
+    expect(sessions).toHaveLength(1);
+    // init, message, and the tool call flushed at end-of-stream with no
+    // result, plus the marker that says one call never resolved. Four, not
+    // eight: flushing twice appended nothing the second time.
+    expect(sessions[0]!.event_count).toBe(4);
+  }, 120_000);
+
+  it("records against an unreachable ADP, then delivers the whole session when it returns", async () => {
+    // Exit criterion 3, including the hard half: ADP is down when the session
+    // *starts*, so there is no session id to record against. The spool is
+    // keyed by a local handle precisely so that recording can begin anyway.
+    const { runId } = await openRun();
+    const file = path.join(transcripts, "offline.jsonl");
+    writeFileSync(file, [init(), say("one"), say("two"), say("three")].join("\n") + "\n");
+
+    await recorder(["wrap", "--repo", `${owner}/${repoName}`, "--run", runId, "--", "cat", file], {
+      ADP_SERVER_URL: "http://127.0.0.1:9",
+    }).catch(() => undefined);
+
+    await recorder(["flush"]);
+
+    const verify = await api(`/api/adp/repos/${owner}/${repoName}/runs/${runId}/verify`);
+    expect(verify.body.ok).toBe(true);
+    expect(verify.body.chains_ok).toBe(true);
+    expect(verify.body.emitters_ok).toBe(true);
+    const sessions = verify.body.sessions as { session_id: string; event_count: number }[];
+    expect(sessions[0]!.event_count).toBe(4);
+
+    // The whole session, in order, numbered from 1 — which is what
+    // emitters_ok is actually asserting.
+    const events = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessions[0]!.session_id}/events`);
+    const rows = events.body.events as { producer_seq: number; producer_id: string }[];
+    expect(rows.map((e) => e.producer_seq)).toEqual([1, 2, 3, 4]);
+    expect(rows[0]!.producer_id).toBe("e2e-recorder");
+  }, 120_000);
+
+  it("follows a transcript that is still being written", async () => {
+    // What `tail` is for, and the reason it is the primary way to attach: the
+    // harness needs no flag and no knowledge that anything is watching.
+    const { runId } = await openRun();
+    const file = path.join(transcripts, "live.jsonl");
+    writeFileSync(file, "");
+
+    const child = execFile(
+      process.execPath,
+      [RECORDER_MAIN, "tail", "--repo", `${owner}/${repoName}`, "--run", runId, "--file", file, "--from-start"],
+      {
+        cwd: RECORDER_ROOT,
+        env: {
+          ...process.env,
+          ADP_SERVER_URL: `http://127.0.0.1:${port}`,
+          ADP_TOKEN: token,
+          ADP_RECORDER_SPOOL: spoolDir,
+          ADP_RECORDER_FLUSH_INTERVAL_MS: "300",
+        },
+      },
+    );
+
+    // Written after the recorder is already following, which is the case a
+    // finished-file test cannot cover.
+    await new Promise((r) => setTimeout(r, 2500));
+    appendFileSync(file, [init(), say("live one"), say("live two")].join("\n") + "\n");
+    await new Promise((r) => setTimeout(r, 2500));
+
+    // SIGINT is how a terminal ends a session, so it has to be the path that
+    // drains rather than the path that loses the tail.
+    child.kill("SIGINT");
+    await new Promise((r) => setTimeout(r, 3000));
+    await recorder(["flush"]).catch(() => undefined);
+
+    const verify = await api(`/api/adp/repos/${owner}/${repoName}/runs/${runId}/verify`);
+    expect(verify.body.chains_ok).toBe(true);
+    expect(verify.body.emitters_ok).toBe(true);
+    const sessions = verify.body.sessions as { event_count: number }[];
+    expect(sessions[0]!.event_count).toBe(3);
+  }, 180_000);
+});
