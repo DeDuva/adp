@@ -265,11 +265,30 @@ pass "B4 post-receive auto-recorded a signed change"
 pass "B5 gh pr create"
 
 # B8 (early) — a land policy that has never refused anything is untested.
-REFUSED=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
+#
+# #145: and a refusal that names the unmet requirement without naming the
+# remedy sends a first-time user back to the documentation at exactly the
+# moment the product was about to prove itself. So this asserts the remedy
+# text rather than the status code alone — the same lesson as `gh pr checks`
+# exiting zero when it found nothing at all.
+REFUSAL="$ARTIFACTS/land-refusal.json"
+REFUSED=$(curl -s -o "$REFUSAL" -w "%{http_code}" -X PUT \
   "http://localhost:${PORT}/api/v3/repos/${OWNER}/${REPO}/pulls/1/merge" \
   -H "Authorization: Bearer ${TOKEN}")
 [ "$REFUSED" = "422" ] || fail "B8: expected the land policy to refuse an ungated, unapproved merge (422), got $REFUSED"
-pass "B8 land policy refuses before gates and approval"
+grep -q '"unmet_detail"' "$REFUSAL" || fail "B8: the refusal carries no unmet_detail — see $REFUSAL"
+grep -q 'gh pr review 1 --approve' "$REFUSAL" \
+  || fail "B8: the refusal names one_approval without naming the command that satisfies it — see $REFUSAL"
+pass "B8 land policy refuses before gates and approval, naming the command that satisfies it"
+
+# And the remedy survives the projection most users will actually read it
+# through. `gh pr merge` lands on the GraphQL mutation, not the REST route, so
+# a remedy that lived only in the REST body would be invisible to exactly the
+# audience most likely to meet the refusal.
+GH_REFUSAL=$("$GH_BIN" pr merge 1 --repo "$GH_REPO" --merge 2>&1 || true)
+grep -q 'gh pr review 1 --approve' <<<"$GH_REFUSAL" \
+  || fail "B8: the remedy did not survive projection to gh. gh said: $GH_REFUSAL"
+pass "B8 the remedy survives to what 'gh pr merge' prints"
 
 # B6 — report a gate result, then check the rollup.
 api POST "/api/v3/repos/${OWNER}/${REPO}/gates" \

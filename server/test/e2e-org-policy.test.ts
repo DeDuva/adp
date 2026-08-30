@@ -159,7 +159,16 @@ describe.skipIf(skipWithoutDb)("M4-2: org policy plane", () => {
 
     const attempt = await api(`/api/v3/repos/${owner}/${repoName}/pulls/${pr.number}/merge`, { method: "PUT", body: "{}" });
     expect(attempt.status).toBe(422);
-    expect((attempt.body as { unmet: string[] }).unmet).toEqual(["org kill switch is active"]);
+    const body = attempt.body as { unmet: string[]; unmet_detail: { requirement: string; remedy: string }[] };
+    expect(body.unmet).toHaveLength(1);
+    expect(body.unmet_detail).toHaveLength(1);
+    expect(body.unmet_detail[0]!.requirement).toBe("org_kill_switch");
+    // #145: the kill switch is the one refusal nothing on the proposal can
+    // clear, so the remedy has to say that rather than send the user round the
+    // gate-and-approve loop it does not respond to.
+    expect(body.unmet_detail[0]!.remedy).toMatch(/org admin/);
+    expect(body.unmet[0]!).toContain("org_kill_switch");
+    expect(body.unmet[0]!).toContain("kill_switch");
   });
 
   it("enforces a requirement named only in the org's policy repo, on top of an empty instance floor and no repo policy", async () => {

@@ -649,10 +649,11 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/LandRefusal"
           description: >
-            Land policy not satisfied (body carries `unmet`), already merged,
-            the proposal is closed, or `merge_method: rebase`.
+            Land policy not satisfied (body carries `unmet` and
+            `unmet_detail`), already merged, the proposal is closed, or
+            `merge_method: rebase`.
   /api/v3/repos/{owner}/{repo}/pulls/{number}/reviews:
     parameters:
       - $ref: "#/components/parameters/owner"
@@ -2648,10 +2649,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/LandRefusal"
           description: >
             No winner under the policy, the set is already resolved, or the
-            winner failed land policy (the set stays open).
+            winner failed land policy — in which case the set stays open and
+            the body carries `unmet` / `unmet_detail`, the same refusal shape
+            the merge route sends, since it is the same land path.
   /api/adp/repos/{owner}/{repo}/sessions:
     parameters:
       - $ref: "#/components/parameters/owner"
@@ -3954,6 +3957,56 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RunVerifySession"
+    LandRefusal:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          description: >
+            #145: the refusal a land policy produces. A refusal is the moment
+            the product proves itself, so it names not only what is unmet but
+            what to do about it — `make demo` is built around reaching this
+            response.
+
+            `unmet` is one line per unsatisfied requirement, each carrying its
+            own remedy and, where one exists, the literal command. A caller
+            that only prints these lines has the whole answer.
+            `unmet_detail` is the same facts with the seams left in, for a
+            caller that wants the command without parsing a sentence. Both are
+            absent on the other 422s this route can produce (already merged, a
+            closed proposal, `merge_method: rebase`), which carry `message`
+            alone.
+          properties:
+            unmet:
+              type: array
+              items:
+                type: string
+            unmet_detail:
+              type: array
+              items:
+                $ref: "#/components/schemas/UnmetRequirement"
+    UnmetRequirement:
+      type: object
+      required: [requirement, problem, remedy]
+      description: >
+        #145: one unsatisfied land requirement. `command` is absent — not
+        empty, and never invented — where nothing a user can type satisfies
+        it: a gate that ran and reported failure is satisfied by a new commit,
+        and a confidence bound is satisfied by more passing runs or a looser
+        policy.
+      properties:
+        requirement:
+          type: string
+          description: >
+            The requirement name — `gates_green`, `gates_confident`,
+            `one_approval`, or `org_kill_switch`. One entry *per gate* for the
+            two gate requirements, because that is the grain a remedy is
+            actionable at.
+        problem:
+          type: string
+        remedy:
+          type: string
+        command:
+          type: string
     Error:
       type: object
       required: [message]

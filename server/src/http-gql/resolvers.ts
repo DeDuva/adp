@@ -7,6 +7,7 @@ import { recordOperation } from "../core/operations.js";
 import type { LandRequirement } from "../core/repo-policy.js";
 import { type MergeMethod } from "../core/merge.js";
 import { landProposal } from "../core/land.js";
+import { renderUnmet } from "../core/land-policy.js";
 import { latestGateResults } from "../core/gate-results-lookup.js";
 import { emitWebhookEvent } from "../core/webhooks.js";
 import { toGlobalId, fromGlobalId } from "./global-id.js";
@@ -852,8 +853,14 @@ export function createResolvers(
           { identityId: identity.identityId, principal: identity.principal },
         );
         if (!result.ok) {
+          // #145: one line per unmet requirement, each carrying its own
+          // remedy. This message is what `gh pr merge` prints, which is where
+          // most people will actually read a refusal — so the remedy has to
+          // survive the projection rather than living only in the REST body.
           throw new GraphQLError(
-            result.unmet ? `Land policy not satisfied: ${result.unmet.join("; ")}` : result.message,
+            result.unmet
+              ? ["Land policy not satisfied:", ...result.unmet.map((u) => `  ${renderUnmet(u)}`)].join("\n")
+              : result.message,
             { extensions: { code: result.status === 409 ? "CONFLICT" : "BAD_USER_INPUT" } },
           );
         }
