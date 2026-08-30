@@ -56,6 +56,18 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm run migrate
+
+      # The recorder's dependency tree, for one test in this suite:
+      # `test/e2e-recorder.test.ts` drives the *built* recorder CLI as a
+      # subprocess (that file says why built, and why a subprocess), and builds
+      # it in `beforeAll` — which needs the recorder's own typescript. This job
+      # otherwise installs only server's tree, so without this the e2e fails
+      # with a build error, which is at least loud. Making it *skip* instead
+      # would be the skip-looks-like-a-pass failure the standing invariant in
+      # AGENTS.md exists to prevent, on the one test that proves ADP has a
+      # trajectory producer at all.
+      - run: npm ci --prefix ../recorder
+
       - run: npm test
 
       - uses: actions/setup-node@v4
