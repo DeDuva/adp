@@ -1,0 +1,81 @@
+{
+  "recordedAt": "2026-08-30T10:14:05.063Z",
+  "arm": "three-way-cost",
+  "cohort": "post-144-tools",
+  "deterministic": false,
+  "method": "adp-mcp",
+  "taskId": "titlecase",
+  "rep": 2,
+  "runId": "dea49c",
+  "environment": {
+    "node": "v24.18.0",
+    "platform": "linux/x64",
+    "model": "claude-haiku-4-5",
+    "adpUrl": "http://localhost:8420",
+    "target": {
+      "owner": "duvabench",
+      "repo": "arm2-mcp-titlecase-r2-dea49c",
+      "issueRef": "http://localhost:8420/repos/duvabench/arm2-mcp-titlecase-r2-dea49c#1"
+    }
+  },
+  "measurement": {
+    "wallClockMs": 65349,
+    "totalCostUsd": 0.0969909,
+    "usage": {
+      "input_tokens": 148,
+      "cache_creation_input_tokens": 18630,
+      "cache_read_input_tokens": 448224,
+      "output_tokens": 5434,
+      "output_tokens_details": {
+        "thinking_tokens": 1776
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 18630
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 10,
+          "output_tokens": 379,
+          "cache_read_input_tokens": 31632,
+          "cache_creation_input_tokens": 626,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 626,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "numTurns": 17,
+    "toolCalls": 16,
+    "toolErrors": 2,
+    "permissionDenials": 0,
+    "toolBreakdown": {
+      "Bash(cat)": 1,
+      "Bash(find)": 1,
+      "Bash(git)": 2,
+      "Bash(node)": 2,
+      "Edit": 1,
+      "Read": 1,
+      "ToolSearch": 1,
+      "Write": 2,
+      "mcp__adp-native__adp_candidates_open": 1,
+      "mcp__adp-native__adp_candidates_resolve": 2,
+      "mcp__adp-native__adp_proposal_open": 1,
+      "mcp__adp-native__adp_proposal_review": 1
+    },
+    "escapeHatchCalls": 0,
+    "isError": false,
+    "terminalReason": "completed",
+    "landed": true,
+    "processExitCode": 0
+  }
+}

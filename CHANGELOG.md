@@ -16,6 +16,60 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**Arm 2 re-run: the native plane's cost gap is gone at pilot scale.** The
+benchmark's whole job is to gate our own investment, and its most
+uncomfortable number was first-party: ADP-MCP at **$0.1435/trial** against
+$0.0848 via `gh`, with *every* MCP trial costing more than *every* `gh` trial
+— a clean separation, not a tendency. The leading hypothesis was that the
+native plane had no tool to open a proposal, so an agent paid a
+hand-assembled `curl` where `gh` spends one command. #144 added the four
+tools. This is the re-run that tests it.
+
+| | baseline (2026-08-10) | post-144-tools (2026-08-30) |
+|---|---|---|
+| ADP-MCP | $0.1435 | $0.0892 |
+| ADP via `gh` | $0.0848 | $0.0771 |
+| GitHub + `gh` | $0.0850 | $0.0710 |
+| MCP : `gh` ratio | **1.69×** | **1.16×** |
+
+**The hypothesis held.** But the honest statement is narrower than "the gap
+closed", and the report computes rather than asserts it: in the baseline the
+two ADP arms' per-trial cost ranges did not overlap at all, and now they do.
+The residual 1.16× is a direction, not a separation — at four trials a cell
+the arms are no longer distinguishable. That is weaker than a win and stronger
+than nothing changed, and bounding what is left needs the study-scale
+replication this report has always said it is not.
+
+**The fallback was available and untouched.** `curl` stayed on the `adp-mcp`
+tool list and unadvertised, and was used **zero times in twelve trials**. That
+matters more than the cost figure: it means the residual is what the native
+plane costs when its own tools are the ones being used, not an agent quietly
+reaching past them. What is left looks structural — opening a candidate set
+and resolving it are two MCP round trips with no single `gh` command standing
+in for them, which no additional tool removes.
+
+Every arm got cheaper between cohorts (`adp-gh` −9.1%, `github-gh` −16.5%),
+which is why the ratio and not the absolute is the headline: cohorts ran on
+different days and a vendor-side model change between them is invisible from
+here.
+
+**Run records are cohorted rather than pooled.** A second run dropped into the
+old pile would have been averaged with the first, producing a mean describing
+neither and destroying the only comparison the re-run exists to make. Records
+carry a `cohort`; the report groups by it, never pools across it, and keeps the
+earlier cohort rather than replacing it — a benchmark that overwrites its own
+baseline cannot show that anything changed. Records without the field are the
+original pilot.
+
+Two setup differences are recorded on the report's own page rather than
+smoothed over: the re-run instance ran today's default land-policy floor, so
+`one_approval` was not actually enforced while the instructions still said it
+was (enabling it was not an option — since #121 it is author-independent and
+these arms are single-principal, so every ADP trial would have failed to land);
+and the per-method `--allowedTools` list turns out to be a slightly leakier
+boundary than it reads as. Neither moves the `adp-mcp`:`adp-gh` comparison,
+because both ADP arms are affected identically.
+
 **Arm 2 keeps its escape hatch, and records when the agent uses it.** #144
 gave the native plane the four tools an agent needed and rewrote the `adp-mcp`
 instructions to name them. It also pulled `Bash(curl *)` off that arm's tool

@@ -1,0 +1,76 @@
+{
+  "recordedAt": "2026-08-30T10:02:28.982Z",
+  "arm": "three-way-cost",
+  "cohort": "post-144-tools",
+  "deterministic": false,
+  "method": "github-gh",
+  "taskId": "clamp",
+  "rep": 1,
+  "runId": "f8562e",
+  "environment": {
+    "node": "v24.18.0",
+    "platform": "linux/x64",
+    "model": "claude-haiku-4-5",
+    "adpUrl": null,
+    "target": {
+      "owner": "DeDuva",
+      "repo": "adp-bench-arm2-scratch",
+      "issueRef": "DeDuva/adp-bench-arm2-scratch#17"
+    }
+  },
+  "measurement": {
+    "wallClockMs": 52009,
+    "totalCostUsd": 0.07716880000000001,
+    "usage": {
+      "input_tokens": 130,
+      "cache_creation_input_tokens": 15176,
+      "cache_read_input_tokens": 395038,
+      "output_tokens": 3433,
+      "output_tokens_details": {
+        "thinking_tokens": 1064
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 15176
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 8,
+          "output_tokens": 251,
+          "cache_read_input_tokens": 28415,
+          "cache_creation_input_tokens": 389,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 389,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "numTurns": 16,
+    "toolCalls": 15,
+    "toolErrors": 1,
+    "permissionDenials": 0,
+    "toolBreakdown": {
+      "Bash(gh)": 4,
+      "Bash(git)": 3,
+      "Bash(ls)": 1,
+      "Bash(node)": 2,
+      "Edit": 1,
+      "Read": 2,
+      "Write": 2
+    },
+    "escapeHatchCalls": 0,
+    "isError": false,
+    "terminalReason": "completed",
+    "landed": true,
+    "processExitCode": 0
+  }
+}

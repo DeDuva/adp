@@ -1,0 +1,79 @@
+{
+  "recordedAt": "2026-08-30T10:04:27.874Z",
+  "arm": "three-way-cost",
+  "cohort": "post-144-tools",
+  "deterministic": false,
+  "method": "adp-mcp",
+  "taskId": "clamp",
+  "rep": 1,
+  "runId": "4d4ad2",
+  "environment": {
+    "node": "v24.18.0",
+    "platform": "linux/x64",
+    "model": "claude-haiku-4-5",
+    "adpUrl": "http://localhost:8420",
+    "target": {
+      "owner": "duvabench",
+      "repo": "arm2-mcp-clamp-r1-4d4ad2",
+      "issueRef": "http://localhost:8420/repos/duvabench/arm2-mcp-clamp-r1-4d4ad2#1"
+    }
+  },
+  "measurement": {
+    "wallClockMs": 50502,
+    "totalCostUsd": 0.07646385000000001,
+    "usage": {
+      "input_tokens": 124,
+      "cache_creation_input_tokens": 16049,
+      "cache_read_input_tokens": 348286,
+      "output_tokens": 3980,
+      "output_tokens_details": {
+        "thinking_tokens": 1587
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 16049
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 10,
+          "output_tokens": 328,
+          "cache_read_input_tokens": 29047,
+          "cache_creation_input_tokens": 630,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 630,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "numTurns": 14,
+    "toolCalls": 13,
+    "toolErrors": 1,
+    "permissionDenials": 0,
+    "toolBreakdown": {
+      "Bash(git)": 2,
+      "Bash(ls)": 1,
+      "Bash(node)": 1,
+      "Read": 1,
+      "ToolSearch": 1,
+      "Write": 2,
+      "mcp__adp-native__adp_candidates_open": 1,
+      "mcp__adp-native__adp_candidates_resolve": 2,
+      "mcp__adp-native__adp_proposal_open": 1,
+      "mcp__adp-native__adp_proposal_review": 1
+    },
+    "escapeHatchCalls": 0,
+    "isError": false,
+    "terminalReason": "completed",
+    "landed": true,
+    "processExitCode": 0
+  }
+}
