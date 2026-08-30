@@ -27,6 +27,14 @@ import { registerGraphQLRoute } from "../src/http-gql/route.js";
 
 const execFileAsync = promisify(execFile);
 
+// #145: the shape of one unmet land requirement on the wire.
+interface UnmetDetail {
+  requirement: string;
+  problem: string;
+  remedy: string;
+  command?: string;
+}
+
 // M1c: the adp.yaml gate runner + two-level land policy
 // — this is the enforcement point the
 // receive-path hooks and evidence bundles all feed into: a merge is refused
@@ -160,6 +168,28 @@ describe.skipIf(skipWithoutDb)("M1c: gate runner + land policy", () => {
     expect((attempt1.body as { unmet: string[] }).unmet.join(" ")).toMatch(/gates_green/);
     expect((attempt1.body as { unmet: string[] }).unmet.join(" ")).toMatch(/one_approval/);
 
+    // #145: the refusal is the product, so it names not only what is unmet but
+    // what to run. This is the first-contact case — a gate nobody has reported
+    // yet, and nobody but the author to approve — and both remedies are the
+    // literal command, not a pointer back to the documentation the user came
+    // here instead of reading.
+    const first = (attempt1.body as { unmet_detail: UnmetDetail[] }).unmet_detail;
+    const gatesGreen = first.find((u) => u.requirement === "gates_green")!;
+    expect(gatesGreen.problem).toContain("tests not reported");
+    expect(gatesGreen.problem).toContain(headSha.slice(0, 7));
+    expect(gatesGreen.command).toBe(
+      `adp gate report --repo ${owner}/${repoName} --sha ${headSha} --name tests --status success`,
+    );
+    const oneApproval = first.find((u) => u.requirement === "one_approval")!;
+    expect(oneApproval.command).toBe(`gh pr review ${pr.number} --approve`);
+    // The remedy has to name *whose* approval, since #121: "approve it" is
+    // advice that does not work when followed by the person reading it.
+    expect(oneApproval.remedy).toMatch(/other than the author/);
+
+    // Every rendered line carries its own remedy, so a caller that prints
+    // `unmet` and nothing else still has the whole answer.
+    for (const line of (attempt1.body as { unmet: string[] }).unmet) expect(line).toContain("→");
+
     // Report the gate as failing — still blocked, and specifically on gates_green.
     const failingReport = await api(`/api/v3/repos/${owner}/${repoName}/gates`, {
       method: "POST",
@@ -173,6 +203,18 @@ describe.skipIf(skipWithoutDb)("M1c: gate runner + land policy", () => {
     const attempt2 = await api(`/api/v3/repos/${owner}/${repoName}/pulls/${pr.number}/merge`, { method: "PUT", body: "{}" });
     expect(attempt2.status).toBe(422);
     expect((attempt2.body as { unmet: string[] }).unmet.join(" ")).toMatch(/gates_green/);
+
+    // A gate that ran and failed is a different refusal from one nobody has
+    // reported, and is fixed by a different thing — so it says so, and offers
+    // *no* command. `adp gate report --status success` would satisfy the
+    // requirement here, which is exactly why it must not be suggested: the
+    // first thing a refusal teaches must not be that the gate is a formality.
+    const failed = (attempt2.body as { unmet_detail: UnmetDetail[] }).unmet_detail.find(
+      (u) => u.requirement === "gates_green",
+    )!;
+    expect(failed.problem).toContain("tests reported failure");
+    expect(failed.command).toBeUndefined();
+    expect(failed.remedy).toMatch(/push again/);
 
     // Report success (a rerun) — gates_green now satisfied, but not approved yet.
     await api(`/api/v3/repos/${owner}/${repoName}/gates`, {
@@ -457,7 +499,18 @@ describe.skipIf(skipWithoutDb)("M1c: gate runner + land policy", () => {
     const refused = await gql(token, mergeMutation, { input: { pullRequestId: prId } });
     const errors = (refused.body as { errors?: { message: string }[] }).errors;
     expect(errors).toBeDefined();
-    expect(errors!.map((e) => e.message).join(" ")).toMatch(/one_approval/);
+    const message = errors!.map((e) => e.message).join(" ");
+    expect(message).toMatch(/one_approval/);
+
+    // #145: REST and GraphQL are stated to enforce identically, so they must
+    // explain identically — and this is the path `gh pr merge` takes, which is
+    // where most people will read a refusal at all. A remedy that lived only
+    // in the REST body would be invisible to exactly that audience.
+    const number = (
+      await api(`/api/v3/repos/${owner}/${repoName}/pulls`)
+    ).body as { number: number }[];
+    expect(message).toContain(`gh pr review ${number[0]!.number} --approve`);
+    expect(message).toMatch(/other than the author/);
 
     await gql(reviewerToken, approveMutation, { input: { pullRequestId: prId, event: "APPROVE", body: "lgtm" } });
     const merged = await gql(token, mergeMutation, { input: { pullRequestId: prId } });

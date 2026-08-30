@@ -4,7 +4,7 @@ import type { GitBackend } from "./git-backend.js";
 import type { Signer } from "./signing.js";
 import { proposals } from "../db/schema.js";
 import { recordOperation } from "./operations.js";
-import { evaluateLandPolicy } from "./land-policy.js";
+import { evaluateLandPolicy, type UnmetRequirement } from "./land-policy.js";
 import type { LandRequirement } from "./repo-policy.js";
 import { findOrgLandContext } from "./org-lookup.js";
 import { performMerge, type MergeMethod } from "./merge.js";
@@ -27,7 +27,7 @@ export interface LandDeps {
 
 export type LandResult =
   | { ok: true; proposal: ProposalRow; sha: string; baseShaBefore: string }
-  | { ok: false; status: 409 | 422; message: string; unmet?: string[] };
+  | { ok: false; status: 409 | 422; message: string; unmet?: UnmetRequirement[] };
 
 // The land sequence, in one place. Three callers reach a merge — the REST merge
 // route, the GraphQL `mergePullRequest` mutation, and (M3) candidate-set

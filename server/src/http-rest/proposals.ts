@@ -12,6 +12,7 @@ import { findRepoAuthorized } from "../core/repos-lookup.js";
 import type { LandRequirement } from "../core/repo-policy.js";
 import { emitWebhookEvent } from "../core/webhooks.js";
 import { landProposal } from "../core/land.js";
+import { landRefusalBody } from "../core/land-policy.js";
 
 const CreateProposalBody = z.object({
   title: z.string().min(1),
@@ -348,10 +349,9 @@ export function registerProposalRoutes(
         { identityId: req.identity!.identityId, principal: req.identity!.principal },
       );
       if (!result.ok) {
-        reply.code(result.status).send({
-          message: result.message,
-          ...(result.unmet ? { unmet: result.unmet } : {}),
-        });
+        reply.code(result.status).send(
+          result.unmet ? landRefusalBody(result.message, result.unmet) : { message: result.message },
+        );
         return;
       }
       const merged = result.proposal;

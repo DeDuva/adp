@@ -6,6 +6,7 @@ import { KeysetQuery, decodeCursor, encodeCursor, NEXT_CURSOR_HEADER } from "./p
 import type { Db } from "../db/client.js";
 import { candidateSets, proposals } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
+import { landRefusalBody } from "../core/land-policy.js";
 import { findRepoAuthorized } from "../core/repos-lookup.js";
 import {
   openCandidateSet,
@@ -243,10 +244,9 @@ export function registerCandidateSetRoutes(
         parsed.data.proposal_id,
       );
       if (!result.ok) {
-        reply.code(result.status).send({
-          message: result.message,
-          ...(result.unmet ? { unmet: result.unmet } : {}),
-        });
+        reply.code(result.status).send(
+          result.unmet ? landRefusalBody(result.message, result.unmet) : { message: result.message },
+        );
         return;
       }
 

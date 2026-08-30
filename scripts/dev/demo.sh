@@ -192,6 +192,12 @@ git clone "http://x-access-token:${TOKEN}@localhost:${PORT}/${OWNER}/${REPO}.git
   git checkout -B main >/dev/null 2>&1
   git config user.email "agent@example.com"; git config user.name "demo-agent"
   echo "# widget" > README.md
+  # adp.yaml names the gate this demo is about. Without it the repo declares
+  # no gates, `gates_green` is satisfied vacuously, and the refusal every line
+  # below narrates ("no gate has reported") is really about the approval
+  # alone — which is not what the demo says, and not the beat it is built on.
+  # Land policy is read off the base ref, so it has to be on main.
+  printf 'gates:\n  - test\nland:\n  require: []\n' > adp.yaml
   git add . && git commit -m "initial commit" >/dev/null
   git push origin main >/dev/null 2>&1 ) || die "initial push failed"
 info "$ git clone https://${GH_REPO}.git"
@@ -232,9 +238,23 @@ step "The part that is the point — the merge is refused"
 REFUSED=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
   "http://localhost:${PORT}/api/v3/repos/${OWNER}/${REPO}/pulls/1/merge" -H "Authorization: Bearer ${TOKEN}")
 [ "$REFUSED" = "422" ] || die "expected the land policy to refuse (422), got $REFUSED"
+
+# Shown through gh rather than described, because a refusal a reader is *told*
+# about is not the thing this demo exists to make them see — and because the
+# remedy (#145) has to survive the projection to be worth anything.
+info "$ gh pr merge 1 --merge"
+GH_REFUSAL=$(gh_ pr merge 1 --repo "$GH_REPO" --merge 2>&1 || true)
+sed 's/^/    /' <<<"$GH_REFUSAL"
+for remedy in 'adp gate report' 'gh pr review 1 --approve'; do
+  grep -q "$remedy" <<<"$GH_REFUSAL" \
+    || die "the refusal did not name '$remedy', the command that satisfies it; gh said: $GH_REFUSAL"
+done
 say "  ${c_y}422 — the land policy refused it.${c_0}"
 info "No gate has reported, and nobody has approved. The change is complete and"
 info "the agent believes it is done; ADP does not accept belief as evidence."
+info "And the refusal names what to run about it: a refusal that stops at the"
+info "requirement sends you back to the documentation at the moment the product"
+info "was about to prove itself."
 say ""
 info "This instance requires ${c_c}gates_green${c_0} and ${c_c}one_approval${c_0}. A fresh instance"
 info "requires only ${c_c}gates_green${c_0}, so you are never blocked by a rule that needs"

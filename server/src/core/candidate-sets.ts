@@ -3,7 +3,7 @@ import type { Db } from "../db/client.js";
 import type { GitBackend } from "./git-backend.js";
 import { candidateSets, proposals, intents, workspaces } from "../db/schema.js";
 import { recordOperation } from "./operations.js";
-import { evaluateLandPolicy } from "./land-policy.js";
+import { evaluateLandPolicy, type UnmetRequirement } from "./land-policy.js";
 import { findOrgLandContext } from "./org-lookup.js";
 import { latestGateResults } from "./gate-results-lookup.js";
 import { decodeStatement, type DsseEnvelope } from "./dsse.js";
@@ -154,7 +154,7 @@ export interface ResolveCandidateSetError {
   ok: false;
   status: 409 | 422;
   message: string;
-  unmet?: string[];
+  unmet?: UnmetRequirement[];
 }
 
 // D1's second half: a fanned-out set *resolves*. Pick a winner by the set's own

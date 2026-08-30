@@ -187,8 +187,9 @@ gh pr merge 1 --merge
 
 *Expect:* success — but only because B6 and B7 happened first. A fresh instance floors at
 `gates_green` alone, so B7 matters here only if you raised the floor as it describes. **Worth doing deliberately once:** try the merge before approving and
-confirm it is refused with a `422` naming the unmet requirement. A policy that has never been seen
-to refuse anything has not been tested.
+confirm it is refused with a `422` naming the unmet requirement *and the command that satisfies
+it* — `gh` prints the remedy, so you should be able to paste it straight back. A policy that has
+never been seen to refuse anything has not been tested.
 
 ---
 

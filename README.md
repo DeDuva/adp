@@ -234,7 +234,7 @@ data here. The `issue create/view` and `pr create/view/merge` paths are driven b
 | `gh pr checkout` | Functional | resolves the head ref, then a real `git fetch` |
 | `gh pr diff` | Functional | REST `Accept: …diff` / `…patch` |
 | `gh pr review` | Functional | |
-| `gh pr merge` | Functional | subject to the land policy; refuses with a typed 422 listing unmet requirements |
+| `gh pr merge` | Functional | subject to the land policy; refuses with a typed 422 naming each unmet requirement and the command that satisfies it |
 | `gh pr close` / `reopen` | Functional | |
 | `gh pr comment` | Partial | stored as an issue comment; PR conversation comments are not a separate subject |
 | `gh pr checks` | Functional | each gate result is a `StatusContext` — name, verdict, and a link to its evidence bundle. Not a `CheckRun`: that shape implies a workflow run, which ADP deliberately does not have |

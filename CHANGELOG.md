@@ -16,6 +16,59 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**A refusal names the command that satisfies it (#145).** The refusal is the
+product — `make demo` is built around reaching it, and the manual test plan
+calls it out as worth doing deliberately: *"a policy that has never been seen
+to refuse anything has not been tested."* Until now that moment produced a
+typed `422` listing unmet requirements, which is correct and one step short:
+the user was told `one_approval` was unmet and left to work out what to do
+about it, which for a first-time user means going back to the documentation at
+precisely the moment the product was about to prove itself. The repo already
+has the opposite instinct elsewhere — an unimplemented REST endpoint 404s
+*naming the ADP equivalent*, on the stated reasoning that "a broken call that
+explains itself costs an agent one turn; a hang or a 500 costs it the
+trajectory". This is that argument applied to the happy path.
+
+Every unmet requirement now carries a remedy: what is missing, what to do, and
+— where one exists — the literal command.
+
+```
+one_approval: no approving review → have a principal other than the author
+  approve it — as that principal, run: gh pr review 1 --approve
+gates_green: test not reported for b55529b → gates run on push — check a
+  runner is up (`adp runner`), or report one: adp gate report --repo
+  acme/widget --sha b55529b… --name test --status success
+```
+
+Three things the shape insists on. **One entry per gate**, not per
+requirement, because that is the grain the command is written at — "some gate
+is not green" is the sentence the user already had. **A gate nobody reported
+and a gate that reported failure are different refusals**, fixed by different
+things, where before both read "not green". And **no command is invented where
+none exists**: a red gate carries a remedy sentence and no command, because
+offering `adp gate report --status success` there would teach a first-time
+user that the gate is a formality. The confidence bound is the same case.
+
+It applies on **both merge paths**. REST and GraphQL are stated to enforce
+identically, so they explain identically — and GraphQL is the path `gh pr
+merge` takes, which is where most people will read a refusal at all, so a
+remedy living only in the REST body would be invisible to exactly that
+audience. The acceptance suite asserts the remedy text on both, including what
+`gh` prints.
+
+`unmet` keeps its shape, an array of strings, and each string now carries its
+own remedy — error prose is explicitly not contract, and a caller that only
+prints the line has the whole answer. `unmet_detail` is additive: the same
+facts with the seams left in, for a caller that wants the command without
+parsing a sentence.
+
+**`make demo` shows the refusal rather than describing it**, through `gh pr
+merge`, and asserts both remedies appear. Doing that surfaced a second defect:
+the demo repo declared no gates, so `gates_green` was satisfied vacuously and
+the refusal every line of its narration is about ("no gate has reported") was
+really about the approval alone. The demo commits an `adp.yaml` naming its
+gate now, so the beat it is built on is the one it actually performs.
+
 **One `changes` row per sha, and a deterministic evidence read (#143).** Three
 individually defensible facts were jointly a bug. `post-receive` auto-records a
 signed change per new commit with a null intent (#142); `POST
