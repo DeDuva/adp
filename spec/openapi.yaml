@@ -2063,7 +2063,13 @@ paths:
       summary: >
         The consolidated evidence bundle for a commit: its signed change plus
         every gate result's DSSE envelope. One read answers "what landed, who
-        produced it, and how was it verified".
+        produced it, why, and how was it verified".
+
+        #189: `change.intent` names the intent by title, alongside the
+        `intent_id` that was there before. Title only — an evidence bundle is
+        read to answer why a line exists, and the intent's body belongs behind
+        its own read rather than inflating every bundle. Null when the change
+        is unbound, which is an ordinary state rather than an error.
       security:
         - bearerAuth: []
       responses:

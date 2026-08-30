@@ -241,12 +241,18 @@ ISSUE_OUT=$("$GH_BIN" issue view 1 --repo "$GH_REPO") || fail "B3: gh issue view
 grep -q "Add a description to the README" <<<"$ISSUE_OUT" || fail "B3: issue title missing from gh output"
 pass "B3 gh issue view shows the intent"
 
-# B4 — edit and push. post-receive auto-records a signed change.
+# B4 — edit and push. post-receive auto-records a signed change, and the
+# `ADP-Intent` trailer (#142) binds it to the issue B3 just read. Nothing below
+# calls an ADP API: this is `git push` and nothing else, which is what makes it
+# work from any harness — and it is the first half of PLAN.md 1a's exit
+# criterion, checked rather than assumed.
 (
   cd "$CLONE"
   git checkout -b feature >/dev/null 2>&1
   echo "A widget, described." >> README.md
-  git commit -am "describe the widget" >/dev/null
+  git commit -am "describe the widget
+
+ADP-Intent: #1" >/dev/null
   git push origin feature >/dev/null 2>&1
 ) || fail "B4: feature push failed"
 HEAD_SHA=$(git -C "$CLONE" rev-parse feature)
@@ -368,7 +374,15 @@ for field in provenance signature; do
   grep -q "\"${field}\"" <<<"$BUNDLE" || fail "C10: evidence bundle has no '${field}'"
 done
 grep -q '"12 passed"' <<<"$BUNDLE" || fail "C10: evidence bundle does not carry the gate result"
-pass "C10 evidence bundle carries provenance, signature and the gate result"
+
+# The second half of 1a's exit criterion, and the one the trailer in B4 exists
+# to make true: the bundle names the intent *by title*, so "why does this line
+# exist" is answered by the artifact rather than by a second round trip against
+# a route the reader has to already know about. Asserted on the title, not on
+# the presence of an id — the id was always there and never answered anything.
+grep -q '"Add a description to the README"' <<<"$BUNDLE" \
+  || fail "C10: evidence bundle does not name the intent by title — see $ARTIFACTS/evidence-bundle.json"
+pass "C10 evidence bundle carries provenance, signature, the gate result, and names the intent"
 
 # C11 — the operation log. Every mutation writes a row in the same transaction.
 OPS=$(api GET "/api/adp/repos/${OWNER}/${REPO}/operations")

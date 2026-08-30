@@ -16,6 +16,35 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**The evidence bundle names the intent by title, and release 1a is complete
+(#189).** `PLAN.md` 1a states its exit criterion as "a commit pushed by a
+plain `git push`, from any harness, resolves to its intent, and the evidence
+bundle names that intent **by title**". The first half shipped with #142 and
+#143. The second did not: `getEvidenceBundle` returned `intent_id` and nothing
+else about the intent, so a reader holding the artifact the whole product
+points at could not answer "what was this change for" without a second round
+trip against a route they had to already know existed.
+
+This was nobody's issue. It is what was left standing when the six that 1a did
+track — #141, #142, #143, #144, #145, #158 — all closed: the criterion the
+section is measured by, which no item in it was about.
+
+`change.intent` carries `{ id, title }` beside the `intent_id` that was
+already there, so nothing generated against the old shape breaks. Title only,
+deliberately: a bundle is read to answer why a line exists, and a title
+answers that, while the body is the intent's own record and belongs behind its
+own read rather than inflating every bundle for a question most readers are
+not asking. It is `null` on an unbound change — an ordinary state, not an
+error, and one the bundle now answers rather than leaving to inference. The
+MCP `adp_evidence_get` tool inherits it for free, being a thin wrapper.
+
+**Checked rather than asserted.** The acceptance walkthrough's B4 now pushes a
+commit carrying an `ADP-Intent` trailer — plain `git push`, no ADP API call,
+which is the whole point of the trailer — and C10 fails unless the bundle it
+reads back names that intent by title. So the exit criterion for this release
+is one assertion in the §2.1 walkthrough rather than a claim in a planning
+document, which is the difference between a criterion and a hope.
+
 **A persistent local instance, with a certificate `gh` will accept (#158).**
 `gh` refuses plain HTTP for any host but github.com and no override exists, so
 the GitHub-compatible plane — the whole point of the compat surface — could
