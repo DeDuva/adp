@@ -496,92 +496,107 @@ figcaption { color: var(--dim); font-size: var(--t3); line-height: 1.6; }
 .legend { display: flex; gap: var(--s3); flex-wrap: wrap; font: 400 var(--t3) var(--mono); }
 
 /* ------------------------------------------------------------- hero stage -- */
-.stage { position: relative; height: 330px; border: 1px solid var(--rule-strong);
-         background: var(--paper); overflow: hidden; width: 100%; }
-.stage__lab { position: absolute; font: 500 var(--t1) var(--mono);
-              letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
-.stage__loop { position: absolute; left: 4%; top: 30%; width: 23%; height: 40%;
-               border: 1px dashed var(--dim); }
-.stage__gate { position: absolute; left: 60.8%; top: 30%; height: 36%; width: 3px;
-               background: var(--accent); animation: gpulse 2.4s ease-in-out infinite; }
-.stage__trunk { position: absolute; left: 61.2%; right: 0; top: calc(47% + 3px);
-                height: 2px; background: var(--rule-strong); }
-.stage__log { position: absolute; left: 56%; right: 0; bottom: 0; height: 14%;
-              border-top: 1px dashed var(--rule); background: rgba(16, 19, 23, .03); }
-.dot { position: absolute; width: 11px; height: 11px; left: 9%; top: 50%; opacity: 0;
-       background: var(--sim-bad); animation: hflow 10s linear infinite;
-       animation-delay: var(--d); }
-.dot--drop { animation-name: hdrop; }
-.dot--undo { animation-name: hundo; }
+/* The front page's stage, second iteration (2026-08-30). The first was a
+   strip of anonymous dots shared with the essay; it asserted the story
+   without showing the record. This one puts the record on stage: one change
+   assembling intent → diff → provenance → evidence through the lifecycle
+   ticks, a gate that refuses or lands it, an append-only ledger — and three
+   buttons that let the reader perform the moves the argument is about:
+   refuse, undo, hand off to another agent.
 
-@keyframes gpulse {
-  0%, 100% { box-shadow: 0 0 6px rgba(28, 79, 216, .35); }
-  50%      { box-shadow: 0 0 18px rgba(28, 79, 216, .85); }
-}
-@keyframes hflow {
-  0%   { left: 9%;    top: 50%; opacity: 0; background: var(--sim-bad); }
-  3%   { opacity: .95; }
-  9%   { left: 15.5%; top: 36%; background: var(--sim-bad); }
-  15%  { left: 22%;   top: 50%; background: var(--sim-warn); }
-  21%  { left: 15.5%; top: 64%; background: var(--sim-bad); }
-  27%  { left: 9%;    top: 50%; background: var(--sim-warn); }
-  33%  { left: 15.5%; top: 36%; background: var(--sim-warn); }
-  39%  { left: 22%;   top: 50%; background: var(--sim-warn); }
-  45%  { left: 15.5%; top: 64%; background: var(--sim-ok); }
-  50%  { left: 27%;   top: 47%; background: var(--sim-ok); }
-  58%  { left: 56%;   top: 47%; background: var(--sim-ok); }
-  62%  { left: 61.5%; top: 47%; background: var(--sim-ok); }
-  94%  { opacity: .95; }
-  100% { left: 102%;  top: 47%; background: var(--sim-ok); opacity: 0; }
-}
-@keyframes hdrop {
-  0%   { left: 9%;    top: 50%; opacity: 0; background: var(--sim-bad); }
-  3%   { opacity: .95; }
-  9%   { left: 15.5%; top: 36%; background: var(--sim-bad); }
-  15%  { left: 22%;   top: 50%; background: var(--sim-warn); }
-  21%  { left: 15.5%; top: 64%; background: var(--sim-bad); }
-  27%  { left: 9%;    top: 50%; background: var(--sim-warn); }
-  33%  { left: 15.5%; top: 36%; background: var(--sim-warn); }
-  39%  { left: 22%;   top: 50%; background: var(--sim-warn); }
-  45%  { left: 15.5%; top: 64%; background: var(--sim-ok); }
-  50%  { left: 27%;   top: 47%; background: var(--sim-ok); }
-  58%  { left: 56%;   top: 47%; background: var(--sim-ok); }
-  61%  { left: 59.5%; top: 47%; background: var(--sim-ok); }
-  70%  { left: 60%;   top: 80%; background: var(--sim-spent); opacity: .75; }
-  88%  { left: 60%;   top: 80%; opacity: .3; }
-  100% { left: 60%;   top: 80%; opacity: 0; }
-}
-@keyframes hundo {
-  0%   { left: 9%;    top: 50%; opacity: 0; background: var(--sim-bad); }
-  3%   { opacity: .95; }
-  9%   { left: 15.5%; top: 36%; background: var(--sim-bad); }
-  15%  { left: 22%;   top: 50%; background: var(--sim-warn); }
-  21%  { left: 15.5%; top: 64%; background: var(--sim-bad); }
-  27%  { left: 9%;    top: 50%; background: var(--sim-warn); }
-  33%  { left: 15.5%; top: 36%; background: var(--sim-warn); }
-  39%  { left: 22%;   top: 50%; background: var(--sim-warn); }
-  45%  { left: 15.5%; top: 64%; background: var(--sim-ok); }
-  50%  { left: 27%;   top: 47%; background: var(--sim-ok); }
-  58%  { left: 56%;   top: 47%; background: var(--sim-ok); }
-  62%  { left: 61.5%; top: 47%; background: var(--sim-ok); }
-  72%  { left: 80%;   top: 47%; background: var(--sim-ok); }
-  77%  { left: 80%;   top: 47%; background: var(--sim-bad); }
-  85%  { left: 62.5%; top: 47%; background: var(--sim-bad); }
-  91%  { left: 62%;   top: 80%; background: var(--sim-spent); opacity: .6; }
-  100% { left: 62%;   top: 80%; opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) { .dot { opacity: 0; } }
-@media (max-width: 760px) { .stage { height: 260px; } }
+   It is scripted by the inline vanilla script at the foot of index.html —
+   a few kilobytes, no build step, nothing third-party — in keeping with
+   #138: the page stays a file you can read. With scripts off, the markup
+   already renders the finished tableau (card landed and stamped, a reverted
+   tick, the whole story in the ledger) and the button bar never appears; the
+   script clears the tableau and brings the stage to life. Below 700px both
+   are hidden, like the wide diagrams: the §01 table carries the story. */
+.stage-wrap { border: 1px solid var(--rule-strong); width: 100%; }
+.stage { position: relative; height: 400px; background: var(--paper);
+         overflow: hidden; font: 500 var(--t1) var(--mono);
+         letter-spacing: .12em; text-transform: uppercase; }
 
-/* Stage geometry: one-off positions, named rather than inlined. */
-.stage__lab--agent { left: 24px;  top: 20px; color: var(--accent); }
-.stage__lab--loop  { left: 4%;    top: 72%;  color: var(--none-mark); }
-.stage__lab--gate  { left: 53.5%; top: 20px; color: var(--accent); }
-.stage__lab--main  { right: 24px; top: calc(47% - 26px); color: var(--ok); }
-.stage__lab--log   { right: 24px; bottom: 12px; }
-.dot--d0 { --d: 0s; }   .dot--d1 { --d: 1.7s; } .dot--d2 { --d: 3.4s; }
-.dot--d3 { --d: 5.1s; } .dot--d4 { --d: 6.8s; } .dot--d5 { --d: 8.5s; }
-@media (max-width: 760px) { .stage__lab { font-size: 9px; } }
+.stage__life { position: absolute; left: 0; right: 0; top: 0; height: 40px;
+               border-bottom: 1px dashed var(--rule); }
+.stage__st { position: absolute; top: 13px; color: var(--dim); transition: color .3s; }
+.stage__st--plan { left: 3%; }      .stage__st--design { left: 12.5%; }
+.stage__st--build { left: 22.5%; }  .stage__st--test { left: 33%; }
+.stage__st--deploy { left: 44%; }   .stage__st--maintain { left: 80%; }
+.stage__st.is-hot { color: var(--accent); }
+
+.stage__lab { position: absolute; color: var(--dim); }
+.stage__lab--ws { left: 3%; top: 52px; color: var(--none-mark); }
+.stage__lab--gate { left: 58.5%; top: 52px; color: var(--accent); }
+.stage__lab--main { right: 24px; top: 106px; color: var(--ok); }
+.stage__lab--log { right: 24px; bottom: 114px; }
+
+.stage__gate { position: absolute; left: 57%; top: 40px; bottom: 110px; width: 3px;
+               background: var(--none-mark); transition: background .3s, box-shadow .3s; }
+.stage__gate.is-bad { background: var(--bad-mark); box-shadow: 0 0 14px rgba(192, 47, 40, .55); }
+.stage__gate.is-ok  { background: var(--accent); box-shadow: 0 0 14px rgba(28, 79, 216, .6); }
+.stage__trunk { position: absolute; left: 59.5%; right: 0; top: 132px; height: 2px;
+                background: var(--rule-strong); }
+
+.stage__ticks { position: absolute; left: 0; right: 0; top: 126px; height: 14px; }
+.stage__tick { position: absolute; width: 13px; height: 13px; background: var(--ok-mark);
+               transition: background .4s, border .4s; }
+.stage__tick--s1 { left: 62%; } .stage__tick--s2 { left: 65.4%; } .stage__tick--s3 { left: 68.8%; }
+.stage__tick--undone { background: var(--paper); border: 2px solid var(--warn-mark); }
+/* the reverted label sits above the trunk, clear of the stamp and the
+   docked card, which own the band below it */
+.stage__ticklab { position: absolute; top: -26px; left: -40px; width: 120px;
+                  text-align: center; color: var(--warn); letter-spacing: .06em;
+                  font-size: 10px; opacity: 0; transition: opacity .4s; }
+.stage__tick--undone .stage__ticklab { opacity: 1; }
+
+/* the record card: the four fields the argument is named for */
+.stage__card { position: absolute; width: 252px; left: 3%; top: 88px;
+               border: 1px solid var(--rule-strong); background: var(--plate);
+               padding: 10px 12px; text-transform: none; letter-spacing: 0;
+               font: 400 var(--t2)/1.55 var(--mono); color: var(--sub);
+               transition: left .7s ease, top .7s ease, transform .7s ease, opacity .45s; }
+.stage__card.at-gate { left: 35.5%; }
+.stage__card.at-main { left: 61.5%; top: 158px; transform: scale(.94); }
+.stage__card.is-bounced { left: 31%; }
+.stage__card.is-hidden { opacity: 0; }
+.stage__cardt { color: var(--ink); font-weight: 500; letter-spacing: .06em; margin-bottom: 4px; }
+.stage__row { display: flex; justify-content: space-between; gap: var(--s1); white-space: nowrap; }
+.stage__k { color: var(--dim); }
+.stage__v { color: var(--none-mark); transition: color .3s; }
+.stage__row.is-done .stage__v { color: var(--sub); }
+.stage__row--intent.is-done .stage__v { color: var(--accent); }
+.stage__row--evid .stage__v { color: var(--bad); }
+.stage__row--evid.is-done .stage__v { color: var(--ok); }
+
+.stage__ban { position: absolute; padding: 6px 10px; border: 1px solid;
+              font: 500 var(--t1) var(--mono); letter-spacing: .08em;
+              opacity: 0; transition: opacity .35s; z-index: 3; }
+.stage__ban.is-on { opacity: 1; }
+.stage__ban--bad { color: var(--bad); border-color: var(--bad); background: var(--sim-bad-soft);
+                   left: 42%; top: 66px; }
+.stage__ban--ok { color: var(--ok); border-color: var(--ok-mark); background: var(--sim-ok-soft);
+                  left: 68%; top: 146px; transform: rotate(-3deg); }
+.stage__ban--ac { color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
+                  left: 3%; top: 66px; text-transform: none; }
+
+.stage__ledger { position: absolute; left: 0; right: 0; bottom: 0; height: 110px;
+                 border-top: 1px dashed var(--rule); background: rgba(16, 19, 23, .03);
+                 padding: var(--s1) var(--s3) 6px; text-transform: none; letter-spacing: 0;
+                 font: 400 11.5px/1.75 var(--mono); color: var(--sub); overflow: hidden;
+                 display: flex; flex-direction: column; justify-content: flex-end; }
+.stage__lrow { opacity: 0; transform: translateY(5px); transition: opacity .4s, transform .4s; }
+.stage__lrow.is-in { opacity: 1; transform: none; }
+
+/* the control bar: hidden until the script wakes it, so a page without
+   JavaScript never shows buttons that do nothing */
+.stage-bar { display: none; }
+.stage-bar.is-live { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap;
+                     border-top: 1px solid var(--rule-strong); background: var(--plate);
+                     padding: 12px var(--s3); }
+.stage-bar__lab { font: 500 var(--t1) var(--mono); letter-spacing: .16em;
+                  text-transform: uppercase; color: var(--dim); }
+
+@media (max-width: 700px) { .stage-wrap { display: none; } }
 
 .counter { font: 400 var(--t2) var(--mono); color: var(--dim); min-width: 46px; }
 
