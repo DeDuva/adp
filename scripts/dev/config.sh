@@ -24,13 +24,13 @@ ADP_NODE_MAJOR="22"
 
 # The dependency trees a full run needs, in the order `make deps` installs them.
 #
-# Five, not six: `dc-runtime` is deliberately absent because `make dc-runtime`
+# `dc-runtime` is deliberately absent because `make dc-runtime`
 # and `make site` each run their own `npm ci --prefix dc-runtime` — that suite
 # must be runnable with none of server's tree installed, since nothing it
 # touches needs a database or a server. `bench` is absent because it has no
 # dependencies at all (`node --test`, zero-dependency by design, same as
 # `adapters`' runtime half).
-ADP_DEP_PACKAGES="server server/web cli adapters runner"
+ADP_DEP_PACKAGES="server server/web cli adapters runner recorder"
 
 # Written by `deps.sh install` into each tree, holding the digest of the
 # `package-lock.json` that produced it. npm has no answer to "is this tree the

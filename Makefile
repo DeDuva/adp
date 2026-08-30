@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps check-deps worktree worktree-remove worktree-list test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner helm dc-runtime site land local local-status local-down local-destroy measure-ops
+.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps check-deps worktree worktree-remove worktree-list test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner recorder helm dc-runtime site land local local-status local-down local-destroy measure-ops
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -124,6 +124,11 @@ runner: ## Typecheck, build, and test the gate runner (no database, REAL docker 
 	# start it, don't unset the flag.
 	ADP_REQUIRE_DOCKER=1 npm test --prefix runner
 
+recorder: ## Typecheck, build, and test the trajectory recorder (no database, no docker)
+	npm run typecheck --prefix recorder
+	npm run build --prefix recorder
+	npm test --prefix recorder
+
 helm: ## Lint and render the self-host chart (skipped if helm is absent; ADP_REQUIRE_HELM=1 makes that fatal)
 	@bash scripts/dev/helm-check.sh
 
@@ -169,6 +174,7 @@ test-all: ## Everything CI runs: build, full suite, web, cli, adapters, runner, 
 	@$(MAKE) cli
 	@$(MAKE) adapters
 	@$(MAKE) runner
+	@$(MAKE) recorder
 	@$(MAKE) helm
 	@$(MAKE) bench
 	@$(MAKE) dc-runtime
@@ -212,7 +218,10 @@ check: ## The gate. Same target name in every repo in this line of work.
 nuke: ## Full teardown: every stack, all generated files, deps and caches
 	-@bash scripts/dev/down.sh --all
 	-@bash scripts/dev/verify-clean.sh --fix
-	rm -rf server/node_modules server/dist server/web/node_modules server/web/dist cli/node_modules cli/dist adapters/node_modules runner/node_modules runner/dist
+	@# The trees `make deps` installs, plus the build outputs beside them —
+	@# one list, in scripts/dev/config.sh, so a seventh package cannot be
+	@# added to the installer and forgotten here.
+	for pkg in $$(. scripts/dev/config.sh && echo $$ADP_DEP_PACKAGES); do rm -rf "$$pkg/node_modules" "$$pkg/dist"; done
 	rm -rf $(ENV_FILE) .adp-test
 	rm -rf $${GH_CACHE_DIR:-$$HOME/.cache/adp-conformance-gh}
 	@echo "nuked — 'make deps && make up' to start over"

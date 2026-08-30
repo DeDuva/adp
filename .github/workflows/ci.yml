@@ -129,6 +129,27 @@ jobs:
       # for ADP, same pattern as the cli/ job.
       - run: npm test
 
+  recorder:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: recorder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: recorder/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      # No service container and no docker: the recorder is a pure HTTP client
+      # and its tests stand up a real local HTTP server of their own, which is
+      # what proves the requests it puts on a socket without needing the thing
+      # they are addressed to.
+      - run: npm test
+
   runner:
     runs-on: ubuntu-latest
     defaults:

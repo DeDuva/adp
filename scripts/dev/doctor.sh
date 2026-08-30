@@ -119,7 +119,7 @@ section "dependencies"
 # here it is advice, there it is a refusal.
 #
 # The severities are not uniform, and were not before this loop existed.
-# `server` is the whole suite; the other four are one target each, and a
+# `server` is the whole suite; the rest are one target each, and a
 # machine that only ever runs `make test-unit` is fine without them.
 for pkg in $ADP_DEP_PACKAGES; do
   case "$(adp_dep_state "$pkg")" in

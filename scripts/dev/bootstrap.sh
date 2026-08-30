@@ -233,8 +233,8 @@ section "project dependencies"
 if [ "$SKIP_DEPS" = "1" ]; then
   info "skipped (--skip-deps)"
 else
-  # Through deps.sh rather than five `npm ci` lines of its own — it is the same
-  # five trees `make deps` and `make check-deps` speak about, and this file
+  # Through deps.sh rather than one `npm ci` line per package — it is the same
+  # list `make deps` and `make check-deps` speak about, and this file
   # used to be the third place that list was written down. `npm ci` not
   # `npm install`, there as here: the lockfile is the pin, and a provisioning
   # script that silently resolves different versions than CI defeats its own

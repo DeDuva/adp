@@ -16,6 +16,62 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**`adp-recorder`, the durable half (#149).** `session_events` has been a
+well-built store with no producer: a fixed cross-harness kind vocabulary, typed
+columns for model and tokens and cost, a hash chain, idempotent retry through
+`client_event_id`, drop detection through `producer_seq` — and nothing in this
+repository writing a single event to it. This is the first of three changes
+that fix that, and it is the half that has to be right before a reader is worth
+attaching: the guarantees, with no harness knowledge at all.
+
+**Events reach the disk before they reach the network.** A reader hands an
+event to the spool, it is numbered and appended, and only then does the shipper
+try to deliver it. A process that dies between those two steps loses nothing;
+the next one reads the file and carries on from the number it finds, because
+`producer_seq` is a property of the file rather than of a process's memory. A
+torn final line — what `kill -9` mid-write leaves — is discarded on recovery,
+which is the one event that genuinely did not make it.
+
+**The spool is append-only and the acknowledgement lives beside it.** Truncating
+a file that is simultaneously being appended to is where corruption comes from,
+so the events file only grows and the high-water mark the server has accepted is
+a second tiny file written by rename. Compaction is a separate operation that a
+crash can only lose, never corrupt.
+
+**Four answers, four policies.** An accepted batch advances the mark to the
+server's own `accepted_through`, never to the local count — the server is the
+one that knows what it durably holds. A reported gap rewinds and replays from
+the number the server names, which is safe because `client_event_id` makes the
+overlap a duplicate rather than a second append. An unreachable server keeps
+everything and backs off. A 422 **quarantines**: the events stay on disk, the
+session is marked, and an operator is told which batch and why — because a
+recorder that discarded a rejected batch to keep moving would manufacture
+exactly the gap this exists to prevent, and would look like a clean run doing
+it. A 403 from the org storage ceiling is retryable rather than quarantined,
+being the one refusal that clears without anyone touching the recorder.
+
+**Both loops are bounded, and one of them was found by a test.** `drain`
+continues while batches succeed, so a server answering 201 without ever
+advancing its mark would have the recorder re-sending the same batch at full
+speed — a denial-of-service written by us and aimed at our own server. The first
+test that modelled a server whose mark stood still hung for five seconds and
+then failed. Progress is a precondition of continuing now, and the same guard
+covers the other door: a replay instruction repeated unchanged is a loop rather
+than an instruction.
+
+**Backpressure degrades honestly.** Past its byte ceiling the spool refuses
+events and *reports* the refusal rather than thinning the stream; once there is
+room the gap is recorded as a `custom` / `recorder.overflow` event, so it is
+covered by the hash chain and carries its own count. The numbering stays
+contiguous across it, which is the difference between "the recorder dropped 412
+events here" and a sequence with a hole nobody can explain.
+
+`recorder/` is a pure HTTP client on `runner/`'s terms — no `server/` import, no
+database credential, no signing key — and it needs only `repo:write`, the scope
+a developer's own token already carries, so it runs as the developer rather
+than as infrastructure. The harness reader and the CLI are the next change; the
+paired cost measurement the issue asks for is the one after.
+
 **A trajectory stores a payload's structure by default; full payloads are
 opt-in per repository (#199).** #148 put the secret detector at this ingest
 path, and that is a real reduction in blast radius — but a detector removes
