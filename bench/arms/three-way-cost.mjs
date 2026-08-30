@@ -290,9 +290,15 @@ async function main() {
   const certFile = args["cert-file"];
   const root = args.root ?? mkdtempSync(path.join(os.tmpdir(), "adp-arm2-"));
   const runId = crypto.randomBytes(3).toString("hex");
+  // Which sitting of the arm this trial belongs to. The report groups by it and
+  // never pools across it: averaging trials taken against different tool
+  // surfaces produces a mean describing neither, and a re-run that quietly
+  // joined the previous run's pile would destroy the only comparison it exists
+  // to make. Records without one are the original pre-#144 pilot.
+  const cohort = args.cohort ?? null;
 
   if (!["github-gh", "adp-gh", "adp-mcp"].includes(method)) {
-    console.error("Usage: --method=github-gh|adp-gh|adp-mcp --task=clamp|titlecase --rep=N --out=FILE");
+    console.error("Usage: --method=github-gh|adp-gh|adp-mcp --task=clamp|titlecase --rep=N --cohort=NAME --out=FILE");
     process.exit(2);
   }
   if ((method === "adp-gh" || method === "adp-mcp") && (!adpUrl || !token)) {
@@ -348,6 +354,7 @@ async function main() {
   const record = {
     recordedAt: new Date().toISOString(),
     arm: "three-way-cost",
+    ...(cohort ? { cohort } : {}),
     deterministic: false,
     method,
     taskId,

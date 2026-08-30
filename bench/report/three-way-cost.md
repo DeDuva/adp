@@ -6,23 +6,35 @@
 **Agent-backed. Stochastic — the spread matters, not a single figure.** The same
 task suite (`clamp`, `titlecase`) completed by a real agent (the `claude` CLI,
 non-interactively, `--allowedTools`-scoped per method) via three interfaces:
-**GitHub + `gh`** against a real GitHub repository, **ADP via `gh`** (the
-compat plane, unmodified `gh` pointed at ADP through `GH_HOST` — the MVP's own
-success criterion), and **ADP-MCP** (the native plane: ADP's own MCP tool
-surface, `server/src/mcp/server.ts`, plus `git` for plumbing and one `curl` call
-for the one REST step the native MCP tools don't wrap — opening the proposal
-itself; noted below, not hidden). Every trial's raw agent transcript
-(token usage, tool calls, tool errors, permission denials) and landed-or-not
-verdict is captured alongside its run record.
+**GitHub + `gh`** against a real GitHub repository, **ADP via `gh`** (the compat
+plane, unmodified `gh` pointed at ADP through `GH_HOST` — the MVP's own success
+criterion), and **ADP-MCP** (the native plane: ADP's own MCP tool surface,
+`server/src/mcp/server.ts`, plus `git` for plumbing). Every trial's raw agent
+transcript (token usage, tool calls, tool errors, permission denials) and
+landed-or-not verdict is captured alongside its run record.
 
 Environment: linux/x64, node v24.18.0. Model(s): claude-haiku-4-5.
 
-**Pilot scale — this is not Study A.** 12 trials across 3
-methods and 2 tasks, reported per the M3-5 pilot-slice instruction to
-run a small slice first, check actual cost-per-trial against budget, and only then
-scale. It is enough to compare the three interfaces on
-their own overhead; it is not enough reps per cell for a confidence interval,
-and the numbers below are pilot-scale means, not statistically gated results.
+**Pilot scale — this is not Study A.** 24 trials in total, across
+2 cohort(s) and 2 tasks, reported per the M3-5 pilot-slice
+instruction to run a small slice first, check actual cost-per-trial against budget, and
+only then scale. Enough to compare the three interfaces on their own overhead; not enough
+reps per cell for a confidence interval. Every figure below is a pilot-scale mean, not a
+statistically gated result.
+
+**The arm has been re-run against the post-#144 tool surface** — cohort `post-144-tools`, below.
+Per this harness's contract the earlier cohort is kept rather than replaced: a benchmark that
+overwrites its own baseline cannot show that anything changed.
+
+## Results by cohort
+
+A cohort is one sitting of the arm against one tool surface. They are reported
+separately and never pooled: averaging trials taken against different tool surfaces
+would produce a mean describing neither.
+
+### Cohort `baseline` — 2026-08-10
+
+the original pilot, run against the pre-#144 tool surface: the native plane had no tool to open a proposal or read an intent, and the `adp-mcp` instructions taught the agent to hand-assemble `curl` calls for both.
 
 | Method | n | Landed | Total cost | Avg cost/trial | Avg tokens in | Avg tokens out | Avg tool calls | Avg tool errors | Avg wall clock |
 |---|---|---|---|---|---|---|---|---|---|
@@ -30,81 +42,141 @@ and the numbers below are pilot-scale means, not statistically gated results.
 | ADP-MCP (native plane) | 4 | 4/4 | $0.5738 | $0.1435 | 460844 | 4137 | 17.0 | 1.75 | 98.6s |
 | GitHub + `gh` | 4 | 4/4 | $0.3402 | $0.0850 | 324165 | 2397 | 12.3 | 0.50 | 54.4s |
 
-**12/12 trials landed.** Total spend: $1.2532.
+**12/12 trials landed.** Spend: $1.2532.
+
+**Fallback use is not measured in this cohort.** `measurement.escapeHatchCalls` and
+`measurement.toolBreakdown` were added after these trials ran, so their records say how many
+tool calls each trial made and not which tools they were. The absence is reported rather than
+read as a zero: these trials were *instructed* to use `curl`, so a zero would be positively
+wrong.
+
+### Cohort `post-144-tools` — 2026-08-30
+
+the same matrix against the post-#144 tool surface. The native plane has `adp_intent_get`, `adp_proposal_open`, `adp_proposal_review` and `adp_proposal_merge`, and the `adp-mcp` instructions name them. `curl` remained on the tool list and unadvertised, so a fallback would have been recorded rather than prevented.
+
+| Method | n | Landed | Total cost | Avg cost/trial | Avg tokens in | Avg tokens out | Avg tool calls | Avg tool errors | Avg wall clock |
+|---|---|---|---|---|---|---|---|---|---|
+| ADP via `gh` (compat plane) | 4 | 4/4 | $0.3084 | $0.0771 | 387617 | 3965 | 14.3 | 1.00 | 52.0s |
+| ADP-MCP (native plane) | 4 | 4/4 | $0.3568 | $0.0892 | 442569 | 4629 | 15.5 | 1.50 | 57.7s |
+| GitHub + `gh` | 4 | 4/4 | $0.2839 | $0.0710 | 358308 | 3436 | 13.3 | 0.75 | 50.9s |
+
+**12/12 trials landed.** Spend: $0.9491.
+
+**Did the agent fall back to raw HTTP?** Counted per trial from the transcript
+(`measurement.escapeHatchCalls`), with the full per-tool breakdown beside it in each run
+record:
+
+- **ADP via `gh` (compat plane)** — 0 raw-HTTP call(s) across 4 trial(s); 0 trial(s) reached for one
+- **ADP-MCP (native plane)** — 0 raw-HTTP call(s) across 4 trial(s); 0 trial(s) reached for one
+- **GitHub + `gh`** — 0 raw-HTTP call(s) across 4 trial(s); 0 trial(s) reached for one
+
+## What changed between cohorts
+
+Comparing `post-144-tools` (n=12) against `baseline` (n=12).
+Both are pilot scale, so this is a direction and a magnitude, not a bounded estimate.
+
+| Method | baseline | post-144-tools | Δ cost | Δ tool calls |
+|---|---|---|---|---|
+| ADP via `gh` (compat plane) | $0.0848 | $0.0771 | -9.1% | 12.3 → 14.3 |
+| ADP-MCP (native plane) | $0.1435 | $0.0892 | -37.8% | 17.0 → 15.5 |
+| GitHub + `gh` | $0.0850 | $0.0710 | -16.5% | 12.3 → 13.3 |
+
+**The native plane cost 1.69× the compat plane in `baseline`, and 1.16× in `post-144-tools`.**
+That ratio is the figure OD-1 turns on, and it is deliberately the headline rather than the
+absolute cost: absolutes move with the model, the tasks and the day, while the ratio compares
+two interfaces doing the same work in the same run. Every arm got cheaper between the two
+cohorts, which is exactly why the ratio and not the absolute is the thing to read.
+
+**Do the two ADP arms separate at all?** Per-trial cost ranges, which at four trials a cell
+says more than a ratio of means does:
+
+| Cohort | `adp-mcp` | `adp-gh` | Separated? |
+|---|---|---|---|
+| `baseline` | $0.1276–$0.1754 | $0.0786–$0.0962 | **yes** — no overlap |
+| `post-144-tools` | $0.0765–$0.0970 | $0.0675–$0.0923 | **no** — ranges overlap |
+
+In `baseline` every `adp-mcp` trial cost more than every `adp-gh` trial — a separation, not
+a tendency. In `post-144-tools` the ranges overlap, so the residual 1.16× is a direction
+and not a separation: at this scale the two arms are no longer distinguishable. **That is the
+finding, and it is weaker than "the gap closed" and stronger than "nothing changed."** Bounding
+what is left needs the study-scale replication this report has always said it is not.
 
 ## What this shows
 
 **The compat plane (`adp-gh`) costs about the same as real GitHub.** Once the one-time
-plumbing fixes were in (matching the git remote's host to `GH_HOST`, and this
-instance's `one_approval` land policy — a real, deliberate constraint, not a bug —
-requiring `gh pr review --approve` before `gh pr merge`), `adp-gh`'s per-trial cost,
+plumbing fixes were in (matching the git remote's host to `GH_HOST`, and the approving
+review the instructions call for before `gh pr merge`), `adp-gh`'s per-trial cost,
 tool-call count, and wall clock land close to `github-gh`'s. That is the MVP's own
 success criterion showing up as a number: an unmodified `gh` workflow does not pay a
 meaningfully higher agent-cost tax against ADP than against GitHub itself.
 
-**The native plane (`adp-mcp`) costs more, and the reason is legible, not mysterious.**
-Every `adp-mcp` trial needed the same `git` plumbing as the other two arms *plus* an
-MCP round trip to open the candidate set, a `curl` call to open the proposal (the one
-gap noted above), a second `curl` call to submit the required approving review, and an
-MCP round trip to resolve — four extra tool calls with no `gh`-equivalent single
-command standing in for any of them. That gap is a property of the native MCP tool
-surface as it stood when these trials ran (no proposal-open tool), not of the native
-plane's design in general.
+**The tools closed most of the gap, and the agent never reached for the fallback.**
+The `adp-mcp` arm fell from $0.1435 to $0.0892 a trial and from 17.0 tool calls to 15.5,
+while `curl` stayed available and unadvertised the whole time — and was used **zero times
+in twelve trials**. That matters more than the cost number: it means the residual difference
+is not an agent still hand-assembling HTTP, it is what the native plane costs when its own
+tools are the ones being used. The four tools were the leading hypothesis for the baseline
+gap, and the hypothesis held.
 
-**The gap is closed in the code, and these numbers predate the fix (#144).** The
-native plane now has `adp_intent_get`, `adp_proposal_open`, `adp_proposal_review`
-and `adp_proposal_merge`, and the `adp-mcp` instructions name those tools instead
-of teaching the agent to hand-assemble `curl` calls. **The arm has not been re-run
-since**, so everything above still describes the pre-fix tool surface — which is the
-accurate thing for it to describe, because these are the trials that produced the
-numbers. Per this harness's own contract, an arm that was not run is reported as not
-run rather than quietly restated: whether the fix moves the `adp-mcp` figure is an
-open question until the re-run happens, and it will be published whichever way it
-points.
+**What is left is a shape, not a hole.** `adp-mcp` still makes more calls than `adp-gh`
+(15.5 against 14.3), and the reason is structural rather than missing: opening a candidate
+set and resolving it are two MCP round trips with no single `gh` command standing in for
+them. That is a real property of a protocol against a CLI, and it is the part no additional
+tool removes.
 
-**`curl` is still on the `adp-mcp` arm's tool list, and that is deliberate.**
-Withdrawing it alongside the new tools would change two things at once, so a cost
-drop in the re-run could not be split between "the tools are cheaper" and "the agent
-can no longer spend turns on HTTP it was told to assemble" — and a withdrawn escape
-hatch turns a step the tools still fail to cover into a failed trial rather than an
-observation. So the hatch stays open and unadvertised: the instructions teach the MCP
-path and never mention `curl`, and an agent that reaches for it anyway is a finding
-about the tools rather than noise in the measurement.
-
-**Fallback use is not measured in these trials.** `measurement.escapeHatchCalls` and
-`measurement.toolBreakdown` were added after they ran, so the records above say how many
-tool calls each trial made and not which tools they were. The absence is reported rather
-than read as a zero: these trials were *instructed* to use `curl`, so a zero would be
-positively wrong.
+**`curl` is on the `adp-mcp` arm's tool list in every cohort, and that is deliberate.**
+In the baseline it was there because the native plane had no proposal-open tool and the
+instructions taught the agent to use it. It stayed afterwards on different reasoning:
+withdrawing it alongside the new tools would change two things at once, so a cost drop
+could not be split between "the tools are cheaper" and "the agent can no longer spend
+turns on HTTP it was told to assemble" — and a withdrawn escape hatch turns a step the
+tools still fail to cover into a failed trial rather than an observation. So the hatch
+stays open and unadvertised: the instructions teach the MCP path and never mention
+`curl`, and an agent that reaches for it anyway is a finding about the tools rather
+than noise in the measurement.
 
 ## What this does not show, and should not be read as showing
 
-- **Pilot scale.** 12 trials is enough to see the shape above, not enough to
-  bound it with a confidence interval. Study-A-scale replication (more reps, more
-  tasks, varied difficulty) is future work, not this report.
+- **Pilot scale.** 24 trials is enough to see a shape, not enough to bound
+  it with a confidence interval. Study-A-scale replication (more reps, more tasks, varied
+  difficulty) is future work, not this report.
 - **One model, fast tier, two small tasks.** Both tasks are solvable in a single
   agent pass by a competent model; neither exercises retries, multi-file changes,
   or a contested land. The interfaces may separate differently under harder work.
-- **The native-plane MCP gap is closeable.** Nothing here says ADP's native plane
-  is inherently costlier — it says today's `~8`-tool MCP surface has no
-  proposal-open tool, so an agent using it pays for
-  a REST round trip `gh` bundles into one command. That is an M3-5 finding for the
-  native-plane MCP surface's own future scope, not a verdict on the plane itself.
+- **Cohorts are not controlled against each other.** They ran on different days, and a
+  vendor-side model change between them is invisible from here. That is why the delta
+  section leads with the `adp-mcp`:`adp-gh` ratio, which is measured *within* a
+  cohort, rather than with the absolute cost, which is not.
 - **Local dev server, not production infrastructure.** Same caveat as arm 1: single
   box, single Postgres. Absolute wall-clock numbers are not a capacity claim.
 - **The approvals in these trials were self-approvals** (noted 2026-08-29). Each arm
   ran as a single principal, so `gh pr review --approve` and `gh pr merge` were the
-  same agent — which `one_approval` accepted at the time, and no longer does (#121,
-  now author-independent). The numbers above are unaffected: the approving call was
-  made and paid for either way, and re-running these arms today would cost the same
-  tool call from a second token. What it does mean is that this run measured the cost
-  of the requirement, never its effect.
+  same agent — which `one_approval` accepted when the baseline ran, and no longer does
+  (#121, now author-independent). The costs are unaffected, because the approving call
+  was made and paid for either way. What it means is that this arm measured the cost of
+  the requirement, never its effect.
+- **`one_approval` was not actually enforced in `post-144-tools`, and the instructions
+  still said it was.** That instance ran today's default floor (`gates_green` alone,
+  per #174) against repos that declare no gates, so nothing gated the merge. Enabling
+  `one_approval` was not an option: since #121 it is author-independent and these arms
+  are single-principal by construction, so every ADP trial would have failed to land.
+  The instructions were left saying it to keep the agent's *workload* identical to the
+  baseline's — the approving call is made and paid for in both cohorts, and both ADP arms
+  do it identically, so the `adp-mcp`:`adp-gh` ratio is untouched. It is recorded here
+  because it is a real difference between the two cohorts' instances, not because it
+  moves the comparison.
+- **The tool boundary is slightly leakier than `--allowedTools` implies.** Trials show
+  occasional `Bash(find)` and `ToolSearch` calls that the per-method list does not
+  name, with no permission denial recorded. It applies to all three arms equally, so it
+  does not bias the comparison, but the per-method list should not be read as an exact
+  account of what the agent could reach for.
 
 ## Run ids
 
-Every trial's ADP-hosted target and run id, so a reader can look up the underlying
-evidence without re-running an agent:
+Every trial's target and run id, so a reader can look up the underlying evidence
+without re-running an agent:
 
+**`baseline`**
 - `adp-gh/clamp/r1` → `duvabench/arm2-gh-clamp-r1-ed097e` (run `ed097e`)
 - `adp-gh/clamp/r2` → `duvabench/arm2-gh-clamp-r2-b5782f` (run `b5782f`)
 - `adp-gh/titlecase/r1` → `duvabench/arm2-gh-titlecase-r1-7dde8d` (run `7dde8d`)
@@ -117,6 +189,20 @@ evidence without re-running an agent:
 - `github-gh/clamp/r2` → `DeDuva/adp-bench-arm2-scratch` (run `d467c9`)
 - `github-gh/titlecase/r1` → `DeDuva/adp-bench-arm2-scratch` (run `dd69f8`)
 - `github-gh/titlecase/r2` → `DeDuva/adp-bench-arm2-scratch` (run `a8168c`)
+
+**`post-144-tools`**
+- `adp-gh/clamp/r1` → `duvabench/arm2-gh-clamp-r1-e47c6a` (run `e47c6a`)
+- `adp-gh/clamp/r2` → `duvabench/arm2-gh-clamp-r2-3d865f` (run `3d865f`)
+- `adp-gh/titlecase/r1` → `duvabench/arm2-gh-titlecase-r1-324b23` (run `324b23`)
+- `adp-gh/titlecase/r2` → `duvabench/arm2-gh-titlecase-r2-e6c378` (run `e6c378`)
+- `adp-mcp/clamp/r1` → `duvabench/arm2-mcp-clamp-r1-4d4ad2` (run `4d4ad2`)
+- `adp-mcp/clamp/r2` → `duvabench/arm2-mcp-clamp-r2-0f8c0c` (run `0f8c0c`)
+- `adp-mcp/titlecase/r1` → `duvabench/arm2-mcp-titlecase-r1-a5412d` (run `a5412d`)
+- `adp-mcp/titlecase/r2` → `duvabench/arm2-mcp-titlecase-r2-dea49c` (run `dea49c`)
+- `github-gh/clamp/r1` → `DeDuva/adp-bench-arm2-scratch` (run `f8562e`)
+- `github-gh/clamp/r2` → `DeDuva/adp-bench-arm2-scratch` (run `fa6c75`)
+- `github-gh/titlecase/r1` → `DeDuva/adp-bench-arm2-scratch` (run `5b6bb8`)
+- `github-gh/titlecase/r2` → `DeDuva/adp-bench-arm2-scratch` (run `c28f48`)
 
 ## What consumes this
 

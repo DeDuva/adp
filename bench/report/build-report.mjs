@@ -122,69 +122,252 @@ const METHOD_LABEL = {
   "adp-mcp": "ADP-MCP (native plane)",
 };
 
+// A benchmark that can be re-run needs somewhere to put the second run. Before
+// #144's tools landed there was one arm-2 run and the report averaged every
+// record it found; adding a second run to the same pile would have blended
+// pre-fix and post-fix trials into one mean and silently destroyed the only
+// comparison the re-run exists to make.
+//
+// So records carry a `cohort`. Absence means the original pilot — the records
+// predate the field — and it is labelled rather than left blank, because "no
+// cohort" is not a thing a reader can interpret.
+const BASELINE = "baseline";
+const cohortOf = (r) => r.cohort ?? BASELINE;
+
+const COHORT_NOTE = {
+  [BASELINE]:
+    "the original pilot, run against the pre-#144 tool surface: the native plane had no tool to open a proposal or read an intent, and the `adp-mcp` instructions taught the agent to hand-assemble `curl` calls for both.",
+  "post-144-tools":
+    "the same matrix against the post-#144 tool surface. The native plane has `adp_intent_get`, `adp_proposal_open`, `adp_proposal_review` and `adp_proposal_merge`, and the `adp-mcp` instructions name them. `curl` remained on the tool list and unadvertised, so a fallback would have been recorded rather than prevented.",
+};
+
+function groupBy(records, key) {
+  const out = new Map();
+  for (const r of records) {
+    const k = key(r);
+    const list = out.get(k) ?? [];
+    list.push(r);
+    out.set(k, list);
+  }
+  return out;
+}
+
+const tokensIn = (m) => m.usage.input_tokens + (m.usage.cache_creation_input_tokens ?? 0) + (m.usage.cache_read_input_tokens ?? 0);
+const avg = (list, f) => list.reduce((s, r) => s + f(r), 0) / list.length;
+
+function methodTable(list) {
+  const byMethod = groupBy(list, (r) => r.method);
+  const rows = [...byMethod.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([method, trials]) => {
+      const n = trials.length;
+      const landed = trials.filter((r) => r.measurement.landed).length;
+      const cost = trials.reduce((s, r) => s + (r.measurement.totalCostUsd ?? 0), 0);
+      return (
+        `| ${METHOD_LABEL[method] ?? method} | ${n} | ${landed}/${n} | $${fmt(cost, 4)} | $${fmt(cost / n, 4)} | ` +
+        `${fmt(avg(trials, (r) => tokensIn(r.measurement)), 0)} | ${fmt(avg(trials, (r) => r.measurement.usage.output_tokens), 0)} | ` +
+        `${fmt(avg(trials, (r) => r.measurement.toolCalls), 1)} | ${fmt(avg(trials, (r) => r.measurement.toolErrors), 2)} | ` +
+        `${fmt(avg(trials, (r) => r.measurement.wallClockMs) / 1000, 1)}s |`
+      );
+    });
+  return `| Method | n | Landed | Total cost | Avg cost/trial | Avg tokens in | Avg tokens out | Avg tool calls | Avg tool errors | Avg wall clock |
+|---|---|---|---|---|---|---|---|---|---|
+${rows.join("\n")}`;
+}
+
+// Absence is "not measured", never zero. The pilot records predate the field
+// and reading them as zero would report a fallback rate that was never
+// observed — the same class of error as a skipped test that exits green.
+function fallbackNote(list) {
+  const measured = list.filter((r) => r.measurement.escapeHatchCalls !== undefined);
+  if (measured.length === 0) {
+    return `**Fallback use is not measured in this cohort.** \`measurement.escapeHatchCalls\` and
+\`measurement.toolBreakdown\` were added after these trials ran, so their records say how many
+tool calls each trial made and not which tools they were. The absence is reported rather than
+read as a zero: these trials were *instructed* to use \`curl\`, so a zero would be positively
+wrong.`;
+  }
+  const rows = [...groupBy(list, (r) => r.method).entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([method, trials]) => {
+      const seen = trials.filter((r) => r.measurement.escapeHatchCalls !== undefined);
+      if (seen.length === 0) return `- **${METHOD_LABEL[method] ?? method}** — not measured`;
+      const total = seen.reduce((sum, r) => sum + r.measurement.escapeHatchCalls, 0);
+      const reached = seen.filter((r) => r.measurement.escapeHatchCalls > 0).length;
+      return `- **${METHOD_LABEL[method] ?? method}** — ${total} raw-HTTP call(s) across ${seen.length} trial(s); ${reached} trial(s) reached for one`;
+    });
+  return `**Did the agent fall back to raw HTTP?** Counted per trial from the transcript
+(\`measurement.escapeHatchCalls\`), with the full per-tool breakdown beside it in each run
+record:
+
+${rows.join("\n")}`;
+}
+
+const pct = (before, after) => {
+  if (!before) return "n/a";
+  const delta = ((after - before) / before) * 100;
+  return `${delta >= 0 ? "+" : ""}${fmt(delta, 1)}%`;
+};
+
+// The question the re-run exists to answer, computed rather than asserted.
+function deltaSection(cohorts) {
+  if (cohorts.length < 2) return "";
+  const [firstName, firstList] = cohorts[0];
+  const [lastName, lastList] = cohorts[cohorts.length - 1];
+
+  const methods = [...new Set([...firstList, ...lastList].map((r) => r.method))].sort();
+  const rows = methods.map((method) => {
+    const before = firstList.filter((r) => r.method === method);
+    const after = lastList.filter((r) => r.method === method);
+    if (before.length === 0 || after.length === 0) {
+      return `| ${METHOD_LABEL[method] ?? method} | ${before.length ? "$" + fmt(avg(before, (r) => r.measurement.totalCostUsd ?? 0), 4) : "—"} | ${after.length ? "$" + fmt(avg(after, (r) => r.measurement.totalCostUsd ?? 0), 4) : "—"} | not comparable |`;
+    }
+    const b = avg(before, (r) => r.measurement.totalCostUsd ?? 0);
+    const a = avg(after, (r) => r.measurement.totalCostUsd ?? 0);
+    const bc = avg(before, (r) => r.measurement.toolCalls);
+    const ac = avg(after, (r) => r.measurement.toolCalls);
+    return `| ${METHOD_LABEL[method] ?? method} | $${fmt(b, 4)} | $${fmt(a, 4)} | ${pct(b, a)} | ${fmt(bc, 1)} → ${fmt(ac, 1)} |`;
+  });
+
+  // The headline is a ratio, not an absolute: absolute cost moves with the
+  // model, the tasks and the day. What OD-1 asks is whether the native plane
+  // costs more *than the compat plane on the same work*, and that ratio is
+  // robust to everything the two cohorts do not share.
+  const ratio = (list) => {
+    const mcp = list.filter((r) => r.method === "adp-mcp");
+    const gh = list.filter((r) => r.method === "adp-gh");
+    if (mcp.length === 0 || gh.length === 0) return null;
+    return avg(mcp, (r) => r.measurement.totalCostUsd ?? 0) / avg(gh, (r) => r.measurement.totalCostUsd ?? 0);
+  };
+  const rBefore = ratio(firstList);
+  const rAfter = ratio(lastList);
+
+  // A ratio of means from four trials a cell can look like a finding and be
+  // noise. This is the cheap non-parametric check that says whether the two
+  // arms are even distinguishable: do their per-trial cost ranges overlap at
+  // all? Non-overlapping ranges mean every trial of one arm cost more than
+  // every trial of the other, which at n=4 is worth stating. Overlapping
+  // ranges mean the ratio is a direction and not a separation, and saying so
+  // is the difference between reporting a result and overclaiming one.
+  const separation = (list) => {
+    const mcp = list.filter((r) => r.method === "adp-mcp").map((r) => r.measurement.totalCostUsd ?? 0);
+    const gh = list.filter((r) => r.method === "adp-gh").map((r) => r.measurement.totalCostUsd ?? 0);
+    if (mcp.length === 0 || gh.length === 0) return null;
+    const overlap = Math.min(...mcp) <= Math.max(...gh);
+    return { overlap, mcp: [Math.min(...mcp), Math.max(...mcp)], gh: [Math.min(...gh), Math.max(...gh)] };
+  };
+  const sBefore = separation(firstList);
+  const sAfter = separation(lastList);
+  const range = (r) => `$${fmt(r[0], 4)}–$${fmt(r[1], 4)}`;
+
+  const separationNote =
+    sBefore && sAfter
+      ? `**Do the two ADP arms separate at all?** Per-trial cost ranges, which at four trials a cell
+says more than a ratio of means does:
+
+| Cohort | \`adp-mcp\` | \`adp-gh\` | Separated? |
+|---|---|---|---|
+| \`${firstName}\` | ${range(sBefore.mcp)} | ${range(sBefore.gh)} | ${sBefore.overlap ? "**no** — ranges overlap" : "**yes** — no overlap"} |
+| \`${lastName}\` | ${range(sAfter.mcp)} | ${range(sAfter.gh)} | ${sAfter.overlap ? "**no** — ranges overlap" : "**yes** — no overlap"} |
+
+${
+  !sBefore.overlap && sAfter.overlap
+    ? `In \`${firstName}\` every \`adp-mcp\` trial cost more than every \`adp-gh\` trial — a separation, not
+a tendency. In \`${lastName}\` the ranges overlap, so the residual ${fmt(rAfter, 2)}× is a direction
+and not a separation: at this scale the two arms are no longer distinguishable. **That is the
+finding, and it is weaker than "the gap closed" and stronger than "nothing changed."** Bounding
+what is left needs the study-scale replication this report has always said it is not.`
+    : ""
+}`
+      : "";
+
+  const headline =
+    rBefore && rAfter
+      ? `**The native plane cost ${fmt(rBefore, 2)}× the compat plane in \`${firstName}\`, and ${fmt(rAfter, 2)}× in \`${lastName}\`.**
+That ratio is the figure OD-1 turns on, and it is deliberately the headline rather than the
+absolute cost: absolutes move with the model, the tasks and the day, while the ratio compares
+two interfaces doing the same work in the same run. Every arm got cheaper between the two
+cohorts, which is exactly why the ratio and not the absolute is the thing to read.
+
+${separationNote}`
+      : "";
+
+  return `## What changed between cohorts
+
+Comparing \`${lastName}\` (n=${lastList.length}) against \`${firstName}\` (n=${firstList.length}).
+Both are pilot scale, so this is a direction and a magnitude, not a bounded estimate.
+
+| Method | ${firstName} | ${lastName} | Δ cost | Δ tool calls |
+|---|---|---|---|---|
+${rows.join("\n")}
+
+${headline}
+`;
+}
+
 function threeWayCostReport(records) {
   if (records.length === 0) {
     return "# Three-way cost comparison — arm 2 results\n\n**Not run.** No records in `bench/runs/` for this arm.\n";
   }
 
-  const byMethod = new Map();
-  for (const r of records) {
-    const list = byMethod.get(r.method) ?? [];
-    list.push(r);
-    byMethod.set(r.method, list);
-  }
-
-  const tokensIn = (m) => m.usage.input_tokens + (m.usage.cache_creation_input_tokens ?? 0) + (m.usage.cache_read_input_tokens ?? 0);
-
-  const rows = [...byMethod.entries()].map(([method, list]) => {
-    const n = list.length;
-    const landed = list.filter((r) => r.measurement.landed).length;
-    const cost = list.reduce((s, r) => s + (r.measurement.totalCostUsd ?? 0), 0);
-    const tIn = list.reduce((s, r) => s + tokensIn(r.measurement), 0);
-    const tOut = list.reduce((s, r) => s + r.measurement.usage.output_tokens, 0);
-    const calls = list.reduce((s, r) => s + r.measurement.toolCalls, 0);
-    const errs = list.reduce((s, r) => s + r.measurement.toolErrors, 0);
-    const wall = list.reduce((s, r) => s + r.measurement.wallClockMs, 0);
-    return (
-      `| ${METHOD_LABEL[method] ?? method} | ${n} | ${landed}/${n} | $${fmt(cost, 4)} | $${fmt(cost / n, 4)} | ` +
-      `${fmt(tIn / n, 0)} | ${fmt(tOut / n, 0)} | ${fmt(calls / n, 1)} | ${fmt(errs / n, 2)} | ${fmt(wall / n / 1000, 1)}s |`
-    );
-  });
+  // Oldest cohort first, by the earliest trial in each — so the report reads
+  // in the order the work happened and the delta section compares the newest
+  // against the original rather than against whatever sorted last.
+  const cohorts = [...groupBy(records, cohortOf).entries()].sort(
+    ([, a], [, b]) => Date.parse(a[0].recordedAt) - Date.parse(b[0].recordedAt),
+  );
+  const latest = cohorts[cohorts.length - 1];
 
   const environments = [...new Set(records.map((r) => `${r.environment.platform}, node ${r.environment.node}`))];
   const models = [...new Set(records.map((r) => r.environment.model))];
   const tasks = [...new Set(records.map((r) => r.taskId))];
-  const totalCost = records.reduce((s, r) => s + (r.measurement.totalCostUsd ?? 0), 0);
-  const totalLanded = records.filter((r) => r.measurement.landed).length;
 
-  // Absence is "not measured", never zero. The pilot records predate the field
-  // and reading them as zero would report a fallback rate that was never
-  // observed — which is the same class of error as a skipped test that exits
-  // green.
-  const measured = records.filter((r) => r.measurement.escapeHatchCalls !== undefined);
-  const fallbackNote =
-    measured.length === 0
-      ? `**Fallback use is not measured in these trials.** \`measurement.escapeHatchCalls\` and
-\`measurement.toolBreakdown\` were added after they ran, so the records above say how many
-tool calls each trial made and not which tools they were. The absence is reported rather
-than read as a zero: these trials were *instructed* to use \`curl\`, so a zero would be
-positively wrong.`
-      : (() => {
-          const rows = [...byMethod.entries()].map(([method, list]) => {
-            const seen = list.filter((r) => r.measurement.escapeHatchCalls !== undefined);
-            if (seen.length === 0) return `- **${METHOD_LABEL[method] ?? method}** — not measured`;
-            const total = seen.reduce((sum, r) => sum + r.measurement.escapeHatchCalls, 0);
-            const trials = seen.filter((r) => r.measurement.escapeHatchCalls > 0).length;
-            return `- **${METHOD_LABEL[method] ?? method}** — ${total} raw-HTTP call(s) across ${seen.length} trial(s); ${trials} trial(s) reached for one`;
-          });
-          return `**Did the agent fall back to raw HTTP?** Counted per trial from the transcript
-(\`measurement.escapeHatchCalls\`), with the full per-tool breakdown beside it in each run
-record:\n\n${rows.join("\n")}`;
-        })();
+  const cohortSections = cohorts
+    .map(([name, list]) => {
+      const dates = list.map((r) => r.recordedAt.slice(0, 10)).sort();
+      const span = dates[0] === dates[dates.length - 1] ? dates[0] : `${dates[0]} – ${dates[dates.length - 1]}`;
+      const landed = list.filter((r) => r.measurement.landed).length;
+      const cost = list.reduce((s2, r) => s2 + (r.measurement.totalCostUsd ?? 0), 0);
+      const note = COHORT_NOTE[name] ? `\n${COHORT_NOTE[name]}\n` : "";
+      return `### Cohort \`${name}\` — ${span}
+${note}
+${methodTable(list)}
 
-  const runIds = records
-    .map((r) => `\`${r.method}/${r.taskId}/r${r.rep}\` → \`${r.environment.target.owner}/${r.environment.target.repo}\` (run \`${r.runId}\`)`)
-    .join("\n- ");
+**${landed}/${list.length} trials landed.** Spend: $${fmt(cost, 4)}.
+
+${fallbackNote(list)}`;
+    })
+    .join("\n\n");
+
+  const runIds = cohorts
+    .map(
+      ([name, list]) =>
+        `**\`${name}\`**\n- ` +
+        list
+          .map(
+            (r) =>
+              `\`${r.method}/${r.taskId}/r${r.rep}\` → \`${r.environment.target.owner}/${r.environment.target.repo}\` (run \`${r.runId}\`)`,
+          )
+          .join("\n- "),
+    )
+    .join("\n\n");
+
+  // Stated once, from the data, rather than asserted in prose that then has to
+  // be remembered and edited: whether the post-#144 tool surface has actually
+  // been measured is a fact about which cohorts exist.
+  const rerunState =
+    cohorts.length > 1
+      ? `**The arm has been re-run against the post-#144 tool surface** — cohort \`${latest[0]}\`, below.
+Per this harness's contract the earlier cohort is kept rather than replaced: a benchmark that
+overwrites its own baseline cannot show that anything changed.`
+      : `**The gap is closed in the code, and these numbers predate the fix (#144).** The native
+plane now has \`adp_intent_get\`, \`adp_proposal_open\`, \`adp_proposal_review\` and
+\`adp_proposal_merge\`, and the \`adp-mcp\` instructions name those tools instead of teaching the
+agent to hand-assemble \`curl\` calls. **The arm has not been re-run since**, so everything here
+still describes the pre-fix tool surface — which is the accurate thing for it to describe,
+because these are the trials that produced the numbers. Whether the fix moves the \`adp-mcp\`
+figure is an open question until the re-run happens, and it will be published whichever way it
+points.`;
 
   return `# Three-way cost comparison — arm 2 results
 
@@ -194,100 +377,109 @@ record:\n\n${rows.join("\n")}`;
 **Agent-backed. Stochastic — the spread matters, not a single figure.** The same
 task suite (\`${tasks.join("`, `")}\`) completed by a real agent (the \`claude\` CLI,
 non-interactively, \`--allowedTools\`-scoped per method) via three interfaces:
-**GitHub + \`gh\`** against a real GitHub repository, **ADP via \`gh\`** (the
-compat plane, unmodified \`gh\` pointed at ADP through \`GH_HOST\` — the MVP's own
-success criterion), and **ADP-MCP** (the native plane: ADP's own MCP tool
-surface, \`server/src/mcp/server.ts\`, plus \`git\` for plumbing and one \`curl\` call
-for the one REST step the native MCP tools don't wrap — opening the proposal
-itself; noted below, not hidden). Every trial's raw agent transcript
-(token usage, tool calls, tool errors, permission denials) and landed-or-not
-verdict is captured alongside its run record.
+**GitHub + \`gh\`** against a real GitHub repository, **ADP via \`gh\`** (the compat
+plane, unmodified \`gh\` pointed at ADP through \`GH_HOST\` — the MVP's own success
+criterion), and **ADP-MCP** (the native plane: ADP's own MCP tool surface,
+\`server/src/mcp/server.ts\`, plus \`git\` for plumbing). Every trial's raw agent
+transcript (token usage, tool calls, tool errors, permission denials) and
+landed-or-not verdict is captured alongside its run record.
 
 Environment: ${environments.join("; ")}. Model(s): ${models.join(", ")}.
 
-**Pilot scale — this is not Study A.** ${records.length} trials across ${byMethod.size}
-methods and ${tasks.length} tasks, reported per the M3-5 pilot-slice instruction to
-run a small slice first, check actual cost-per-trial against budget, and only then
-scale. It is enough to compare the three interfaces on
-their own overhead; it is not enough reps per cell for a confidence interval,
-and the numbers below are pilot-scale means, not statistically gated results.
+**Pilot scale — this is not Study A.** ${records.length} trials in total, across
+${cohorts.length} cohort(s) and ${tasks.length} tasks, reported per the M3-5 pilot-slice
+instruction to run a small slice first, check actual cost-per-trial against budget, and
+only then scale. Enough to compare the three interfaces on their own overhead; not enough
+reps per cell for a confidence interval. Every figure below is a pilot-scale mean, not a
+statistically gated result.
 
-| Method | n | Landed | Total cost | Avg cost/trial | Avg tokens in | Avg tokens out | Avg tool calls | Avg tool errors | Avg wall clock |
-|---|---|---|---|---|---|---|---|---|---|
-${rows.join("\n")}
+${rerunState}
 
-**${totalLanded}/${records.length} trials landed.** Total spend: $${fmt(totalCost, 4)}.
+## Results by cohort
 
+A cohort is one sitting of the arm against one tool surface. They are reported
+separately and never pooled: averaging trials taken against different tool surfaces
+would produce a mean describing neither.
+
+${cohortSections}
+
+${deltaSection(cohorts)}
 ## What this shows
 
 **The compat plane (\`adp-gh\`) costs about the same as real GitHub.** Once the one-time
-plumbing fixes were in (matching the git remote's host to \`GH_HOST\`, and this
-instance's \`one_approval\` land policy — a real, deliberate constraint, not a bug —
-requiring \`gh pr review --approve\` before \`gh pr merge\`), \`adp-gh\`'s per-trial cost,
+plumbing fixes were in (matching the git remote's host to \`GH_HOST\`, and the approving
+review the instructions call for before \`gh pr merge\`), \`adp-gh\`'s per-trial cost,
 tool-call count, and wall clock land close to \`github-gh\`'s. That is the MVP's own
 success criterion showing up as a number: an unmodified \`gh\` workflow does not pay a
 meaningfully higher agent-cost tax against ADP than against GitHub itself.
 
-**The native plane (\`adp-mcp\`) costs more, and the reason is legible, not mysterious.**
-Every \`adp-mcp\` trial needed the same \`git\` plumbing as the other two arms *plus* an
-MCP round trip to open the candidate set, a \`curl\` call to open the proposal (the one
-gap noted above), a second \`curl\` call to submit the required approving review, and an
-MCP round trip to resolve — four extra tool calls with no \`gh\`-equivalent single
-command standing in for any of them. That gap is a property of the native MCP tool
-surface as it stood when these trials ran (no proposal-open tool), not of the native
-plane's design in general.
+**The tools closed most of the gap, and the agent never reached for the fallback.**
+The \`adp-mcp\` arm fell from \$0.1435 to \$0.0892 a trial and from 17.0 tool calls to 15.5,
+while \`curl\` stayed available and unadvertised the whole time — and was used **zero times
+in twelve trials**. That matters more than the cost number: it means the residual difference
+is not an agent still hand-assembling HTTP, it is what the native plane costs when its own
+tools are the ones being used. The four tools were the leading hypothesis for the baseline
+gap, and the hypothesis held.
 
-**The gap is closed in the code, and these numbers predate the fix (#144).** The
-native plane now has \`adp_intent_get\`, \`adp_proposal_open\`, \`adp_proposal_review\`
-and \`adp_proposal_merge\`, and the \`adp-mcp\` instructions name those tools instead
-of teaching the agent to hand-assemble \`curl\` calls. **The arm has not been re-run
-since**, so everything above still describes the pre-fix tool surface — which is the
-accurate thing for it to describe, because these are the trials that produced the
-numbers. Per this harness's own contract, an arm that was not run is reported as not
-run rather than quietly restated: whether the fix moves the \`adp-mcp\` figure is an
-open question until the re-run happens, and it will be published whichever way it
-points.
+**What is left is a shape, not a hole.** \`adp-mcp\` still makes more calls than \`adp-gh\`
+(15.5 against 14.3), and the reason is structural rather than missing: opening a candidate
+set and resolving it are two MCP round trips with no single \`gh\` command standing in for
+them. That is a real property of a protocol against a CLI, and it is the part no additional
+tool removes.
 
-**\`curl\` is still on the \`adp-mcp\` arm's tool list, and that is deliberate.**
-Withdrawing it alongside the new tools would change two things at once, so a cost
-drop in the re-run could not be split between "the tools are cheaper" and "the agent
-can no longer spend turns on HTTP it was told to assemble" — and a withdrawn escape
-hatch turns a step the tools still fail to cover into a failed trial rather than an
-observation. So the hatch stays open and unadvertised: the instructions teach the MCP
-path and never mention \`curl\`, and an agent that reaches for it anyway is a finding
-about the tools rather than noise in the measurement.
-
-${fallbackNote}
+**\`curl\` is on the \`adp-mcp\` arm's tool list in every cohort, and that is deliberate.**
+In the baseline it was there because the native plane had no proposal-open tool and the
+instructions taught the agent to use it. It stayed afterwards on different reasoning:
+withdrawing it alongside the new tools would change two things at once, so a cost drop
+could not be split between "the tools are cheaper" and "the agent can no longer spend
+turns on HTTP it was told to assemble" — and a withdrawn escape hatch turns a step the
+tools still fail to cover into a failed trial rather than an observation. So the hatch
+stays open and unadvertised: the instructions teach the MCP path and never mention
+\`curl\`, and an agent that reaches for it anyway is a finding about the tools rather
+than noise in the measurement.
 
 ## What this does not show, and should not be read as showing
 
-- **Pilot scale.** ${records.length} trials is enough to see the shape above, not enough to
-  bound it with a confidence interval. Study-A-scale replication (more reps, more
-  tasks, varied difficulty) is future work, not this report.
+- **Pilot scale.** ${records.length} trials is enough to see a shape, not enough to bound
+  it with a confidence interval. Study-A-scale replication (more reps, more tasks, varied
+  difficulty) is future work, not this report.
 - **One model, fast tier, two small tasks.** Both tasks are solvable in a single
   agent pass by a competent model; neither exercises retries, multi-file changes,
   or a contested land. The interfaces may separate differently under harder work.
-- **The native-plane MCP gap is closeable.** Nothing here says ADP's native plane
-  is inherently costlier — it says today's \`~8\`-tool MCP surface has no
-  proposal-open tool, so an agent using it pays for
-  a REST round trip \`gh\` bundles into one command. That is an M3-5 finding for the
-  native-plane MCP surface's own future scope, not a verdict on the plane itself.
+- **Cohorts are not controlled against each other.** They ran on different days, and a
+  vendor-side model change between them is invisible from here. That is why the delta
+  section leads with the \`adp-mcp\`:\`adp-gh\` ratio, which is measured *within* a
+  cohort, rather than with the absolute cost, which is not.
 - **Local dev server, not production infrastructure.** Same caveat as arm 1: single
   box, single Postgres. Absolute wall-clock numbers are not a capacity claim.
 - **The approvals in these trials were self-approvals** (noted 2026-08-29). Each arm
   ran as a single principal, so \`gh pr review --approve\` and \`gh pr merge\` were the
-  same agent — which \`one_approval\` accepted at the time, and no longer does (#121,
-  now author-independent). The numbers above are unaffected: the approving call was
-  made and paid for either way, and re-running these arms today would cost the same
-  tool call from a second token. What it does mean is that this run measured the cost
-  of the requirement, never its effect.
+  same agent — which \`one_approval\` accepted when the baseline ran, and no longer does
+  (#121, now author-independent). The costs are unaffected, because the approving call
+  was made and paid for either way. What it means is that this arm measured the cost of
+  the requirement, never its effect.
+- **\`one_approval\` was not actually enforced in \`post-144-tools\`, and the instructions
+  still said it was.** That instance ran today's default floor (\`gates_green\` alone,
+  per #174) against repos that declare no gates, so nothing gated the merge. Enabling
+  \`one_approval\` was not an option: since #121 it is author-independent and these arms
+  are single-principal by construction, so every ADP trial would have failed to land.
+  The instructions were left saying it to keep the agent's *workload* identical to the
+  baseline's — the approving call is made and paid for in both cohorts, and both ADP arms
+  do it identically, so the \`adp-mcp\`:\`adp-gh\` ratio is untouched. It is recorded here
+  because it is a real difference between the two cohorts' instances, not because it
+  moves the comparison.
+- **The tool boundary is slightly leakier than \`--allowedTools\` implies.** Trials show
+  occasional \`Bash(find)\` and \`ToolSearch\` calls that the per-method list does not
+  name, with no permission denial recorded. It applies to all three arms equally, so it
+  does not bias the comparison, but the per-method list should not be read as an exact
+  account of what the agent could reach for.
 
 ## Run ids
 
-Every trial's ADP-hosted target and run id, so a reader can look up the underlying
-evidence without re-running an agent:
+Every trial's target and run id, so a reader can look up the underlying evidence
+without re-running an agent:
 
-- ${runIds}
+${runIds}
 
 ## What consumes this
 
