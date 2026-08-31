@@ -16,6 +16,71 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**`adp connect <harness>` — one command, and then the harness records itself
+(#154).** Connecting used to mean minting a token by hand, writing an MCP config
+in the right format at the right path, knowing that `gh` reads
+`GH_ENTERPRISE_TOKEN` rather than `GH_TOKEN` for a non-github.com host, and then
+writing the trajectory integration yourself because none shipped. All of that is
+knowledge a command should hold. `adp disconnect` takes it back out.
+
+**And then it proves it worked.** A config written to the wrong path fails
+silently and looks exactly like success, so the last thing connect does is open a
+session with the credential it just wrote and close it again. That round trip
+exercises the token, the server URL, the repository resolution and the scope —
+and it earned its place immediately, by failing on its own first run: a token
+minted under a fresh per-harness principal has membership in no org and therefore
+access to nothing, and no REST route grants one. The token is minted under the
+caller's own principal now, narrower than theirs — `repo:read` and `repo:write`,
+never `admin` — and carrying the harness, which is also the more accurate claim:
+#141 fixed the grain of these fields, and a per-harness credential held by a
+developer is exactly "the Codex integration's token". The provenance on a signed
+change then names both the person and the harness.
+
+**Everything it writes is inside the repository**, because all three harnesses
+take project-scoped configuration — Claude Code's `.mcp.json`, the `Project`
+layer of Codex's config loader at `.codex/config.toml`, and Gemini CLI's
+`.gemini/settings.json`. Nothing reaches into `$HOME`, so disconnecting cannot
+leave an orphan somewhere nobody looks and two checkouts of two projects cannot
+fight over one file. ADP owns one key inside each, never the file: connect
+replaces its own entry rather than appending, which is what makes re-running
+after a harness upgrade a repair instead of a duplicate, and disconnect deletes a
+file ADP created from nothing rather than leaving `{}` behind.
+
+**Those files hold a live token, so they are kept out of commits.** A harness
+reads its MCP configuration from a file in the repository and that file has to
+carry the credential — so connect writes one into the working tree, and the next
+`git add -A` would publish it. The paths go into `.git/info/exclude`: per clone,
+not committed, because a `.gitignore` entry is itself a commit and telling every
+contributor about one developer's harness is not connect's business.
+
+**The `prepare-commit-msg` hook is the client half #142 never had.** The server
+has read an `ADP-Intent` trailer off a pushed commit since #142; writing one
+stayed something a person or an agent had to remember, and the binding is worth
+exactly what the remembering is. The hook fills it in from
+`branch.<name>.adpIntent`, or from a leading issue number in the branch name —
+this repository's own convention and most others'. It never overwrites a trailer
+the author wrote, never touches a merge, squash, amend or template message, and
+writes **nothing** on a branch that names no issue: a wrong intent binds a change
+to work it did not do, which is worse than no binding and much harder to notice.
+It uses `git interpret-trailers` rather than appending a line, so the trailer
+lands in the trailer block instead of inside a paragraph where git would ignore
+it.
+
+**Recording attaches on whatever terms each harness allows.** Claude Code is the
+only one that can start the recorder by itself — a `SessionStart` hook is handed
+the transcript path, which is exactly what `adp-recorder tail` follows — so
+connect writes that launcher. The others get a `wrap` launcher, which is the
+honest answer where a harness offers no place to hook in, and a script in the
+repository beats a paragraph in a README that has to be retyped correctly. The
+MCP server is invoked as `node dist/mcp/server.js` where a build exists and via
+the direct `tsx` binary otherwise — never `npx tsx`, whose cold start raced
+Claude Code's MCP connect timeout often enough in this repository's own benchmark
+harness to be worth avoiding rather than tuning around.
+
+Gemini CLI connects on the same command and is honest about what it gets:
+everything riding on `git` and the commit trailer, and no trajectory, because
+#150 ships two readers and it is not one of them.
+
 **The session lifecycle, driven by what the harness did (#151).** Starting,
 checkpointing and closing a session were each a call somebody had to remember to
 make mid-task — so sessions existed only when an agent had been prompted well

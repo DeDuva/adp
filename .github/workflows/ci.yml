@@ -68,6 +68,13 @@ jobs:
       # trajectory producer at all.
       - run: npm ci --prefix ../recorder
 
+      # And the CLI's, for the same reason, one test later:
+      # `test/e2e-connect.test.ts` builds and drives the `adp` binary as a
+      # subprocess, because what #154 is about is the gap between "wrote some
+      # files" and "it works" — and only a real process against a real server
+      # closes it.
+      - run: npm ci --prefix ../cli
+
       - run: npm test
 
       - uses: actions/setup-node@v4

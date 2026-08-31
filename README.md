@@ -369,6 +369,31 @@ node dist/index.js login --server https://adp.example.com --token <token>   # wr
 | `adp gate report --repo <owner>/<repo> --sha <sha> --name <name> --status <success\|failure\|pending>` | `POST .../gates` |
 | `adp pr list --repo <owner>/<repo>` | `GET .../pulls` |
 | `adp pr merge --repo <owner>/<repo> --number <n> [--method merge\|squash\|rebase]` | `PUT .../pulls/{n}/merge` |
+| `adp connect <claude-code\|codex\|gemini-cli> [--model <name>]` | not a wrapper — see below |
+| `adp disconnect <harness>` | undoes exactly what `connect` wrote |
+
+### `adp connect`
+
+One command per harness, in the checkout you want connected:
+
+```bash
+adp connect claude-code
+```
+
+It mints a token carrying that harness's name, writes the harness's own MCP configuration in its own
+format at its own path, installs a `prepare-commit-msg` hook that adds the `ADP-Intent` trailer from
+the branch you are on, and wires up recording. Then it **proves it worked** by opening and closing a
+real session with the credential it just wrote — because a config written to the wrong path fails
+silently and looks exactly like success.
+
+Everything it writes is inside the repository: `.mcp.json` for Claude Code, `.codex/config.toml` for
+Codex, `.gemini/settings.json` for Gemini CLI, and `.adp/` for the recorder launcher. **Those files
+hold a live token**, so connect adds them to `.git/info/exclude` — a per-clone ignore, not a
+`.gitignore` entry, because telling every other contributor about one developer's harness is not its
+business. `adp disconnect <harness>` removes exactly what connect wrote, including that block.
+
+Minting needs an `admin` scope. Without one connect still works and says which half you did not get:
+the harness reuses your own token, and the provenance on a signed change names no harness.
 
 ### `adp-recorder`
 

@@ -74,7 +74,6 @@ with ADP absent.
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 1-11 | `adp connect <harness>` | #154 | not started. Proves itself with a round trip rather than reporting success on having written files |
 
 Item 1-7 — `adp-recorder`, #149 — is finished and is gone from this table. It landed as
 three changes, because a Size-L flagship is not reviewable at once: the delivery guarantees
@@ -123,7 +122,27 @@ digest is canonical now, in jsonb's own ordering — chosen because any other ca
 reintroduce the same bug in a new set of cases, and because it makes the fix free: every checkpoint
 that verifies today has keys already in that order.
 
-**1b is not finished with 1-10.** What is left is 1-11 above.
+Item 1-11 — `adp connect <harness>`, #154 — is finished, and **release 1b is complete**. One
+command per harness mints a token that names it, writes that harness's own configuration in its own
+format at its own path, installs the `prepare-commit-msg` hook that was the client half #142 never
+had, wires recording, and then opens and closes a real session to prove all of it — because a config
+written to the wrong path fails silently and looks exactly like success.
+
+Two things it found are worth carrying. **The round trip caught a design error on its first run**,
+which is the argument for it: minting a token under a fresh per-harness principal produces a
+credential with membership in no org and therefore access to nothing, and there is no REST route that
+grants one. The token is minted under the caller's own principal instead — narrower than theirs
+(never `admin`) and carrying the harness — which is also the more accurate claim, since a signed
+change then names both the person and the harness. And **the config a harness reads has to hold the
+token**, so connect writes a live credential into the working tree; the files go into
+`.git/info/exclude` rather than `.gitignore`, per clone, because one developer's harness is not
+every contributor's business.
+
+1b's exit criterion — a developer connects a harness, works an ordinary session, and finds the whole
+trajectory in ADP having called no ADP API, at an agent cost indistinguishable from a session with
+ADP absent — is met for the two harnesses that have readers. Gemini CLI connects on the same command
+and gets everything that rides on `git` and the commit trailer; what it does not get is turn-level
+detail, which is the degraded mode #150 documented and not a gap this item left.
 
 Item 1-19 — the trajectory payload default, #199 — is finished and is gone from this table, on
 the terms 1a's items left: what shipped is in `CHANGELOG.md`, and the number is not reused. It
