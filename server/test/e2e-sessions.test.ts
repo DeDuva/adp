@@ -802,4 +802,100 @@ describe.skipIf(skipWithoutDb)("M3: cross-harness checkpoint and resume (D2)", (
     expect(errors[0]!.path).toEqual(["state"]);
     expect(errors[0]!.message).toContain(String(MAX_CHECKPOINT_STATE_BYTES));
   }, 60_000);
+
+  // ── #151: how a session ended is a fact, and there were only two states ──
+  //
+  // `suspended` has been in the schema since sessions existed and nothing ever
+  // set it, which was fine while a human decided when a session was over and
+  // could just not call `close`. It stopped being fine when a recorder started
+  // ending sessions: an interrupted one could say it had finished, or say
+  // nothing — and an unclosed session is indistinguishable from an abandoned
+  // one, while `runs.close` binds every session's chain head.
+  describe("ending a session as suspended", () => {
+    async function open(): Promise<string> {
+      const started = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+        method: "POST",
+        body: JSON.stringify({ harness: "claude-code" }),
+      });
+      return started.body.id as string;
+    }
+
+    it("suspends, and the session says so", async () => {
+      const sessionId = await open();
+      const res = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/close`, {
+        method: "POST",
+        body: JSON.stringify({ status: "suspended" }),
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("suspended");
+    });
+
+    it("still accepts events, because a suspended session is not over", async () => {
+      // The distinction that makes `flush` possible: a recorder that died can
+      // still have its tail delivered by the next one. Closing would refuse it.
+      const sessionId = await open();
+      await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/close`, {
+        method: "POST",
+        body: JSON.stringify({ status: "suspended" }),
+      });
+      const appended = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/events`, {
+        method: "POST",
+        body: JSON.stringify({ events: [{ kind: "message", type: "assistant" }] }),
+      });
+      expect(appended.status).toBe(201);
+    });
+
+    it("lets a suspended session be closed later", async () => {
+      // `adp-recorder flush` finishing a spool the dead recorder could not
+      // deliver is exactly this. Refusing would leave the session forever
+      // describing an interruption that was in fact recovered.
+      const sessionId = await open();
+      await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/close`, {
+        method: "POST",
+        body: JSON.stringify({ status: "suspended" }),
+      });
+      const closed = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/close`, {
+        method: "POST",
+        body: JSON.stringify({ status: "closed" }),
+      });
+      expect(closed.status).toBe(200);
+      expect(closed.body.status).toBe("closed");
+    });
+
+    it("refuses to suspend a closed session", async () => {
+      // Closing is terminal, and quietly ignoring the request would report a
+      // fact recorded that was not.
+      const sessionId = await open();
+      await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/close`, { method: "POST" });
+      const res = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/close`, {
+        method: "POST",
+        body: JSON.stringify({ status: "suspended" }),
+      });
+      expect(res.status).toBe(409);
+      expect(res.body.message).toContain("closed");
+    });
+
+    it("closes with no body at all, exactly as before", async () => {
+      // The field is optional and defaults to the behaviour that existed
+      // before it, so a client generated against a body-less close is
+      // untouched.
+      const sessionId = await open();
+      const res = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/close`, { method: "POST" });
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("closed");
+    });
+
+    it("names the transition in the operation log", async () => {
+      // `session.suspend`, not `session.close` — the log distinguishes the two
+      // without anyone reading `after`.
+      const sessionId = await open();
+      await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/close`, {
+        method: "POST",
+        body: JSON.stringify({ status: "suspended" }),
+      });
+      const log = await api(`/api/adp/repos/${owner}/${repoName}/operations?verb=session.suspend`);
+      const ops = log.body as unknown as { verb: string; target: string }[];
+      expect(ops.some((op) => op.target.includes(sessionId))).toBe(true);
+    });
+  });
 });

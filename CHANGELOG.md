@@ -16,6 +16,71 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**The session lifecycle, driven by what the harness did (#151).** Starting,
+checkpointing and closing a session were each a call somebody had to remember to
+make mid-task — so sessions existed only when an agent had been prompted well
+enough, checkpoints existed only when someone was thinking about checkpointing,
+and every session that ended stayed `active` for ever. `adp-recorder` drives all
+three now, from signals it already has.
+
+**A session binds to its intent because HEAD says which one.** The commit
+trailer #142 established already names the intent the work answers; the recorder
+reads it rather than being told, and accepts both forms the trailer allows — a
+UUID or an issue reference — because making someone learn which of the two the
+session route takes is the same defect one layer down. `--intent` still wins
+where it is given.
+
+**Boundaries, not intervals.** A checkpoint on a timer is a DSSE signature over
+opaque state every N seconds, most of them signing what the last one signed. Four
+boundaries and no fifth: HEAD moved, the reader emitted a `handoff`, a quiet
+stretch with work recorded in it, and the end of the stream — the last taken
+whatever else is true, so an interrupted session has somewhere to resume from. A
+checkpoint names a commit, so ADP has to hold it: one taken against unpushed work
+is refused with a typed error, deferred to the next boundary, and reported rather
+than swallowed.
+
+**`closed` and `suspended` are different facts, and until now only one of them
+could be produced.** `sessions.status` has had `suspended` since sessions existed
+and nothing ever set it. `wrap` is the command that can tell — the harness exited
+0 or it did not — and `tail` always suspends, because a follower is not in a
+position to claim the session finished. The session is ended only once the spool
+is drained: a closed session refuses appends, so ending one over undelivered
+events would make the rest of the recording permanently undeliverable. Undrained,
+the terminal state waits on disk and `adp-recorder flush` carries it out. The
+outcome is written as `suspended` when the session opens and only ever upgraded,
+so a recorder killed outright — which runs no shutdown code by definition — still
+reports what happened to it.
+
+**Lineage nobody assembled.** A stream whose harness session id this spool has
+recorded before *is* a resume, so `claude --resume` and `codex resume` produce a
+linked session with no `resume` call. `--continue` covers the cross-harness case
+no stream can signal, picking up this machine's last suspended session in the
+repository. A refused resume falls back to a fresh session and says so: ADP
+declines a resume whose checkpoint it cannot verify, and an unlinked recording
+beats no recording.
+
+**A checkpoint whose state was not in `jsonb`'s key order was permanently
+unresumable.** `checkpoints.state` is `jsonb`, which sorts object keys by length
+then bytewise and hands back what it sorted; the digest inside the signed
+checkpoint statement was taken over `JSON.stringify` of the caller's order. The
+signature verified and the digest did not, so `resumeSession` refused — at resume
+time, possibly in another harness hours later, which is exactly the moment the
+code around it was written to avoid. Nobody had hit it because hand-written
+checkpoint state is short and often already ordered; the recorder writes five keys
+in the order a person would list them and it failed on the first attempt. The
+digest is canonical now, sorted in jsonb's own ordering rather than a plain
+lexicographic one — any other canonical order would still differ from what comes
+back out of the column, and this one makes the fix free, since a checkpoint whose
+digest verifies today has keys already in that order.
+
+**`POST .../sessions/{id}/close` takes an optional `status`.** Additive: the field
+defaults to the behaviour that existed before it, so a client generated against a
+body-less close is untouched. A suspended session still accepts events, because it
+is not over; it may later be closed, which is what `flush` finishing a dead
+recorder's spool is; and a closed one may not be suspended, because closing is
+terminal and quietly ignoring the request would report a fact recorded that was
+not. The operation log says `session.suspend` rather than `session.close`.
+
 **A second harness, and the interface that makes it one (#150).** `adp-recorder`
 reads Codex now — `codex exec --json` — alongside Claude Code's `stream-json`.
 Two, chosen for having a stable machine-readable event stream rather than for

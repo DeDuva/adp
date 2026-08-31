@@ -52,6 +52,13 @@ export interface ShipReport {
   reason?: string;
   /** Set when waiting: how long before the next attempt is worth making. */
   retryInMs?: number;
+  /**
+   * What the session's lifecycle did, when the report is the one a session ends
+   * with (#151) — checkpoints taken, checkpoints deferred, a resume that could
+   * not be made. Empty on an ordinary drain: the shipper does not produce
+   * these, it only carries them.
+   */
+  notes?: string[];
 }
 
 export const DEFAULT_BATCH_SIZE = 200;

@@ -2920,9 +2920,25 @@ paths:
       - $ref: "#/components/parameters/id"
     post:
       x-required-scope: "repo:write"
-      summary: Close a session. Idempotent.
+      summary: End a session, as closed or as suspended. Idempotent.
+      description: >
+        `closed` is the ordinary end. `suspended` records that the session
+        stopped without finishing and is still resumable — what a recorder
+        reports when its harness was interrupted. A suspended session may later
+        be closed; a closed one may not be suspended.
       security:
         - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [closed, suspended]
+                  default: closed
       responses:
         "401":
           content:
@@ -2931,13 +2947,19 @@ paths:
                 $ref: "#/components/schemas/Error"
           description: Missing or invalid token
         "200":
-          description: Closed
+          description: Ended
         "404":
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
           description: Not found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: The session is already closed, and closing is terminal
   /api/adp/repos/{owner}/{repo}/sessions/{id}/events:
     parameters:
       - $ref: "#/components/parameters/owner"

@@ -24,6 +24,8 @@ describe("Recorder", () => {
   let port: number;
   let requests: Recorded[];
   let sessionsUp: boolean;
+  /** The terminal state each `close` asked for, in order. */
+  let ended: string[];
   let stored: number;
   let dir: string;
 
@@ -34,6 +36,14 @@ describe("Recorder", () => {
       req.on("end", () => {
         const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         requests.push({ url: req.url!, body });
+        // #151: `close` ends the session, and a fake ADP that does not answer
+        // it turns every test that finishes a session into a timeout.
+        if (req.url!.endsWith("/close")) {
+          ended.push(body.status as string);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ id: "22222222-3333-4444-5555-666666666666", status: body.status }));
+          return;
+        }
         if (req.url!.endsWith("/sessions")) {
           if (!sessionsUp) {
             res.writeHead(503, { "Content-Type": "application/json" });
@@ -69,6 +79,7 @@ describe("Recorder", () => {
 
   beforeEach(() => {
     requests = [];
+    ended = [];
     sessionsUp = true;
     stored = 0;
     dir = mkdtempSync(path.join(tmpdir(), "adp-recorder-e2e-"));
@@ -105,6 +116,10 @@ describe("Recorder", () => {
     expect(requests[1]!.body.events!.map((e) => e.kind)).toEqual(["custom", "message"]);
     // Contiguous from 1, which is what makes emitters_ok answerable.
     expect(requests[1]!.body.events!.map((e) => e.producer_seq)).toEqual([1, 2]);
+    // #151: and the session does not stay `active` forever. Suspended is the
+    // default, because a recorder that was not told the harness finished is
+    // not in a position to say it did.
+    expect(ended).toEqual(["suspended"]);
   });
 
   it("records a whole session while ADP is down, and delivers it when ADP returns", async () => {

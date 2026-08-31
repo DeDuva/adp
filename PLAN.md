@@ -74,7 +74,6 @@ with ADP absent.
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 1-10 | Session lifecycle driven by harness signals | #151 | not started. What turns 2-3 into a demonstration rather than a script that calls two endpoints |
 | 1-11 | `adp connect <harness>` | #154 | not started. Proves itself with a round trip rather than reporting success on having written files |
 
 Item 1-7 — `adp-recorder`, #149 — is finished and is gone from this table. It landed as
@@ -106,7 +105,25 @@ vocabulary is a 422 at ingest and a 422 quarantines the session, so **one bad ev
 reader nobody here wrote would have cost the whole recording**. It is relabelled at the spool
 now, and the record says a reader did it.
 
-**1b is not finished with 1-9.** What is left is the lifecycle: 1-10 and 1-11 above.
+Item 1-10 — the session lifecycle, #151 — is finished and is gone from this table. All three of
+its decisions had the wrong actor and now have none: a session opens bound to the intent HEAD's
+trailer names, checkpoints at boundaries rather than intervals — a commit, a handoff, a quiet
+stretch, the end — and ends `closed` or `suspended` according to whether the harness finished.
+`suspended` was a status the schema had declared since sessions existed and **nothing had ever
+set**, which was survivable while a human decided when a session was over and is not once a
+recorder does.
+
+**It also found the bug that made 2-3 impossible.** `checkpoints.state` is `jsonb`, which sorts
+object keys and returns what it sorted, while the digest the checkpoint signs was taken over the
+caller's key order — so a checkpoint whose state was not already in the column's order failed its
+own digest check and was refused at *resume* time, permanently unresumable, discovered at the worst
+possible moment. Nobody had hit it because hand-written checkpoint state is short; the recorder
+writes five keys in the order a person would list them and it failed on the first attempt. The
+digest is canonical now, in jsonb's own ordering — chosen because any other canonical order would
+reintroduce the same bug in a new set of cases, and because it makes the fix free: every checkpoint
+that verifies today has keys already in that order.
+
+**1b is not finished with 1-10.** What is left is 1-11 above.
 
 Item 1-19 — the trajectory payload default, #199 — is finished and is gone from this table, on
 the terms 1a's items left: what shipped is in `CHANGELOG.md`, and the number is not reused. It

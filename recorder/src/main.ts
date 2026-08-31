@@ -18,22 +18,32 @@ import { builtinHarnesses, DEFAULT_HARNESS, resolveReader } from "./readers/inde
 import { Recorder } from "./recorder.js";
 import { Spool } from "./spool.js";
 import { Shipper } from "./shipper.js";
-import { listSessions, newSessionMeta, writeSessionMeta } from "./session.js";
+import { listSessions, newSessionMeta, producerAlive, writeSessionMeta, type SessionMeta } from "./session.js";
+import { Lifecycle, DEFAULT_IDLE_MS, type Outcome } from "./lifecycle.js";
+import { headIntentTrailer, headSha } from "./git.js";
 import { tailFile } from "./tail.js";
 
 function usage(): never {
   console.error(`usage: adp-recorder <command>
 
   tail  --repo <owner/name> --file <transcript.jsonl> [--from-start]
-        [--harness <name>] [--reader <module>] [--intent <uuid>] [--run <uuid>]
+        [--harness <name>] [--reader <module>] [--intent <uuid|#n>] [--run <uuid>]
+        [--dir <path>] [--idle-ms <n>] [--continue] [--resume-from <session-id>]
 
   wrap  --repo <owner/name> [--harness <name>] [--reader <module>]
-        [--intent <uuid>] [--run <uuid>] -- <command> [args...]
+        [--intent <uuid|#n>] [--run <uuid>] [--dir <path>] [--idle-ms <n>]
+        [--continue] [--resume-from <session-id>] -- <command> [args...]
 
   flush [--repo <owner/name>]
 
 Harnesses with a reader built in: ${builtinHarnesses().join(", ")} (default ${DEFAULT_HARNESS}).
 --reader loads your own; it exports createReader() returning { read, end }.
+
+The session lifecycle needs nothing typed. --dir is the checkout being worked in
+(default: the working directory); the intent comes from HEAD's ADP-Intent trailer
+when --intent is absent; checkpoints happen at boundaries; a clean exit closes the
+session and anything else suspends it. --continue picks up where this machine's
+last suspended session in the repository left off, across harnesses.
 
 Environment: ADP_SERVER_URL, ADP_TOKEN, and optionally ADP_RECORDER_SPOOL.`);
   process.exit(2);
@@ -78,18 +88,67 @@ function splitRepo(value: unknown): { owner: string; repo: string } {
 }
 
 /** One line of status, so a recorder that is stuck says so rather than looking busy. */
-function announce(report: { state: string; delivered: number; pending: number; reason?: string }): void {
+function announce(report: {
+  state: string;
+  delivered: number;
+  pending: number;
+  reason?: string;
+  notes?: string[];
+}): void {
   const detail = report.reason ? ` — ${report.reason}` : "";
   console.error(`adp-recorder: ${report.state} (delivered ${report.delivered}, pending ${report.pending})${detail}`);
+  for (const note of report.notes ?? []) console.error(`adp-recorder: ${note}`);
+}
+
+/**
+ * Which session, if any, this one continues.
+ *
+ * Two ways, and neither asks the user to know a UUID:
+ *
+ * **The harness is resuming.** `claude --resume <id>` and `codex resume <id>`
+ * both re-emit the id they were given, so a stream whose harness session id
+ * this spool has recorded before *is* a resume — and ADP learns the lineage
+ * without anybody calling `resume` by hand, which is the whole point of #151.
+ * The previous spool must be finished (`endedAt`), or this is a second
+ * recorder attached to a session someone is still writing.
+ *
+ * **`--continue`.** The cross-harness case, which no stream can signal because
+ * the other harness has never heard of this one's ids. It picks the last
+ * session this spool suspended in this repository, whichever harness recorded
+ * it. That is one flag, and what it saves is the part that would otherwise be
+ * assembled by hand: finding the session, choosing its checkpoint, and linking
+ * the lineage.
+ */
+function findResumeTarget(
+  sessions: SessionMeta[],
+  self: { owner: string; repo: string; harness: string; localId: string },
+  input: { harnessSessionId?: string; continueLast?: boolean },
+): SessionMeta | null {
+  const here = sessions.filter(
+    (m) => m.owner === self.owner && m.repo === self.repo && m.localId !== self.localId && m.sessionId !== null,
+  );
+  if (input.harnessSessionId) {
+    const sameHarnessSession = here.filter(
+      (m) => m.harness === self.harness && m.harnessSessionId === input.harnessSessionId && m.endedAt,
+    );
+    const latest = sameHarnessSession[sameHarnessSession.length - 1];
+    if (latest) return latest;
+  }
+  if (input.continueLast) {
+    const suspended = here.filter((m) => m.endedAt && m.outcome === "suspended");
+    return suspended[suspended.length - 1] ?? null;
+  }
+  return null;
 }
 
 async function runSession(
   args: Args,
-  lines: (onLine: (line: string) => void, stopped: Promise<void>) => Promise<void>,
+  lines: (onLine: (line: string) => void, stopped: Promise<void>) => Promise<Outcome>,
 ): Promise<void> {
   const config = loadConfig();
   const { owner, repo } = splitRepo(args.flags.repo);
   const harness = typeof args.flags.harness === "string" ? args.flags.harness : DEFAULT_HARNESS;
+  const dir = typeof args.flags.dir === "string" ? args.flags.dir : process.cwd();
 
   // Resolved before the session exists, and fatal when it cannot be. A reader
   // chosen *after* `POST /sessions` would leave an empty session behind on
@@ -107,23 +166,59 @@ async function runSession(
     process.exit(2);
   }
 
+  const client = new TrajectoryClient(config.ADP_SERVER_URL, config.ADP_TOKEN);
+
+  // **The intent is derivable, so nobody should be typing it.** The commit
+  // trailer #142 established already names it, and a session that starts
+  // against a checkout whose HEAD says which intent the work answers should
+  // not also require the UUID on a command line. `--intent` still wins where
+  // one is given, and both forms the trailer allows — a UUID or an issue
+  // reference — are accepted here, because making the user learn which of the
+  // two the session route takes is the same defect one layer down.
+  const intentFlag = typeof args.flags.intent === "string" ? args.flags.intent : headIntentTrailer(dir);
+  const intentId = intentFlag ? ((await client.resolveIntent(owner, repo, intentFlag)) ?? undefined) : undefined;
+  if (intentFlag && !intentId) {
+    console.error(`adp-recorder: could not resolve intent '${intentFlag}' — recording without one`);
+  }
+
   const meta = newSessionMeta({
     dir: config.ADP_RECORDER_SPOOL,
     owner,
     repo,
     harness,
-    intentId: typeof args.flags.intent === "string" ? args.flags.intent : undefined,
+    intentId,
     runId: typeof args.flags.run === "string" ? args.flags.run : undefined,
   });
 
+  // Every spool this directory already holds, read once and before this
+  // session's own sidecar can appear in the list a second time.
+  const previous = listSessions(config.ADP_RECORDER_SPOOL);
+  const explicitResume = typeof args.flags["resume-from"] === "string" ? args.flags["resume-from"] : undefined;
+  const resumeTarget =
+    explicitResume ??
+    findResumeTarget(previous, { owner, repo, harness, localId: meta.localId }, {
+      continueLast: args.flags.continue === true,
+    })?.sessionId ??
+    undefined;
+
+  const lifecycle = new Lifecycle({
+    dir,
+    idleMs: typeof args.flags["idle-ms"] === "string" ? Number(args.flags["idle-ms"]) : DEFAULT_IDLE_MS,
+  });
+  // The commit the session starts at is not a boundary — the harness has not
+  // done anything yet. Seeding it is what makes the *next* commit one.
+  lifecycle.startedAt(headSha(dir));
+
   const recorder = new Recorder(
     {
-      client: new TrajectoryClient(config.ADP_SERVER_URL, config.ADP_TOKEN),
+      client,
       spoolDir: config.ADP_RECORDER_SPOOL,
       meta,
       producerId: config.ADP_RECORDER_ID,
       batchSize: config.ADP_RECORDER_BATCH_SIZE,
       maxSpoolBytes: config.ADP_RECORDER_MAX_SPOOL_BYTES,
+      lifecycle,
+      resumeFromSessionId: resumeTarget,
     },
     reader,
   );
@@ -158,10 +253,10 @@ async function runSession(
     process.on(signal, () => requestStop());
   }
 
-  await lines((line) => recorder.record(line), stopped);
+  const outcome = await lines((line) => recorder.record(line), stopped);
 
   clearInterval(timer);
-  const report = await recorder.close();
+  const report = await recorder.close(outcome);
   announce(report);
   if (!recorder.drained()) {
     console.error(
@@ -185,6 +280,14 @@ async function commandTail(args: Args): Promise<void> {
     // poll and the signal are recorded rather than left in the file.
     poll();
     stop();
+    // **`tail` always suspends, and that is honesty rather than pessimism.**
+    // Nothing here can know the session finished: the transcript may still be
+    // written to after this process stops watching it, and someone pressing ^C
+    // on a follower is saying they are done watching, not that the agent is
+    // done working. `suspended` is the state that says exactly that, and it is
+    // resumable — where `closed` would be a claim this command is not in a
+    // position to make.
+    return "suspended";
   });
 }
 
@@ -203,9 +306,57 @@ async function commandWrap(args: Args): Promise<void> {
     // Either the child finishes on its own, or a signal asks us to stop — in
     // which case the child has had that signal too, being in the same process
     // group, and closing is what we are waiting for either way.
-    await Promise.race([new Promise<void>((resolve) => child.on("close", resolve)), stopped]);
+    const exit = await Promise.race([
+      new Promise<{ code: number | null; signal: NodeJS.Signals | null } | null>((resolve) =>
+        child.on("close", (code, signal) => resolve({ code, signal })),
+      ),
+      stopped.then(() => null),
+    ]);
     reader.close();
+    // **`wrap` is the command that can tell, which is why it exists.** The
+    // harness ran to completion and said it succeeded, or it did not — exit 0
+    // closes the session, and a non-zero code, a signal, or our own
+    // interruption before the child finished all suspend it. Those are
+    // different facts about the work, and until now the schema could hold the
+    // difference while nothing produced it.
+    return exit?.code === 0 ? "closed" : "suspended";
   });
+}
+
+/**
+ * Tell ADP how a session ended, when the recorder that knew could not.
+ *
+ * The three guards are each a way of getting this wrong:
+ *
+ *   - **no `endedAt`** — the recorder never got to the end. It may be running.
+ *   - **`producerAlive`** — it *is* running, on this machine, right now.
+ *     Ending its session would turn a live recording into a stream of 409s.
+ *   - **already `terminated`** — said once is enough, and `flush` is expected
+ *     to be run repeatedly.
+ *
+ * The outcome itself is never decided here. It was written into the sidecar
+ * when the session opened (`suspended`) and upgraded only by a clean exit, so
+ * by the time `flush` reads it the fact is already settled — which is the only
+ * way a recorder that was killed outright can still report what happened to it.
+ */
+async function terminateIfOwed(
+  client: TrajectoryClient,
+  spoolDir: string,
+  meta: SessionMeta,
+): Promise<SessionMeta> {
+  if (meta.sessionId === null || meta.terminated || !meta.endedAt) return meta;
+  if (producerAlive(meta)) return meta;
+
+  const outcome: Outcome = meta.outcome ?? "suspended";
+  const ended = await client.endSession(meta.owner, meta.repo, meta.sessionId, outcome);
+  if (!ended.ok) {
+    console.error(`adp-recorder: ${meta.sessionId}: could not mark ${outcome} — ${ended.message}`);
+    return meta;
+  }
+  console.error(`adp-recorder: ${meta.owner}/${meta.repo} ${meta.sessionId}: marked ${outcome}`);
+  const updated = { ...meta, terminated: true };
+  writeSessionMeta(spoolDir, updated);
+  return updated;
 }
 
 /**
@@ -231,6 +382,10 @@ async function commandFlush(args: Args): Promise<void> {
     if (only && (meta.owner !== only.owner || meta.repo !== only.repo)) continue;
     const spool = new Spool({ dir: config.ADP_RECORDER_SPOOL, sessionId: meta.localId });
     if (spool.drained()) {
+      // Drained, but possibly not *finished*: a recorder that died between
+      // delivering its last batch and telling ADP how the session ended leaves
+      // exactly this. Ending it is the other half of what `flush` is for.
+      meta = await terminateIfOwed(client, config.ADP_RECORDER_SPOOL, meta);
       spool.close();
       continue;
     }
@@ -262,6 +417,10 @@ async function commandFlush(args: Args): Promise<void> {
       batchSize: config.ADP_RECORDER_BATCH_SIZE,
     }).drain();
     console.error(`adp-recorder: ${meta.owner}/${meta.repo} ${meta.sessionId}: ${report.state}`);
+    // Only once everything is delivered. A closed session refuses appends, so
+    // ending one over an undrained spool would make the rest of the recording
+    // permanently undeliverable — the tidying-up would destroy the tail.
+    if (report.state === "idle") meta = await terminateIfOwed(client, config.ADP_RECORDER_SPOOL, meta);
     announce(report);
     if (report.state !== "idle") failures += 1;
     spool.close();
