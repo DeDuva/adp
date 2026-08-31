@@ -70,10 +70,8 @@ than only the command.
 
 Exit criterion: a developer connects a harness, works an ordinary session, and finds the whole
 trajectory in ADP having called no ADP API — at an agent cost indistinguishable from a session
-with ADP absent.
-
-| # | Item | Tracking | State |
-|---|---|---|---|
+with ADP absent. **Release 1b is complete**, and its table is gone with it, on the terms 1a and 1d
+set: this file records what is left, and what shipped is in `CHANGELOG.md`.
 
 Item 1-7 — `adp-recorder`, #149 — is finished and is gone from this table. It landed as
 three changes, because a Size-L flagship is not reviewable at once: the delivery guarantees
