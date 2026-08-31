@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { skipWithoutDb } from "./require-db.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { appendFileSync, mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -116,6 +116,25 @@ describe.skipIf(skipWithoutDb)("#149: adp-recorder against a live ADP", () => {
   const result = (id: string, output: string) =>
     JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content: output }] } });
 
+  // The same session in the other harness's stream. Shapes taken from Codex's
+  // own `codex-rs/exec/src/exec_events.rs`, which is the schema `codex exec
+  // --json` serialises.
+  const cxThread = () => JSON.stringify({ type: "thread.started", thread_id: "thread-1" });
+  const cxSay = (text: string) =>
+    JSON.stringify({ type: "item.completed", item: { id: `m-${text.length}`, type: "agent_message", text } });
+  const cxRun = (id: string, command: string) =>
+    JSON.stringify({ type: "item.started", item: { id, type: "command_execution", command, status: "in_progress" } });
+  const cxRan = (id: string, output: string) =>
+    JSON.stringify({
+      type: "item.completed",
+      item: { id, type: "command_execution", aggregated_output: output, exit_code: 0, status: "completed" },
+    });
+  const cxTurn = () =>
+    JSON.stringify({
+      type: "turn.completed",
+      usage: { input_tokens: 900, cached_input_tokens: 0, output_tokens: 40, reasoning_output_tokens: 0 },
+    });
+
   beforeAll(async () => {
     // Built here rather than relied on: `make test-all` runs the server suite
     // before `make recorder`, so a dist from a previous run — or none at all —
@@ -165,6 +184,11 @@ describe.skipIf(skipWithoutDb)("#149: adp-recorder against a live ADP", () => {
     await rm(spoolDir, { recursive: true, force: true });
     await rm(transcripts, { recursive: true, force: true });
   });
+
+  /** What the spool directory holds, for asserting that a refusal left nothing behind. */
+  function listSpooled(): string[] {
+    return readdirSync(spoolDir).sort();
+  }
 
   /** Open a run so the trajectory has something to verify against. */
   async function openRun(): Promise<{ runId: string; intentId: string }> {
@@ -329,4 +353,65 @@ describe.skipIf(skipWithoutDb)("#149: adp-recorder against a live ADP", () => {
     const sessions = verify.body.sessions as { event_count: number }[];
     expect(sessions[0]!.event_count).toBe(3);
   }, 180_000);
+
+  // #150's exit criterion, sharing #149's fixture because it is the same
+  // recorder against the same routes: two harnesses record end to end with the
+  // user writing nothing. The cases above are the first harness; these are the
+  // second, driven through the same CLI with one flag changed.
+  describe("#150: the second harness, and the interface that makes it one", () => {
+    it("records a second harness end to end, through the same CLI", async () => {
+      const { runId } = await openRun();
+      const file = path.join(transcripts, "codex.jsonl");
+      writeFileSync(
+        file,
+        [cxThread(), cxSay("looking at the repo"), cxRun("i1", "npm test"), cxRan("i1", "4 passing"), cxTurn()].join(
+          "\n",
+        ) + "\n",
+      );
+
+      await recorder([
+        ...["wrap", "--repo", `${owner}/${repoName}`, "--run", runId, "--harness", "codex"],
+        ...["--", "cat", file],
+      ]);
+
+      const verify = await api(`/api/adp/repos/${owner}/${repoName}/runs/${runId}/verify`);
+      expect(verify.body.ok).toBe(true);
+      expect(verify.body.chains_ok).toBe(true);
+      expect(verify.body.emitters_ok).toBe(true);
+
+      const sessions = verify.body.sessions as { session_id: string; event_count: number }[];
+      expect(sessions).toHaveLength(1);
+      // Four, not five: the command's `item.started` and `item.completed` are
+      // one tool call, exactly as the claude-code case counts its pair once.
+      expect(sessions[0]!.event_count).toBe(4);
+
+      const events = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessions[0]!.session_id}/events`);
+      const kinds = (events.body.events as { kind: string; type: string }[]).map((e) => `${e.kind}:${e.type}`);
+      expect(kinds).toEqual([
+        "custom:codex.thread_started",
+        "message:assistant",
+        "tool_call:shell",
+        "model_call:turn",
+      ]);
+
+      // Stored verbatim, and the server never branched on it to get here —
+      // which is the invariant the whole readers-in-a-client design protects.
+      const session = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessions[0]!.session_id}`);
+      expect(session.body.harness).toBe("codex");
+    }, 120_000);
+
+    it("refuses a harness it has no reader for, before creating a session", async () => {
+      // Defaulting instead would record the stream through the wrong parser: a
+      // trajectory of `custom` events that looks like a successful recording and
+      // is worthless, discovered days later from the record being relied on.
+      const before = listSpooled();
+      await expect(
+        recorder(["wrap", "--repo", `${owner}/${repoName}`, "--harness", "aider", "--", "true"]),
+      ).rejects.toMatchObject({ code: 2, stderr: expect.stringContaining("no reader for harness 'aider'") });
+      // And nothing was left behind: the reader is resolved before the spool's
+      // sidecar is written, so a typo does not leave a spool for `flush` to
+      // find forever.
+      expect(listSpooled()).toEqual(before);
+    }, 120_000);
+  });
 });

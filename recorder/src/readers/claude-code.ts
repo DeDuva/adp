@@ -26,6 +26,7 @@
 // invocation time — loses the *status of every call, always*, which is a worse
 // record every day in exchange for a better one on the day you are killed.
 import type { EventKind, EventStatus, TrajectoryEvent } from "../events.js";
+import type { SessionFacts } from "./index.js";
 
 /** One line of the harness's stream, parsed. Deliberately loose: this is someone else's format. */
 interface StreamLine {
@@ -62,11 +63,10 @@ interface ContentBlock {
   is_error?: boolean;
 }
 
-/** What the reader learned about the session itself, as opposed to what happened in it. */
-export interface SessionFacts {
-  harnessSessionId?: string;
-  model?: string;
-}
+// One definition of the session facts, in the contract file, rather than one
+// per reader: two readers agreeing by coincidence is how a field acquires two
+// meanings.
+export type { SessionFacts };
 
 interface PendingCall {
   name: string;

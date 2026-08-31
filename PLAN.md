@@ -74,7 +74,6 @@ with ADP absent.
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 1-9 | Harness readers, two to start, and named in the README | #150 | not started. Translation lives in the recorder, so the server keeps storing `harness` as a string it never branches on |
 | 1-10 | Session lifecycle driven by harness signals | #151 | not started. What turns 2-3 into a demonstration rather than a script that calls two endpoints |
 | 1-11 | `adp connect <harness>` | #154 | not started. Proves itself with a round trip rather than reporting success on having written files |
 
@@ -88,8 +87,26 @@ $0.0752/trial with the recorder off against $0.0730 with it on — paired mean d
 −$0.0022, 95% interval [−$0.0073, +$0.0029] — and 20/20 of the recorded trajectories
 verified, so it is a measurement of the recorder rather than of its absence.
 
-**1b is not finished with 1-7.** What is left is harness *breadth* and the lifecycle:
-1-9, 1-10 and 1-11 above. The recorder reads one harness's stream today.
+Item 1-9 — harness readers, two to start, #150 — is finished and is gone from this table on
+the same terms. The recorder reads two harnesses now: Claude Code's `stream-json` and Codex's
+`codex exec --json`, chosen for having a stable machine-readable event stream rather than for
+being popular, and both named in the README along with what a harness *without* a reader still
+gets — which is everything that rides on `git` and the commit trailer, and none of the
+turn-level detail.
+
+**The second reader was the one that made the interface real**, which is the argument for
+having done it before 1-10 rather than after. One reader is an implementation detail of the
+recorder; two put the contract in a file — `read`, `end`, `sessionFacts` — that a third-party
+reader is loaded against with `--reader`, no patch to this package. And the two disagree in a
+way one could not have shown: Claude Code assembles one `tool_call` from a pair of lines, Codex
+collapses three lines carrying one item id, and both arrive as one event with a status because
+that is what the fixed vocabulary is for. `harness` is still a string the server never branches
+on. What did change is the boundary the readers cross: a reader emitting a `kind` outside the
+vocabulary is a 422 at ingest and a 422 quarantines the session, so **one bad event from a
+reader nobody here wrote would have cost the whole recording**. It is relabelled at the spool
+now, and the record says a reader did it.
+
+**1b is not finished with 1-9.** What is left is the lifecycle: 1-10 and 1-11 above.
 
 Item 1-19 — the trajectory payload default, #199 — is finished and is gone from this table, on
 the terms 1a's items left: what shipped is in `CHANGELOG.md`, and the number is not reused. It

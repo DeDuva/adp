@@ -16,6 +16,60 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**A second harness, and the interface that makes it one (#150).** `adp-recorder`
+reads Codex now — `codex exec --json` — alongside Claude Code's `stream-json`.
+Two, chosen for having a stable machine-readable event stream rather than for
+being popular, which is the criterion that makes a reader something other than
+a scraping project. `--harness codex` is the whole of the difference at the
+command line.
+
+**One reader is an implementation detail; two put the contract in a file.** A
+reader is `read(line)`, `end()` and an optional `sessionFacts()`, documented in
+`recorder/src/readers/index.ts`, and a reader for a harness ADP has never heard
+of is loaded with `--reader ./my-reader.js` — nothing in the package changes to
+run it. The module and what it returns are both checked at startup, because a
+reader validated late fails as a session that recorded nothing, which is the
+outcome the recorder exists to prevent.
+
+**The two harnesses disagree in a way one of them could not have shown.** Claude
+Code assembles a `tool_call` from a pair of lines — the invocation and its
+result. Codex reports an item's life as `item.started`, any number of
+`item.updated`, and `item.completed`, all under one id, and the reader emits on
+the completion alone: emitting on the first *terminal* status instead would
+double every command that reports `failed` and then completes, silently, on the
+harness's schedule. That same rule disposes without a special case of the thing
+Claude Code needed one for — Codex's running to-do list is re-emitted on every
+change, like `thinking_tokens`, and collapses to the version that survived.
+A declined command becomes `rejected`, the same status a denied Claude Code tool
+call gets and for the same reason. Codex's shell tool records as `shell` rather
+than as the command line it ran: whether that is the same tool as Claude Code's
+`Bash` is a question for whoever reads the corpus, and answering it here would
+mean the recorder inventing a cross-harness taxonomy and writing its guesses
+into the permanent record. Codex reports no money, so `cost_micro_usd` stays
+unset — absent and zero are different, and a corpus summing them would be wrong
+in the direction that flatters us.
+
+**An out-of-vocabulary event no longer costs the session.** `kind` is a stored
+enum the server does branch on, an unknown one is a 422 at ingest, and a 422
+quarantines the shipper — deliberately, since a discarded rejected batch would
+manufacture the exact gap the spool prevents. That is an acceptable price for a
+bug in this repository and an unacceptable one for a typo in a reader nobody
+here wrote, so every event a reader produces is checked before it reaches the
+spool. A bad one is not dropped and not silently repaired: it is relabelled
+`custom`, the rejected values are named in `type`, and the payload and counts
+arrive intact. The record says a reader emitted something outside the
+vocabulary, which is the only way anyone finds out.
+
+**`harness` is still a string the server never branches on**, and readers are
+still clients — the same line `adapters/` holds for scanners. An unknown
+`--harness` with no `--reader` is refused rather than defaulted, before the
+session is created: recording one harness's stream through another's parser
+succeeds, produces a trajectory of `custom` events, looks like a recording, and
+is worthless — and it is found out days later, from the record being relied on.
+The README now says which harnesses are covered and what an uncovered one still
+gets, which is everything riding on `git` and the commit trailer and none of the
+turn-level detail.
+
 **Recording costs the agent nothing, measured rather than argued (#149).** The
 last of three, and the one the design's central claim rests on. Arm 5 is paired:
 the same task, model, tool boundary and ADP-via-`gh` fixture arm 2 uses, run

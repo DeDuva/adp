@@ -204,7 +204,7 @@ find the same text rather than a second, drifting copy.
 | `cli/` | the `adp` CLI (no database needed to test) |
 | `adapters/` | scanner-as-gate adapters (osv-scanner, wizcli) |
 | `runner/` | the gate runner: polls `/api/adp/gate-jobs/claim`, executes in an isolated container (network-deny, no host mounts, no ambient secrets, resource caps), reports via `/complete`. A pure HTTP client like `cli/` — no `server/` import, no DB or signing-key credential |
-| `recorder/` | `adp-recorder`: the out-of-band trajectory producer (#149). Durable spool, batching shipper, idempotent replay. A pure HTTP client on `runner/`'s terms — no `server/` import, no DB or signing-key credential, and only `repo:write`, so it runs as the developer rather than as infrastructure |
+| `recorder/` | `adp-recorder`: the out-of-band trajectory producer (#149). Durable spool, batching shipper, idempotent replay, and one reader per harness under `src/readers/` (#150) — translation lives here so that `harness` stays a string the server never branches on. A pure HTTP client on `runner/`'s terms — no `server/` import, no DB or signing-key credential, and only `repo:write`, so it runs as the developer rather than as infrastructure |
 | `bench/` | benchmark arms, runs, and the generated report |
 | `dc-runtime/` | the published site's client runtime. Builds `docs/html/support.js` and the React bundles beside it — all committed, because the site itself has no build step. `dc-runtime/test/` drives every published page in a real browser (`make site`) |
 | `spec/` | the published contract: `spec/openapi.yaml`, `spec/schemas/`, `spec/graphql/github.graphql` |
