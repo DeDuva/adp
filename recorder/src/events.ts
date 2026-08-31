@@ -58,3 +58,42 @@ export interface SpooledEvent extends TrajectoryEvent {
   client_event_id: string;
   producer_seq: number;
 }
+
+/**
+ * Keep a reader's output inside the vocabulary, whoever wrote the reader.
+ *
+ * `kind` is a stored enum the server *does* branch on, and an event outside it
+ * is a 422 at ingest. A 422 is `refused` to the shipper, and refused
+ * quarantines the session — deliberately, because a rejected batch that got
+ * discarded to keep moving would manufacture exactly the gap the spool exists
+ * to prevent. The consequence is that **one malformed event costs the whole
+ * session**, and that is an acceptable price for a bug in this repository and
+ * an unacceptable one for a typo in a third-party reader (`readers/index.ts`).
+ *
+ * So the boundary is checked here rather than trusted. A bad event is not
+ * dropped and not silently repaired: it is relabelled `custom`, its rejected
+ * values are named in `type` where they cost no payload budget, and everything
+ * else about it — the payload, the token counts, the timing — arrives intact.
+ * The record then says a reader emitted something outside the vocabulary,
+ * which is a fact worth having and the only way anyone finds out.
+ */
+export function normalizeEvent(event: TrajectoryEvent): TrajectoryEvent {
+  const kindOk = (EVENT_KINDS as readonly string[]).includes(event.kind);
+  const statusOk = event.status === undefined || (EVENT_STATUSES as readonly string[]).includes(event.status);
+  if (kindOk && statusOk) return event;
+
+  // Truncated, because `type` is unbounded text on the wire and a reader
+  // emitting a kind built from user input would otherwise write it all down.
+  const show = (value: unknown) => String(value).slice(0, 64);
+  const rejected = [
+    ...(kindOk ? [] : [`kind=${show(event.kind)}`]),
+    ...(statusOk ? [] : [`status=${show(event.status)}`]),
+  ].join(",");
+
+  return {
+    ...event,
+    kind: kindOk ? event.kind : "custom",
+    status: statusOk ? event.status : undefined,
+    type: `recorder.invalid_event(${rejected})${event.type ? ` ${event.type}` : ""}`,
+  };
+}

@@ -14,7 +14,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { TrajectoryClient } from "./client.js";
 import { loadConfig } from "./config.js";
-import { ClaudeCodeReader } from "./readers/claude-code.js";
+import { builtinHarnesses, DEFAULT_HARNESS, resolveReader } from "./readers/index.js";
 import { Recorder } from "./recorder.js";
 import { Spool } from "./spool.js";
 import { Shipper } from "./shipper.js";
@@ -25,12 +25,15 @@ function usage(): never {
   console.error(`usage: adp-recorder <command>
 
   tail  --repo <owner/name> --file <transcript.jsonl> [--from-start]
-        [--harness <name>] [--intent <uuid>] [--run <uuid>]
+        [--harness <name>] [--reader <module>] [--intent <uuid>] [--run <uuid>]
 
-  wrap  --repo <owner/name> [--harness <name>] [--intent <uuid>] [--run <uuid>]
-        -- <command> [args...]
+  wrap  --repo <owner/name> [--harness <name>] [--reader <module>]
+        [--intent <uuid>] [--run <uuid>] -- <command> [args...]
 
   flush [--repo <owner/name>]
+
+Harnesses with a reader built in: ${builtinHarnesses().join(", ")} (default ${DEFAULT_HARNESS}).
+--reader loads your own; it exports createReader() returning { read, end }.
 
 Environment: ADP_SERVER_URL, ADP_TOKEN, and optionally ADP_RECORDER_SPOOL.`);
   process.exit(2);
@@ -86,7 +89,23 @@ async function runSession(
 ): Promise<void> {
   const config = loadConfig();
   const { owner, repo } = splitRepo(args.flags.repo);
-  const harness = typeof args.flags.harness === "string" ? args.flags.harness : "claude-code";
+  const harness = typeof args.flags.harness === "string" ? args.flags.harness : DEFAULT_HARNESS;
+
+  // Resolved before the session exists, and fatal when it cannot be. A reader
+  // chosen *after* `POST /sessions` would leave an empty session behind on
+  // every typo, and an unknown harness is refused rather than defaulted — see
+  // `resolveReader`, where the reason is that recording a codex stream through
+  // the claude-code parser succeeds, looks like a recording, and is worthless.
+  let reader;
+  try {
+    reader = await resolveReader({
+      harness,
+      module: typeof args.flags.reader === "string" ? args.flags.reader : undefined,
+    });
+  } catch (err) {
+    console.error(`adp-recorder: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(2);
+  }
 
   const meta = newSessionMeta({
     dir: config.ADP_RECORDER_SPOOL,
@@ -106,7 +125,7 @@ async function runSession(
       batchSize: config.ADP_RECORDER_BATCH_SIZE,
       maxSpoolBytes: config.ADP_RECORDER_MAX_SPOOL_BYTES,
     },
-    new ClaudeCodeReader(),
+    reader,
   );
 
   // Delivery on a timer, not per event. Batching is what keeps this cheap, and

@@ -370,6 +370,56 @@ node dist/index.js login --server https://adp.example.com --token <token>   # wr
 | `adp pr list --repo <owner>/<repo>` | `GET .../pulls` |
 | `adp pr merge --repo <owner>/<repo> --number <n> [--method merge\|squash\|rebase]` | `PUT .../pulls/{n}/merge` |
 
+### `adp-recorder`
+
+The trajectory producer. It records what an agent actually did — every message, model call and tool
+call, in order and hash-chained — by reading a stream the harness is *already* producing, from a
+separate process. Nothing runs inside the agent's context window, so recording costs the agent
+nothing: 20 paired trials put it at −$0.0022 per trial, 95% CI [−$0.0073, +$0.0029].
+
+Lives in `recorder/`, built like the CLI, and needs only `repo:write` — the scope a developer's own
+token already carries, so it runs as the developer rather than as infrastructure:
+
+```bash
+cd recorder && npm ci && npm run build
+export ADP_SERVER_URL=https://adp.example.com ADP_TOKEN=<token>
+
+# follow a transcript the harness is already writing — it needs no flag and no
+# knowledge that anything is watching
+node dist/main.js tail --repo <owner>/<repo> --file ~/.claude/projects/.../session.jsonl
+
+# or run the harness through it
+node dist/main.js wrap --repo <owner>/<repo> --harness codex -- codex exec --json "fix the flake"
+
+# and finish anything a previous recorder left undelivered
+node dist/main.js flush
+```
+
+**Which harnesses are covered.** A reader translates one harness's private event names into ADP's
+fixed vocabulary. Two ship, chosen for having a stable machine-readable event stream rather than for
+being the most popular:
+
+| `--harness` | Reads | Gets |
+|---|---|---|
+| `claude-code` (default) | `claude --output-format stream-json`, or the session transcript it writes | messages, model calls, tool calls with their outcomes, denied calls as `rejected`, per-session cost |
+| `codex` | `codex exec --json` | messages and reasoning, shell and `apply_patch` and MCP calls with their outcomes, declined calls as `rejected`, per-turn tokens (Codex reports no cost) |
+
+**And what an uncovered harness still gets, which is most of it.** Commit-level provenance, intent
+binding, gates, evidence bundles and land policy all ride on `git` and the commit trailer rather
+than on the harness, so they work from anything that can push. What is missing without a reader is
+turn-level detail — the trajectory itself, and the evals and checkpoints that hang off it.
+
+Two ways to close that gap. Write a reader: it is a module exporting `createReader()` returning an
+object with `read(line)` and `end()`, documented in
+[`recorder/src/readers/index.ts`](recorder/src/readers/index.ts), and it is loaded with
+`--reader ./my-reader.js` without this package changing. Or emit events directly to
+`POST /api/adp/repos/{owner}/{repo}/sessions/{id}/events`, which is what the recorder itself does.
+
+The server stores `harness` as a string it never branches on — translation is the recorder's job,
+which is what keeps the protocol harness-neutral. An unknown `--harness` with no `--reader` is
+refused rather than defaulted, because recording one harness's stream through another's parser
+succeeds, looks like a recording, and is worthless.
+
 ### Web UI
 
 A read-only React SPA served at `/ui/*` by the same server. It shows issues and pull requests with

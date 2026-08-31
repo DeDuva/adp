@@ -13,10 +13,16 @@
 // So the only thing on the agent's path is a pipe. Everything expensive —
 // batching, retry, the session lifecycle — happens on this side of it.
 import { TrajectoryClient } from "./client.js";
-import type { TrajectoryEvent } from "./events.js";
+import { normalizeEvent, type TrajectoryEvent } from "./events.js";
 import { Shipper, type ShipReport } from "./shipper.js";
 import { Spool } from "./spool.js";
 import { writeSessionMeta, type SessionMeta } from "./session.js";
+// The reader contract lives with the readers, because it is the thing a
+// third-party reader is written against — see `readers/index.ts`. It is
+// re-exported here so that the older import path keeps working.
+import type { Reader } from "./readers/index.js";
+
+export type { Reader };
 
 export interface RecorderOptions {
   client: TrajectoryClient;
@@ -25,12 +31,6 @@ export interface RecorderOptions {
   producerId: string;
   batchSize?: number;
   maxSpoolBytes?: number;
-}
-
-export interface Reader {
-  read(line: string): TrajectoryEvent[];
-  end(): TrajectoryEvent[];
-  sessionFacts?(): { harnessSessionId?: string; model?: string };
 }
 
 export class Recorder {
@@ -71,7 +71,12 @@ export class Recorder {
    * resumes. Putting it after would date the gap wrongly by one event, which
    * is a small lie in the one record whose whole value is that it is not.
    */
-  private appendEvent(event: TrajectoryEvent): void {
+  private appendEvent(raw: TrajectoryEvent): void {
+    // Every reader's output crosses this line, including one this repository
+    // did not write. See `normalizeEvent`: an out-of-vocabulary event is a
+    // 422, a 422 quarantines the session, so the check has to happen before
+    // the spool rather than at ingest.
+    const event = normalizeEvent(raw);
     if (this.overflowed > 0) {
       const marker = this.spool.append(Spool.overflowMarker(this.overflowed, this.overflowSince ?? "unknown"));
       if (!marker.accepted) {
