@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { skipWithoutDb } from "./require-db.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { appendFileSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -413,5 +413,155 @@ describe.skipIf(skipWithoutDb)("#149: adp-recorder against a live ADP", () => {
       // find forever.
       expect(listSpooled()).toEqual(before);
     }, 120_000);
+  });
+
+  // ── #151: the lifecycle nobody has to remember ─────────────────────────
+  //
+  // The three decisions — start, checkpoint, close — each used to need someone
+  // to make a call mid-task. These drive the CLI as a process, in a real
+  // checkout pushed to a real ADP, and assert the facts that were previously
+  // only available if an agent had been prompted well enough to produce them.
+  describe("#151: session lifecycle, driven by what the harness did", () => {
+    /** A checkout wired to this ADP, so a commit the recorder sees is one ADP can resolve. */
+    async function checkout(): Promise<string> {
+      const dir = await mkdtemp(path.join(tmpdir(), "adp-e2e-recorder-work-"));
+      const url = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/${repoName}.git`;
+      await execFileAsync("git", ["clone", "-q", url, dir]);
+      await execFileAsync("git", ["config", "user.email", "t@example.com"], { cwd: dir });
+      await execFileAsync("git", ["config", "user.name", "T"], { cwd: dir });
+      return dir;
+    }
+
+    async function commitAndPush(dir: string, message: string): Promise<string> {
+      writeFileSync(path.join(dir, `f-${Date.now()}.txt`), "work\n");
+      await execFileAsync("git", ["add", "-A"], { cwd: dir });
+      await execFileAsync("git", ["commit", "-q", "-m", message], { cwd: dir });
+      await execFileAsync("git", ["push", "-q", "origin", "HEAD"], { cwd: dir });
+      const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: dir });
+      return stdout.trim();
+    }
+
+    /** The ADP session id of the most recently started spool, read off its sidecar. */
+    function newestSpooledSessionId(): string {
+      const metas = readdirSync(spoolDir)
+        .filter((f) => f.endsWith(".meta.json"))
+        .map((f) => JSON.parse(readFileSync(path.join(spoolDir, f), "utf8")) as { sessionId?: string; startedAt: string })
+        .filter((m) => typeof m.sessionId === "string")
+        .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+      return metas[metas.length - 1]!.sessionId!;
+    }
+
+    async function sessionsOf(runId: string): Promise<{ session_id: string }[]> {
+      const verify = await api(`/api/adp/repos/${owner}/${repoName}/runs/${runId}/verify`);
+      return verify.body.sessions as { session_id: string }[];
+    }
+
+    it("suspends the session when the harness did not finish, and leaves a checkpoint to resume from", async () => {
+      // The done-when, exactly: killing it produces a suspended session with a
+      // usable checkpoint, not an open one. `false` is a harness that exits
+      // non-zero, which is what "did not finish" looks like from outside.
+      const work = await checkout();
+      const sha = await commitAndPush(work, "the work so far");
+      const { runId } = await openRun();
+
+      await recorder([
+        ...["wrap", "--repo", `${owner}/${repoName}`, "--run", runId, "--dir", work],
+        ...["--", "sh", "-c", `printf '%s\\n' '${say("half done").replace(/'/g, "'\\''")}'; exit 3`],
+      ]).catch(() => undefined);
+
+      const [session] = await sessionsOf(runId);
+      const got = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${session!.session_id}`);
+      expect(got.body.status).toBe("suspended");
+      const checkpoints = got.body.checkpoints as { git_sha: string; state: unknown }[];
+      expect(checkpoints.length).toBeGreaterThan(0);
+      expect(checkpoints[checkpoints.length - 1]!.git_sha).toBe(sha);
+
+      await rm(work, { recursive: true, force: true });
+    }, 180_000);
+
+    it("closes the session when the harness finished, with nobody calling close", async () => {
+      const work = await checkout();
+      await commitAndPush(work, "done");
+      const { runId } = await openRun();
+      const file = path.join(transcripts, "clean.jsonl");
+      writeFileSync(file, [init(), say("all done")].join("\n") + "\n");
+
+      await recorder([
+        ...["wrap", "--repo", `${owner}/${repoName}`, "--run", runId, "--dir", work],
+        ...["--", "cat", file],
+      ]);
+
+      const [session] = await sessionsOf(runId);
+      const got = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${session!.session_id}`);
+      expect(got.body.status).toBe("closed");
+      await rm(work, { recursive: true, force: true });
+    }, 180_000);
+
+    it("binds the session to the intent HEAD's trailer names, with no --intent", async () => {
+      // The phase rule: an input ADP can derive that a human is supplying is a
+      // defect. The trailer #142 established already says which intent the
+      // work answers, so the recorder reads it rather than being told.
+      //
+      // No run here, deliberately — a run would supply the intent itself, and
+      // the session would look identical whether or not the trailer worked. So
+      // the session is found through the recorder's own spool sidecar, which
+      // is a file read rather than an import: `recorder/` stays a package this
+      // suite runs and never links against.
+      const work = await checkout();
+      const issue = await api(`/api/v3/repos/${owner}/${repoName}/issues`, {
+        method: "POST",
+        body: JSON.stringify({ title: "answer me", body: "via the trailer" }),
+      });
+      const intentId = issue.body.intent_id as string;
+      const number = issue.body.number as number;
+      await commitAndPush(work, `Answer it\n\nADP-Intent: #${number}\n`);
+
+      const file = path.join(transcripts, "trailer.jsonl");
+      writeFileSync(file, [init(), say("bound")].join("\n") + "\n");
+      await recorder([...["wrap", "--repo", `${owner}/${repoName}`, "--dir", work], ...["--", "cat", file]]);
+
+      const sessionId = newestSpooledSessionId();
+      const got = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}`);
+      expect(got.body.intent_id).toBe(intentId);
+      await rm(work, { recursive: true, force: true });
+    }, 180_000);
+
+    it("continues a suspended session across harnesses, and the lineage is walkable", async () => {
+      // #151's third done-when, and what #160 needs in order to be a
+      // demonstration rather than a script: the chain was never assembled by
+      // hand. `--continue` names no session, no checkpoint and no link.
+      const work = await checkout();
+      await commitAndPush(work, "first half");
+      const { runId } = await openRun();
+
+      const first = path.join(transcripts, "harness-a.jsonl");
+      writeFileSync(first, [init(), say("first half")].join("\n") + "\n");
+      await recorder([
+        ...["wrap", "--repo", `${owner}/${repoName}`, "--run", runId, "--dir", work],
+        ...["--", "sh", "-c", `cat ${first}; exit 3`],
+      ]).catch(() => undefined);
+
+      const second = path.join(transcripts, "harness-b.jsonl");
+      writeFileSync(
+        second,
+        [
+          JSON.stringify({ type: "thread.started", thread_id: "t-1" }),
+          JSON.stringify({ type: "item.completed", item: { id: "m1", type: "agent_message", text: "second half" } }),
+        ].join("\n") + "\n",
+      );
+      await recorder([
+        ...["wrap", "--repo", `${owner}/${repoName}`, "--run", runId, "--dir", work],
+        ...["--harness", "codex", "--continue", "--", "cat", second],
+      ]);
+
+      const sessions = await sessionsOf(runId);
+      expect(sessions.length).toBe(2);
+      // Ask the newest session where it came from; the answer is a chain, not
+      // a field somebody filled in.
+      const latest = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessions[1]!.session_id}`);
+      const lineage = latest.body.lineage as { harness: string }[];
+      expect(lineage.map((s) => s.harness)).toEqual(["claude-code", "codex"]);
+      await rm(work, { recursive: true, force: true });
+    }, 240_000);
   });
 });

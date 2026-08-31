@@ -27,8 +27,47 @@ export interface SessionError {
 // claim about the git sha alone while the thing a harness actually resumes from
 // travelled unauthenticated. Hashing it keeps the statement small and keeps
 // arbitrarily large harness state out of the signed payload.
+/**
+ * Order an object's keys the way the column that will store it does.
+ *
+ * **`checkpoints.state` is `jsonb`, and `jsonb` does not keep key order** — it
+ * sorts by key length first and then bytewise, and hands back what it sorted.
+ * `hashState` was hashing `JSON.stringify` of whatever the caller passed in, so
+ * a checkpoint whose state happened to arrive in a different order than the
+ * column would store it signed a digest of one serialization and was read back
+ * as another. The signature verified; the digest check did not; and
+ * `resumeSession` refused with "state does not match its signed digest" —
+ * making the checkpoint permanently unresumable, at resume time, which is the
+ * worst possible place to find out.
+ *
+ * Nobody hit it while checkpoint state was written by hand, because a
+ * hand-written `{ cursor, note }` is short and often already in that order.
+ * #151 made the recorder write it automatically, with five keys in the order a
+ * human would list them, and it failed the first time it was tried.
+ *
+ * The sort is jsonb's own rule rather than a plain lexicographic one, and that
+ * is the point: any *other* canonical order would still differ from what comes
+ * back out of the column and would reintroduce exactly this bug in a new set of
+ * cases. Choosing this one also makes the fix free — a checkpoint whose digest
+ * verifies today has keys already in this order, so sorting them changes
+ * nothing for it, and the only checkpoints whose digest changes are the ones
+ * that were already unresumable.
+ *
+ * This is a canonical form for key *order*, not for JSON as a whole. `jsonb`
+ * also normalises numbers through `numeric`, so a state carrying `1e2` is
+ * stored as `100` and would still mismatch. Nothing writes one, and a full
+ * canonicalisation is a bigger promise than this digest needs.
+ */
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value === null || typeof value !== "object") return value;
+  const entries = Object.entries(value as Record<string, unknown>);
+  entries.sort(([a], [b]) => (a.length !== b.length ? a.length - b.length : (a < b ? -1 : a > b ? 1 : 0)));
+  return Object.fromEntries(entries.map(([k, v]) => [k, canonicalize(v)]));
+}
+
 export function hashState(state: unknown): string {
-  return createHash("sha256").update(JSON.stringify(state ?? null), "utf8").digest("hex");
+  return createHash("sha256").update(JSON.stringify(canonicalize(state ?? null)), "utf8").digest("hex");
 }
 
 export function checkpointStatement(
@@ -390,39 +429,76 @@ export async function resumeSession(
   };
 }
 
+/**
+ * End a session, and record *how* it ended.
+ *
+ * **`suspended` was a status the schema declared and nothing ever set** (#151).
+ * That mattered once something other than a human started ending sessions: a
+ * recorder whose terminal ends, or whose harness is killed, knows the session
+ * did not finish, and the only two states available were "closed" — which says
+ * it did — and "active", which says nothing ended at all. The issue's phrasing
+ * is exact: those are different facts, and an unclosed session is
+ * indistinguishable from an abandoned one.
+ *
+ * One entry point rather than a second route, because there is one decision
+ * here — how did this session end — and every guard, the operation record and
+ * the idempotency rule are the same for both answers. Two endpoints would let a
+ * caller ask for both.
+ *
+ * The transitions, and why:
+ *
+ *   active|resumed -> closed      the ordinary end
+ *   active|resumed -> suspended   it stopped without finishing; still resumable
+ *   suspended      -> closed      allowed: `adp-recorder flush` finishing a
+ *                                 spool the dead recorder could not deliver is
+ *                                 exactly this, and refusing would leave the
+ *                                 session forever describing an interruption
+ *                                 that was in fact recovered
+ *   suspended      -> suspended   idempotent
+ *   closed         -> closed      idempotent, as before
+ *   closed         -> suspended   **refused**. Closing is terminal, and quietly
+ *                                 ignoring the request would report a fact
+ *                                 recorded that was not
+ */
 export async function closeSession(
   db: Db,
   repo: { id: string; owner: string; name: string },
   sessionId: string,
   actorId: string,
+  status: "closed" | "suspended" = "closed",
 ): Promise<{ ok: true; session: SessionRow } | SessionError> {
   const [session] = await db
     .select()
     .from(sessions)
     .where(and(eq(sessions.id, sessionId), eq(sessions.repoId, repo.id)));
   if (!session) return { ok: false, status: 404, message: "session not found" };
-  if (session.status === "closed") return { ok: true, session };
+  if (session.status === status) return { ok: true, session };
+  if (session.status === "closed") {
+    return { ok: false, status: 409, message: "cannot suspend a closed session" };
+  }
 
-  const closed = await db.transaction(async (tx) => {
+  const ended = await db.transaction(async (tx) => {
     const [row] = await tx
       .update(sessions)
-      .set({ status: "closed", updatedAt: new Date() })
+      .set({ status, updatedAt: new Date() })
       .where(eq(sessions.id, sessionId))
       .returning();
 
     await recordOperation(tx, {
       repoId: repo.id,
       actorId,
-      verb: "session.close",
+      // Named for what happened rather than for the route that was called, so
+      // the operation log distinguishes the two without anyone reading `after`.
+      verb: status === "suspended" ? "session.suspend" : "session.close",
       target: `${repo.owner}/${repo.name}@session:${sessionId}`,
       before: { status: session.status },
-      after: { status: "closed" },
+      after: { status },
     });
 
     return row!;
   });
 
-  return { ok: true, session: closed };
+  return { ok: true, session: ended };
 }
 
 export async function listCheckpoints(db: Db, sessionId: string): Promise<CheckpointRow[]> {

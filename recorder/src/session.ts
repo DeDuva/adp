@@ -13,6 +13,7 @@
 // names. So recording begins immediately against a locally-generated handle,
 // and the server's id is written here when it arrives.
 import { randomUUID } from "node:crypto";
+import { hostname } from "node:os";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -31,6 +32,25 @@ export interface SessionMeta {
   startedAt: string;
   /** Set by `close`, so `flush` can tell an abandoned spool from a finished one. */
   endedAt?: string;
+
+  // ── The lifecycle (#151) ────────────────────────────────────────────────
+  //
+  // **`outcome` starts as `suspended` and is only ever upgraded**, which is the
+  // whole trick that makes an interrupted session say so. A recorder killed
+  // outright runs no shutdown code — there is nothing to write at the moment it
+  // dies — so the fact has to already be on disk before it is true, and the
+  // clean exit is the thing that has to announce itself. The inverse, writing
+  // `closed` at the end, means every hard kill leaves a session that claims to
+  // have finished.
+  /** How this session ended, or will be recorded as having ended. */
+  outcome?: "closed" | "suspended";
+  /** Whether ADP has been told. Separate from `outcome`, because being unable to say it does not change it. */
+  terminated?: boolean;
+  /** The session this one resumes, when the harness was resuming. */
+  resumedFromSessionId?: string;
+  /** The recorder that owns this spool, so `flush` does not end a session someone is still writing. */
+  pid?: number;
+  host?: string;
 }
 
 export function metaPath(dir: string, localId: string): string {
@@ -54,9 +74,38 @@ export function newSessionMeta(input: {
     intentId: input.intentId,
     runId: input.runId,
     startedAt: new Date().toISOString(),
+    // Suspended until something says otherwise — see the note on the field.
+    outcome: "suspended",
+    terminated: false,
+    pid: process.pid,
+    host: hostname(),
   };
   writeSessionMeta(input.dir, meta);
   return meta;
+}
+
+/**
+ * Is the recorder that opened this spool still running?
+ *
+ * `flush` ends sessions, and ending one someone is still appending to would
+ * turn their live recording into a stream of 409s. Signal 0 asks the kernel
+ * whether a pid exists without sending anything, which is the cheapest honest
+ * answer available — and it is only asked on the machine that wrote the spool,
+ * because a pid from another host means nothing here.
+ *
+ * Pid reuse can make this say "alive" about an unrelated process. The cost of
+ * that is a session left active until the next flush rather than a session
+ * ended under a live writer, which is the right way round.
+ */
+export function producerAlive(meta: SessionMeta): boolean {
+  if (meta.host !== hostname() || typeof meta.pid !== "number") return false;
+  if (meta.pid === process.pid) return false;
+  try {
+    process.kill(meta.pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

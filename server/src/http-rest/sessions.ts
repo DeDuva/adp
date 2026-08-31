@@ -34,6 +34,15 @@ import {
   type CheckpointRow,
 } from "../core/sessions.js";
 
+// How a session ended, which is a fact about the session and not only about the
+// request that ended it (#151). `suspended` is what a recorder reports when its
+// harness stopped without finishing — the schema has always had the status and
+// nothing set it, so every interrupted session read as either finished or
+// still running.
+const CloseBody = z.object({
+  status: z.enum(["closed", "suspended"]).default("closed"),
+});
+
 const StartSessionBody = z.object({
   // Free-form on purpose: ADP never branches on the value, which is what makes
   // the protocol harness-neutral rather than harness-aware. "claude-code",
@@ -333,12 +342,25 @@ export function registerSessionRoutes(
     { preHandler: requireScope("repo:write") },
     async (req, reply) => {
       const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
+      // Optional, and defaulting to the behaviour that existed before it: a
+      // caller written against a body-less close keeps working unchanged.
+      const parsed = CloseBody.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
+        return;
+      }
       const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
         return;
       }
-      const result = await closeSession(db, { id: repo.id, owner, name: repoName }, id, req.identity!.identityId);
+      const result = await closeSession(
+        db,
+        { id: repo.id, owner, name: repoName },
+        id,
+        req.identity!.identityId,
+        parsed.data.status,
+      );
       if (!result.ok) {
         reply.code(result.status).send({ message: result.message });
         return;

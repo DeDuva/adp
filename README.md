@@ -395,6 +395,22 @@ node dist/main.js wrap --repo <owner>/<repo> --harness codex -- codex exec --jso
 node dist/main.js flush
 ```
 
+**The session lifecycle needs nothing typed.** A session opens when the recorder attaches, bound to
+the intent HEAD's `ADP-Intent` trailer names; it checkpoints at boundaries — a commit, a handoff, a
+quiet stretch, the end — rather than on a timer, because a checkpoint is worth having when it is
+somewhere you would want to return to; and it ends as `closed` when the harness finished or
+`suspended` when it did not. Those last two are different facts, and an unclosed session is
+indistinguishable from an abandoned one.
+
+A checkpoint names a commit, so ADP has to have that commit: one taken against work you have not
+pushed is deferred to the next boundary and the recorder says so. `--continue` picks up where this
+machine's last suspended session in the repository left off, across harnesses — the lineage chain
+that results was assembled by nobody:
+
+```bash
+node dist/main.js wrap --repo <owner>/<repo> --harness codex --continue -- codex exec --json "carry on"
+```
+
 **Which harnesses are covered.** A reader translates one harness's private event names into ADP's
 fixed vocabulary. Two ship, chosen for having a stable machine-readable event stream rather than for
 being the most popular:
