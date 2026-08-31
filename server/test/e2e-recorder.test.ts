@@ -422,9 +422,23 @@ describe.skipIf(skipWithoutDb)("#149: adp-recorder against a live ADP", () => {
   // checkout pushed to a real ADP, and assert the facts that were previously
   // only available if an agent had been prompted well enough to produce them.
   describe("#151: session lifecycle, driven by what the harness did", () => {
+    /**
+     * Every checkout these cases make, removed once in `afterAll`.
+     *
+     * Not at the end of each test: a `rm` in the test body is skipped whenever
+     * an assertion above it throws, so the runs that leak are exactly the runs
+     * that failed — and `scripts/dev/verify-clean.sh` then warns about stale
+     * directories on top of the failure that caused them.
+     */
+    const checkouts: string[] = [];
+    afterAll(async () => {
+      for (const dir of checkouts) await rm(dir, { recursive: true, force: true });
+    });
+
     /** A checkout wired to this ADP, so a commit the recorder sees is one ADP can resolve. */
     async function checkout(): Promise<string> {
       const dir = await mkdtemp(path.join(tmpdir(), "adp-e2e-recorder-work-"));
+      checkouts.push(dir);
       const url = `http://x-access-token:${token}@127.0.0.1:${port}/${owner}/${repoName}.git`;
       await execFileAsync("git", ["clone", "-q", url, dir]);
       await execFileAsync("git", ["config", "user.email", "t@example.com"], { cwd: dir });
@@ -476,7 +490,6 @@ describe.skipIf(skipWithoutDb)("#149: adp-recorder against a live ADP", () => {
       expect(checkpoints.length).toBeGreaterThan(0);
       expect(checkpoints[checkpoints.length - 1]!.git_sha).toBe(sha);
 
-      await rm(work, { recursive: true, force: true });
     }, 180_000);
 
     it("closes the session when the harness finished, with nobody calling close", async () => {
@@ -494,7 +507,6 @@ describe.skipIf(skipWithoutDb)("#149: adp-recorder against a live ADP", () => {
       const [session] = await sessionsOf(runId);
       const got = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${session!.session_id}`);
       expect(got.body.status).toBe("closed");
-      await rm(work, { recursive: true, force: true });
     }, 180_000);
 
     it("binds the session to the intent HEAD's trailer names, with no --intent", async () => {
@@ -523,7 +535,6 @@ describe.skipIf(skipWithoutDb)("#149: adp-recorder against a live ADP", () => {
       const sessionId = newestSpooledSessionId();
       const got = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}`);
       expect(got.body.intent_id).toBe(intentId);
-      await rm(work, { recursive: true, force: true });
     }, 180_000);
 
     it("continues a suspended session across harnesses, and the lineage is walkable", async () => {
@@ -561,7 +572,6 @@ describe.skipIf(skipWithoutDb)("#149: adp-recorder against a live ADP", () => {
       const latest = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessions[1]!.session_id}`);
       const lineage = latest.body.lineage as { harness: string }[];
       expect(lineage.map((s) => s.harness)).toEqual(["claude-code", "codex"]);
-      await rm(work, { recursive: true, force: true });
     }, 240_000);
   });
 });

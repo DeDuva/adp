@@ -201,7 +201,7 @@ find the same text rather than a second, drifting copy.
 | `server/acceptance/` | the §2.1 walkthrough, driven by Playwright |
 | `server/conformance/` | the real-`gh` gate |
 | `server/drizzle/`, `server/web/` | migrations; the supervision UI |
-| `cli/` | the `adp` CLI (no database needed to test) |
+| `cli/` | the `adp` CLI (no database needed to test). Thin REST wrappers, plus `connect`/`disconnect` (#154), which write a harness's own configuration into the repo and then prove it with a real session |
 | `adapters/` | scanner-as-gate adapters (osv-scanner, wizcli) |
 | `runner/` | the gate runner: polls `/api/adp/gate-jobs/claim`, executes in an isolated container (network-deny, no host mounts, no ambient secrets, resource caps), reports via `/complete`. A pure HTTP client like `cli/` — no `server/` import, no DB or signing-key credential |
 | `recorder/` | `adp-recorder`: the out-of-band trajectory producer (#149). Durable spool, batching shipper, idempotent replay, and one reader per harness under `src/readers/` (#150) — translation lives here so that `harness` stays a string the server never branches on. A pure HTTP client on `runner/`'s terms — no `server/` import, no DB or signing-key credential, and only `repo:write`, so it runs as the developer rather than as infrastructure |
