@@ -567,10 +567,29 @@ describe.skipIf(skipWithoutDb)("#149: adp-recorder against a live ADP", () => {
 
       const sessions = await sessionsOf(runId);
       expect(sessions.length).toBe(2);
-      // Ask the newest session where it came from; the answer is a chain, not
-      // a field somebody filled in.
-      const latest = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessions[1]!.session_id}`);
-      const lineage = latest.body.lineage as { harness: string }[];
+      // Ask the *resumed* session where it came from; the answer is a chain,
+      // not a field somebody filled in.
+      //
+      // Found by walking to the one nothing was resumed into rather than by
+      // taking `sessions[1]`: positional indexing made this depend on the order
+      // the verify route's select happened to return, which held until it did
+      // not — one CI run, on a change that touched neither sessions nor
+      // resume. The route orders deterministically now; this stops caring
+      // either way, because a test that pins the *meaning* survives a route
+      // that later orders differently on purpose.
+      const resumedFrom = new Set<string>();
+      const details = await Promise.all(
+        sessions.map(async (s) => {
+          const got = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${s.session_id}`);
+          const from = got.body.resumed_from_session_id as string | null;
+          if (from) resumedFrom.add(from);
+          return { id: s.session_id, body: got.body };
+        }),
+      );
+      const tip = details.find((d) => !resumedFrom.has(d.id));
+      expect(tip, "no session at the tip of the chain — every one was resumed into another").toBeDefined();
+
+      const lineage = tip!.body.lineage as { harness: string }[];
       expect(lineage.map((s) => s.harness)).toEqual(["claude-code", "codex"]);
     }, 240_000);
   });

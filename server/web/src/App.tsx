@@ -9,6 +9,9 @@ import OperationsLog from "./components/OperationsLog.js";
 import EvidenceView from "./components/EvidenceView.js";
 import { CandidateSetList, CandidateSetDetailView } from "./components/CandidateSets.js";
 import OrgConsole from "./components/OrgConsole.js";
+import RunList from "./components/Runs.js";
+import RunDetailView from "./components/RunDetail.js";
+import SessionDetailView from "./components/SessionDetail.js";
 
 type Route =
   | { view: "issues" }
@@ -16,6 +19,12 @@ type Route =
   | { view: "proposals" }
   | { view: "proposal"; number: number }
   | { view: "operations" }
+  // #156: the M3 surface. `back` is carried rather than assumed because a
+  // session is reached from a run, from a trajectory event, and from another
+  // session's lineage — three parents, and guessing wrong strands the reader.
+  | { view: "runs" }
+  | { view: "run"; id: string }
+  | { view: "session"; id: string; back: Route }
   | { view: "candidate-sets" }
   | { view: "candidate-set"; id: string }
   | { view: "organization" }
@@ -38,9 +47,11 @@ export default function App() {
         ? "proposals"
         : route.view === "candidate-set"
           ? "candidate-sets"
-          : route.view === "evidence"
-            ? null
-            : route.view;
+          : route.view === "run" || route.view === "session"
+            ? "runs"
+            : route.view === "evidence"
+              ? null
+              : route.view;
 
   return (
     <div className="shell">
@@ -57,6 +68,12 @@ export default function App() {
           </button>
           <button className={tab === "proposals" ? "active" : ""} onClick={() => setRoute({ view: "proposals" })}>
             Pull requests
+          </button>
+          {/* #156. Above candidate sets because a run is the coarser unit: a
+              candidate set is N proposals against one intent, a run is one
+              attempt and everything it did. */}
+          <button className={tab === "runs" ? "active" : ""} onClick={() => setRoute({ view: "runs" })}>
+            Runs
           </button>
           <button
             className={tab === "candidate-sets" ? "active" : ""}
@@ -101,6 +118,25 @@ export default function App() {
             conn={conn}
             number={route.number}
             onBack={() => setRoute({ view: "proposals" })}
+            onViewEvidence={(sha) => setRoute({ view: "evidence", sha, back: route })}
+          />
+        )}
+        {route.view === "runs" && <RunList conn={conn} onOpen={(id) => setRoute({ view: "run", id })} />}
+        {route.view === "run" && (
+          <RunDetailView
+            conn={conn}
+            runId={route.id}
+            onBack={() => setRoute({ view: "runs" })}
+            onOpenSession={(id) => setRoute({ view: "session", id, back: route })}
+            onViewEvidence={(sha) => setRoute({ view: "evidence", sha, back: route })}
+          />
+        )}
+        {route.view === "session" && (
+          <SessionDetailView
+            conn={conn}
+            sessionId={route.id}
+            onBack={() => setRoute(route.back)}
+            onOpenSession={(id) => setRoute({ view: "session", id, back: route })}
             onViewEvidence={(sha) => setRoute({ view: "evidence", sha, back: route })}
           />
         )}

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { LAND_REQUIREMENTS } from "./api.js";
+import { EVENT_KINDS, RUN_STATUSES, LAND_REQUIREMENTS } from "./api.js";
 
 // #98 — the same argument as the server's observability-coverage, one
 // package out. api.ts hand-copies server enums because this package
@@ -28,5 +28,42 @@ describe("api.ts enum copies match the server's source of truth", () => {
       .sort();
 
     expect([...LAND_REQUIREMENTS].sort()).toEqual(serverValues);
+  });
+
+  // #156: the trajectory's kind filter is rendered from this array, so a copy
+  // that drifts renders a filter that silently cannot select a kind the server
+  // writes — the same failure shape as the blank label above, one surface over.
+  it("EVENT_KINDS matches core/trajectory.ts's EVENT_KINDS, both directions", () => {
+    const source = readFileSync(new URL("../../src/core/trajectory.ts", import.meta.url), "utf8");
+    const match = /export const EVENT_KINDS = \[([^\]]+)\] as const/.exec(source);
+    expect(
+      match,
+      "core/trajectory.ts no longer declares EVENT_KINDS as a const array — update this test's extraction",
+    ).not.toBeNull();
+    const serverValues = match![1]!
+      .split(",")
+      .map((s) => s.trim().replace(/^"|"$/g, ""))
+      .filter(Boolean)
+      .sort();
+
+    expect([...EVENT_KINDS].sort()).toEqual(serverValues);
+  });
+
+  // Same argument for the status filter, whose values come from the column's
+  // own enum in the schema.
+  it("RUN_STATUSES matches core/runs.ts's RUN_STATUSES, both directions", () => {
+    const source = readFileSync(new URL("../../src/core/runs.ts", import.meta.url), "utf8");
+    const match = /export const RUN_STATUSES = \[([^\]]+)\] as const/.exec(source);
+    expect(
+      match,
+      "core/runs.ts no longer declares RUN_STATUSES as a const array — update this test's extraction",
+    ).not.toBeNull();
+    const serverValues = match![1]!
+      .split(",")
+      .map((s) => s.trim().replace(/^"|"$/g, ""))
+      .filter(Boolean)
+      .sort();
+
+    expect([...RUN_STATUSES].sort()).toEqual(serverValues);
   });
 });

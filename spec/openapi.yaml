@@ -3416,6 +3416,19 @@ paths:
           schema:
             type: string
           description: Restrict the paired eval to this name.
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, closed, abandoned]
+          description: >
+            #156: restrict to runs in this state. Applied before `limit`, so the
+            answer is "the most recent N runs in this state" rather than "the
+            runs in this state among the most recent N" — which reads
+            identically and is a different question. An unrecognised value is
+            ignored rather than refused: this is a display filter, and a typo
+            that quietly returns everything is a better failure than a 422 in
+            the middle of narrowing a table.
         - name: limit
           in: query
           schema:

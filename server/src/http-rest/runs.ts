@@ -18,6 +18,7 @@ import {
   runStats,
   runTrajectory,
   compareRuns,
+  asRunStatus,
   trajectoryDigest,
   serializeRun,
 } from "../core/runs.js";
@@ -152,11 +153,16 @@ export function registerRunRoutes(
   app.get("/api/adp/repos/:owner/:repo/runs/compare", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const repo = await repoOr404(req, reply);
     if (!repo) return;
-    const query = req.query as { intent_id?: string; eval?: string; limit?: string };
+    const query = req.query as { intent_id?: string; eval?: string; status?: string; limit?: string };
 
     const comparisons = await compareRuns(db, repo.id, {
       intentId: query.intent_id,
       evalName: query.eval,
+      // An unrecognised status is ignored rather than refused, matching the
+      // list route beside it: these are display filters, and a typo that
+      // silently returns everything is a better failure than a 422 in the
+      // middle of someone narrowing a table.
+      status: asRunStatus(query.status),
       limit: Number(query.limit ?? 50) || 50,
     });
     reply.send({ intent_id: query.intent_id ?? null, runs: comparisons });
@@ -321,7 +327,18 @@ export function registerRunRoutes(
       const query = req.query as { from?: string };
       const coverage: VerifyCoverage = query.from === "checkpoint" ? "from-checkpoint" : "full";
 
-      const sessionRows = await db.select().from(sessions).where(eq(sessions.runId, runId));
+      // Ordered, and the ordering is part of the answer rather than a nicety.
+      // This response's `sessions` array is what a caller walks to find a
+      // particular session — including the resumed one at the end of a
+      // cross-harness chain — and an unordered select left that to whatever
+      // order Postgres happened to return, which is stable until it is not. It
+      // matches the run detail route above, so the two never disagree about
+      // which session is which.
+      const sessionRows = await db
+        .select()
+        .from(sessions)
+        .where(eq(sessions.runId, runId))
+        .orderBy(sessions.createdAt);
       // Bounded fan-out rather than `Promise.all` over however many sessions
       // the run has — see VERIFY_SESSION_CONCURRENCY.
       const verified = await verifySessions(

@@ -404,19 +404,76 @@ MERGE_OP=$(node -e '
   process.stdout.write(op.id);
 ' "$ARTIFACTS/operations.json") || fail "C12: no proposal.merge operation to undo"
 
+# C14 — the M3 surface needs something to be a surface *of*. #156 gave the
+# supervision UI its first view of a run, a session, a trajectory, a checkpoint
+# and an eval; none of the walkthrough above creates any of those, because §2.1
+# predates them. So seed one real run here, through the same API an orchestrator
+# uses, and let the browser read it back.
+#
+# Inside the UI branch on purpose: this exists to give the rendering something
+# to render. The behaviour of these endpoints is covered by the e2e tier, which
+# is where a contract assertion belongs.
 if [ "${ADP_ACCEPTANCE_UI:-0}" = "1" ]; then
-  step "C9-C12 — web UI (Playwright)"
+  step "C14 — seed a run, a resumed session and a trajectory for the UI"
+  INTENT_ID=$(api GET "/api/v3/repos/${OWNER}/${REPO}/issues/1" | node -e '
+    let raw = ""; process.stdin.on("data", (c) => (raw += c));
+    process.stdin.on("end", () => process.stdout.write(JSON.parse(raw).intent_id ?? ""));
+  ')
+  [ -n "$INTENT_ID" ] || fail "C14: issue 1 carries no intent_id"
+
+  SEED_RUN=$(api POST "/api/adp/repos/${OWNER}/${REPO}/runs" \
+    -d "{\"intent_id\":\"${INTENT_ID}\",\"orchestrator\":\"squad\",\"external_ref\":\"issue:1-ui\",\"labels\":{\"provider\":\"anthropic\",\"model\":\"claude-opus-5\"}}" \
+    | node -e 'let r="";process.stdin.on("data",c=>r+=c);process.stdin.on("end",()=>process.stdout.write(JSON.parse(r).id))')
+  [ -n "$SEED_RUN" ] || fail "C14: could not open a run"
+
+  SEED_SESSION=$(api POST "/api/adp/repos/${OWNER}/${REPO}/sessions" \
+    -d "{\"harness\":\"claude-code\",\"run_id\":\"${SEED_RUN}\"}" \
+    | node -e 'let r="";process.stdin.on("data",c=>r+=c);process.stdin.on("end",()=>process.stdout.write(JSON.parse(r).id))')
+  [ -n "$SEED_SESSION" ] || fail "C14: could not start a session"
+
+  # One of each kind that carries a typed column worth rendering: a model call
+  # with tokens and cost, a tool call that succeeded, one that failed, and the
+  # commit the work produced.
+  api POST "/api/adp/repos/${OWNER}/${REPO}/sessions/${SEED_SESSION}/events" -o /dev/null -f \
+    -d "{\"events\":[
+      {\"kind\":\"message\",\"type\":\"user\",\"payload\":{\"text\":\"add a health endpoint\"}},
+      {\"kind\":\"model_call\",\"type\":\"completion\",\"payload\":{\"text\":\"I will add the route and a test\"},\"model\":\"claude-opus-5\",\"tokens_in\":1800,\"tokens_out\":420,\"cost_micro_usd\":9400,\"duration_ms\":3100,\"status\":\"success\"},
+      {\"kind\":\"tool_call\",\"type\":\"Write\",\"payload\":{\"command\":\"write src/health.ts\"},\"duration_ms\":40,\"status\":\"success\"},
+      {\"kind\":\"tool_call\",\"type\":\"Bash\",\"payload\":{\"command\":\"npm test\"},\"duration_ms\":8200,\"status\":\"failure\"},
+      {\"kind\":\"test_result\",\"type\":\"vitest\",\"payload\":{\"summary\":\"1 failing\"},\"status\":\"failure\"},
+      {\"kind\":\"commit\",\"type\":\"git\",\"payload\":{\"message\":\"add health endpoint\"},\"git_sha\":\"${MAIN_BEFORE}\",\"status\":\"success\"}
+    ]}" || fail "C14: could not append the trajectory"
+
+  # A checkpoint, then a resume under a second harness — D2's continuous signed
+  # history, which is the lineage the session view draws.
+  CP=$(api POST "/api/adp/repos/${OWNER}/${REPO}/sessions/${SEED_SESSION}/checkpoints" \
+    -d "{\"git_sha\":\"${MAIN_BEFORE}\",\"state\":{\"note\":\"handing over\"}}" \
+    | node -e 'let r="";process.stdin.on("data",c=>r+=c);process.stdin.on("end",()=>process.stdout.write(JSON.parse(r).id))')
+  [ -n "$CP" ] || fail "C14: could not checkpoint"
+
+  RESUMED=$(api POST "/api/adp/repos/${OWNER}/${REPO}/sessions/${SEED_SESSION}/resume" \
+    -d "{\"checkpoint_id\":\"${CP}\",\"harness\":\"codex\"}" \
+    | node -e 'let r="";process.stdin.on("data",c=>r+=c);process.stdin.on("end",()=>process.stdout.write(JSON.parse(r).session?.id ?? JSON.parse(r).id ?? ""))')
+  [ -n "$RESUMED" ] || fail "C14: could not resume under a second harness"
+
+  api POST "/api/adp/repos/${OWNER}/${REPO}/runs/${SEED_RUN}/close" -o /dev/null -f \
+    -d "{\"final_git_sha\":\"${MAIN_BEFORE}\"}" || fail "C14: could not close the run"
+  pass "C14 seeded run ${SEED_RUN:0:8} — two harnesses, one signed history"
+
+  step "C9-C14 — web UI (Playwright)"
   ADP_UI_BASE="http://localhost:${PORT}" \
   ADP_UI_TOKEN="$TOKEN" \
   ADP_UI_OWNER="$OWNER" \
   ADP_UI_REPO="$REPO" \
   ADP_UI_ARTIFACTS="$ARTIFACTS" \
+  ADP_UI_RUN="$SEED_RUN" \
   ADP_UI_UNDO=1 \
     npx playwright test --config acceptance/playwright.config.ts \
     || fail "the web UI checks failed"
   pass "C9-C11 UI rendered the intent, evidence, provenance and op log"
   pass "C12 undo performed by clicking Undo in the UI"
   pass "C13 org console showed the resolved policy for ${OWNER}"
+  pass "C14 the run, its trajectory, its verification and its lineage rendered"
   note "screenshots in $ARTIFACTS"
 else
   note "web UI checks skipped (set ADP_ACCEPTANCE_UI=1 to run them)"

@@ -661,6 +661,25 @@ describe.skipIf(skipWithoutDb)("run trajectory and eval-gated close", () => {
       body: JSON.stringify({ name: "behavior", passed: false, score: 0.41, spec: { suite: "greeting-behavior" } }),
     });
 
+    // #156: the supervision UI's runs list is this endpoint with no intent
+    // filter, so the status filter has to narrow before `limit` rather than
+    // after. Asserted here because "the closed runs among the fifty most
+    // recent" and "the fifty most recent closed runs" read identically and are
+    // different answers.
+    const closedOnly = await api(`/api/adp/repos/${owner}/${repoName}/runs/compare?status=closed`);
+    expect(closedOnly.status).toBe(200);
+    const closedIds = closedOnly.body.runs.map((r: { runId: string }) => r.runId);
+    expect(closedIds).toContain(runId);
+    expect(closedIds).toContain(secondRun);
+    for (const r of closedOnly.body.runs) expect(r.status).toBe("closed");
+
+    // And an unrecognised value is ignored rather than refused: this is a
+    // display filter, and a 422 in the middle of narrowing a table is a worse
+    // failure than quietly returning everything.
+    const bogus = await api(`/api/adp/repos/${owner}/${repoName}/runs/compare?status=banana`);
+    expect(bogus.status).toBe(200);
+    expect(bogus.body.runs.length).toBeGreaterThanOrEqual(closedIds.length);
+
     const compare = await api(
       `/api/adp/repos/${owner}/${repoName}/runs/compare?intent_id=${intentId}&eval=behavior`,
     );

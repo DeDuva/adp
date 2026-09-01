@@ -16,6 +16,47 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## v0.6.0 — unreleased
 
+**The M3 surface has a reader (#156).** The supervision UI had six views and none of
+them was a run, a session, a trajectory, a checkpoint or an eval — so the part of ADP
+that has no GitHub analogue, and is the reason to run it, was reachable only by someone
+willing to write an API client and paginate a 2,000-event trajectory by hand. A
+trajectory is worth its write cost only if something consumes it, and the second consumer
+has to be a person or the recording is an experiment rather than a product.
+
+Four views: a **runs list** filterable by intent and status, showing the arm off the
+signed labels beside what the run cost to produce it; **run detail** with its sessions,
+its evals and its trajectory; the **trajectory** itself, filtered by kind and paged, with
+every typed column rendered as the thing it is — tokens, cost in micro-USD, duration, tool
+identity, verdict, commit; and **session lineage**, so a resume chain across harnesses is a
+picture rather than a series of API calls.
+
+**Verification stays two answers.** `chains_ok` says the events ADP holds were not edited;
+`emitters_ok` says ADP was given all of them. A run can pass the first and fail the second,
+and that combination is the more interesting half — so they are two tiles rather than one
+tick, with the attestation as a third, and an untracked emitter reads as *unknown* rather
+than as a failure. A chain verified from a signed checkpoint says so instead of presenting
+the weaker answer as the strong one.
+
+**It also found the limit of its own exit criterion, and says so on the page.** Under
+#199's default `trajectory.payloads: structure` every string is replaced by its byte count
+before the event is chained, so the record can say what an agent *did* and not what it
+*said*. Rendering the `[adp:str bytes=N]` marker as content would be worse than rendering
+nothing — it reads as something the agent uttered and is identical on every row — so the
+preview falls through to the payload's shape, and one banner at the top of the trajectory
+explains why and names the one line of `adp.yaml` that changes it.
+
+**Payload rendering is a client decision, and that is not a violation of the invariant.**
+Payloads are opaque to the *server*: nothing server-side branches on their contents, which
+is what keeps the protocol harness-neutral. Guessing which key holds the human-readable
+part is done in the browser, where nothing downstream depends on the guess and a wrong one
+shows a slightly worse preview rather than corrupting a record.
+
+The runs list is `/runs/compare` with no intent filter — the aggregates a list wants are
+already computed there, server-side, in one request. It gains a `status` query parameter
+(additive), applied before `limit` so the answer is "the most recent N runs in this state"
+rather than "the runs in this state among the most recent N", which reads identically and
+is a different question.
+
 **Contract 0.6.0, additive.** One new operation:
 `GET /api/adp/repos/{owner}/{repo}/sessions/{id}/verify` (#152). No existing
 operation changes shape, so a client generated against 0.5.0 keeps working
