@@ -212,7 +212,10 @@ describe.skipIf(skipWithoutDb)("#143: one change row per sha, and a deterministi
 
     // #189: by title, which is the half of 1a's exit criterion an id never
     // satisfied. "bind me" is the issue this sha was bound to above.
-    expect(change.intent).toEqual({ id: row!.intentId, title: "bind me" });
+    // #157 added the issue number beside the title, for the same reason #189
+    // added the title beside the id: a reader needs something to navigate to,
+    // and a uuid is not it.
+    expect(change.intent).toEqual({ id: row!.intentId, title: "bind me", issue_number: 1 });
   });
 
   // Unbound is an ordinary state, not an error: a commit pushed with no intent

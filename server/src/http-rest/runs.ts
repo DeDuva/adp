@@ -15,6 +15,7 @@ import {
   closeRun,
   abandonRun,
   runChains,
+  runCommits,
   runStats,
   runTrajectory,
   compareRuns,
@@ -200,6 +201,10 @@ export function registerRunRoutes(
         created_at: s.createdAt.toISOString(),
       })),
       evals: (await listEvals(db, runId)).map(serializeEval),
+      // #157: run → its commits. The other direction of the same edge the
+      // evidence bundle now walks, so a reader can go from a run to the change
+      // it produced and from that change back to the trajectory.
+      commits: await runCommits(db, runId),
     });
   });
 

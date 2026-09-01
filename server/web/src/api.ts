@@ -58,6 +58,10 @@ async function request<T>(conn: Connection, path: string, init: RequestInit = {}
 export interface Issue {
   id: string;
   number: number;
+  // #157: the intent an issue carries, which is what the runs against it are
+  // keyed by. Present on the server since M1 and unused here until the UI had
+  // runs to point at.
+  intent_id: string | null;
   title: string;
   body: string;
   state: "open" | "closed";
@@ -282,6 +286,9 @@ export interface RunDetail {
   closed_at: string | null;
   sessions: RunSession[];
   evals: { id: string; name: string; score: number | null; passed: boolean | null; reporter_principal: string; separately_authorized: boolean; created_at: string }[];
+  // #157: the commits this run produced, off `session_events.git_sha` on commit
+  // events. The other direction of the edge the evidence bundle walks.
+  commits: string[];
 }
 
 // Every typed column the chain commits to. They are rendered as what they are —
@@ -384,10 +391,27 @@ export interface SessionDetail extends SessionSummary {
   checkpoints: Checkpoint[];
 }
 
+// #157: the edges out of a commit. Navigation rather than evidence — nothing
+// here is signed — but it is the difference between holding the identifier of
+// the thing you want and being able to follow it.
+export interface ProducedBy {
+  sessions: { id: string; harness: string; run_id: string | null; seq: number }[];
+  runs: { id: string; orchestrator: string; labels: Record<string, string>; status: RunStatus }[];
+  proposals: { number: number; title: string; state: "open" | "closed" | "merged" }[];
+}
+
 export interface EvidenceBundle {
   git_sha: string;
-  change: { id: string; intent_id: string | null; provenance: unknown; signature: string; created_at: string } | null;
+  change: {
+    id: string;
+    intent_id: string | null;
+    intent: { id: string; title: string; issue_number: number | null } | null;
+    provenance: unknown;
+    signature: string;
+    created_at: string;
+  } | null;
   gates: { name: string; status: string; summary: string; envelope: unknown; created_at: string }[];
+  produced_by: ProducedBy;
 }
 
 export const api = {
