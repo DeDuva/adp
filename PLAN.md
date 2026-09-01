@@ -167,7 +167,9 @@ exist" from the browser in under a minute.
 | 1-15 | Commit → intent → run navigation | #157 | not started. The commit-to-intent edge is populated now that trailers bind it; what is missing is a surface that follows it |
 | 1-16 | An interim retention default | #161 | not started. 3-6 is the real policy and waits on 3-5; this decides only what happens in the interval, which 1-7 makes expensive to get wrong |
 
-3-4, 2-2 and 2-3 belong to this release as well.
+2-2 and 2-3 belong to this release as well. So did 3-4, which is finished and gone from Phase 3's
+table: verification of a trajectory now costs a constant rather than a session, which is the
+precondition for 1-14 putting a verification badge on every run page.
 
 ### 1d — Legible before install: the published site
 
@@ -280,12 +282,21 @@ reproduces all of it.
 volume; 1-7 is the thing that writes to them, and it is the first real load this schema has seen.
 Shipping capture before the ceiling and the indexes exist hands the most enthusiastic user a way
 to fill their own disk, and they will report it as ADP being unreliable rather than as ADP being
-popular. 3-4 moves for the same reason, one release later.
+popular. 3-4 moved for the same reason, one release later, and is gone from the table below on
+the rule this file runs on — its number is not reused.
+
+**3-4 also answered a question it was not asked**, which is worth keeping here because it changes
+what a later item may assume. Recomputing a hash chain from its genesis does not detect an edit
+made *consistently*: repair every hash behind the change and the chain verifies. What pins the
+middle is a signature over a head the rewrite would have had to move, and the checkpoints have
+held one all along with nothing reading it. Verification checks them now. So "the chain verifies"
+was a weaker statement than this backlog assumed until 2026-08-31, and 3-6's third verification
+state has one more thing to be precise about: a payload that was aged out is still covered by a
+signed head, and that is what makes "verified, payload not retained" say something.
 
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
 | 3-3 | Make the SBOM deterministic so identical dependency sets dedup | #194 | not started | `randomUUID()` and a fresh timestamp per land make ~8 KB of every ~12 KB landed change un-dedupable and ~100% redundant. Pure win; needs no object store |
-| 3-4 | Stream or bound `verifyChain` | #152 | in progress — the memory half landed, the range shape is next up | Verification reads in batches and fans out over a run's sessions four at a time, so one `repo:read` request costs a constant rather than the run: 132 MiB down to 1.6 MiB on a 200,000-event session, reproducible with `make measure-verify`. `?from=checkpoint` verifies from the newest signed head forward. What is left is a session-scoped endpoint that can verify an explicit window — a new operation, so it carries the 0.6.0 bump |
 | 3-5 | Bench arm 4 — `storage-growth` | #195 | not started | Deterministic, no model, no tokens, CI-runnable like arm 1: bytes per unit on a real Postgres, realised vs batched compression, dedup yield, ingest cliff, peak RSS on `/verify` |
 | 3-6 | Retention and tiering as org policy | — | blocked on 3-5 | The intended shape — hot/extended tiers with promote-on-reference, attestations committing to digests never payloads, "verified, payload not retained" as an honest third verification state — is settled; the numbers that justify it come from 3-5. 1-19 (#199) built the commitment half already: an event whose payload is stored as structure carries `payload_digest`, covered by the chain. 1-16 covers the interval. The object-store half also waits on decision 2 |
 

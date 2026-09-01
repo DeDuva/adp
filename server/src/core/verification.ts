@@ -3,6 +3,7 @@ import type { KeyRegistry } from "./signing.js";
 import { mapWithConcurrency } from "./concurrency.js";
 import { verifiedAnchors, type ChainAnchor } from "./sessions.js";
 import {
+  chainHeadAt,
   emitterContiguity,
   verifyChain,
   type EmitterContiguity,
@@ -18,11 +19,10 @@ import {
 //   from-checkpoint — from the newest checkpoint whose signature verifies.
 //                     Bounded by what has happened since that checkpoint rather
 //                     than by the age of the session.
-//
-// `verifyChain` underneath can verify an arbitrary window, and reports it as
-// the third `ChainPrefix` state; nothing over HTTP asks for one yet, so this
-// type carries the two coverages a caller can actually request.
-export type VerifyCoverage = "full" | "from-checkpoint";
+//   range           — an explicit window, for walking a session too long to
+//                     verify in one request. The weakest of the three, and the
+//                     response says so.
+export type VerifyCoverage = "full" | "from-checkpoint" | "range";
 
 // How many sessions of one run are verified at a time.
 //
@@ -47,6 +47,10 @@ export interface SessionVerification {
 
 export interface VerifySessionOptions {
   coverage?: VerifyCoverage;
+  // Honoured only for coverage "range". `fromSeq` is exclusive, `toSeq`
+  // inclusive.
+  fromSeq?: number;
+  toSeq?: number;
   batchSize?: number;
 }
 
@@ -76,6 +80,26 @@ export async function verifySession(
     chainOptions.fromSeq = anchor.eventCount;
     chainOptions.fromHash = anchor.head;
     chainOptions.prefix = "attested";
+  } else if (coverage === "range") {
+    chainOptions.toSeq = options.toSeq;
+    if (options.fromSeq) {
+      // A window starting mid-chain is linked to what the database *stores* at
+      // that point, so it proves the window is internally consistent and proves
+      // nothing about what precedes it. That is a useful question — walk a
+      // 100,000-event session in ten passes and every event has been
+      // recomputed — and it is not a substitute for either coverage above,
+      // which is why the result reports `prefix: "assumed"`.
+      //
+      // Nothing stored at that seq falls through with an empty hash rather than
+      // erroring here: `verifyChain` reads the boundary row itself and reports
+      // its absence, and one code path saying that is better than two.
+      chainOptions.fromHash = (await chainHeadAt(db, sessionId, options.fromSeq)) ?? "";
+      chainOptions.fromSeq = options.fromSeq;
+      chainOptions.prefix = "assumed";
+    }
+    // Signed heads inside the window are still checked — narrowing what you
+    // recompute is not a reason to stop comparing it to what was signed.
+    chainOptions.attested = anchors.map((a) => ({ seq: a.eventCount, hash: a.head }));
   } else {
     // Full coverage recomputes the chain *and* checks it against every signed
     // head on the way past, which is strictly more than recomputing alone: a

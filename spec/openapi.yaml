@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ADP API
-  version: 0.5.0
+  version: 0.6.0
   description: >
     Native and compat-plane HTTP surface for ADP.
 
@@ -2960,6 +2960,80 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
           description: The session is already closed, and closing is terminal
+  /api/adp/repos/{owner}/{repo}/sessions/{id}/verify:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+      - $ref: "#/components/parameters/repo"
+      - $ref: "#/components/parameters/id"
+    get:
+      x-required-scope: "repo:read"
+      summary: >
+        #152: verification at the resolution the record is written at. The
+        run-level endpoint answers "is this run's evidence intact", which is the
+        question a reviewer asks; this one answers it for one session, and it
+        covers two cases that one cannot. A session need not belong to a run — a
+        developer checkpointing their own work is a session — and a session long
+        enough to be worth bounding is one worth verifying in pieces.
+
+        Three coverages, and the response names which one it ran. Default
+        `full`, from the genesis, pinned to every signed checkpoint head it
+        passes. `from=checkpoint` starts at the newest checkpoint whose
+        signature verifies. `from_seq`/`to_seq` walk an explicit window, where
+        `from_seq` is exclusive and `to_seq` inclusive, matching `seq`'s own
+        1-based numbering — `from_seq=100&to_seq=200` is the hundred events
+        after the hundredth.
+
+        `from=checkpoint` and an explicit window are alternatives, not a
+        combination. An anchor already fixes where the window starts, and
+        letting a caller move it off a signed head is how you build a verifier
+        that starts too late and misses the tampering it exists to find.
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [checkpoint]
+        - name: from_seq
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+        - name: to_seq
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: >
+            The session's chain and its emitter's numbering as two separate
+            answers, plus `prefix` and `verified_from_seq`/`verified_to_seq`
+            stating exactly what was recomputed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionVerifyResult"
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Missing or invalid token
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: Not found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: >
+            `from=checkpoint` combined with an explicit window, or a `to_seq`
+            that is not greater than `from_seq`.
   /api/adp/repos/{owner}/{repo}/sessions/{id}/events:
     parameters:
       - $ref: "#/components/parameters/owner"
@@ -4122,7 +4196,7 @@ components:
             was never checkpointed: a fact about the record, not a failure.
         prefix:
           type: string
-          enum: [recomputed, attested]
+          enum: [recomputed, attested, assumed]
           description: >
             #152: what is known about the events *before* `verified_from_seq`,
             and the field that keeps a partial answer from reading as a whole
@@ -4132,7 +4206,10 @@ components:
             checkpoint signature named in `anchor`: a prefix rewritten to stay
             internally consistent still fails, because its head would no longer
             be the one that was signed, and a prefix edited without repairing
-            its hashes is the case this does not cover.
+            its hashes is the case this does not cover. `assumed` — the window
+            was linked to what the database stores at its start, so it claims
+            the window is internally consistent and claims nothing at all about
+            what precedes it.
         anchor:
           nullable: true
           allOf:
@@ -4156,6 +4233,19 @@ components:
         head:
           type: string
           description: The chain head the signature commits to at that event count.
+    SessionVerifyResult:
+      description: >
+        #152: one session's verification. The same per-session shape the run
+        endpoint reports, plus the `coverage` that produced it — stated on the
+        result rather than left to the caller to remember what it asked for.
+      allOf:
+        - type: object
+          required: [coverage]
+          properties:
+            coverage:
+              type: string
+              enum: [full, from-checkpoint, range]
+        - $ref: "#/components/schemas/RunVerifySession"
     RunVerifyResult:
       type: object
       required: [run_id, ok, coverage, chains_ok, emitters_ok, envelope_verified, trajectory_digest_matches, recomputed_trajectory_digest, attested_trajectory_digest, final_git_sha, attested_subject_sha, sessions]

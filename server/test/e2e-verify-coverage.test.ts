@@ -450,6 +450,119 @@ describe.skipIf(skipWithoutDb)("#152: verification coverage, batching and the ta
     });
   });
 
+  // The session-scoped endpoint, which exists for the two cases the run-level
+  // one cannot cover: a session with no run, and a session too long to verify
+  // in one request.
+  describe("the session endpoint", () => {
+    const verify = (query = "") =>
+      api(`/api/adp/repos/${owner}/${repoName}/sessions/${sessionId}/verify${query}`);
+
+    it("defaults to full coverage and says so", async () => {
+      const res = await verify();
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.coverage).toBe("full");
+      expect(res.body.prefix).toBe("recomputed");
+      expect(res.body.verified_from_seq).toBe(0);
+      expect(res.body.verified_to_seq).toBe(TOTAL_EVENTS);
+      expect(res.body.attested_heads_checked).toBe(1);
+      expect(res.body.anchor).toBeNull();
+    });
+
+    it("anchors at the newest signed checkpoint on request", async () => {
+      const res = await verify("?from=checkpoint");
+      expect(res.body.ok).toBe(true);
+      expect(res.body.coverage).toBe("from-checkpoint");
+      expect(res.body.prefix).toBe("attested");
+      expect(res.body.verified_from_seq).toBe(ANCHOR_AT);
+      expect((res.body.anchor as Record<string, unknown>).event_count).toBe(ANCHOR_AT);
+    });
+
+    // The point of a window: walk a session in passes and every event has been
+    // recomputed, without any one request holding the session.
+    it("walks an explicit window, and the passes cover the chain between them", async () => {
+      const first = await verify("?to_seq=8");
+      expect(first.body.ok).toBe(true);
+      expect(first.body.coverage).toBe("range");
+      // A window from the genesis has no prefix to assume anything about.
+      expect(first.body.prefix).toBe("recomputed");
+      expect(first.body.verified_from_seq).toBe(0);
+      expect(first.body.verified_to_seq).toBe(8);
+
+      const second = await verify("?from_seq=8&to_seq=16");
+      expect(second.body.ok).toBe(true);
+      expect(second.body.prefix).toBe("assumed");
+      expect(second.body.verified_from_seq).toBe(8);
+      expect(second.body.verified_to_seq).toBe(16);
+      // A signed head inside the window is still checked — narrowing what you
+      // recompute is not a reason to stop comparing it to what was signed.
+      expect(second.body.attested_heads_checked).toBe(1);
+
+      const third = await verify(`?from_seq=16&to_seq=${TOTAL_EVENTS}`);
+      expect(third.body.ok).toBe(true);
+      expect(third.body.verified_to_seq).toBe(TOTAL_EVENTS);
+    });
+
+    it("catches an edit inside the window and reports it clear of one that ends first", async () => {
+      await withTamper(
+        async () => {
+          await db
+            .update(sessionEvents)
+            .set({ tokensOut: 999_999 })
+            .where(and(eq(sessionEvents.sessionId, sessionId), eq(sessionEvents.seq, 14)));
+        },
+        async () => {
+          const covering = await verify("?from_seq=8&to_seq=16");
+          expect(covering.body.ok).toBe(false);
+          expect(covering.body.broke_at_seq).toBe(14);
+
+          // And a window that stops before the edit reports honestly on what it
+          // looked at rather than on the session.
+          const earlier = await verify("?to_seq=8");
+          expect(earlier.body.ok).toBe(true);
+          expect(earlier.body.verified_to_seq).toBe(8);
+        },
+      );
+    });
+
+    it("refuses an anchor combined with a window, rather than moving the anchor", async () => {
+      const res = await verify("?from=checkpoint&from_seq=4");
+      expect(res.status).toBe(422);
+      expect(JSON.stringify(res.body)).toMatch(/cannot be combined/);
+    });
+
+    it("refuses a window that runs backwards", async () => {
+      const res = await verify("?from_seq=9&to_seq=4");
+      expect(res.status).toBe(422);
+      expect(JSON.stringify(res.body)).toMatch(/greater than from_seq/);
+    });
+
+    it("reports on a session that belongs to no run at all", async () => {
+      const solo = await api(`/api/adp/repos/${owner}/${repoName}/sessions`, {
+        method: "POST",
+        body: JSON.stringify({ harness: "gemini-cli" }),
+      });
+      const soloId = solo.body.id as string;
+      await api(`/api/adp/repos/${owner}/${repoName}/sessions/${soloId}/events`, {
+        method: "POST",
+        body: JSON.stringify({ events: [{ kind: "message", type: "user", payload: { text: "hi" } }] }),
+      });
+      const res = await api(`/api/adp/repos/${owner}/${repoName}/sessions/${soloId}/verify`);
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.event_count).toBe(1);
+      // Never checkpointed, so nothing pins the recomputation. A fact about the
+      // record, reported rather than rounded up to a green tick.
+      expect(res.body.attested_heads_checked).toBe(0);
+    });
+
+    it("is a 404 for a session id belonging to another repo, not a probe", async () => {
+      await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: "other" }) });
+      const res = await api(`/api/adp/repos/${owner}/other/sessions/${sessionId}/verify`);
+      expect(res.status).toBe(404);
+    });
+  });
+
   it("the run endpoint reports its coverage, and full stays the default", async () => {
     const full = await api(`/api/adp/repos/${owner}/${repoName}/runs/${runId}/verify`);
     expect(full.status).toBe(200);

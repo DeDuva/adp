@@ -449,6 +449,17 @@ export async function chainHead(db: Db, sessionId: string): Promise<ChainSummary
 //                anything outside the window.
 export type ChainPrefix = "recomputed" | "attested" | "assumed";
 
+// The stored hash at one seq, for a caller starting a range there. Named apart
+// from `chainHead` because what it returns is *stored* rather than verified —
+// which is the whole content of the "assumed" prefix above.
+export async function chainHeadAt(db: Db, sessionId: string, seq: number): Promise<string | undefined> {
+  const [row] = await db
+    .select({ hash: sessionEvents.hash })
+    .from(sessionEvents)
+    .where(and(eq(sessionEvents.sessionId, sessionId), eq(sessionEvents.seq, seq)));
+  return row?.hash;
+}
+
 export interface VerifyResult {
   sessionId: string;
   ok: boolean;
