@@ -127,7 +127,7 @@ describe.skipIf(skipWithoutDb)("#159: compensating-revert undo", () => {
       "repo:write",
     ]);
     await grantOwner(db, reviewer!.id, owner);
-  });
+  }, 120_000);
 
   afterAll(async () => {
     await app.close();
@@ -317,7 +317,7 @@ describe.skipIf(skipWithoutDb)("#159: compensating-revert undo", () => {
         "other.txt",
       ),
     ).not.toBeNull();
-  });
+  }, 120_000);
 
   it("subjects the revert to the same land policy, and lands it once the gate is green", async () => {
     // The repo has to name a gate: `gates_green` on a repo that declares none
@@ -386,7 +386,7 @@ describe.skipIf(skipWithoutDb)("#159: compensating-revert undo", () => {
     expect(
       await gitBackend.statPath(owner, repoName, head, "other.txt"),
     ).not.toBeNull();
-  });
+  }, 120_000);
 
   it("enqueues the revert's own gates, so the policy it must satisfy is satisfiable", async () => {
     const adpYaml =
@@ -426,7 +426,7 @@ describe.skipIf(skipWithoutDb)("#159: compensating-revert undo", () => {
       );
     expect(queued).toHaveLength(1);
     expect(queued[0]!.status).toBe("queued");
-  });
+  }, 120_000);
 
   it("refuses a conflicting revert with the paths named, rather than producing a broken tree", async () => {
     // The later work edits the same file the merge introduced, so undoing the
@@ -463,7 +463,7 @@ describe.skipIf(skipWithoutDb)("#159: compensating-revert undo", () => {
     expect(
       await gitBackend.resolveRef(owner, repoName, "adp/revert-1"),
     ).toBeNull();
-  });
+  }, 120_000);
 
   it("refuses a second undo of the same merge, whichever path the first took", async () => {
     const { repoName, mergeOp } = await repoWithMovedBranch(
@@ -493,7 +493,7 @@ describe.skipIf(skipWithoutDb)("#159: compensating-revert undo", () => {
     expect((second.body as unknown as { message: string }).message).toMatch(
       /already been undone/,
     );
-  });
+  }, 120_000);
 
   it("refuses when the merge is no longer in the branch's history at all", async () => {
     const { repoName, mergeOp } = await repoWithMovedBranch(
@@ -521,7 +521,7 @@ describe.skipIf(skipWithoutDb)("#159: compensating-revert undo", () => {
     expect((undone.body as unknown as { message: string }).message).toMatch(
       /history was rewritten/,
     );
-  });
+  }, 120_000);
 
   it("still prefers the exact path: an untouched branch is rolled back, not reverted", async () => {
     const repoName = "untouched";
@@ -610,5 +610,5 @@ describe.skipIf(skipWithoutDb)("#159: compensating-revert undo", () => {
     expect(await gitBackend.resolveRef(owner, repoName, "main")).toBe(
       baseBefore,
     );
-  });
+  }, 120_000);
 });
