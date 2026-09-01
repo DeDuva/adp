@@ -176,17 +176,38 @@ export function registerOperationRoutes(app: FastifyInstance, db: Db, gitBackend
 
       const result = await undoOperation(db, gitBackend, repo, entry, req.identity!.identityId);
       if (!result.ok) {
-        reply.code(422).send({ message: result.message });
+        // #159: `conflicts` rides along when a compensating revert could not be
+        // produced. Absent — not empty — on every other refusal, so a caller
+        // cannot mistake "no conflicts" for "a conflict with no files".
+        reply.code(422).send({ message: result.message, ...(result.conflicts ? { conflicts: result.conflicts } : {}) });
         return;
       }
 
-      const [undoOp] = await db
-        .select()
-        .from(operations)
-        .where(eq(operations.parentOp, entry.id))
-        .orderBy(desc(operations.createdAt))
-        .limit(1);
-      reply.send(serializeOperation(undoOp!));
+      const [undoOp] = await db.select().from(operations).where(eq(operations.id, result.operationId));
+
+      // The operation is still the top-level body, so a client typed against
+      // the old shape keeps parsing. What is added beside it is which of undo's
+      // two paths ran (#159) — and, when it was the revert, the proposal that
+      // now has to satisfy the land policy before the undo actually takes
+      // effect. A caller that does not read `undo_path` would otherwise be told
+      // "undone" about a branch that has not changed.
+      reply.send({
+        ...serializeOperation(undoOp!),
+        undo_path: result.path,
+        ...(result.path === "revert"
+          ? {
+              proposal: {
+                number: result.proposal.number,
+                title: result.proposal.title,
+                head_ref: result.branch,
+                head_sha: result.revertSha,
+                base_ref: result.proposal.baseRef,
+                state: result.proposal.state,
+              },
+              gate_jobs_enqueued: result.gateJobs,
+            }
+          : {}),
+      });
     },
   );
 

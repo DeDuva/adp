@@ -206,7 +206,15 @@ describe.skipIf(skipWithoutDb)("M1c: operations log + undo", () => {
     expect(new Set(paged).size).toBe(paged.length);
   });
 
-  it("refuses to undo a merge once the branch has moved since (would silently drop later work)", async () => {
+  // #159 changed what this case does, and the property it was protecting is the
+  // one worth keeping: the ref is not wound back. It used to refuse there and
+  // stop; the moved branch now reaches the compensating-revert path instead —
+  // which this particular history cannot take, because the later commit appends
+  // to the same file the merge did. So it refuses again, for a better reason
+  // and with the conflict named. Both outcomes of that path are pinned in
+  // e2e-undo-revert.test.ts, which has a real land policy to test against; this
+  // suite deliberately has none.
+  it("never winds a moved branch back, and refuses a conflicting revert by name", async () => {
     const repoName = "widget2";
     await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: repoName }) });
 
@@ -251,7 +259,15 @@ describe.skipIf(skipWithoutDb)("M1c: operations log + undo", () => {
       body: "{}",
     });
     expect(undoRes.status).toBe(422);
-    expect((undoRes.body as { message: string }).message).toMatch(/moved since/i);
+    const refusal = undoRes.body as { message: string; conflicts: string[] };
+    expect(refusal.message).toMatch(/conflicts with what landed after it/);
+    expect(refusal.conflicts).toEqual(["README.md"]);
+
+    // The load-bearing assertion, unchanged since this test was written: what
+    // landed after the merge is still there. A rollback here would have
+    // discarded it silently, which is why that path stays refused — and a
+    // revert that merged with conflict markers in it would be a second outage
+    // caused by fixing the first.
     expect(await gitBackend.resolveRef(owner, repoName, "main")).toBe(laterSha);
   });
 });

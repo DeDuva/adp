@@ -123,8 +123,12 @@ export function buildMcpServer(client: AdpClient): McpServer {
     "adp_undo",
     {
       description:
-        "Undo an operation by id — currently only supports reverting a fast-forward merge " +
-        "(verb 'proposal.merge'), and only if the branch hasn't moved since.",
+        "Undo an operation by id — only a merge (verb 'proposal.merge') is undoable. " +
+        "Read `undo_path` in the result: 'rollback' means the base ref was wound back and " +
+        "the change is already out of the branch; 'revert' means the branch had moved, so a " +
+        "revert PROPOSAL was opened and the change is NOT out of the branch until that " +
+        "proposal satisfies the land policy and lands. A revert that conflicts with what " +
+        "landed after the merge is refused with the conflicting paths named.",
       inputSchema: { owner: z.string(), repo: z.string(), operation_id: z.string() },
     },
     async ({ owner, repo, operation_id }) => {

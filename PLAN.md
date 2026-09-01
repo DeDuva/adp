@@ -167,9 +167,11 @@ exist" from the browser in under a minute.
 | 1-15 | Commit → intent → run navigation | #157 | not started. The commit-to-intent edge is populated now that trailers bind it; what is missing is a surface that follows it |
 | 1-16 | An interim retention default | #161 | not started. 3-6 is the real policy and waits on 3-5; this decides only what happens in the interval, which 1-7 makes expensive to get wrong |
 
-2-2 and 2-3 belong to this release as well. So did 3-4, which is finished and gone from Phase 3's
-table: verification of a trajectory now costs a constant rather than a session, which is the
-precondition for 1-14 putting a verification badge on every run page.
+2-3 belongs to this release as well. So did 3-4 and 2-2, both finished: verification of a
+trajectory now costs a constant rather than a session, which is the precondition for 1-14 putting a
+verification badge on every run page; and undo has a second path, so it survives the branch moving —
+which on an active repository it does within minutes of any merge. What remains of 2-2 is 1-13's
+job, since the CLI is where a person actually reads which path an undo took.
 
 ### 1d — Legible before install: the published site
 
@@ -235,15 +237,22 @@ in Phase 1 to land in.
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 2-2 | Compensating-revert undo — undo that survives a moved branch, rather than only CAS rollback | #159 | not started. Lands with 1c |
 | 2-3 | Cross-harness checkpoint/resume demo | #160 | not started. Also the instrument for OD-3, which is why it earns its place twice. Waits on 1-10, without which it is a bespoke script rather than evidence of portability |
 | 2-4 | Provenance-priced approval — the approver differs by model, harness or session, not merely by identity | #176 | not started, and unblocked: 1-1 (#141) shipped, so a token carries `harness`, `model` and `session_id` over the wire and a signed change names them |
 
-Item 2-1 — author-independent approval, #121 — shipped and is gone from this table. Its number is
-not reused, for the reason given under 1a. It was the first half of OD-2 below, and the half that
-had to come first: until it landed, `one_approval` was satisfiable by the principal it exists to
-constrain, so no bake-off's "landed" column measured anything and no refusal 1-5 could honestly
-teach a solo evaluator to satisfy.
+Items 2-1 and 2-2 — author-independent approval, #121, and compensating-revert undo, #159 — shipped
+and are gone from this table. Their numbers are not reused, for the reason given under 1a.
+
+2-1 was the first half of OD-2 below, and the half that had to come first: until it landed,
+`one_approval` was satisfiable by the principal it exists to constrain, so no bake-off's "landed"
+column measured anything and no refusal 1-5 could honestly teach a solo evaluator to satisfy.
+
+2-2 settled a question this file had left open, and the answer is worth keeping: **a compensating
+revert goes through the land policy.** It is a change, and an undo that skipped the gate would be a
+hole in the gate opened by the verb most likely to be used in a hurry. The consequence is that
+`undo_path: revert` means "here is the change that undoes it" rather than "it is undone" — the
+branch does not move until the revert proposal lands — and 1-13 has to say so at the point a person
+reads it.
 
 **2-4 is what it left undone**, and the gap is worth stating because the shipped check reads
 stronger than it is. Comparing principals is a separation-of-*identity* control doing a

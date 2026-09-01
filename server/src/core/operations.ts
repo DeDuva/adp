@@ -23,15 +23,27 @@ export interface OperationEntry {
 // forgotten silently. `repoId` is required (not defaulted) so a call site
 // can't forget it silently the way the pre-M2 schema let every op forget it —
 // pass `null` explicitly for the (currently nonexistent) genuinely global verb.
-export async function recordOperation(tx: Pick<Db, "insert">, entry: OperationEntry): Promise<void> {
-  await tx.insert(operations).values({
-    repoId: entry.repoId,
-    orgId: entry.orgId ?? null,
-    actorId: entry.actorId,
-    verb: entry.verb,
-    target: entry.target,
-    before: entry.before ?? null,
-    after: entry.after ?? null,
-    parentOp: entry.parentOp ?? null,
-  });
+// Returns the row it wrote. Most callers ignore it — recording is a side effect
+// of the change they are making — but a caller that has to *name* the operation
+// it just recorded (undo, which returns it to the client) would otherwise have
+// to go looking for its own write, and "find the operation I just made" is a
+// query with no correct answer under concurrency.
+export async function recordOperation(
+  tx: Pick<Db, "insert">,
+  entry: OperationEntry,
+): Promise<typeof operations.$inferSelect> {
+  const [row] = await tx
+    .insert(operations)
+    .values({
+      repoId: entry.repoId,
+      orgId: entry.orgId ?? null,
+      actorId: entry.actorId,
+      verb: entry.verb,
+      target: entry.target,
+      before: entry.before ?? null,
+      after: entry.after ?? null,
+      parentOp: entry.parentOp ?? null,
+    })
+    .returning();
+  return row!;
 }

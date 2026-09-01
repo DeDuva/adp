@@ -227,14 +227,31 @@ curl -X POST "$PUBLIC_URL/api/adp/repos/<owner>/<repo>/operations/<id>/undo" \
   -H "Authorization: Bearer <token>"
 ```
 
-*Expect:* the call succeeds, and `main` server-side points back at the commit it was on before the
-merge. Verify that directly rather than trusting the response:
+*Expect:* the call succeeds and the response carries `"undo_path": "rollback"`, and `main`
+server-side points back at the commit it was on before the merge. Verify that directly rather
+than trusting the response:
 
 ```bash
 git --git-dir=$GIT_ROOT/<owner>/<repo>.git log --oneline main
 ```
 
 The undo is itself an operation, so the log now records the reversal too.
+
+**C12b. Undo a merge somebody has already built on (#159).** Land a second proposal, then push an
+unrelated commit to `main`, then undo *that* merge. The rollback above is only available while the
+ref still points where the merge left it — which is what makes it exact, and also why it stops
+being available minutes after any merge on an active repository.
+
+*Expect:* the call succeeds with `"undo_path": "revert"` and a `proposal` block instead. `main` has
+**not** moved: the undo produced a change rather than editing history, and that change is a proposal
+on branch `adp/revert-<n>` which still has to satisfy the land policy. Merge it the ordinary way and
+only then is the merge out of the branch. This is the point of the second path — a revert is a
+change, and an undo that bypassed the gate would be a hole in the gate opened by the verb most
+likely to be used in a hurry.
+
+If the later commit touches the same lines the merge did, expect a 422 instead, naming the
+conflicting paths in `conflicts`. That is correct: a revert merged with conflict markers in it
+would be a second outage caused by fixing the first.
 
 ---
 

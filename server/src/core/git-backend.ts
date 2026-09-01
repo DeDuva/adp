@@ -512,6 +512,56 @@ export class GitBackend {
     return stdout.trim();
   }
 
+  // #159: the tree that results from undoing one commit's change on top of
+  // another, without a worktree and without touching a ref.
+  //
+  // A revert is a three-way merge and nothing more exotic: to undo the change
+  // `revertSha` introduced over `revertParentSha`, merge `revertParentSha` into
+  // `ontoSha` using `revertSha` as the merge base. `git merge-tree
+  // --write-tree` performs exactly that in a bare repository and writes the
+  // result to the object store without moving anything — which is what makes
+  // this safe to call before deciding whether the result is acceptable.
+  //
+  // The conflict case is the one that matters. `merge-tree` exits 1 and still
+  // prints a tree, because a conflicted tree containing markers is a useful
+  // thing for some callers; it is not useful here, so a conflict returns the
+  // paths and no tree, and the caller refuses. Producing a broken tree would
+  // be worse than producing nothing (#159), since a revert that lands with
+  // conflict markers in it is a second outage caused by fixing the first.
+  async revertTree(
+    owner: string,
+    name: string,
+    ontoSha: string,
+    revertSha: string,
+    revertParentSha: string,
+  ): Promise<{ ok: true; tree: string } | { ok: false; conflicts: string[] }> {
+    try {
+      const { stdout } = await run(
+        ["merge-tree", "--write-tree", "--name-only", `--merge-base=${revertSha}`, ontoSha, revertParentSha],
+        this.repoPath(owner, name),
+      );
+      return { ok: true, tree: stdout.trim().split("\n")[0]!.trim() };
+    } catch (err) {
+      // Exit 1 is "merged with conflicts", which is an answer rather than a
+      // failure; anything else is git being unable to run at all and must not
+      // be reported as a conflict the user can resolve.
+      const failure = err as { code?: number; stdout?: Buffer | string };
+      if (failure.code !== 1) throw err;
+      // `String()` rather than a Buffer narrowing: `run` above asks for
+      // `encoding: "buffer"`, and Buffer's own `toString()` is utf8.
+      const out = String(failure.stdout ?? "").trim();
+      // Tree oid, then one conflicted path per line, then a blank line and
+      // git's own informational messages.
+      const [, ...rest] = out.split("\n");
+      const conflicts: string[] = [];
+      for (const line of rest) {
+        if (line.trim() === "") break;
+        conflicts.push(line.trim());
+      }
+      return { ok: false, conflicts };
+    }
+  }
+
   async createRef(owner: string, name: string, ref: string, sha: string): Promise<void> {
     await run(["update-ref", ref, sha], this.repoPath(owner, name));
   }
