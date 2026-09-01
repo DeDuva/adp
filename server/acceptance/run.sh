@@ -530,6 +530,48 @@ CLI_OUT=$(ADP_SERVER_URL="http://localhost:${PORT}" ADP_TOKEN="$TOKEN" node "$CL
 grep -q "Describe the widget" <<<"$CLI_OUT" || fail "D14: adp pr list did not show the PR"
 pass "D14 adp CLI (pr list) shows the same PR gh and curl already saw"
 
+# D14b — the verbs #155 added, against the live server rather than against the
+# fake one cli/test stands up. The CLI's own suite proves the request shapes; a
+# request shape can still be wrong about what the real endpoint requires, which
+# is exactly how `repo mirror` once shipped with the wrong `direction`
+# vocabulary. This is the check that catches that class.
+adp() { ADP_SERVER_URL="http://localhost:${PORT}" ADP_TOKEN="$TOKEN" node "$CLI_BIN" "$@"; }
+
+# `adp watch --once`: the land verdict read *without* attempting the merge,
+# which is the one thing no other client could do. The proposal is open again
+# after C12's undo and the gate is green, so what is unmet is the approval.
+WATCH_OUT=$(adp watch --repo "${OWNER}/${REPO}" --pr 1 --once) || fail "D14b: adp watch failed"
+printf '%s\n' "$WATCH_OUT" > "$ARTIFACTS/adp-watch.txt"
+grep -q "Describe the widget" <<<"$WATCH_OUT" || fail "D14b: adp watch did not name the proposal"
+grep -qE "test — 12 passed" <<<"$WATCH_OUT" || fail "D14b: adp watch did not show the gate"
+# The load-bearing assertion: a verdict, read **without attempting the merge**.
+# Nothing else could do that — the only way to find out whether a change would
+# land was to try to land it. By this point in the walkthrough the gate is green
+# and the reviewer has approved, so the verdict is "yes", and it says how.
+#
+# The refusal rendering — each unmet requirement with its remedy and its literal
+# command (#145) — is asserted in cli/test/cli.test.ts against every branch,
+# because reaching each of them here would mean running the walkthrough four
+# times with different floors.
+grep -q "ready to land" <<<"$WATCH_OUT" || fail "D14b: adp watch did not report the land verdict"
+grep -q "adp pr merge --repo ${OWNER}/${REPO} --number 1" <<<"$WATCH_OUT" \
+  || fail "D14b: adp watch reported a landable change without naming the command that lands it"
+pass "D14b adp watch read the land verdict without attempting the merge"
+
+# `adp undo <sha>`: takes the commit git log shows, not an operation id. C12
+# already undid the merge, so this asserts the refusal — which is the half that
+# has to be right, since undoing twice would be the destructive mistake.
+UNDO_OUT=$(adp undo "$MAIN_AFTER" --repo "${OWNER}/${REPO}" 2>&1) && fail "D14b: adp undo did not refuse a second undo"
+grep -qiE "already been undone|no merge in" <<<"$UNDO_OUT" \
+  || fail "D14b: adp undo refused without saying why: $UNDO_OUT"
+pass "D14b adp undo resolves a commit to its merge, and refuses a second undo"
+
+# `adp runner up`: the refusal is the feature. A mounted Docker socket is root
+# on the host, so starting one by accident is the thing this must not do.
+RUNNER_OUT=$(ADP_RUNNER_TOKEN=placeholder adp runner up 2>&1) && fail "D14b: adp runner up started without --here"
+grep -q "root on this host" <<<"$RUNNER_OUT" || fail "D14b: adp runner up refused without naming the reason"
+pass "D14b adp runner up refuses to start here without being told this is the right host"
+
 # D15 — outbound webhooks: register a hook, then trigger a real signed
 # delivery against a real local listener (not a mock of core/webhooks.ts).
 WEBHOOK_SECRET="acceptance-webhook-$(openssl rand -hex 8)"

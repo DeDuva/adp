@@ -16,6 +16,40 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## v0.6.0 — unreleased
 
+**Four verbs the native plane had no command for (#155).** `cli/` wrapped five REST
+calls, and several of ADP's most distinctive capabilities had none — so the documented
+way to reach them was an HTTP request assembled by hand, which is a strange thing to ask
+of somebody evaluating a product whose argument is that the tools should already know.
+
+**`adp watch`** is the command a person leaves open beside an agent: the proposal, its
+gates, the runs against it, and the land verdict. **`adp undo <sha>`** takes the commit
+`git log` shows rather than an operation id, finds the merge that produced it, and says
+which of undo's two paths it took — printing, for a compensating revert, the sentence that
+stops it being read as done: *nothing is undone yet, #9 has to satisfy the land policy
+first*. That is #159's last done-when. **`adp bakeoff`** opens a candidate set and one
+labelled run per harness and prints the comparison — every server piece existed and
+nothing drove them. **`adp runner up`** refuses to start unless told this is the right
+host, because the runner mounts a Docker socket and a mounted daemon socket is root on the
+machine it is mounted from.
+
+**Asking whether a change would land no longer means trying to land it.**
+`GET /pulls/{n}?land=1` returns the verdict, and when it is no, every unmet requirement
+with its remedy and the literal command that satisfies it (#145). Opt-in, because
+evaluating the policy reads gate results, the org's policy repo out of git and flake
+statistics — a cost `gh pr view` should not pay on a route it uses constantly. Additive on
+an existing operation, so the contract version does not move.
+
+**The canonical walkthrough reaches for `curl` nowhere.** Parts B and C of the manual test
+plan — the agent's loop and the human's supervision — now use `adp gate report`,
+`adp pr review` and `adp undo`, and `scripts/check-docs.sh` fails the build if a `curl`
+returns to them. Part D is exempt *by name*: registering a webhook and posting a lockfile
+diff for admission are operator surfaces with no CLI verb by design, and a check that
+swallowed the whole file would stop meaning anything.
+
+`adp pr review` is the fifth command and not one the issue names — one line of REST, added
+because leaving it out would have meant the walkthrough still reached for `curl` for one
+step, which is the whole thing being fixed.
+
 **Trajectory payloads have a retention window (#161).** Ambient capture (#149) started
 writing at a volume nobody had operated before, against an implicit promise of unbounded
 retention that nothing was going to keep — and the first operator to notice would have

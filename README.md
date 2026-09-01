@@ -369,6 +369,11 @@ node dist/index.js login --server https://adp.example.com --token <token>   # wr
 | `adp gate report --repo <owner>/<repo> --sha <sha> --name <name> --status <success\|failure\|pending>` | `POST .../gates` |
 | `adp pr list --repo <owner>/<repo>` | `GET .../pulls` |
 | `adp pr merge --repo <owner>/<repo> --number <n> [--method merge\|squash\|rebase]` | `PUT .../pulls/{n}/merge` |
+| `adp pr review --repo <owner>/<repo> --number <n> --state <approved\|changes_requested\|commented>` | `POST .../pulls/{n}/reviews` |
+| `adp watch --repo <owner>/<repo> [--pr <n>]` | the proposal, its gates, its runs, and whether it would land |
+| `adp undo <sha> --repo <owner>/<repo>` | finds the merge that produced the commit, and says which undo path it took |
+| `adp bakeoff --repo <owner>/<repo> --intent <uuid\|#issue> --harness <a,b,c>` | a candidate set, one labelled run per harness, and the comparison |
+| `adp runner up --here` | starts a gate runner, or refuses and says why not here |
 | `adp connect <claude-code\|codex\|gemini-cli> [--model <name>]` | not a wrapper — see below |
 | `adp disconnect <harness>` | undoes exactly what `connect` wrote |
 

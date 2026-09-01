@@ -251,6 +251,36 @@ else
 	done
 fi
 
+# ---------------------------------------------------------------------------
+# 4. The canonical walkthrough reaches for the product, not for curl (#155).
+# ---------------------------------------------------------------------------
+# Parts B and C of the manual test plan are the §2.1 walkthrough — the agent's
+# loop and the human's supervision — and they are what a first-time reader
+# follows. Every `curl` in them was a capability with no command: the documented
+# way to report a gate, record a review or undo a merge was to assemble an HTTP
+# request by hand, which is a strange thing to ask of somebody evaluating a
+# product whose whole argument is that the tools should already know.
+#
+# Part D onward is deliberately exempt. It is the trust-plane ramp — registering
+# a webhook, posting a lockfile diff for admission, delivering a GitHub-shaped
+# payload — and those are operator and integration surfaces that have no CLI
+# verb by design. Exempting them by *naming* them is the point: a check that
+# swallowed the whole file would stop meaning anything the first time Part D
+# grew a curl nobody minded.
+plan="docs/manual-test-plan.md"
+if [ -f "$plan" ]; then
+	walkthrough=$(awk '/^## Part B/{p=1} /^## Part D/{p=0} p' "$plan")
+	if printf '%s\n' "$walkthrough" | grep -q 'curl'; then
+		note "check-docs: the canonical walkthrough (Parts B–C of $plan) reaches for curl:"
+		printf '%s\n' "$walkthrough" | grep -n 'curl' | sed 's/^/            /' >&2
+		note ""
+		note "            #155: a capability with no command is one whose documented"
+		note "            spelling is an HTTP request assembled by hand. Add the command,"
+		note "            or move the step to Part D and say why it belongs there."
+		fail=1
+	fi
+fi
+
 if [ "$fail" -ne 0 ]; then
 	note ""
 	note "Either the world moved and the document needs updating, or the claim was wrong"

@@ -12,7 +12,8 @@ import { findRepoAuthorized } from "../core/repos-lookup.js";
 import type { LandRequirement } from "../core/repo-policy.js";
 import { emitWebhookEvent } from "../core/webhooks.js";
 import { landProposal } from "../core/land.js";
-import { landRefusalBody } from "../core/land-policy.js";
+import { landRefusalBody, evaluateLandPolicy } from "../core/land-policy.js";
+import { findOrgLandContext } from "../core/org-lookup.js";
 
 const CreateProposalBody = z.object({
   title: z.string().min(1),
@@ -218,6 +219,35 @@ export function registerProposalRoutes(
     if (accept.includes("diff") || accept.includes("patch")) {
       const patch = await gitBackend.diffPatch(owner, repoName, proposal.baseRef, proposal.headSha);
       reply.type(accept.includes("patch") ? "text/x-patch" : "text/x-diff").send(patch);
+      return;
+    }
+
+    // #155: whether this would land, and what is unmet if it would not.
+    //
+    // Opt-in, because evaluating the policy reads gate results, the org's
+    // policy repo out of git, and flake statistics — a cost `gh pr view` should
+    // not pay on every call to a route it uses constantly. `adp watch` asks for
+    // it; nothing else has to.
+    //
+    // It lives here rather than on a route of its own because "can this land"
+    // is a property of the proposal, and because a new operation would move the
+    // contract version for a field. The same reasoning `change_id` and
+    // `candidate_set_id` already sit on this GitHub-shaped response under: a
+    // client that does not know the key ignores it.
+    const wantsLand = (req.query as { land?: string }).land === "1";
+    if (wantsLand && proposal.state === "open") {
+      const org = await findOrgLandContext(db, repo.orgId);
+      const policy = await evaluateLandPolicy(db, gitBackend, instanceFloor, repo, proposal, org);
+      reply.send({
+        ...serializeProposal(proposal, owner, repoName),
+        // The same shape the refusal uses, so what a watcher reads and what a
+        // failed merge prints cannot drift into two different sentences.
+        land: {
+          allowed: policy.allowed,
+          ...landRefusalBody("Land policy not satisfied", policy.unmet),
+          advisories: policy.advisories,
+        },
+      });
       return;
     }
 
