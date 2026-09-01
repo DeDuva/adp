@@ -10,6 +10,16 @@ import { signStatement, type InTotoStatement } from "./dsse.js";
 import { chainGenesis, serializeEvent, type SessionEventRow } from "./trajectory.js";
 
 export type RunRow = typeof runs.$inferSelect;
+export type RunStatus = RunRow["status"];
+
+// #156: the runs list is filterable by status, and the filter is validated
+// against the column's own enum rather than a second copy of it — a hand-copy
+// here would drift the way the web bundle's did (#98).
+export const RUN_STATUSES = ["open", "closed", "abandoned"] as const satisfies readonly RunStatus[];
+
+export function asRunStatus(value: string | undefined): RunStatus | undefined {
+  return (RUN_STATUSES as readonly string[]).includes(value ?? "") ? (value as RunStatus) : undefined;
+}
 
 export const RUN_PREDICATE_TYPE = "https://adp.dev/attestations/run/v1";
 
@@ -533,10 +543,15 @@ export interface RunComparison {
 export async function compareRuns(
   db: Db,
   repoId: string,
-  filter: { intentId?: string; evalName?: string; limit?: number },
+  filter: { intentId?: string; evalName?: string; status?: RunStatus; limit?: number },
 ): Promise<RunComparison[]> {
   const runFilters = [eq(runs.repoId, repoId)];
   if (filter.intentId) runFilters.push(eq(runs.intentId, filter.intentId));
+  // #156: filtered here rather than in the caller, because `limit` is applied
+  // to this query. Narrowing a page of fifty rows after the fact answers "the
+  // closed runs among the fifty most recent", which is not the question anyone
+  // asked and reads identically to the one they did.
+  if (filter.status) runFilters.push(eq(runs.status, filter.status));
 
   const runRows = await db
     .select()

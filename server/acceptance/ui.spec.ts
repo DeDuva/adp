@@ -167,6 +167,85 @@ test("C9-C12: the supervision UI shows intent, evidence, provenance, op log — 
     await shot(page, "06-org-console");
   });
 
+  // #156 — the M3 surface. Until this the supervision UI had six views and none
+  // of them was a run, a session, a trajectory, a checkpoint or an eval, so the
+  // part of ADP that has no GitHub analogue was reachable only by writing an API
+  // client. run.sh's C14 seeded a real run for this to read back.
+  //
+  // The exit criterion is a judgement — "answer 'what was this agent doing when
+  // it wrote this line' in under a minute" — which is what the screenshots are
+  // for. What is asserted here is the part a judgement cannot catch: that the
+  // numbers are rendered as the things they are, and that verification's two
+  // answers stay apart.
+  await test.step("C14 read a run, its trajectory, its verification and its lineage", async () => {
+    await page.getByRole("button", { name: "Runs" }).click();
+    await expect(page.getByRole("heading", { name: "Runs" })).toBeVisible();
+
+    // The arm, off the signed labels rather than guessed from external_ref.
+    const row = page.locator("table.grid tbody tr").filter({ hasText: "claude-opus-5" });
+    await expect(row).toBeVisible();
+    await shot(page, "07-runs");
+
+    await row.click();
+    await expect(page.getByRole("heading", { name: /claude-opus-5/ })).toBeVisible();
+
+    // Verification is three separate tiles, never one tick. The chain verifying
+    // and nothing having been dropped are different assurances.
+    await expect(page.locator(".check").filter({ hasText: "Chain" })).toBeVisible();
+    await expect(page.locator(".check").filter({ hasText: "Completeness" })).toBeVisible();
+    await expect(page.locator(".check").filter({ hasText: "Attestation" })).toBeVisible();
+    await expect(page.locator(".check.ok").filter({ hasText: "chains verify" })).toBeVisible();
+
+    // The trajectory, with its typed columns rendered as what they are. The
+    // cost is the one worth asserting: 9400 micro-USD is $0.0094, and a view
+    // that rounded it to $0.00 would be useless for the comparison the column
+    // exists for.
+    await expect(page.getByRole("heading", { name: "Trajectory" })).toBeVisible();
+    const modelCall = page.locator("table.trajectory tbody tr").filter({ hasText: "completion" });
+    await expect(modelCall).toContainText("$0.0094");
+    await expect(modelCall).toContainText("2.2k");
+    await expect(modelCall).toContainText("3.1s");
+
+    // A failed tool call is findable by scanning rather than by reading.
+    await expect(page.locator("table.trajectory tbody tr.row-bad").filter({ hasText: "Bash" })).toBeVisible();
+    await shot(page, "08-run-detail");
+
+    // The kind filter is rendered from a copy of the server's own EVENT_KINDS
+    // (bound to it by api.test.ts), so every kind here is one the server writes.
+    await page.getByRole("button", { name: "tool_call" }).click();
+    await expect(page.locator("table.trajectory tbody tr").filter({ hasText: "completion" })).toHaveCount(0);
+    await expect(page.locator("table.trajectory tbody tr").filter({ hasText: "Bash" })).toBeVisible();
+    await page.getByRole("button", { name: "clear" }).click();
+
+    // "What was this agent doing when it wrote this line": open the commit
+    // event and the payload is there.
+    await page.locator("table.trajectory tbody tr").filter({ hasText: "git" }).first().click();
+    await expect(page.locator(".payload")).toBeVisible();
+    await shot(page, "09-trajectory-event");
+
+    // D2, drawn rather than asserted: one continuous signed history across two
+    // harnesses. The seeded run checkpointed under claude-code and resumed
+    // under codex — so the *resumed* session is the one that has a chain to
+    // show. Opening the root instead shows a lineage of one, which is correct
+    // and proves nothing.
+    await page.locator("table.grid tbody tr").filter({ hasText: "codex" }).first().click();
+    await expect(page.getByRole("heading", { name: "Lineage" })).toBeVisible();
+    const chain = page.locator(".lineage li");
+    await expect(chain).toHaveCount(2);
+    await expect(chain.nth(0)).toContainText("claude-code");
+    await expect(chain.nth(1)).toContainText("codex");
+    // The current session is the one you are on, and it is marked rather than
+    // merely present — a chain you cannot locate yourself in is a list.
+    await expect(page.locator(".lineage li.current")).toHaveCount(1);
+    await shot(page, "10-session-lineage");
+
+    // And the root, reached by following the chain back — which is the
+    // navigation the lineage exists to provide.
+    await chain.nth(0).getByRole("button").click();
+    await expect(page.getByRole("heading", { name: "Checkpoints" })).toBeVisible();
+    await expect(page.locator("table.grid tbody tr")).toContainText("claude-code");
+  });
+
   expect(
     pageErrors,
     `the page reported errors:\n${pageErrors.join("\n")}` +

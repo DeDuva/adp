@@ -163,9 +163,22 @@ exist" from the browser in under a minute.
 |---|---|---|---|
 | 1-12 | `adp init` — attach to a repo that already exists, and detect the toolchain | #153 | not started. Mirror mode is the way in: it asks one developer to add a remote rather than a team to agree |
 | 1-13 | CLI: `watch`, `undo`, `bakeoff`, `runner` | #155 | not started. Removes the last two raw round-trips from the canonical walkthrough |
-| 1-14 | Runs, sessions, trajectories and evals in the UI | #156 | not started. `server/web/src/App.tsx` has six views and none of them is any of these, so the whole M3 surface is API-only |
 | 1-15 | Commit → intent → run navigation | #157 | not started. The commit-to-intent edge is populated now that trailers bind it; what is missing is a surface that follows it |
 | 1-16 | An interim retention default | #161 | not started. 3-6 is the real policy and waits on 3-5; this decides only what happens in the interval, which 1-7 makes expensive to get wrong |
+
+**1-14 is finished, and it found the limit of its own exit criterion.** The M3 surface has a reader
+now — runs, run detail, the trajectory with its typed columns, verification as two separate answers,
+and session lineage across harnesses. What it cannot do is answer "what was this agent *saying* when
+it wrote this line", because under #199's default `trajectory.payloads: structure` the strings are
+replaced by their byte counts before the event is chained. The shape survives and the content does
+not. Everything the run *did* is there — the tool, its verdict, the tokens, the cost, the commit —
+and the view says which of the two it is showing rather than rendering the projection marker as
+though the agent had said it.
+
+That is the right default and it is worth restating here because it prices 1-16 and 3-6: the
+structural projection is already a retention policy for the most valuable payloads, taken before
+anyone measured what retaining them would cost. A repo widens it with one line of `adp.yaml`, and
+`1-16`'s interim default should not quietly narrow it further on the same surface.
 
 2-3 belongs to this release as well. So did 3-4 and 2-2, both finished: verification of a
 trajectory now costs a constant rather than a session, which is the precondition for 1-14 putting a

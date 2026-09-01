@@ -200,6 +200,190 @@ export interface OrgRepoPolicy {
   resolved: { requirement: LandRequirement; from: PolicyLayer[] }[];
 }
 
+// ── M3 surface: runs, sessions, trajectories, evals (#156) ────────────────
+//
+// The whole M3 plane was API-only until this: six views, none of them a run, a
+// session, a trajectory, a checkpoint or an eval. A trajectory is worth its
+// write cost only if something consumes it, and the second consumer has to be a
+// person or the recording is an experiment rather than a product.
+
+// A runtime array bound to the server's own list, the same way
+// LAND_REQUIREMENTS is and for the same reason (#98): the kind filter is
+// rendered from this, so a copy that drifts renders a filter that silently
+// cannot select a kind the server writes.
+export const EVENT_KINDS = [
+  "message",
+  "model_call",
+  "tool_call",
+  "handoff",
+  "commit",
+  "test_result",
+  "custom",
+] as const;
+export type EventKind = (typeof EVENT_KINDS)[number];
+
+export const RUN_STATUSES = ["open", "closed", "abandoned"] as const;
+export type RunStatus = (typeof RUN_STATUSES)[number];
+
+export interface ComparisonEval {
+  name: string;
+  score: number | null;
+  passed: boolean | null;
+  gateStatus: string;
+}
+
+// One row of the runs list. This is `/runs/compare` without an intent filter —
+// the aggregates the list wants (events, cost, duration, tool failures) are
+// already computed there, server-side and in one request, which is the
+// difference between a list and fifty round trips.
+export interface RunRow {
+  runId: string;
+  externalRef: string | null;
+  orchestrator: string;
+  status: RunStatus;
+  labels: Record<string, string>;
+  finalGitSha: string | null;
+  trajectoryDigest: string | null;
+  eval: ComparisonEval | null;
+  evals: (ComparisonEval & { createdAt: string })[];
+  events: number;
+  tokensIn: number;
+  tokensOut: number;
+  costMicroUsd: number;
+  durationMs: number;
+  toolCalls: number;
+  toolFailures: number;
+  createdAt: string;
+  closedAt: string | null;
+}
+
+export interface RunSession {
+  id: string;
+  harness: string;
+  status: "active" | "suspended" | "resumed" | "closed";
+  workspace_id: string | null;
+  resumed_from_session_id: string | null;
+  event_count: number;
+  chain_head: string | null;
+  created_at: string;
+}
+
+export interface RunDetail {
+  id: string;
+  intent_id: string;
+  orchestrator: string;
+  external_ref: string | null;
+  labels: Record<string, string>;
+  status: RunStatus;
+  final_git_sha: string | null;
+  trajectory_digest: string | null;
+  envelope: unknown;
+  created_at: string;
+  closed_at: string | null;
+  sessions: RunSession[];
+  evals: { id: string; name: string; score: number | null; passed: boolean | null; reporter_principal: string; separately_authorized: boolean; created_at: string }[];
+}
+
+// Every typed column the chain commits to. They are rendered as what they are —
+// tokens, cost, duration, tool identity, status — rather than as a JSON blob,
+// which is the entire reason the schema has them.
+export interface TrajectoryEvent {
+  id: string;
+  session_id: string;
+  seq: number;
+  kind: EventKind;
+  type: string;
+  payload: unknown;
+  status: string | null;
+  model: string | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  cost_micro_usd: number | null;
+  duration_ms: number | null;
+  git_sha: string | null;
+  related_session_id: string | null;
+  client_event_id: string | null;
+  producer_seq: number | null;
+  producer_id: string | null;
+  redactions: { path: string; pattern: string }[] | null;
+  payload_digest: string | null;
+  occurred_at: string;
+  created_at: string;
+}
+
+export interface TrajectoryPage {
+  run_id: string;
+  total: number;
+  events: TrajectoryEvent[];
+}
+
+// #152. `chains_ok` and `emitters_ok` are deliberately separate answers and the
+// UI keeps them separate: "verified" and "nothing was dropped" are different
+// assurances, and collapsing them into one green tick throws away the more
+// interesting half. `coverage` and `prefix` say how much of each chain the
+// answer is actually about.
+export interface VerifySession {
+  session_id: string;
+  ok: boolean;
+  event_count: number;
+  head: string | null;
+  broke_at_seq: number | null;
+  reason: string | null;
+  emitter_tracked: boolean;
+  emitter_complete: boolean;
+  emitter_first_gap: number | null;
+  verified_from_seq: number;
+  verified_to_seq: number;
+  prefix: "recomputed" | "attested" | "assumed";
+  attested_heads_checked: number;
+  anchor: { checkpoint_id: string; checkpoint_seq: number; event_count: number; head: string } | null;
+}
+
+export interface RunVerification {
+  run_id: string;
+  ok: boolean;
+  coverage: "full" | "from-checkpoint";
+  chains_ok: boolean;
+  emitters_ok: boolean;
+  envelope_verified: boolean | null;
+  trajectory_digest_matches: boolean | null;
+  recomputed_trajectory_digest: string;
+  attested_trajectory_digest: string | null;
+  final_git_sha: string | null;
+  attested_subject_sha: string | null;
+  sessions: VerifySession[];
+}
+
+export interface Checkpoint {
+  id: string;
+  session_id: string;
+  seq: number;
+  git_sha: string;
+  harness: string;
+  state: unknown;
+  envelope: unknown;
+  created_at: string;
+}
+
+export interface SessionSummary {
+  id: string;
+  run_id: string | null;
+  intent_id: string | null;
+  workspace_id: string | null;
+  harness: string;
+  status: "active" | "suspended" | "resumed" | "closed";
+  resumed_from_session_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionDetail extends SessionSummary {
+  // Oldest first: the session that started the work, then each resume. A chain
+  // across three harnesses is a picture rather than a series of API calls.
+  lineage: SessionSummary[];
+  checkpoints: Checkpoint[];
+}
+
 export interface EvidenceBundle {
   git_sha: string;
   change: { id: string; intent_id: string | null; provenance: unknown; signature: string; created_at: string } | null;
@@ -244,6 +428,36 @@ export const api = {
     request<CandidateSetSummary[]>(conn, `/api/adp/repos/${conn.owner}/${conn.repo}/candidate-sets`),
   getCandidateSet: (conn: Connection, id: string) =>
     request<CandidateSetDetail>(conn, `/api/adp/repos/${conn.owner}/${conn.repo}/candidate-sets/${id}`),
+
+  // #156. The list is `/runs/compare` with no intent filter — see RunRow.
+  listRuns: (conn: Connection, filters: { intent_id?: string; status?: string }) => {
+    const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v) as [string, string][]).toString();
+    return request<{ intent_id: string | null; runs: RunRow[] }>(
+      conn,
+      `/api/adp/repos/${conn.owner}/${conn.repo}/runs/compare${qs ? `?${qs}` : ""}`,
+    );
+  },
+  getRun: (conn: Connection, runId: string) =>
+    request<RunDetail>(conn, `/api/adp/repos/${conn.owner}/${conn.repo}/runs/${runId}`),
+  // Paged deliberately: a long trajectory must not load the run into the
+  // browser, which is the same property #152 gave the server side of it.
+  getTrajectory: (conn: Connection, runId: string, opts: { kinds?: EventKind[]; limit: number; offset: number }) => {
+    const qs = new URLSearchParams({ limit: String(opts.limit), offset: String(opts.offset) });
+    if (opts.kinds && opts.kinds.length > 0) qs.set("kinds", opts.kinds.join(","));
+    return request<TrajectoryPage>(
+      conn,
+      `/api/adp/repos/${conn.owner}/${conn.repo}/runs/${runId}/trajectory?${qs.toString()}`,
+    );
+  },
+  verifyRun: (conn: Connection, runId: string) =>
+    request<RunVerification>(conn, `/api/adp/repos/${conn.owner}/${conn.repo}/runs/${runId}/verify`),
+  getSession: (conn: Connection, sessionId: string) =>
+    request<SessionDetail>(conn, `/api/adp/repos/${conn.owner}/${conn.repo}/sessions/${sessionId}`),
+  verifySession: (conn: Connection, sessionId: string) =>
+    request<VerifySession & { coverage: string }>(
+      conn,
+      `/api/adp/repos/${conn.owner}/${conn.repo}/sessions/${sessionId}/verify`,
+    ),
 
   getEvidence: (conn: Connection, gitSha: string) =>
     request<EvidenceBundle>(conn, `/api/adp/repos/${conn.owner}/${conn.repo}/evidence/${gitSha}`),

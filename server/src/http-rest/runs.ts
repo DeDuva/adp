@@ -18,6 +18,7 @@ import {
   runStats,
   runTrajectory,
   compareRuns,
+  asRunStatus,
   trajectoryDigest,
   serializeRun,
 } from "../core/runs.js";
@@ -152,11 +153,16 @@ export function registerRunRoutes(
   app.get("/api/adp/repos/:owner/:repo/runs/compare", { preHandler: requireScope("repo:read") }, async (req, reply) => {
     const repo = await repoOr404(req, reply);
     if (!repo) return;
-    const query = req.query as { intent_id?: string; eval?: string; limit?: string };
+    const query = req.query as { intent_id?: string; eval?: string; status?: string; limit?: string };
 
     const comparisons = await compareRuns(db, repo.id, {
       intentId: query.intent_id,
       evalName: query.eval,
+      // An unrecognised status is ignored rather than refused, matching the
+      // list route beside it: these are display filters, and a typo that
+      // silently returns everything is a better failure than a 422 in the
+      // middle of someone narrowing a table.
+      status: asRunStatus(query.status),
       limit: Number(query.limit ?? 50) || 50,
     });
     reply.send({ intent_id: query.intent_id ?? null, runs: comparisons });

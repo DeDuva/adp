@@ -294,3 +294,109 @@ table.gate-table th, table.gate-table td { text-align: left; padding: 0.4rem 0.6
 /* Sections stack in this view, unlike the single-h2 views elsewhere, so the
    headings need breathing room above them rather than only below. */
 .org-console h2 { margin-top: 1.6rem; }
+
+/* ── The M3 surface: runs, trajectories, sessions (#156) ───────────────────
+   Every colour here comes from the variables above, and every dimension from
+   the scale the rest of this file already uses. A second palette living in one
+   view is how a restyle becomes an audit. */
+
+.grid { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-bottom: 1.5rem; }
+.grid th {
+  text-align: left;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+  font-weight: 600;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+.grid td { padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.grid tr:last-child td { border-bottom: none; }
+.grid .num { text-align: right; }
+.grid tr.clickable { cursor: pointer; }
+.grid tr.clickable:hover { background: var(--paper-raised); }
+/* A failed step is the one a reader is looking for, so it is findable by
+   scanning rather than by reading the status column. */
+.grid tr.row-bad td:first-child { box-shadow: inset 2px 0 0 var(--danger); }
+.bad { color: var(--danger); }
+
+/* Horizontal scroll belongs to the table, never to the page: a trajectory has
+   nine columns and a narrow window must not push the nav off-screen. */
+.grid { display: block; overflow-x: auto; white-space: nowrap; }
+.grid .what { white-space: normal; max-width: 44rem; }
+
+.filters { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-end; margin-bottom: 1rem; }
+.filters .field { display: flex; flex-direction: column; gap: 0.2rem; }
+.filters .field span { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
+.filters select, .filters input {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.chip {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.chip.clear { border-style: dashed; }
+
+.kind { font-size: 0.75rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.pager { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1.5rem; }
+.pager .btn[disabled] { opacity: 0.4; cursor: default; }
+
+.detail-row td { background: var(--paper-raised); white-space: normal; }
+.event-detail { padding: 0.3rem 0; }
+.payload {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.6rem;
+  margin: 0.5rem 0 0;
+  max-height: 20rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* The two answers stay apart visually as well as in the data — one tile each,
+   so there is no single tick to read instead of both. */
+.verification .checks { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0.6rem 0; }
+.check { flex: 1 1 12rem; border: 1px solid var(--line); border-radius: 8px; padding: 0.55rem 0.7rem; }
+.check-title { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
+.check-label { font-size: 0.9rem; margin-top: 0.15rem; }
+.check.ok { border-color: var(--done); background: var(--done-soft); }
+.check.bad { border-color: var(--danger); background: var(--danger-soft); }
+.check.warn, .check.unknown { border-color: var(--warn); background: var(--warn-soft); }
+.card.verification.bad { border-color: var(--danger); }
+
+.linkish {
+  font: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.linkish[disabled] { color: var(--ink-soft); cursor: default; text-decoration: none; }
+
+.lineage { list-style: none; margin: 0 0 1.5rem; padding: 0; }
+.lineage li { border-left: 2px solid var(--line); padding: 0 0 0.9rem 0.9rem; }
+.lineage li.current { border-left-color: var(--accent); }
+.lineage-harness { font-size: 0.95rem; }
+.lineage-arrow { font-size: 0.75rem; color: var(--ink-soft); margin-top: 0.35rem; }
