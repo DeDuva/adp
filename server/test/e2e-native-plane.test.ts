@@ -169,6 +169,15 @@ describe.skipIf(skipWithoutDb)("M1c: workspaces + evidence bundle", () => {
   it("returns an empty-but-shaped bundle for a commit with no change or gate history", async () => {
     const bundle = await api(`/api/adp/repos/${owner}/${repoName}/evidence/${"f".repeat(40)}`);
     expect(bundle.status).toBe(200);
-    expect(bundle.body).toEqual({ git_sha: "f".repeat(40), change: null, gates: [] });
+    // #157: `produced_by` is present and empty rather than absent. An unknown
+    // sha is a legitimate question and "nothing ADP saw produced this" is the
+    // answer — a caller that has to distinguish a missing key from an empty
+    // one is a caller doing the schema's job.
+    expect(bundle.body).toEqual({
+      git_sha: "f".repeat(40),
+      change: null,
+      gates: [],
+      produced_by: { sessions: [], runs: [], proposals: [] },
+    });
   });
 });

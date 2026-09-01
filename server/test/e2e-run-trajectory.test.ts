@@ -620,6 +620,53 @@ describe.skipIf(skipWithoutDb)("run trajectory and eval-gated close", () => {
     expect(restored.body.ok).toBe(true);
   });
 
+  // #157's other direction, and the one the trajectory actually serves: a
+  // commit recorded as an event names the session that made it, and that
+  // session names its run. `session_events.git_sha` is typed for exactly this
+  // join, so nothing here parses a payload.
+  it("walks from a commit back to the session and run that produced it", async () => {
+    // The commit event this suite already recorded, rather than a new one: by
+    // this point the run is closed and its sessions with it, so appending here
+    // would be refused — correctly, since a closed session's chain is what the
+    // run attestation named.
+    const commitSha = finalSha;
+
+    const bundle = await api(`/api/adp/repos/${owner}/${repoName}/evidence/${commitSha}`);
+    expect(bundle.status).toBe(200);
+    const produced = bundle.body.produced_by as {
+      sessions: { id: string; harness: string; run_id: string; seq: number }[];
+      runs: { id: string; status: string }[];
+      proposals: unknown[];
+    };
+    // Contains rather than equals: more than one session may legitimately name
+    // the same commit — a second agent that also recorded it, or a later run
+    // that closed against it — and an assertion that forbade that would be
+    // pinning an accident of this fixture rather than the behaviour.
+    const backend = produced.sessions.find((s) => s.id === backendSession);
+    expect(backend, "the session that recorded the commit event is not among the edges").toBeDefined();
+    expect(backend!.run_id).toBe(runId);
+    // A real seq, unlike the trailer-only case in e2e-hooks: this commit was
+    // observed at a point in the trajectory, and the point is part of the
+    // answer.
+    expect(backend!.seq).toBeGreaterThan(0);
+    expect(produced.runs.map((r) => r.id)).toContain(runId);
+
+    // And the run knows its commits, which is what makes the loop a loop rather
+    // than a one-way link.
+    const run = await api(`/api/adp/repos/${owner}/${repoName}/runs/${runId}`);
+    expect(run.body.commits).toContain(commitSha);
+  });
+
+  // A commit nothing recorded still answers, with an empty set rather than a
+  // 404 — an evidence bundle for an unknown sha is a legitimate question, and
+  // "nothing produced this that ADP saw" is the answer.
+  it("answers for a commit no session and no run ever named", async () => {
+    const bundle = await api(`/api/adp/repos/${owner}/${repoName}/evidence/${"d".repeat(40)}`);
+    expect(bundle.status).toBe(200);
+    expect(bundle.body.produced_by).toEqual({ sessions: [], runs: [], proposals: [] });
+    expect(bundle.body.change).toBeNull();
+  });
+
   // The point of recording trajectories: N attempts at one assignment, each
   // pairing an attested outcome with what it cost to produce.
   it("compares runs against one intent, ranked by attested score", async () => {

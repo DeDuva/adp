@@ -163,7 +163,6 @@ exist" from the browser in under a minute.
 |---|---|---|---|
 | 1-12 | `adp init` — attach to a repo that already exists, and detect the toolchain | #153 | not started. Mirror mode is the way in: it asks one developer to add a remote rather than a team to agree |
 | 1-13 | CLI: `watch`, `undo`, `bakeoff`, `runner` | #155 | not started. Removes the last two raw round-trips from the canonical walkthrough |
-| 1-15 | Commit → intent → run navigation | #157 | not started. The commit-to-intent edge is populated now that trailers bind it; what is missing is a surface that follows it |
 | 1-16 | An interim retention default | #161 | not started. 3-6 is the real policy and waits on 3-5; this decides only what happens in the interval, which 1-7 makes expensive to get wrong |
 
 **1-14 is finished, and it found the limit of its own exit criterion.** The M3 surface has a reader
@@ -179,6 +178,13 @@ That is the right default and it is worth restating here because it prices 1-16 
 structural projection is already a retention policy for the most valuable payloads, taken before
 anyone measured what retaining them would cost. A repo widens it with one line of `adp.yaml`, and
 `1-16`'s interim default should not quietly narrow it further on the same surface.
+
+**1-15 is finished**, and with 1-14 it settles 1c's exit criterion: the record is navigable in both
+directions, from a landed commit to the intent that asked for it and the trajectory that produced
+it, and back. It works for a commit made by a plain `git push` — which is the case that mattered,
+since a join over `session_events` alone would have answered only for commits some recorder happened
+to observe. A pushed commit names its session through the change's provenance instead, and the
+bundle now walks both routes.
 
 2-3 belongs to this release as well. So did 3-4 and 2-2, both finished: verification of a
 trajectory now costs a constant rather than a session, which is the precondition for 1-14 putting a

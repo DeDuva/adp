@@ -14,6 +14,7 @@ import { mintToken } from "../src/auth/tokens.js";
 import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
 import { GitBackend } from "../src/core/git-backend.js";
+import { getEvidenceBundle } from "../src/core/evidence.js";
 import { Signer } from "../src/core/signing.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
 import { repoAccessCheck } from "../src/core/repos-lookup.js";
@@ -178,6 +179,22 @@ describe.skipIf(skipWithoutDb)("M1c: receive-path hooks", () => {
         change!.signature,
       ),
     ).toBe(true);
+
+    // #157's second done-when, and the one that decides whether the navigation
+    // is worth having: the path has to work for a commit recorded by a plain
+    // `git push`, not only for one recorded through the explicit API. This
+    // commit was pushed. Nothing called a run or session route for it.
+    const bundle = await getEvidenceBundle(db, repo.id, sha);
+    expect(bundle.change?.intent?.title).toBe("Clamp the retry backoff at 30s");
+    // By number, because that is what a person can navigate to — the uuid is
+    // what the API is keyed by and not what anyone reads.
+    expect(bundle.change?.intent?.issue_number).toBe(7);
+
+    // The session came from the trailer rather than from a commit event, which
+    // is the only route a pushed commit has: no recorder observed this push, so
+    // `session_events` holds nothing naming this sha.
+    expect(bundle.produced_by.sessions.map((s) => s.id)).toEqual([session!.id]);
+    expect(bundle.produced_by.sessions[0]!.seq).toBe(0);
   });
 
   it("records the change unbound when a trailer names nothing this repo has, and never fails the push", async () => {

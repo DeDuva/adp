@@ -9,14 +9,19 @@ export default function RunDetailView({
   onBack,
   onOpenSession,
   onViewEvidence,
+  onOpenIssue,
 }: {
   conn: Connection;
   runId: string;
   onBack: () => void;
   onOpenSession: (id: string) => void;
   onViewEvidence: (sha: string) => void;
+  onOpenIssue: (number: number) => void;
 }) {
   const [run, setRun] = useState<RunDetail | null>(null);
+  // Resolved by asking the intent's own issue, which is the only place the
+  // number lives. One request, and only when the run is loaded.
+  const [intentIssue, setIntentIssue] = useState<number | null>(null);
   const [verification, setVerification] = useState<RunVerification | null>(null);
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -25,9 +30,17 @@ export default function RunDetailView({
     setRun(null);
     setVerification(null);
     setVerifyError(null);
+    setIntentIssue(null);
     api
       .getRun(conn, runId)
-      .then(setRun)
+      .then(async (r) => {
+        setRun(r);
+        // The issue that carries this run's intent. Found by looking rather
+        // than by holding a second copy of the number on the run: an intent may
+        // come from an issue, a task or the API, and only the first has one.
+        const issues = await api.listIssues(conn).catch(() => []);
+        setIntentIssue(issues.find((i) => i.intent_id === r.intent_id)?.number ?? null);
+      })
       .catch((err) => setError(err instanceof ApiError ? err.message : String(err)));
     // Separate request, and a separate failure: verification is the expensive
     // half and the run is still worth reading if it cannot be computed. Since
@@ -66,7 +79,19 @@ export default function RunDetailView({
           </div>
 
           <div className="meta">
-            intent <span className="mono">{run.intent_id}</span>
+            {/* #157: an intent is reachable through the issue that carries it,
+                which is the thing a person can read. The uuid stays visible
+                because it is what the API is keyed by, and someone comparing a
+                run to a trajectory needs it. */}
+            for{" "}
+            {intentIssue !== null ? (
+              <button className="linkish" onClick={() => onOpenIssue(intentIssue)}>
+                #{intentIssue}
+              </button>
+            ) : (
+              "an intent with no issue"
+            )}{" "}
+            <span className="mono">{run.intent_id}</span>
             {run.final_git_sha && (
               <>
                 {" "}
@@ -152,6 +177,27 @@ export default function RunDetailView({
                   ))}
                 </tbody>
               </table>
+            </>
+          )}
+
+          {/* #157: run → its commits, each one a step back into the evidence
+              the other direction of this edge starts from. `final_git_sha` is
+              what the run attested; these are everything its sessions actually
+              committed on the way, which is not the same list. */}
+          {run.commits.length > 0 && (
+            <>
+              <h2>Commits</h2>
+              <div className="meta">
+                Recorded as commit events in the trajectory. Open one for its signed change, its provenance and
+                every gate reported against it.
+              </div>
+              <div className="commit-list">
+                {run.commits.map((sha) => (
+                  <button key={sha} className="linkish mono" onClick={() => onViewEvidence(sha)}>
+                    {shortSha(sha, 10)}
+                  </button>
+                ))}
+              </div>
             </>
           )}
 

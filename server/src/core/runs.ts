@@ -350,6 +350,29 @@ export interface RunStats {
   commits: string[];
 }
 
+// #157: the commits a run produced, read off `session_events.git_sha` on commit
+// events — which is what that column is typed for, so the join needs no payload
+// parsing. Shared with `runStats` so the run detail page and the stats endpoint
+// can never disagree about what a run committed.
+export async function runCommits(db: Db, runId: string): Promise<string[]> {
+  const sessionRows = await db.select({ id: sessions.id }).from(sessions).where(eq(sessions.runId, runId));
+  if (sessionRows.length === 0) return [];
+  const rows = await db
+    .selectDistinct({ gitSha: sessionEvents.gitSha })
+    .from(sessionEvents)
+    .where(
+      and(
+        inArray(
+          sessionEvents.sessionId,
+          sessionRows.map((s) => s.id),
+        ),
+        eq(sessionEvents.kind, "commit"),
+        sql`${sessionEvents.gitSha} is not null`,
+      ),
+    );
+  return rows.map((r) => r.gitSha!);
+}
+
 // The shape eval-based optimization actually reads: what a run cost, what it
 // spent it on, and where it failed — computed in SQL over the typed columns
 // rather than by pulling a million payloads into Node to count them.

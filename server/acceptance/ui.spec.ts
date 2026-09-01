@@ -246,6 +246,52 @@ test("C9-C12: the supervision UI shows intent, evidence, provenance, op log — 
     await expect(page.locator("table.grid tbody tr")).toContainText("claude-code");
   });
 
+  // #157 — the record is navigable in both directions. The done-when is
+  // literal: "from any landed commit, a person reaches the intent and the
+  // trajectory without typing a URL", and "the path works for a commit recorded
+  // by a plain `git push`, not only for one recorded through the explicit API".
+  //
+  // The commit walked here is the one Part B pushed with `git push` and an
+  // `ADP-Intent` trailer. Nothing called a run or session route for it.
+  await test.step("C15 walk from a landed commit to the intent that asked for it", async () => {
+    await page.getByRole("button", { name: "Operation log" }).click();
+    // The change the push auto-recorded — the ordinary case, not an API call.
+    const pushed = page.locator(".list-row").filter({ hasText: "change.create" }).first();
+    await pushed.getByRole("button", { name: "Evidence" }).click();
+    await expect(page.getByRole("heading", { name: /^Evidence/ })).toBeVisible();
+
+    // The intent, by issue number and title rather than as a uuid. This is the
+    // exact point at which JTBD-2 was one click from being answered and was
+    // not.
+    const intentLink = page.locator(".linkish").filter({ hasText: "#1" }).first();
+    await expect(intentLink).toBeVisible();
+    await shot(page, "11-evidence-navigable");
+
+    await intentLink.click();
+    await expect(page.getByRole("heading", { name: /#1$/ })).toBeVisible();
+
+    // And the other direction: the issue lists the runs against its intent,
+    // each pairing what it produced with what it cost. C14 seeded one.
+    await expect(page.getByRole("heading", { name: /^Attempts/ })).toBeVisible();
+    const attempt = page.locator("table.grid tbody tr").filter({ hasText: "claude-opus-5" });
+    await expect(attempt).toBeVisible();
+    await shot(page, "12-issue-attempts");
+
+    // Issue → run → the commits it produced → back into evidence. A loop, which
+    // is what "navigable in both directions" has to mean to be worth anything.
+    await attempt.click();
+    await expect(page.getByRole("heading", { name: "Commits" })).toBeVisible();
+    await page.locator(".commit-list .linkish").first().click();
+    await expect(page.getByRole("heading", { name: /^Evidence/ })).toBeVisible();
+
+    // From that commit, the session that produced it — reached without typing
+    // a URL, which is the whole criterion.
+    await expect(page.locator(".edge-label").filter({ hasText: "Session" })).toBeVisible();
+    await page.locator(".edge").filter({ hasText: "Session" }).locator(".linkish").first().click();
+    await expect(page.getByRole("heading", { name: "Lineage" })).toBeVisible();
+    await shot(page, "13-commit-to-session");
+  });
+
   expect(
     pageErrors,
     `the page reported errors:\n${pageErrors.join("\n")}` +

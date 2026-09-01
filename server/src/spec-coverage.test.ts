@@ -256,7 +256,6 @@ const RESPONSE_SCHEMA_DEBT = new Set<string>([
   "DELETE /api/adp/repos/{owner}/{repo}/workspaces/{id}",
   "GET /api/adp/repos/{owner}/{repo}/candidate-sets",
   "GET /api/adp/repos/{owner}/{repo}/candidate-sets/{id}",
-  "GET /api/adp/repos/{owner}/{repo}/evidence/{sha}",
   "GET /api/adp/repos/{owner}/{repo}/operations",
   "GET /api/adp/repos/{owner}/{repo}/operations/{id}",
   "GET /api/adp/repos/{owner}/{repo}/runs/{runId}",

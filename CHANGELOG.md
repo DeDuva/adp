@@ -16,6 +16,35 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## v0.6.0 — unreleased
 
+**The record is navigable in both directions (#157).** `getEvidenceBundle` has returned
+the change with its `intent_id` since M1 and the intent's title since #189, and the
+evidence view rendered neither — which is the exact point at which "when a change lands
+wrong, I want to know what the agent was trying to do" was one click from being answered
+and was not. The reader was holding the identifier of the thing they wanted with no way to
+follow it.
+
+Four edges, each a join over data that already existed. **Evidence → intent**, by issue
+number and title rather than as a uuid. **Intent → the runs against it**, each pairing what
+it produced with what it cost, on the issue that carries it. **Run → its commits**, off
+`session_events.git_sha`. **Commit → the session that produced it**, and the run that
+session belongs to.
+
+**The second route to a session is the one that mattered.** #157 asks that the path work
+for a commit recorded by a plain `git push`, not only for one recorded through the explicit
+API — and a join over `session_events.git_sha` alone answers only for commits some recorder
+happened to observe. A pushed commit carrying an `ADP-Session` trailer records the id in
+the change's *provenance*, not as a trajectory event, so the bundle walks both routes. A
+session known only from a trailer reports `seq: 0`, which is not a seq — they are 1-based —
+and therefore says "no such event" rather than "the first one".
+
+`produced_by` is **navigation, not evidence**: nothing in it is signed and none of it
+changes what the bundle attests. The route is typed in the contract now (`EvidenceBundle`,
+`ProducedBy`), which takes a second line off `spec-coverage.test.ts`'s response-schema debt
+list.
+
+Incidentally: the issue view rendered "opened by ·" with a gap where a name should be,
+because the issue read routes serialize no author. It claims only what the API says now.
+
 **The M3 surface has a reader (#156).** The supervision UI had six views and none of
 them was a run, a session, a trajectory, a checkpoint or an eval — so the part of ADP
 that has no GitHub analogue, and is the reason to run it, was reachable only by someone

@@ -2128,6 +2128,16 @@ paths:
         read to answer why a line exists, and the intent's body belongs behind
         its own read rather than inflating every bundle. Null when the change
         is unbound, which is an ordinary state rather than an error.
+
+        #157: `change.intent` also carries `issue_number`, and `produced_by`
+        carries the three edges out of a commit — the sessions that produced it
+        (via `session_events.git_sha`, which is typed on commit events precisely
+        so this join needs no payload parsing), the runs those sessions belong
+        to or that closed against this commit, and any proposal whose head this
+        is. That block is **navigation, not evidence**: nothing in it is signed
+        and none of it changes what the bundle attests. It is here because the
+        alternative is a reader holding the identifier of the thing they want
+        and no way to follow it.
       security:
         - bearerAuth: []
       responses:
@@ -2139,6 +2149,10 @@ paths:
           description: Missing or invalid token
         "200":
           description: Evidence bundle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvidenceBundle"
   /api/adp/repos/{owner}/{repo}/gate-jobs:
     parameters:
       - $ref: "#/components/parameters/owner"
@@ -4318,6 +4332,117 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RunVerifySession"
+    EvidenceBundle:
+      type: object
+      description: >
+        Everything already signed and stored about one commit, assembled by one
+        read: the change record, every gate result's DSSE envelope, and — since
+        #157 — the unsigned edges to what produced it.
+      required: [git_sha, change, gates, produced_by]
+      properties:
+        git_sha: { type: string }
+        change:
+          nullable: true
+          description: Null when nothing recorded a change for this commit.
+          type: object
+          required: [id, intent_id, intent, provenance, signature, created_at]
+          properties:
+            id: { type: string, format: uuid }
+            intent_id: { type: string, format: uuid, nullable: true }
+            intent:
+              nullable: true
+              description: >
+                #189/#157: the intent named rather than only referenced. Null
+                when the change is unbound, which is ordinary — a commit pushed
+                with no `ADP-Intent` trailer and never bound afterwards has no
+                intent to name. Title only; the body belongs behind the intent's
+                own read rather than inflating every bundle.
+              type: object
+              required: [id, title, issue_number]
+              properties:
+                id: { type: string, format: uuid }
+                title: { type: string }
+                issue_number:
+                  type: integer
+                  nullable: true
+                  description: >
+                    The issue carrying this intent, so a reader has something to
+                    navigate to. Null is ordinary: `intents.source` is `issue`,
+                    `task` or `api`, and only the first has a number.
+            provenance: { description: What produced the change, as signed. }
+            signature: { type: string }
+            created_at: { type: string, format: date-time }
+        gates:
+          type: array
+          description: Every gate result reported for this commit, most recent first.
+          items:
+            type: object
+            required: [name, status, summary, envelope, created_at]
+            properties:
+              name: { type: string }
+              status: { type: string }
+              summary: { type: string }
+              envelope: { description: The gate result's DSSE envelope, verbatim. }
+              created_at: { type: string, format: date-time }
+        produced_by:
+          $ref: "#/components/schemas/ProducedBy"
+    ProducedBy:
+      type: object
+      description: >
+        #157: how to get from a commit to what produced it. **Navigation, not
+        evidence** — nothing here is signed, and a caller verifying a commit
+        should read `change` and `gates` instead. Every field is a join over a
+        column that already exists for the purpose.
+      required: [sessions, runs, proposals]
+      properties:
+        sessions:
+          type: array
+          description: >
+            Sessions this commit names, by either of the two routes a commit has
+            to one. A trajectory holding a commit event with this `git_sha`, and
+            the session an `ADP-Session` trailer put in the change's provenance
+            on a plain `git push` — the second is the ordinary case, and a join
+            over `session_events` alone would answer only for commits some
+            recorder happened to observe. Scoped to this repository:
+            `session_events` has no repo column, and a sha is the caller's input
+            rather than a secret.
+          items:
+            type: object
+            required: [id, harness, run_id, seq]
+            properties:
+              id: { type: string, format: uuid }
+              harness: { type: string }
+              run_id: { type: string, format: uuid, nullable: true }
+              seq:
+                type: integer
+                description: >
+                  The first event in that session naming this commit, or 0 for a
+                  session known only from a trailer — seqs are 1-based, so 0
+                  means "no such event" rather than "the first one".
+        runs:
+          type: array
+          description: >
+            Runs those sessions belong to, plus any run that closed against this
+            commit — a run whose final sha this is, but whose sessions recorded
+            no commit event, is still the run that produced it.
+          items:
+            type: object
+            required: [id, orchestrator, labels, status]
+            properties:
+              id: { type: string, format: uuid }
+              orchestrator: { type: string }
+              labels: { type: object, additionalProperties: { type: string } }
+              status: { type: string, enum: [open, closed, abandoned] }
+        proposals:
+          type: array
+          description: Proposals whose head is this commit.
+          items:
+            type: object
+            required: [number, title, state]
+            properties:
+              number: { type: integer }
+              title: { type: string }
+              state: { type: string, enum: [open, closed, merged] }
     Operation:
       type: object
       description: >

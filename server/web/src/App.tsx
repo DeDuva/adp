@@ -108,7 +108,12 @@ export default function App() {
       <main>
         {route.view === "issues" && <IssueList conn={conn} onOpen={(number) => setRoute({ view: "issue", number })} />}
         {route.view === "issue" && (
-          <IssueDetail conn={conn} number={route.number} onBack={() => setRoute({ view: "issues" })} />
+          <IssueDetail
+            conn={conn}
+            number={route.number}
+            onBack={() => setRoute({ view: "issues" })}
+            onOpenRun={(id) => setRoute({ view: "run", id })}
+          />
         )}
         {route.view === "proposals" && (
           <ProposalList conn={conn} onOpen={(number) => setRoute({ view: "proposal", number })} />
@@ -129,6 +134,7 @@ export default function App() {
             onBack={() => setRoute({ view: "runs" })}
             onOpenSession={(id) => setRoute({ view: "session", id, back: route })}
             onViewEvidence={(sha) => setRoute({ view: "evidence", sha, back: route })}
+            onOpenIssue={(number) => setRoute({ view: "issue", number })}
           />
         )}
         {route.view === "session" && (
@@ -156,7 +162,19 @@ export default function App() {
         )}
         {route.view === "organization" && <OrgConsole conn={conn} />}
         {route.view === "evidence" && (
-          <EvidenceView conn={conn} sha={route.sha} onBack={() => setRoute(route.back)} />
+          <EvidenceView
+            conn={conn}
+            sha={route.sha}
+            onBack={() => setRoute(route.back)}
+            // #157: every edge out of a commit carries `back` so the reader can
+            // return to where they came from rather than to a guess. Following
+            // evidence → run → session → evidence is a path, and a path you
+            // cannot walk backwards is a maze.
+            onOpenIssue={(number) => setRoute({ view: "issue", number })}
+            onOpenRun={(id) => setRoute({ view: "run", id })}
+            onOpenSession={(id) => setRoute({ view: "session", id, back: route })}
+            onOpenProposal={(number) => setRoute({ view: "proposal", number })}
+          />
         )}
       </main>
     </div>

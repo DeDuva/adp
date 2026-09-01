@@ -400,3 +400,16 @@ table.gate-table th, table.gate-table td { text-align: left; padding: 0.4rem 0.6
 .lineage li.current { border-left-color: var(--accent); }
 .lineage-harness { font-size: 0.95rem; }
 .lineage-arrow { font-size: 0.75rem; color: var(--ink-soft); margin-top: 0.35rem; }
+
+/* #157: the edges out of a commit — a label column and the things it points at,
+   so the three kinds do not read as one list. */
+.edge { display: flex; gap: 0.9rem; padding: 0.4rem 0; align-items: baseline; }
+.edge-label {
+  flex: none;
+  width: 5.5rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+}
+.commit-list { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-bottom: 1.5rem; }

@@ -1,7 +1,30 @@
 import { useEffect, useState } from "react";
 import { api, type Connection, type EvidenceBundle, ApiError } from "../api.js";
+import { runArm } from "../format.js";
 
-export default function EvidenceView({ conn, sha, onBack }: { conn: Connection; sha: string; onBack: () => void }) {
+// #157. `getEvidenceBundle` has returned the change with its `intent_id` since
+// M1, and the intent's title since #189 — and this view rendered neither. That
+// is the exact point at which JTBD-2 ("when a change lands wrong, I want to know
+// what the agent was trying to do") was one click from being answered and was
+// not: the reader is holding the identifier of the thing they want and has no
+// way to follow it.
+export default function EvidenceView({
+  conn,
+  sha,
+  onBack,
+  onOpenIssue,
+  onOpenRun,
+  onOpenSession,
+  onOpenProposal,
+}: {
+  conn: Connection;
+  sha: string;
+  onBack: () => void;
+  onOpenIssue: (number: number) => void;
+  onOpenRun: (id: string) => void;
+  onOpenSession: (id: string) => void;
+  onOpenProposal: (number: number) => void;
+}) {
   const [bundle, setBundle] = useState<EvidenceBundle | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -12,6 +35,10 @@ export default function EvidenceView({ conn, sha, onBack }: { conn: Connection; 
       .then(setBundle)
       .catch((err) => setError(err instanceof ApiError ? err.message : String(err)));
   }, [conn, sha]);
+
+  const produced = bundle?.produced_by;
+  const hasEdges =
+    produced && (produced.sessions.length > 0 || produced.runs.length > 0 || produced.proposals.length > 0);
 
   return (
     <>
@@ -26,6 +53,83 @@ export default function EvidenceView({ conn, sha, onBack }: { conn: Connection; 
           <h1>
             Evidence <span className="mono">{sha.slice(0, 12)}</span>
           </h1>
+
+          {/* The intent leads, because "what was this for" is the question an
+              evidence bundle is opened to answer. An unbound change says so
+              rather than showing a blank: a commit pushed with no trailer and
+              never bound afterwards is an ordinary state, not a fault. */}
+          {bundle.change?.intent ? (
+            <div className="meta">
+              for{" "}
+              {bundle.change.intent.issue_number !== null ? (
+                <button className="linkish" onClick={() => onOpenIssue(bundle.change!.intent!.issue_number!)}>
+                  #{bundle.change.intent.issue_number} {bundle.change.intent.title}
+                </button>
+              ) : (
+                <strong>{bundle.change.intent.title}</strong>
+              )}
+            </div>
+          ) : (
+            <div className="meta">
+              This commit is bound to no intent — it was pushed without an <code>ADP-Intent</code> trailer and
+              never bound afterwards.
+            </div>
+          )}
+
+          {hasEdges && (
+            <div className="card">
+              <h3>Produced by</h3>
+              <div className="meta">
+                Joins over what is already recorded, not part of what is signed — a commit event carries its
+                <code> git_sha</code> as a typed column precisely so this needs no payload parsing.
+              </div>
+              {produced!.runs.length > 0 && (
+                <div className="edge">
+                  <span className="edge-label">Run</span>
+                  <div>
+                    {produced!.runs.map((r) => (
+                      <div key={r.id}>
+                        <button className="linkish" onClick={() => onOpenRun(r.id)}>
+                          {runArm(r.labels) === "—" ? r.orchestrator : runArm(r.labels)}
+                        </button>{" "}
+                        <span className="meta">· {r.status}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {produced!.sessions.length > 0 && (
+                <div className="edge">
+                  <span className="edge-label">Session</span>
+                  <div>
+                    {produced!.sessions.map((s) => (
+                      <div key={s.id}>
+                        <button className="linkish" onClick={() => onOpenSession(s.id)}>
+                          {s.harness}
+                        </button>{" "}
+                        <span className="meta mono">· committed at event {s.seq}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {produced!.proposals.length > 0 && (
+                <div className="edge">
+                  <span className="edge-label">Proposal</span>
+                  <div>
+                    {produced!.proposals.map((p) => (
+                      <div key={p.number}>
+                        <button className="linkish" onClick={() => onOpenProposal(p.number)}>
+                          #{p.number} {p.title}
+                        </button>{" "}
+                        <span className="meta">· {p.state}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <h3>Change (intent, provenance, signature)</h3>
           {!bundle.change ? (
@@ -54,8 +158,7 @@ export default function EvidenceView({ conn, sha, onBack }: { conn: Connection; 
           ) : (
             bundle.gates.map((g, i) => (
               <div className="card" key={i}>
-                <span className={`pill ${g.status}`}>{g.status}</span>{" "}
-                <strong>{g.name}</strong>
+                <span className={`pill ${g.status}`}>{g.status}</span> <strong>{g.name}</strong>
                 <div className="meta">{new Date(g.created_at).toLocaleString()}</div>
                 {g.summary && <div className="body-text">{g.summary}</div>}
                 <details style={{ marginTop: "0.4rem" }}>
