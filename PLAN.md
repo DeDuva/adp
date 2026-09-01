@@ -162,7 +162,6 @@ exist" from the browser in under a minute.
 | # | Item | Tracking | State |
 |---|---|---|---|
 | 1-12 | `adp init` — attach to a repo that already exists, and detect the toolchain | #153 | not started. Mirror mode is the way in: it asks one developer to add a remote rather than a team to agree |
-| 1-13 | CLI: `watch`, `undo`, `bakeoff`, `runner` | #155 | not started. Removes the last two raw round-trips from the canonical walkthrough |
 
 **1-14 is finished, and it found the limit of its own exit criterion.** The M3 surface has a reader
 now — runs, run detail, the trajectory with its typed columns, verification as two separate answers,
@@ -200,6 +199,17 @@ because the chain does not commit to the digest — it commits to the payload, t
 hash. The honest third state is therefore "the link holds and the contents cannot be re-derived",
 which is what `not_retained` reports. 3-5's numbers still decide the window and the tiering; they no
 longer decide the verification vocabulary.
+
+**1-13 is finished**, and it closes #159's last done-when along with its own: `adp undo` takes the
+commit `git log` shows rather than an operation id, and says which of undo's two paths it took —
+including the sentence that stops a revert being read as "done". The canonical walkthrough (Parts B
+and C of the manual test plan) reaches for `curl` nowhere now, and `scripts/check-docs.sh` fails the
+build if it starts to again; Part D is exempt by name, because registering a webhook and posting a
+lockfile diff are operator surfaces with no CLI verb by design.
+
+The one thing `adp watch` needed that did not exist was a way to ask **whether a change would land
+without trying to land it** — until now the only way to see a refusal was to attempt the merge.
+`GET /pulls/{n}?land=1` is that, opt-in so `gh pr view` pays nothing for it.
 
 2-3 belongs to this release as well. So did 3-4 and 2-2, both finished: verification of a
 trajectory now costs a constant rather than a session, which is the precondition for 1-14 putting a

@@ -540,7 +540,26 @@ paths:
       security:
         - bearerAuth: []
       x-required-scope: "repo:read"
-      summary: Get a proposal
+      summary: >
+        Get a proposal.
+
+        #155: `?land=1` adds a `land` block saying whether this would land right
+        now and, when it would not, every unmet requirement with its remedy and
+        — where one exists — the literal command that satisfies it. Until this
+        the only way to find out why a change would not land was to *try to land
+        it*, which is a strange thing to have to do to ask a question, and which
+        `adp watch` cannot do on a loop.
+
+        Opt-in because evaluating the policy reads gate results, the org's
+        policy repo out of git, and flake statistics — a cost `gh pr view`
+        should not pay on a route it uses constantly. Present only on an open
+        proposal: a merged or closed one has no verdict to give.
+      parameters:
+        - name: land
+          in: query
+          required: false
+          schema: { type: string, enum: ["1"] }
+          description: Include the land verdict. Costs a policy evaluation.
       responses:
         "401":
           content:

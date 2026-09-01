@@ -122,11 +122,16 @@ ADP receives and attests results, it never executes them (same division of labor
 API):
 
 ```bash
-curl -X POST "$PUBLIC_URL/api/v3/repos/<owner>/<repo>/gates" \
-  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
-  -d '{"git_sha":"<sha>","name":"test","status":"success","summary":"12 passed"}'
+adp gate report --repo <owner>/<repo> --sha <sha> --name test --status success --summary "12 passed"
 
 gh pr checks 1
+```
+
+Or leave `adp watch` open beside the agent, which is the same information plus the one thing
+`gh` cannot tell you — whether this would land, and what is unmet if it would not:
+
+```bash
+adp watch --repo <owner>/<repo> --pr 1
 ```
 
 *Expect:* a row per reported gate, naming the gate, its verdict, and a link — something like:
@@ -169,9 +174,8 @@ tsx src/bootstrap.ts reviewer --org <owner>   # a second token, same org
 ```
 
 ```bash
-curl -X POST "$PUBLIC_URL/api/v3/repos/<owner>/<repo>/pulls/1/reviews" \
-  -H "Authorization: Bearer <reviewer-token>" -H "Content-Type: application/json" \
-  -d '{"state":"approved","body":"looks good"}'
+adp login --server "$PUBLIC_URL" --token <reviewer-token>   # the second principal
+adp pr review --repo <owner>/<repo> --number 1 --state approved --body "looks good"
 
 gh pr view 1
 ```
@@ -223,9 +227,11 @@ transaction as the mutation itself, so the log cannot drift from what happened.
 **C12. Undo the merge.** Find the merge operation and undo it.
 
 ```bash
-curl -X POST "$PUBLIC_URL/api/adp/repos/<owner>/<repo>/operations/<id>/undo" \
-  -H "Authorization: Bearer <token>"
+adp undo <merge-sha> --repo <owner>/<repo>
 ```
+
+`adp undo` takes the commit `git log` shows you, not an operation id — it finds the merge that
+produced that commit itself (#155).
 
 *Expect:* the call succeeds and the response carries `"undo_path": "rollback"`, and `main`
 server-side points back at the commit it was on before the merge. Verify that directly rather
@@ -270,6 +276,27 @@ curl "$PUBLIC_URL/metrics"
 *Expect:* Prometheus text format (`# TYPE ... counter` lines), with at least one
 `adp_http_requests_total{...}` line and one `adp_graphql_operations_total{...}` line carrying a
 nonzero count — proof the counters are wired to real requests, not just present and empty.
+
+**D13b. A bake-off, and a runner.** One intent, several harnesses, one table:
+
+```bash
+adp bakeoff --repo <owner>/<repo> --intent '#1' --harness claude-code,codex
+adp bakeoff results --repo <owner>/<repo> --intent '#1'
+```
+
+*Expect:* a candidate set, one labelled run per harness, and a table pairing what each produced
+with what it cost. The labels ride inside the signed run attestation, which is what makes the
+comparison evidence rather than a table somebody can edit afterwards.
+
+And the runner, which refuses rather than defaults:
+
+```bash
+adp runner up          # refuses, and says why
+```
+
+*Expect:* a refusal naming the reason — the runner mounts the Docker socket, a mounted daemon
+socket is root on the host, and the gate image is named by whoever can push an `adp.yaml`. Add
+`--here` on a host that holds nothing you care about.
 
 **D14. The `adp` CLI.** A second client against the same REST surface `gh` and `curl` have been
 using — build it once, then point it at the server the same way `gh` was pointed at it (`ADP_TOKEN`/

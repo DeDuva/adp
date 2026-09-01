@@ -4,6 +4,12 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public readonly status: number,
+    // #155: the parsed body, not only its `message`. ADP's refusals are
+    // structured on purpose — a land refusal carries `unmet` with a remedy and
+    // often a literal command (#145), and a conflicting undo carries the paths
+    // it conflicts in (#159) — and a client that keeps only the message throws
+    // away the half that tells a user what to do next.
+    public readonly body?: unknown,
   ) {
     super(message);
   }
@@ -38,7 +44,7 @@ export async function apiRequest<T>(method: string, urlPath: string, body?: unkn
       parsed && typeof parsed === "object" && "message" in parsed
         ? String((parsed as { message: unknown }).message)
         : `request failed with status ${res.status}`;
-    throw new ApiError(message, res.status);
+    throw new ApiError(message, res.status, parsed);
   }
 
   return parsed as T;
