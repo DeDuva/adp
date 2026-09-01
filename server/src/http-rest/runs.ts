@@ -327,7 +327,18 @@ export function registerRunRoutes(
       const query = req.query as { from?: string };
       const coverage: VerifyCoverage = query.from === "checkpoint" ? "from-checkpoint" : "full";
 
-      const sessionRows = await db.select().from(sessions).where(eq(sessions.runId, runId));
+      // Ordered, and the ordering is part of the answer rather than a nicety.
+      // This response's `sessions` array is what a caller walks to find a
+      // particular session — including the resumed one at the end of a
+      // cross-harness chain — and an unordered select left that to whatever
+      // order Postgres happened to return, which is stable until it is not. It
+      // matches the run detail route above, so the two never disagree about
+      // which session is which.
+      const sessionRows = await db
+        .select()
+        .from(sessions)
+        .where(eq(sessions.runId, runId))
+        .orderBy(sessions.createdAt);
       // Bounded fan-out rather than `Promise.all` over however many sessions
       // the run has — see VERIFY_SESSION_CONCURRENCY.
       const verified = await verifySessions(
