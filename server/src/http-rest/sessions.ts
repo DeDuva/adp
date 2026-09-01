@@ -24,6 +24,11 @@ import {
   type EventKind,
 } from "../core/trajectory.js";
 import {
+  verifySession,
+  serializeSessionVerification,
+  type VerifyCoverage,
+} from "../core/verification.js";
+import {
   startSession,
   createCheckpoint,
   resumeSession,
@@ -42,6 +47,30 @@ import {
 const CloseBody = z.object({
   status: z.enum(["closed", "suspended"]).default("closed"),
 });
+
+// #152. `from_seq` is exclusive and `to_seq` inclusive, matching `seq`'s own
+// 1-based numbering: `from_seq=100&to_seq=200` is the hundred events after the
+// hundredth.
+//
+// `from=checkpoint` and an explicit window are alternatives rather than a
+// combination, and the refusal is the point: an anchor already fixes where the
+// window starts, and letting a caller move it off a signed head is precisely
+// how you build a verifier that starts too late and misses the tampering it
+// exists to find.
+const VerifyQuery = z
+  .object({
+    from: z.literal("checkpoint").optional(),
+    from_seq: z.coerce.number().int().positive().optional(),
+    to_seq: z.coerce.number().int().positive().optional(),
+  })
+  .refine((q) => q.from === undefined || (q.from_seq === undefined && q.to_seq === undefined), {
+    message: "from=checkpoint cannot be combined with from_seq or to_seq",
+    path: ["from"],
+  })
+  .refine((q) => q.to_seq === undefined || q.from_seq === undefined || q.to_seq > q.from_seq, {
+    message: "to_seq must be greater than from_seq",
+    path: ["to_seq"],
+  });
 
 const StartSessionBody = z.object({
   // Free-form on purpose: ADP never branches on the value, which is what makes
@@ -554,6 +583,52 @@ export function registerSessionRoutes(
         limit: Number(query.limit ?? 500) || 500,
       });
       reply.send({ session_id: id, events: events.map(serializeEvent) });
+    },
+  );
+
+  // #152: verification at the resolution the record is actually written at.
+  //
+  // The run-level endpoint answers "is this run's evidence intact", which is
+  // the question a reviewer asks. This one answers it for one session, and it
+  // exists for two reasons the run endpoint cannot cover. A session need not
+  // belong to a run — a developer checkpointing their own work is a session,
+  // and requiring a run would make the orchestrated case the only verifiable
+  // one. And a session long enough to be worth bounding is a session worth
+  // verifying in pieces, which needs a window.
+  app.get(
+    "/api/adp/repos/:owner/:repo/sessions/:id/verify",
+    { preHandler: requireScope("repo:read") },
+    async (req, reply) => {
+      const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
+      if (!repo) {
+        reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
+        return;
+      }
+      // The same existence check the events route uses. Without it, verifying
+      // by id is a probe for session ids belonging to other tenants.
+      const lineage = await sessionLineage(db, repo.id, id);
+      if (lineage.length === 0) {
+        reply.code(404).send({ message: "Not Found" });
+        return;
+      }
+
+      const parsed = VerifyQuery.safeParse(req.query);
+      if (!parsed.success) {
+        reply.code(422).send({ message: "Validation failed", errors: validationErrors(parsed.error) });
+        return;
+      }
+      const { from, from_seq: fromSeq, to_seq: toSeq } = parsed.data;
+
+      const coverage: VerifyCoverage =
+        from === "checkpoint"
+          ? "from-checkpoint"
+          : fromSeq !== undefined || toSeq !== undefined
+            ? "range"
+            : "full";
+
+      const verification = await verifySession(db, keyRegistry, id, { coverage, fromSeq, toSeq });
+      reply.send({ coverage, ...serializeSessionVerification(verification) });
     },
   );
 }

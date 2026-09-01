@@ -1,5 +1,5 @@
 {
-  "version": "0.5.0",
+  "version": "0.6.0",
   "operations": [
     "DELETE /api/adp/repos/{owner}/{repo}/workspaces/{id}",
     "DELETE /api/v3/repos/{owner}/{repo}/git/refs/heads/{branch}",
@@ -26,6 +26,7 @@
     "GET /api/adp/repos/{owner}/{repo}/sessions/{id}",
     "GET /api/adp/repos/{owner}/{repo}/sessions/{id}/checkpoints",
     "GET /api/adp/repos/{owner}/{repo}/sessions/{id}/events",
+    "GET /api/adp/repos/{owner}/{repo}/sessions/{id}/verify",
     "GET /api/adp/repos/{owner}/{repo}/workspaces",
     "GET /api/v3",
     "GET /api/v3/",

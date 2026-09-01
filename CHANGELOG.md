@@ -14,7 +14,35 @@ its spec-coverage guard.
 Until 2026-08-23 only one edge of that rule was enforced, and it was checked on
 the tag push — after publication. Two contract bumps slipped through it.
 
-## Unreleased
+## v0.6.0 — unreleased
+
+**Contract 0.6.0, additive.** One new operation:
+`GET /api/adp/repos/{owner}/{repo}/sessions/{id}/verify` (#152). No existing
+operation changes shape, so a client generated against 0.5.0 keeps working
+untouched. Everything below this heading ships under it.
+
+**Verification scoped to one session, and bounded to a window (#152).** The
+run-level endpoint answers "is this run's evidence intact", which is the
+question a reviewer asks — and it cannot cover either of the two cases this one
+exists for. A session need not belong to a run: a developer checkpointing their
+own work is a session, and requiring a run would have made the orchestrated case
+the only verifiable one. And a session long enough to be worth bounding is a
+session worth verifying in pieces, which needs a window: `from_seq` exclusive,
+`to_seq` inclusive, matching `seq`'s own 1-based numbering.
+
+`from=checkpoint` and an explicit window are refused in combination, and the
+refusal is the point rather than an implementation limit. An anchor already
+fixes where the window starts; letting a caller move it off a signed head is
+precisely how you build a verifier that starts too late and misses the tampering
+it exists to find.
+
+**A window reports the third verification state.** `prefix: assumed` — the
+window was linked to what the database stores at its start, so it claims the
+window is internally consistent and claims nothing at all about what precedes
+it. That is a useful thing to be able to ask, and it is not a substitute for
+either of the other two, which is why it has its own name rather than a bare
+`ok`. Signed heads falling inside a window are still checked: narrowing what you
+recompute is not a reason to stop comparing it against what was signed.
 
 **Verifying a trajectory costs a constant now, not a session (#152).**
 `verifyChain` selected every event of a session into an array, and

@@ -46,6 +46,17 @@
 // previously could not — trajectory append, checkpoint create, git push — and
 // gate-job completion drops its logs rather than refusing, so that a storage
 // quota can never become a land outage.
-export const API_VERSION = "0.5.0";
+// 0.6.0 — additive: #152 adds GET
+// /api/adp/repos/{owner}/{repo}/sessions/{id}/verify, verification scoped to
+// one session and bounded to a window. The run-level endpoint could not cover
+// either case it exists for: a session need not belong to a run, and a session
+// long enough to be worth bounding is one worth verifying in pieces. Additive
+// in the strict sense — no existing operation changes shape, so a client
+// generated against 0.5.0 keeps working untouched. The same release carries
+// #152's additive response fields on the run verify result (`coverage`, and per
+// session `prefix`, `verified_from_seq`, `verified_to_seq`,
+// `attested_heads_checked`, `anchor`) and its optional `from` query parameter,
+// none of which move an existing field.
+export const API_VERSION = "0.6.0";
 
 export const API_VERSION_HEADER = "ADP-API-Version";
