@@ -478,6 +478,21 @@ export interface VerifyResult {
   // How many signed chain heads the recomputation passed through and agreed
   // with. See `VerifyOptions.attested` for why this is not decoration.
   attestedHeadsChecked: number;
+  // #161: events in the verified range whose payload ADP no longer holds, so
+  // their hash was taken as recorded rather than re-derived from their
+  // contents. This is the third verification state PLAN.md 3-6 wanted a name
+  // for, and it is reported as a count rather than folded into `ok` because it
+  // is not a failure — it is a different, weaker claim about part of the range,
+  // and a reader has to be able to see which part.
+  //
+  // What it costs, precisely: for those events the typed columns are no longer
+  // independently verifiable either, because the hash that covers them cannot
+  // be recomputed without the payload it also covers. What survives is the
+  // link — the stored hash is what the next event chains to — and any signed
+  // head past them still pins the prefix, so a wholesale rewrite is still
+  // caught. That is the strongest guarantee available once a preimage is gone,
+  // and pretending otherwise would be worse than saying it.
+  notRetained: number;
 }
 
 // One signed statement about where a chain had reached: a checkpoint's
@@ -565,6 +580,7 @@ export async function verifyChain(
     .sort((a, b) => a.seq - b.seq);
   let attestedIndex = 0;
   let attestedHeadsChecked = 0;
+  let notRetained = 0;
 
   const fail = (brokeAtSeq: number, head: string, reason: string): VerifyResult => ({
     sessionId,
@@ -577,6 +593,7 @@ export async function verifyChain(
     verifiedToSeq: brokeAtSeq - 1,
     prefix,
     attestedHeadsChecked,
+    notRetained,
   });
 
   let prevHash = options.fromHash ?? chainGenesis(sessionId);
@@ -618,6 +635,30 @@ export async function verifyChain(
     }
   }
 
+  // The signed-head check, shared by both paths through the loop. `prevHash` is
+  // the head as of `seq` — recomputed on an ordinary event, taken as stored on
+  // one whose payload was aged out — which is precisely what a checkpoint at
+  // that event count committed to. Reaching a signed head still pins a reduced
+  // region, which is the whole reason retention can drop payloads without
+  // dropping tamper-evidence.
+  const checkAttested = (seq: number): VerifyResult | null => {
+    while (attestedIndex < attested.length && attested[attestedIndex]!.seq === seq) {
+      const head = attested[attestedIndex]!;
+      if (head.hash !== prevHash) {
+        return fail(
+          seq,
+          prevHash,
+          `event ${seq} recomputes to ${prevHash.slice(0, 12)}…, but ${head.hash.slice(0, 12)}… was signed for it — ` +
+            "the chain was rewritten after it was attested",
+        );
+      }
+      attestedHeadsChecked++;
+      attestedIndex++;
+    }
+    while (attestedIndex < attested.length && attested[attestedIndex]!.seq < seq) attestedIndex++;
+    return null;
+  };
+
   let expectedSeq = fromSeq + 1;
   let cursor = fromSeq;
 
@@ -647,6 +688,22 @@ export async function verifyChain(
           `event ${row.seq} links to ${row.prevHash.slice(0, 12)}…, expected ${prevHash.slice(0, 12)}…`,
         );
       }
+      // #161: an event whose payload was aged out cannot be re-derived — the
+      // hash covers the payload, and the payload is gone. Its stored hash is
+      // taken as the link and counted, rather than recomputed against contents
+      // that are no longer all there. Recomputing anyway would compare against
+      // a null payload and report every reduced event as tampered, which is the
+      // failure mode that makes retention and verification look incompatible
+      // when they are not.
+      if (!row.payloadRetained) {
+        notRetained++;
+        prevHash = row.hash;
+        expectedSeq++;
+        const reducedMismatch = checkAttested(row.seq);
+        if (reducedMismatch) return reducedMismatch;
+        continue;
+      }
+
       const recomputed = eventHash(sessionId, prevHash, row);
       if (recomputed !== row.hash) {
         return fail(
@@ -657,24 +714,8 @@ export async function verifyChain(
       }
       prevHash = recomputed;
       expectedSeq++;
-
-      // The signed-head check. `prevHash` is now the recomputed head as of
-      // `row.seq`, which is precisely what a checkpoint at that event count
-      // committed to.
-      while (attestedIndex < attested.length && attested[attestedIndex]!.seq === row.seq) {
-        const head = attested[attestedIndex]!;
-        if (head.hash !== prevHash) {
-          return fail(
-            row.seq,
-            prevHash,
-            `event ${row.seq} recomputes to ${prevHash.slice(0, 12)}…, but ${head.hash.slice(0, 12)}… was signed for it — ` +
-              "the chain was rewritten after it was attested",
-          );
-        }
-        attestedHeadsChecked++;
-        attestedIndex++;
-      }
-      while (attestedIndex < attested.length && attested[attestedIndex]!.seq < row.seq) attestedIndex++;
+      const mismatch = checkAttested(row.seq);
+      if (mismatch) return mismatch;
     }
     cursor = rows[rows.length - 1]!.seq;
   }
@@ -707,6 +748,7 @@ export async function verifyChain(
       verifiedToSeq: toSeq,
       prefix,
       attestedHeadsChecked,
+      notRetained,
     };
   }
 
@@ -721,6 +763,7 @@ export async function verifyChain(
     verifiedToSeq: toSeq,
     prefix,
     attestedHeadsChecked,
+    notRetained,
   };
 }
 

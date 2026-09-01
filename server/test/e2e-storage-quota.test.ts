@@ -7,9 +7,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
-import { identities, operations, orgs, gateJobs } from "../src/db/schema.js";
+import { identities, operations, orgs, gateJobs, sessionEvents } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { grantOwner } from "./org-fixture.js";
 import { authPlugin } from "../src/auth/plugin.js";
@@ -18,6 +18,9 @@ import { Signer } from "../src/core/signing.js";
 import { findRepo, repoAccessCheck } from "../src/core/repos-lookup.js";
 import { measureOrgStorage, meterAllOrgs, pushQuotaCheck } from "../src/core/storage-usage.js";
 import { renderMetrics, resetMetricsForTest } from "../src/core/telemetry.js";
+import { reduceOrgPayloads } from "../src/core/trajectory-retention.js";
+import { findOrCreateSystemIdentity } from "../src/core/system-identity.js";
+import { verifyChain } from "../src/core/trajectory.js";
 import { registerGitHttpRoutes } from "../src/http-git/proxy.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerSessionRoutes } from "../src/http-rest/sessions.js";
@@ -391,4 +394,144 @@ describe.skipIf(skipWithoutDb)("M4-3: per-org storage quota", () => {
       .where(and(eq(operations.verb, "org.quota_update"), eq(operations.orgId, orgId), isNull(operations.repoId)));
     expect((op!.after as Record<string, unknown>).max_storage_bytes).toBe(5_000_000_000);
   }, 120_000);
+
+  // #161: the interim retention window, in the suite that already owns "what
+  // one org is allowed to accumulate". A quota bounds what an org may write;
+  // this bounds how long ADP keeps the expensive part of it.
+  describe("trajectory retention", () => {
+    it("reduces payloads past the window, keeps everything the chain needs, and records the act", async () => {
+      const org = await seedOrg("retention");
+      const sessionId = await startSession(org.owner);
+      const appended = await api(`/api/adp/repos/${org.owner}/app/sessions/${sessionId}/events`, {
+        method: "POST",
+        body: JSON.stringify({
+          events: [
+            { kind: "message", type: "user", payload: { text: "old" }, occurred_at: "2020-01-01T00:00:00.000Z" },
+            { kind: "message", type: "user", payload: { text: "also old" }, occurred_at: "2020-01-02T00:00:00.000Z" },
+            { kind: "message", type: "user", payload: { text: "recent" } },
+          ],
+        }),
+      });
+      expect(appended.status).toBe(201);
+
+      const before = await db
+        .select()
+        .from(sessionEvents)
+        .where(eq(sessionEvents.sessionId, sessionId))
+        .orderBy(asc(sessionEvents.seq));
+      expect(before).toHaveLength(3);
+
+      const actorId = await findOrCreateSystemIdentity(db, `system:retention-test-${Date.now()}`);
+      const reduced = await reduceOrgPayloads(db, { id: org.orgId, trajectoryRetentionDays: null }, 90, actorId);
+      expect(reduced).toBe(2);
+
+      const after = await db
+        .select()
+        .from(sessionEvents)
+        .where(eq(sessionEvents.sessionId, sessionId))
+        .orderBy(asc(sessionEvents.seq));
+
+      // The two old events lost their payload and nothing else. Every column
+      // the chain commits to, and every column an optimizer reads, survives —
+      // which is what makes this a reduction rather than a deletion.
+      for (const row of after.slice(0, 2)) {
+        expect(row.payloadRetained).toBe(false);
+        expect(row.payload).toBeNull();
+      }
+      expect(after[2]!.payloadRetained).toBe(true);
+      expect(after[2]!.payload).toEqual({ text: "recent" });
+      // Hashes and links untouched: reducing a payload must not rewrite the
+      // chain, or the reduction would itself look like tampering.
+      expect(after.map((r) => r.hash)).toEqual(before.map((r) => r.hash));
+      expect(after.map((r) => r.prevHash)).toEqual(before.map((r) => r.prevHash));
+
+      // And it still verifies, saying how much of it it could only take as
+      // recorded rather than re-derive.
+      const verified = await verifyChain(db, sessionId);
+      expect(verified.ok).toBe(true);
+      expect(verified.notRetained).toBe(2);
+
+      // Recorded, because reducing what the record holds is a change to the
+      // record. An operator who finds a payload gone can find out why.
+      const [op] = await db
+        .select()
+        .from(operations)
+        .where(and(eq(operations.verb, "trajectory.reduce"), eq(operations.orgId, org.orgId)));
+      expect(op).toBeTruthy();
+      expect((op!.after as Record<string, unknown>).events).toBe(2);
+      expect((op!.after as Record<string, unknown>).retentionDays).toBe(90);
+
+      // Idempotent: a second sweep finds nothing, because `payload_retained` is
+      // the claim and it is already false.
+      expect(await reduceOrgPayloads(db, { id: org.orgId, trajectoryRetentionDays: null }, 90, actorId)).toBe(0);
+    }, 120_000);
+
+    it("keeps everything when the org has chosen an unbounded window", async () => {
+      const org = await seedOrg("retention-off");
+      const sessionId = await startSession(org.owner);
+      await api(`/api/adp/repos/${org.owner}/app/sessions/${sessionId}/events`, {
+        method: "POST",
+        body: JSON.stringify({
+          events: [{ kind: "message", type: "user", payload: { text: "ancient" }, occurred_at: "2019-01-01T00:00:00.000Z" }],
+        }),
+      });
+
+      const actorId = await findOrCreateSystemIdentity(db, `system:retention-test-off-${Date.now()}`);
+      // 0 at the org level, which is a choice rather than an absence — an org
+      // that inherited the instance's 90 would have had this reduced.
+      expect(await reduceOrgPayloads(db, { id: org.orgId, trajectoryRetentionDays: 0 }, 90, actorId)).toBe(0);
+      expect(await reduceOrgPayloads(db, { id: org.orgId, trajectoryRetentionDays: null }, 90, actorId)).toBe(1);
+    }, 120_000);
+
+    it("tells an operator what is due before the sweep does it", async () => {
+      const org = await seedOrg("retention-status");
+      const sessionId = await startSession(org.owner);
+      await api(`/api/adp/repos/${org.owner}/app/sessions/${sessionId}/events`, {
+        method: "POST",
+        body: JSON.stringify({
+          events: [
+            { kind: "message", type: "user", payload: { text: "old" }, occurred_at: "2020-01-01T00:00:00.000Z" },
+            { kind: "message", type: "user", payload: { text: "recent" } },
+          ],
+        }),
+      });
+
+      // requireOrgAccess grants only where the *token* is scoped to the org —
+      // the token carries the grant, not the person — so the console needs an
+      // org-scoped token even for an identity that is already a member. Same
+      // note as the quota console test above.
+      const orgToken = await mintToken(db, identityId, ["repo:read", "admin"], { orgId: org.orgId });
+
+      // The org console's answer, before anything has been reduced. `due_next`
+      // is what makes this a warning rather than a report.
+      const detail = await api(`/api/adp/orgs/${org.orgId}`, {}, orgToken);
+      expect(detail.status, JSON.stringify(detail.body)).toBe(200);
+      const retention = detail.body.retention as { days: number; source: string; reduced: number; dueNext: number };
+      expect(retention.days).toBe(90);
+      expect(retention.source).toBe("instance");
+      expect(retention.reduced).toBe(0);
+      expect(retention.dueNext).toBe(1);
+
+      // Narrowing it is audited on its own verb — a quota bounds what an org
+      // may write, this decides what ADP stops holding, and somebody will come
+      // looking for the second when a payload is gone.
+      const patched = await api(
+        `/api/adp/orgs/${org.orgId}`,
+        { method: "PATCH", body: JSON.stringify({ trajectory_retention_days: 0 }) },
+        orgToken,
+      );
+      expect(patched.status).toBe(200);
+      const [op] = await db
+        .select()
+        .from(operations)
+        .where(and(eq(operations.verb, "org.retention_update"), eq(operations.orgId, org.orgId)));
+      expect((op!.after as Record<string, unknown>).trajectory_retention_days).toBe(0);
+
+      const off = await api(`/api/adp/orgs/${org.orgId}`, {}, orgToken);
+      expect((off.body.retention as { days: number; source: string }).days).toBe(0);
+      expect((off.body.retention as { source: string }).source).toBe("org");
+      // Nothing is due when nothing will ever be reduced.
+      expect((off.body.retention as { dueNext: number }).dueNext).toBe(0);
+    }, 120_000);
+  });
 });

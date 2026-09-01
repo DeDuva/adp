@@ -13,6 +13,7 @@ import { registerMirrorWebhookRawBodyParser } from "./http-rest/mirror-webhook.j
 import { registerApiRoutes } from "./routes.js";
 import { startMirrorPoller } from "./core/mirror-poller.js";
 import { startWorkspaceSweeper } from "./core/workspace-sweeper.js";
+import { startRetentionSweeper } from "./core/trajectory-retention.js";
 import { startGateJobReaper } from "./core/gate-job-reaper.js";
 import { findOrCreateSystemIdentity } from "./core/system-identity.js";
 import { LandRequirement } from "./core/repo-policy.js";
@@ -97,6 +98,7 @@ async function main() {
     publicUrl: config.PUBLIC_URL,
     credentialKey: config.MIRROR_CREDENTIAL_KEY,
     instanceFloor,
+    retentionDays: config.TRAJECTORY_RETENTION_DAYS,
     gitMaxPackBytes: config.GIT_MAX_PACK_BYTES,
     // M4-5. Both credentials or nothing: half-configured OIDC would mount
     // routes that cannot complete a flow, which is worse than not having them.
@@ -159,6 +161,26 @@ async function main() {
   // and records no operation, because a measurement is not a change to the
   // thing measured.
   startStorageMeter(db, gitBackend, config.STORAGE_METER_INTERVAL_MS);
+
+  // #161: the interim retention window. Unlike the meter above this *changes*
+  // what ADP holds, so it takes an actor identity and records an operation per
+  // sweep — reducing what the record holds is itself a change to the record,
+  // and this project says such things in the log rather than in a metric.
+  const retentionActorId = await findOrCreateSystemIdentity(db, "system:trajectory-retention");
+  startRetentionSweeper(
+    db,
+    config.TRAJECTORY_RETENTION_DAYS,
+    retentionActorId,
+    config.TRAJECTORY_RETENTION_INTERVAL_MS,
+  );
+  if (config.TRAJECTORY_RETENTION_DAYS === 0) {
+    app.log.warn("TRAJECTORY_RETENTION_DAYS=0 — trajectory payloads are kept forever on this instance");
+  } else {
+    app.log.info(
+      `trajectory payloads are reduced after ${config.TRAJECTORY_RETENTION_DAYS} days ` +
+        "(chain, hashes and typed columns are kept); override per org",
+    );
+  }
 }
 
 main().catch((err) => {

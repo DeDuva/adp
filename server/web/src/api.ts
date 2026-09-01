@@ -192,6 +192,15 @@ export interface OrgDetail extends OrgSummary {
     max_concurrent_workspaces: OrgQuota;
     max_concurrent_gate_jobs: OrgQuota;
   };
+  // #161: how long this org keeps trajectory payloads, and what the next sweep
+  // will reduce. `due_next` is what makes this a warning rather than a report —
+  // an operator has to be told before it matters, not after.
+  retention: {
+    days: number;
+    source: "org" | "instance";
+    reduced: number;
+    dueNext: number;
+  };
 }
 
 export interface OrgRepoPolicy {

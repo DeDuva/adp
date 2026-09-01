@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { identities, sessionEvents } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
@@ -560,6 +560,119 @@ describe.skipIf(skipWithoutDb)("#152: verification coverage, batching and the ta
       await api(`/api/v3/repos/${owner}`, { method: "POST", body: JSON.stringify({ name: "other" }) });
       const res = await api(`/api/adp/repos/${owner}/other/sessions/${sessionId}/verify`);
       expect(res.status).toBe(404);
+    });
+  });
+
+  // #161. The interim retention window reduces payloads and keeps the chain,
+  // and this is the claim that has to hold for that to be an acceptable trade:
+  // a reduced run still verifies, it says how much of it it could only take as
+  // recorded, and tampering is still caught where a signature covers it.
+  describe("retention: payloads reduced, chain kept", () => {
+    // Reduces exactly what the sweeper reduces, without waiting ninety days for
+    // it. The sweeper's own selection is covered by its unit tests; what this
+    // file is for is what verification does afterwards.
+    async function reduce(seqs: number[]) {
+      await db
+        .update(sessionEvents)
+        .set({ payload: sql`'null'::jsonb`, payloadRetained: false })
+        .where(and(eq(sessionEvents.sessionId, sessionId), inArray(sessionEvents.seq, seqs)));
+    }
+    async function restore(before: (typeof sessionEvents.$inferSelect)[]) {
+      await db.delete(sessionEvents).where(eq(sessionEvents.sessionId, sessionId));
+      await db.insert(sessionEvents).values(before);
+    }
+    const snapshot = () =>
+      db.select().from(sessionEvents).where(eq(sessionEvents.sessionId, sessionId)).orderBy(asc(sessionEvents.seq));
+
+    it("still verifies, and says how much it could only take as recorded", async () => {
+      const before = await snapshot();
+      try {
+        await reduce([3, 4, 5]);
+        const full = await verifySession(db, keys, sessionId, { coverage: "full" });
+
+        // The load-bearing claim: reducing payloads does not break the chain.
+        // If it did, retention and verification would be incompatible and one
+        // of them would have to go.
+        expect(full.chain.ok).toBe(true);
+        expect(full.chain.head).toBe((await verifyChain(db, sessionId, { batchSize: 500 })).head);
+
+        // And it is not reported as a plain pass. Three of twenty events were
+        // taken as recorded rather than re-derived, and the answer says so.
+        expect(full.chain.notRetained).toBe(3);
+        // The signed checkpoint at event 12 is past the reduced region, so the
+        // prefix is still pinned to something that was signed at the time —
+        // which is what keeps a wholesale rewrite detectable through a gap.
+        expect(full.chain.attestedHeadsChecked).toBe(1);
+      } finally {
+        await restore(before);
+      }
+    });
+
+    it("catches a rewrite that reaches across the reduced region", async () => {
+      const before = await snapshot();
+      try {
+        await reduce([3, 4, 5]);
+        // Rewrite an event *after* the reduction and re-chain forward, exactly
+        // as someone with database access would. Event 12 is the signed head.
+        const rows = await snapshot();
+        let prevHash = rows[5]!.hash;
+        for (const row of rows.slice(6)) {
+          const rewritten = { ...row, payload: row.seq === 7 ? { step: "rewritten" } : row.payload };
+          const hash = row.payloadRetained ? eventHash(sessionId, prevHash, rewritten) : row.hash;
+          await db
+            .update(sessionEvents)
+            .set({ payload: rewritten.payload, prevHash, hash })
+            .where(eq(sessionEvents.id, row.id));
+          prevHash = hash;
+        }
+
+        const full = await verifySession(db, keys, sessionId, { coverage: "full" });
+        expect(full.chain.ok).toBe(false);
+        // At the signature, not at the edit — the rewrite was internally
+        // consistent, and only the signed head disagrees with it.
+        expect(full.chain.brokeAtSeq).toBe(ANCHOR_AT);
+        expect(full.chain.reason).toMatch(/rewritten after it was attested/);
+      } finally {
+        await restore(before);
+      }
+    });
+
+    // The honest boundary, asserted rather than described. A reduced event's
+    // typed columns cannot be re-derived, because the hash that covers them
+    // covers the payload too — and the payload is gone. Editing one is
+    // undetectable, and pretending otherwise would be worse than saying it.
+    it("cannot detect an edit to a reduced event's own columns, and the count says why", async () => {
+      const before = await snapshot();
+      try {
+        await reduce([5]);
+        await db
+          .update(sessionEvents)
+          .set({ tokensOut: 999_999 })
+          .where(and(eq(sessionEvents.sessionId, sessionId), eq(sessionEvents.seq, 5)));
+
+        const full = await verifySession(db, keys, sessionId, { coverage: "full" });
+        expect(full.chain.ok).toBe(true);
+        // What a reader has instead: the range says one of its events was not
+        // recomputed. That is the whole content of the third state.
+        expect(full.chain.notRetained).toBe(1);
+
+        // The same edit on a *retained* event is caught, which is what makes
+        // the count above meaningful rather than an excuse.
+        await db
+          .update(sessionEvents)
+          .set({ tokensOut: 999_999 })
+          .where(and(eq(sessionEvents.sessionId, sessionId), eq(sessionEvents.seq, 6)));
+        const after = await verifySession(db, keys, sessionId, { coverage: "full" });
+        expect(after.chain.ok).toBe(false);
+        expect(after.chain.brokeAtSeq).toBe(6);
+      } finally {
+        await restore(before);
+      }
+    });
+
+    it("reports zero on a run nothing has reduced", async () => {
+      const full = await verifySession(db, keys, sessionId, { coverage: "full" });
+      expect(full.chain.notRetained).toBe(0);
     });
   });
 

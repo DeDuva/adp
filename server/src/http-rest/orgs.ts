@@ -10,6 +10,7 @@ import { recordOperation } from "../core/operations.js";
 import { isOrgMember } from "../auth/tokens.js";
 import { isSafeRepoSegment } from "../core/git-backend.js";
 import { describeOrgPolicy } from "../core/org-policy.js";
+import { retentionStatusFor, DEFAULT_RETENTION_DAYS } from "../core/trajectory-retention.js";
 import { loadRepoPolicy, resolveLandRequirements, type LandRequirement } from "../core/repo-policy.js";
 
 // M4-7 — the org policy console.
@@ -53,6 +54,11 @@ const PatchOrgBody = z.object({
   // not a quota anyone means — but the column is bigint, not int4, because
   // a couple of gigabytes is an ordinary ceiling and would overflow int4.
   max_storage_bytes: z.number().int().nonnegative().nullable().optional(),
+  // #161. Null defers to the instance window rather than meaning unlimited —
+  // the opposite of the quotas above, and deliberately so: an org that has
+  // never been configured and one that has chosen to keep everything are
+  // different states, and 0 is how the second says it.
+  trajectory_retention_days: z.number().int().nonnegative().nullable().optional(),
   policy_repo_id: z.string().uuid().nullable().optional(),
 });
 
@@ -115,6 +121,9 @@ export function registerOrgRoutes(
   db: Db,
   gitBackend: GitBackend,
   instanceFloor: LandRequirement[],
+  // #161: the window an org inherits when it has set none of its own. Defaulted
+  // so every existing test app keeps constructing these routes unchanged.
+  instanceRetentionDays: number = DEFAULT_RETENTION_DAYS,
 ) {
   // #91 (audit §P0-2): the explicit provisioning path. Until this route,
   // orgs came into being as a side effect of naming an unseen owner string
@@ -221,6 +230,11 @@ export function registerOrgRoutes(
             measured_at: org.storageMeasuredAt?.toISOString() ?? null,
           },
         },
+        // #161: stated where an operator reads, before it matters rather than
+        // after. `due_next` is what makes this a warning instead of a report —
+        // the number of payloads the next sweep will reduce is the thing
+        // somebody would want to have seen first.
+        retention: await retentionStatusFor(db, org, instanceRetentionDays),
       });
     },
   );
@@ -333,6 +347,9 @@ export function registerOrgRoutes(
               ? { maxConcurrentGateJobs: patch.max_concurrent_gate_jobs }
               : {}),
             ...(patch.max_storage_bytes !== undefined ? { maxStorageBytes: patch.max_storage_bytes } : {}),
+            ...(patch.trajectory_retention_days !== undefined
+              ? { trajectoryRetentionDays: patch.trajectory_retention_days }
+              : {}),
             ...(patch.policy_repo_id !== undefined ? { policyRepoId: patch.policy_repo_id } : {}),
           })
           .where(eq(orgs.id, orgId))
@@ -352,6 +369,24 @@ export function registerOrgRoutes(
             target: existing.name,
             before: { kill_switch: existing.killSwitch },
             after: { kill_switch: row!.killSwitch },
+          });
+        }
+        // #161: retention is audited on its own verb rather than folded into
+        // the quota op. A quota bounds what an org may write; this decides what
+        // ADP stops holding, which is a different act and the one somebody will
+        // come looking for when a payload is gone.
+        if (
+          patch.trajectory_retention_days !== undefined &&
+          patch.trajectory_retention_days !== existing.trajectoryRetentionDays
+        ) {
+          await recordOperation(tx, {
+            repoId: null,
+            orgId,
+            actorId: req.identity!.identityId,
+            verb: "org.retention_update",
+            target: existing.name,
+            before: { trajectory_retention_days: existing.trajectoryRetentionDays },
+            after: { trajectory_retention_days: row!.trajectoryRetentionDays },
           });
         }
         if (

@@ -1983,6 +1983,19 @@ paths:
                 max_concurrent_workspaces: { type: integer, nullable: true, minimum: 0 }
                 max_concurrent_gate_jobs: { type: integer, nullable: true, minimum: 0 }
                 max_storage_bytes: { type: integer, nullable: true, minimum: 0 }
+                trajectory_retention_days:
+                  type: integer
+                  nullable: true
+                  minimum: 0
+                  description: >
+                    #161: how long this org keeps trajectory payloads, in days.
+                    **Null defers to the instance window rather than meaning
+                    unlimited** — the opposite of the quotas above, and
+                    deliberately so: an org that has never been configured and
+                    one that has chosen to keep everything are different states,
+                    and 0 is how the second says it. Audited under its own verb,
+                    `org.retention_update`, because deciding what ADP stops
+                    holding is a different act from bounding what it may write.
                 policy_repo_id: { type: string, format: uuid, nullable: true }
       responses:
         "401":
@@ -4102,6 +4115,32 @@ components:
             max_concurrent_workspaces: { $ref: "#/components/schemas/OrgQuota" }
             max_concurrent_gate_jobs: { $ref: "#/components/schemas/OrgQuota" }
             max_storage_bytes: { $ref: "#/components/schemas/OrgStorageQuota" }
+        retention:
+          type: object
+          description: >
+            #161: the interim trajectory retention window, stated where an
+            operator reads before it matters rather than after. Reducing a
+            payload keeps the event — its place in the chain, its hash and every
+            typed column survive, and a reduced run still verifies — so what is
+            lost is what the agent said, and `not_retained` on a verification
+            result says how much of a range could only be taken as recorded.
+          required: [days, source, reduced, dueNext]
+          properties:
+            days:
+              type: integer
+              description: Days payloads are kept. 0 means indefinitely.
+            source:
+              type: string
+              enum: [org, instance]
+              description: Whether this org set the window or inherited it.
+            reduced:
+              type: integer
+              description: Events in this org whose payload has already been reduced.
+            dueNext:
+              type: integer
+              description: >
+                Events the next sweep will reduce. This is the number that makes
+                the block a warning rather than a report.
     OrgRepoPolicy:
       type: object
       required: [id, owner, name, default_branch, is_policy_repo, repo_requirements, resolved]
@@ -4223,7 +4262,7 @@ components:
         closedAt: { type: string, format: date-time, nullable: true }
     RunVerifySession:
       type: object
-      required: [session_id, ok, event_count, head, broke_at_seq, reason, emitter_tracked, emitter_complete, emitter_first_gap, verified_from_seq, verified_to_seq, prefix, attested_heads_checked, anchor]
+      required: [session_id, ok, event_count, head, broke_at_seq, reason, emitter_tracked, emitter_complete, emitter_first_gap, verified_from_seq, verified_to_seq, prefix, attested_heads_checked, not_retained, anchor]
       properties:
         session_id: { type: string, format: uuid }
         ok: { type: boolean }
@@ -4252,6 +4291,22 @@ components:
             middle is a signature over a head the rewrite would have had to
             change, which is what each checkpoint holds. Zero on a session that
             was never checkpointed: a fact about the record, not a failure.
+        not_retained:
+          type: integer
+          description: >
+            #161: events in the verified range whose payload ADP no longer holds
+            — aged out under the retention window — so their hash was taken as
+            recorded rather than re-derived from their contents. Not a failure,
+            and deliberately not folded into `ok`: it is a weaker claim about
+            part of the range, and a reader has to be able to see which part.
+
+            What it costs, precisely: for those events the typed columns are no
+            longer independently verifiable either, because the hash covering
+            them cannot be recomputed without the payload it also covers. What
+            survives is the link — the stored hash is what the next event chains
+            to — and any signed checkpoint head past them still pins the prefix,
+            so a wholesale rewrite is still caught. That is the strongest
+            guarantee available once a preimage is gone.
         prefix:
           type: string
           enum: [recomputed, attested, assumed]
