@@ -3540,6 +3540,30 @@ paths:
         run attestation against them. Tamper-evidence nobody can check is
         decoration; this is what makes the guarantee falsifiable by any holder
         of a read token. Reports where a chain first broke, by seq.
+
+        #152: chains are read in batches and sessions are verified with a
+        bounded fan-out, so the cost of this endpoint is a constant rather than
+        the size of the run. `from=checkpoint` additionally starts each chain at
+        the newest checkpoint whose signature verifies, which bounds the work by
+        what has happened since that checkpoint rather than by the age of the
+        session. It is opt-in, and `full` is not merely the slower default but
+        the *stronger* check: it recomputes every event and pins the result to
+        every signed checkpoint head it passes, so it catches both a careless
+        edit and a rewrite that repaired its own hashes. `from=checkpoint`
+        catches the first, and only after the anchor. What each session's result
+        covers is stated per session as `prefix` — see `RunVerifySession`.
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [checkpoint]
+          description: >
+            Anchor each session at its newest signature-verified checkpoint
+            instead of recomputing from the genesis. Sessions with no usable
+            checkpoint fall back to a full recomputation — the fallback is
+            always toward the stronger check, never away from it.
       security:
         - bearerAuth: []
       responses:
@@ -4067,7 +4091,7 @@ components:
         closedAt: { type: string, format: date-time, nullable: true }
     RunVerifySession:
       type: object
-      required: [session_id, ok, event_count, head, broke_at_seq, reason, emitter_tracked, emitter_complete, emitter_first_gap]
+      required: [session_id, ok, event_count, head, broke_at_seq, reason, emitter_tracked, emitter_complete, emitter_first_gap, verified_from_seq, verified_to_seq, prefix, attested_heads_checked, anchor]
       properties:
         session_id: { type: string, format: uuid }
         ok: { type: boolean }
@@ -4078,14 +4102,76 @@ components:
         emitter_tracked: { type: boolean }
         emitter_complete: { type: boolean }
         emitter_first_gap: { type: integer, nullable: true }
+        verified_from_seq:
+          type: integer
+          description: >
+            #152: exclusive lower bound of the range that was recomputed. 0 is
+            the genesis.
+        verified_to_seq:
+          type: integer
+          description: Inclusive upper bound of the range that was recomputed.
+        attested_heads_checked:
+          type: integer
+          description: >
+            #152: how many signed chain heads the recomputation passed through
+            and agreed with. Recomputing from the genesis does not on its own
+            detect an edit made *consistently* — rewrite an event, repair every
+            hash after it, and the chain verifies perfectly. What pins the
+            middle is a signature over a head the rewrite would have had to
+            change, which is what each checkpoint holds. Zero on a session that
+            was never checkpointed: a fact about the record, not a failure.
+        prefix:
+          type: string
+          enum: [recomputed, attested]
+          description: >
+            #152: what is known about the events *before* `verified_from_seq`,
+            and the field that keeps a partial answer from reading as a whole
+            one. `recomputed` — there are none; every event was re-derived from
+            its own contents, and pinned to every signed head it passed (see
+            `attested_heads_checked`). `attested` — the prefix is vouched for by the
+            checkpoint signature named in `anchor`: a prefix rewritten to stay
+            internally consistent still fails, because its head would no longer
+            be the one that was signed, and a prefix edited without repairing
+            its hashes is the case this does not cover.
+        anchor:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ChainAnchor"
+    ChainAnchor:
+      type: object
+      description: >
+        #152: the signed checkpoint a verification started from. Reported rather
+        than kept server-side, because "the first 40,000 events were skipped
+        because this envelope says so" is precisely the claim a reader has to be
+        able to audit for themselves.
+      required: [checkpoint_id, checkpoint_seq, event_count, head]
+      properties:
+        checkpoint_id: { type: string, format: uuid }
+        checkpoint_seq:
+          type: integer
+          description: The checkpoint's own sequence number, which is not an event count.
+        event_count:
+          type: integer
+          description: How many of the session's events the signature covers.
+        head:
+          type: string
+          description: The chain head the signature commits to at that event count.
     RunVerifyResult:
       type: object
-      required: [run_id, ok, chains_ok, emitters_ok, envelope_verified, trajectory_digest_matches, recomputed_trajectory_digest, attested_trajectory_digest, final_git_sha, attested_subject_sha, sessions]
+      required: [run_id, ok, coverage, chains_ok, emitters_ok, envelope_verified, trajectory_digest_matches, recomputed_trajectory_digest, attested_trajectory_digest, final_git_sha, attested_subject_sha, sessions]
       properties:
         run_id: { type: string, format: uuid }
         ok:
           type: boolean
           description: The single answer — false whenever any component check below is false.
+        coverage:
+          type: string
+          enum: [full, from-checkpoint]
+          description: >
+            #152: how much of each chain `ok` was computed over. Required rather
+            than present only on the anchored path — a reader who has to notice
+            an absent key to learn that a verification was partial will not
+            notice it.
         chains_ok: { type: boolean }
         emitters_ok: { type: boolean }
         envelope_verified: { type: boolean, nullable: true }

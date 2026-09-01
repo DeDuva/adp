@@ -382,14 +382,35 @@ export function contiguityOf(seqs: number[]): EmitterContiguity {
 
 // Whether the emitter's own numbering arrived whole. The hash chain proves the
 // events ADP holds have not been edited; this proves ADP was given all of them.
+//
+// #152: the same math as `contiguityOf` above, pushed into one aggregate rather
+// than run over an array of every counter the session holds. It used to select
+// one row per event and map it — bounded memory only in the sense that an
+// integer is smaller than a payload, which stops being reassuring at the
+// multi-hour sessions ambient capture produces. `row_number()` reproduces the
+// `seq !== i + 1` test exactly: the counters are ascending and distinct (the
+// unique partial index in schema.ts), so the smallest position whose value
+// disagrees with its position is the first number the emitter never delivered.
+// `contiguityOf` stays as the statement of that math, and
+// `test/e2e-verify-coverage.test.ts` asserts the two agree on real rows rather
+// than leaving the equivalence as a claim in this comment.
 export async function emitterContiguity(db: Db, sessionId: string): Promise<EmitterContiguity> {
-  const rows = await db
-    .select({ producerSeq: sessionEvents.producerSeq })
-    .from(sessionEvents)
-    .where(and(eq(sessionEvents.sessionId, sessionId), sql`${sessionEvents.producerSeq} is not null`))
-    .orderBy(asc(sessionEvents.producerSeq));
+  const result = await db.execute(sql`
+    select
+      count(*)::int as n,
+      max(producer_seq)::bigint as max_seq,
+      min(case when producer_seq <> rn then rn end)::bigint as first_gap
+    from (
+      select producer_seq, row_number() over (order by producer_seq) as rn
+      from session_events
+      where session_id = ${sessionId}::uuid and producer_seq is not null
+    ) counted
+  `);
+  const row = result.rows[0] as { n: number; max_seq: string | number | null; first_gap: string | number | null };
 
-  return contiguityOf(rows.map((r) => r.producerSeq!));
+  if (Number(row.n) === 0) return { tracked: false, complete: true, maxSeq: null, firstGap: null };
+  const firstGap = row.first_gap === null ? null : Number(row.first_gap);
+  return { tracked: true, complete: firstGap === null, maxSeq: Number(row.max_seq), firstGap };
 }
 
 export interface ChainSummary {
@@ -410,6 +431,24 @@ export async function chainHead(db: Db, sessionId: string): Promise<ChainSummary
   return { sessionId, count: tail?.seq ?? 0, head: tail?.hash ?? chainGenesis(sessionId) };
 }
 
+// How much of a chain a verification actually recomputed. This is the honest
+// third state #152 needed and 3-6 already wanted a name for: "verified" is not
+// one claim, and reporting an anchored verification as a plain `ok: true` would
+// quietly hand a caller the weaker of the two.
+//
+//   recomputed — every covered event's hash was re-derived from its own
+//                contents. Nothing in the range is taken on trust.
+//   attested   — the range was recomputed, and everything before it is vouched
+//                for by a *signature* over the head it starts from: a
+//                checkpoint's `trajectoryHead`. A prefix rewritten to stay
+//                internally consistent still fails, because its head would no
+//                longer be the one that was signed.
+//   assumed    — the range was recomputed and the prefix was neither. The
+//                window starts from whatever the database stores at that point.
+//                Useful for walking a long chain in passes; not a claim about
+//                anything outside the window.
+export type ChainPrefix = "recomputed" | "attested" | "assumed";
+
 export interface VerifyResult {
   sessionId: string;
   ok: boolean;
@@ -419,7 +458,63 @@ export interface VerifyResult {
   // is not actionable, "event 4108 does not match its recorded hash" is.
   brokeAtSeq: number | null;
   reason: string | null;
+  // #152: the range this verification covers, so a result can never be read as
+  // a claim about more of the chain than was looked at. `verifiedFromSeq` is
+  // exclusive and 0 means the genesis; `verifiedToSeq` is inclusive.
+  verifiedFromSeq: number;
+  verifiedToSeq: number;
+  prefix: ChainPrefix;
+  // How many signed chain heads the recomputation passed through and agreed
+  // with. See `VerifyOptions.attested` for why this is not decoration.
+  attestedHeadsChecked: number;
 }
+
+// One signed statement about where a chain had reached: a checkpoint's
+// `eventCount` and the `trajectoryHead` its envelope commits to.
+export interface AttestedHead {
+  seq: number;
+  hash: string;
+}
+
+export interface VerifyOptions {
+  // Start after this seq rather than at the genesis. Requires `fromHash`: a
+  // starting point without the hash it is supposed to link to would verify a
+  // suffix against itself, which is the "verifier that starts too late"
+  // failure — internally consistent and blind to everything before it.
+  fromSeq?: number;
+  // The hash the event at `fromSeq` must carry. Pass a *signed* value — a
+  // checkpoint's `trajectoryHead` — and the prefix becomes attested rather
+  // than merely assumed; that is the whole difference between the two states
+  // of `ChainPrefix`.
+  fromHash?: string;
+  // Stop after this seq. Lets a caller walk a long session in pieces.
+  toSeq?: number;
+  // What `fromHash` is worth. Defaults to the weaker of the two, so a caller
+  // that skips a prefix without saying where the hash came from gets the answer
+  // that claims less — the direction a default in a verifier has to fall.
+  prefix?: Exclude<ChainPrefix, "recomputed">;
+  // Signed heads to check the recomputation against as it passes them,
+  // ascending by seq.
+  //
+  // Recomputing a chain from its genesis does *not* on its own detect an edit
+  // that was made consistently: rewrite an event and repair every hash after
+  // it, and the result is a chain that verifies perfectly, because the genesis
+  // is derived from the session id and nothing else pins the middle. What pins
+  // it is a signature over a head the rewrite would have had to change, and the
+  // checkpoints already hold exactly that. Passing them here is what makes a
+  // full verification detect the repaired edit as well as the careless one.
+  attested?: AttestedHead[];
+  // Rows held in memory at once. The knob exists so the tests can prove the
+  // batch boundary is not load-bearing by running the same chain at 1, 2 and
+  // 7 rows per read and getting one answer.
+  batchSize?: number;
+}
+
+// How many events one read pulls back. Peak memory for a verification is this
+// many rows plus their payloads — a constant, where it used to be the session.
+// 500 is the same order as `listEvents`' own default page, so the largest
+// object this module allocates is not made larger by verification.
+export const VERIFY_BATCH_SIZE = 500;
 
 // Recomputes a session's chain from the stored rows.
 //
@@ -427,50 +522,195 @@ export interface VerifyResult {
 // re-derives every hash from the row's own contents rather than trusting the
 // stored `hash`, so an edit to any covered column — payload or projection —
 // shows up here.
-export async function verifyChain(db: Db, sessionId: string): Promise<VerifyResult> {
-  const rows = await db
-    .select()
-    .from(sessionEvents)
-    .where(eq(sessionEvents.sessionId, sessionId))
-    .orderBy(asc(sessionEvents.seq));
+//
+// #152: it reads in batches and keeps only the batch. It used to select the
+// whole session and iterate the array, so peak memory was the trajectory —
+// fine while the worst case was a fixture, and a way to exhaust the server
+// with a `repo:read` token once ambient capture (#149) started writing real
+// multi-hour sessions.
+export async function verifyChain(
+  db: Db,
+  sessionId: string,
+  options: VerifyOptions = {},
+): Promise<VerifyResult> {
+  const fromSeq = options.fromSeq ?? 0;
+  const batchSize = options.batchSize ?? VERIFY_BATCH_SIZE;
+  const anchored = fromSeq > 0;
+  const prefix: ChainPrefix = anchored ? (options.prefix ?? "assumed") : "recomputed";
 
-  let prevHash = chainGenesis(sessionId);
-  for (const [i, row] of rows.entries()) {
-    if (row.seq !== i + 1) {
-      return {
-        sessionId,
-        ok: false,
-        count: rows.length,
-        head: prevHash,
-        brokeAtSeq: row.seq,
-        reason: `sequence gap: expected seq ${i + 1}, found ${row.seq}`,
-      };
+  // The session's true length, read off the tail rather than counted. The chain
+  // is contiguous by construction, so `max(seq)` *is* the event count — and it
+  // is the number `runChains` and the run attestation already use, which is
+  // what keeps an anchored verification able to reproduce a trajectory digest
+  // without reading the events the digest covers.
+  const { count } = await chainHead(db, sessionId);
+  const toSeq = Math.min(options.toSeq ?? count, count);
+
+  // Only the heads inside the range being recomputed can be checked; one at or
+  // before `fromSeq` is behind the window, and one past `toSeq` was never
+  // reached.
+  const attested = (options.attested ?? [])
+    .filter((a) => a.seq > fromSeq)
+    .sort((a, b) => a.seq - b.seq);
+  let attestedIndex = 0;
+  let attestedHeadsChecked = 0;
+
+  const fail = (brokeAtSeq: number, head: string, reason: string): VerifyResult => ({
+    sessionId,
+    ok: false,
+    count,
+    head,
+    brokeAtSeq,
+    reason,
+    verifiedFromSeq: fromSeq,
+    verifiedToSeq: brokeAtSeq - 1,
+    prefix,
+    attestedHeadsChecked,
+  });
+
+  let prevHash = options.fromHash ?? chainGenesis(sessionId);
+
+  if (anchored) {
+    if (options.fromHash === undefined) {
+      throw new TypeError("verifyChain: fromSeq requires fromHash — see VerifyOptions");
     }
-    if (row.prevHash !== prevHash) {
-      return {
-        sessionId,
-        ok: false,
-        count: rows.length,
-        head: prevHash,
-        brokeAtSeq: row.seq,
-        reason: `event ${row.seq} links to ${row.prevHash.slice(0, 12)}…, expected ${prevHash.slice(0, 12)}…`,
-      };
+    // The anchor check, and the reason an anchored verification is worth more
+    // than a suffix scan. The event at `fromSeq` must carry the hash the
+    // signature commits to, so a prefix that was rewritten to stay internally
+    // consistent still fails here — its recomputed head no longer matches what
+    // was signed.
+    //
+    // It also catches the one tamper full verification cannot: a chain
+    // truncated at the tail verifies perfectly, because what is gone leaves
+    // nothing behind to disagree with. A signed anchor beyond the last stored
+    // event is the missing evidence.
+    const [boundary] = await db
+      .select({ seq: sessionEvents.seq, hash: sessionEvents.hash })
+      .from(sessionEvents)
+      .where(and(eq(sessionEvents.sessionId, sessionId), eq(sessionEvents.seq, fromSeq)));
+    if (!boundary) {
+      return fail(
+        fromSeq,
+        prevHash,
+        prefix === "attested"
+          ? `event ${fromSeq} is attested but absent — the chain is shorter than what was signed`
+          : `event ${fromSeq} is absent — the chain is shorter than the range asked about`,
+      );
     }
-    const recomputed = eventHash(sessionId, prevHash, row);
-    if (recomputed !== row.hash) {
-      return {
-        sessionId,
-        ok: false,
-        count: rows.length,
-        head: prevHash,
-        brokeAtSeq: row.seq,
-        reason: `event ${row.seq} does not match its recorded hash — contents changed after it was appended`,
-      };
+    if (boundary.hash !== options.fromHash) {
+      const source = prefix === "attested" ? "was signed for it" : "was expected";
+      return fail(
+        fromSeq,
+        prevHash,
+        `event ${fromSeq} holds ${boundary.hash.slice(0, 12)}…, but ${options.fromHash.slice(0, 12)}… ${source}`,
+      );
     }
-    prevHash = recomputed;
   }
 
-  return { sessionId, ok: true, count: rows.length, head: prevHash, brokeAtSeq: null, reason: null };
+  let expectedSeq = fromSeq + 1;
+  let cursor = fromSeq;
+
+  while (cursor < toSeq) {
+    const rows = await db
+      .select()
+      .from(sessionEvents)
+      .where(
+        and(
+          eq(sessionEvents.sessionId, sessionId),
+          sql`${sessionEvents.seq} > ${cursor}`,
+          sql`${sessionEvents.seq} <= ${toSeq}`,
+        ),
+      )
+      .orderBy(asc(sessionEvents.seq))
+      .limit(batchSize);
+    if (rows.length === 0) break;
+
+    for (const row of rows) {
+      if (row.seq !== expectedSeq) {
+        return fail(row.seq, prevHash, `sequence gap: expected seq ${expectedSeq}, found ${row.seq}`);
+      }
+      if (row.prevHash !== prevHash) {
+        return fail(
+          row.seq,
+          prevHash,
+          `event ${row.seq} links to ${row.prevHash.slice(0, 12)}…, expected ${prevHash.slice(0, 12)}…`,
+        );
+      }
+      const recomputed = eventHash(sessionId, prevHash, row);
+      if (recomputed !== row.hash) {
+        return fail(
+          row.seq,
+          prevHash,
+          `event ${row.seq} does not match its recorded hash — contents changed after it was appended`,
+        );
+      }
+      prevHash = recomputed;
+      expectedSeq++;
+
+      // The signed-head check. `prevHash` is now the recomputed head as of
+      // `row.seq`, which is precisely what a checkpoint at that event count
+      // committed to.
+      while (attestedIndex < attested.length && attested[attestedIndex]!.seq === row.seq) {
+        const head = attested[attestedIndex]!;
+        if (head.hash !== prevHash) {
+          return fail(
+            row.seq,
+            prevHash,
+            `event ${row.seq} recomputes to ${prevHash.slice(0, 12)}…, but ${head.hash.slice(0, 12)}… was signed for it — ` +
+              "the chain was rewritten after it was attested",
+          );
+        }
+        attestedHeadsChecked++;
+        attestedIndex++;
+      }
+      while (attestedIndex < attested.length && attested[attestedIndex]!.seq < row.seq) attestedIndex++;
+    }
+    cursor = rows[rows.length - 1]!.seq;
+  }
+
+  // A range that ended early is a gap at the far end: the tail was deleted
+  // after the read that measured it, or `toSeq` names an event that is not
+  // there. Either way the caller asked about a range this session cannot
+  // answer for, and reporting `ok` would answer for it anyway.
+  if (cursor < toSeq) {
+    return fail(expectedSeq, prevHash, `sequence gap: expected seq ${expectedSeq}, found end of chain`);
+  }
+
+  // A signed head naming an event the chain does not reach is the truncation
+  // case from the other side: the events are gone, so nothing was left to
+  // disagree with the signature, and a chain that simply stops early otherwise
+  // verifies perfectly. Deleting the tail would be the one edit that leaves no
+  // trace. Checked only when the range ran to the end of the chain — a caller
+  // who asked for a window that stops early has claimed nothing about what
+  // follows it.
+  const unreached = toSeq === count ? attested.find((a) => a.seq > count) : undefined;
+  if (unreached) {
+    return {
+      sessionId,
+      ok: false,
+      count,
+      head: prevHash,
+      brokeAtSeq: unreached.seq,
+      reason: `event ${unreached.seq} is attested but the chain ends at ${count} — events were removed after they were attested`,
+      verifiedFromSeq: fromSeq,
+      verifiedToSeq: toSeq,
+      prefix,
+      attestedHeadsChecked,
+    };
+  }
+
+  return {
+    sessionId,
+    ok: true,
+    count,
+    head: prevHash,
+    brokeAtSeq: null,
+    reason: null,
+    verifiedFromSeq: fromSeq,
+    verifiedToSeq: toSeq,
+    prefix,
+    attestedHeadsChecked,
+  };
 }
 
 export interface ListEventsOptions {
