@@ -325,6 +325,44 @@ export default function OrgConsole({ conn }: { conn: Connection }) {
         <Quota label="Live workspaces" quota={detail.quotas.max_concurrent_workspaces} />
         <Quota label="Running gate jobs" quota={detail.quotas.max_concurrent_gate_jobs} />
       </div>
+
+      {/* #161. Beside the quotas because it answers the same operator question
+          from the other side: a quota bounds what this org may accumulate, and
+          this bounds how long ADP keeps the expensive part of it. Stated
+          before it matters rather than after — which is the whole reason the
+          interim default exists at all. */}
+      <h2>Trajectory retention</h2>
+      <div className="card">
+        {detail.retention.days === 0 ? (
+          <div className="kill-switch-state">
+            Payloads are kept <strong>indefinitely</strong>
+            {detail.retention.source === "org" ? " — this org has chosen an unbounded window." : "."}
+          </div>
+        ) : (
+          <div className="kill-switch-state">
+            Payloads are reduced after <strong>{detail.retention.days} days</strong>
+            {detail.retention.source === "instance" ? ", inherited from this instance." : ", set by this org."}
+          </div>
+        )}
+        <div className="meta">
+          Reducing a payload keeps the event: its place in the chain, its hash and every typed column
+          survive, and a reduced run still verifies. What a reader loses is what the agent said, and that
+          those events can no longer be re-derived from their contents — the verification result says how
+          many.
+        </div>
+        <div className="quotas">
+          <div className="quota">
+            <span className="quota-label">Already reduced</span>
+            <span className="quota-value mono">{detail.retention.reduced}</span>
+          </div>
+          <div className="quota">
+            <span className="quota-label">Due at the next sweep</span>
+            <span className={`quota-value mono ${detail.retention.dueNext > 0 ? "at-limit" : ""}`}>
+              {detail.retention.dueNext}
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

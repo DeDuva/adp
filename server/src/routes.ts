@@ -18,6 +18,7 @@ import { registerDependencyAdmissionRoutes } from "./http-rest/dependency-admiss
 import { registerOperationRoutes } from "./http-rest/operations.js";
 import { registerAuditLogRoutes } from "./http-rest/audit-log.js";
 import { registerOrgRoutes } from "./http-rest/orgs.js";
+import { DEFAULT_RETENTION_DAYS } from "./core/trajectory-retention.js";
 import { registerTokenRoutes } from "./http-rest/tokens.js";
 import { registerOidcRoutes, type OidcConfig } from "./http-rest/oidc.js";
 import { registerWorkspaceRoutes } from "./http-rest/workspaces.js";
@@ -47,6 +48,10 @@ export interface RouteDeps {
   publicUrl: string;
   credentialKey: string;
   instanceFloor: LandRequirement[];
+  // #161: the trajectory retention window an org inherits when it sets none.
+  // Optional so every test app that predates retention keeps constructing
+  // routes unchanged, and defaulted to the same number `config.ts` serves.
+  retentionDays?: number;
   gitMaxPackBytes?: number;
   // M4-5: present only when the instance has been given IdP credentials.
   // Absent is the normal case for a single-tenant instance and for every test
@@ -69,6 +74,7 @@ export interface RouteDeps {
 // the mirror poller.
 export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { db, gitBackend, signer, publicUrl, credentialKey, instanceFloor } = deps;
+  const retentionDays = deps.retentionDays ?? DEFAULT_RETENTION_DAYS;
   const keyRegistry = deps.keyRegistry ?? new KeyRegistry(signer);
 
   // Served on every response, including 401s and 404s. A client pins the
@@ -98,7 +104,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   registerDependencyAdmissionRoutes(app, db, signer, publicUrl);
   registerOperationRoutes(app, db, gitBackend);
   registerAuditLogRoutes(app, db);
-  registerOrgRoutes(app, db, gitBackend, instanceFloor);
+  registerOrgRoutes(app, db, gitBackend, instanceFloor, retentionDays);
   registerTokenRoutes(app, db);
   // Conditional, and the only conditional registration in this function. The
   // routes are absent rather than disabled when no IdP is configured, which

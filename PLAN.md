@@ -163,7 +163,6 @@ exist" from the browser in under a minute.
 |---|---|---|---|
 | 1-12 | `adp init` — attach to a repo that already exists, and detect the toolchain | #153 | not started. Mirror mode is the way in: it asks one developer to add a remote rather than a team to agree |
 | 1-13 | CLI: `watch`, `undo`, `bakeoff`, `runner` | #155 | not started. Removes the last two raw round-trips from the canonical walkthrough |
-| 1-16 | An interim retention default | #161 | not started. 3-6 is the real policy and waits on 3-5; this decides only what happens in the interval, which 1-7 makes expensive to get wrong |
 
 **1-14 is finished, and it found the limit of its own exit criterion.** The M3 surface has a reader
 now — runs, run detail, the trajectory with its typed columns, verification as two separate answers,
@@ -185,6 +184,22 @@ it, and back. It works for a commit made by a plain `git push` — which is the 
 since a join over `session_events` alone would have answered only for commits some recorder happened
 to observe. A pushed commit names its session through the change's provenance instead, and the
 bundle now walks both routes.
+
+**1-16 is finished**, and it sharpened what 3-6 still has to decide. The interim window reduces
+payloads and keeps the chain — 90 days by default, per-org overridable, `0` meaning forever — so a
+reduced run still verifies and says how much of it it could only take as recorded. What that costs
+is now a measured fact rather than an assumption: a reduced event's *typed columns* stop being
+independently verifiable too, because the hash covering them covers the payload as well. A signed
+checkpoint head past them still pins the prefix, which is the strongest guarantee available once a
+preimage is gone, and it is the reason 3-4's signed-head check turned out to be load-bearing for
+retention rather than only for verification.
+
+**So 3-6 has one fewer degree of freedom.** "Attestations committing to digests never payloads" was
+the intended shape; what 1-16 shows is that the digest is not what makes a reduced event verifiable,
+because the chain does not commit to the digest — it commits to the payload, through the event's own
+hash. The honest third state is therefore "the link holds and the contents cannot be re-derived",
+which is what `not_retained` reports. 3-5's numbers still decide the window and the tiering; they no
+longer decide the verification vocabulary.
 
 2-3 belongs to this release as well. So did 3-4 and 2-2, both finished: verification of a
 trajectory now costs a constant rather than a session, which is the precondition for 1-14 putting a
@@ -326,7 +341,7 @@ signed head, and that is what makes "verified, payload not retained" say somethi
 |---|---|---|---|---|
 | 3-3 | Make the SBOM deterministic so identical dependency sets dedup | #194 | not started | `randomUUID()` and a fresh timestamp per land make ~8 KB of every ~12 KB landed change un-dedupable and ~100% redundant. Pure win; needs no object store |
 | 3-5 | Bench arm 4 — `storage-growth` | #195 | not started | Deterministic, no model, no tokens, CI-runnable like arm 1: bytes per unit on a real Postgres, realised vs batched compression, dedup yield, ingest cliff, peak RSS on `/verify` |
-| 3-6 | Retention and tiering as org policy | — | blocked on 3-5 | The intended shape — hot/extended tiers with promote-on-reference, attestations committing to digests never payloads, "verified, payload not retained" as an honest third verification state — is settled; the numbers that justify it come from 3-5. 1-19 (#199) built the commitment half already: an event whose payload is stored as structure carries `payload_digest`, covered by the chain. 1-16 covers the interval. The object-store half also waits on decision 2 |
+| 3-6 | Retention and tiering as org policy | — | blocked on 3-5; 1-16 shipped the interval | The intended shape — hot/extended tiers with promote-on-reference, attestations committing to digests never payloads, "verified, payload not retained" as an honest third verification state — is settled; the numbers that justify it come from 3-5. 1-19 (#199) built the commitment half already: an event whose payload is stored as structure carries `payload_digest`, covered by the chain. 1-16 covers the interval. The object-store half also waits on decision 2 |
 
 ---
 

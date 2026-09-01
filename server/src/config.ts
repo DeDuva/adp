@@ -74,6 +74,30 @@ const EnvSchema = z.object({
   // it is not.
   STORAGE_METER_INTERVAL_MS: z.coerce.number().int().positive().default(600_000),
 
+  // #161: how long trajectory payloads are kept, in days, for an org that has
+  // set no window of its own. **This is the interim answer, not the policy** —
+  // PLAN.md 3-6 is that, and waits on bench arm 4's numbers. What this decides
+  // is what happens in the meantime, and the meantime is not empty: ambient
+  // capture writes at a volume nobody has operated before, against a promise of
+  // unbounded retention that was never going to be kept.
+  //
+  // Zero keeps payloads forever, explicitly, and an operator who wants that
+  // should say so rather than inherit it. Reducing a payload never touches the
+  // chain: the event keeps its links, its hash and every typed column, and
+  // verification reports how much of a range it could only take as recorded
+  // rather than re-derive (core/trajectory-retention.ts).
+  //
+  // **Upgrading an existing instance changes behaviour**, which is the cost of
+  // shipping a default instead of an implicit forever. Ninety days is
+  // deliberately generous for that reason, and under #199's default
+  // `trajectory.payloads: structure` a reduced event loses a shape whose
+  // strings were already replaced by their byte counts.
+  TRAJECTORY_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(90),
+  // Once an hour. The window is measured in days, so a sweep this coarse
+  // bounds overshoot to a rounding error against it — and this scans the
+  // largest table in the schema, which is not something to do on a short timer.
+  TRAJECTORY_RETENTION_INTERVAL_MS: z.coerce.number().int().positive().default(3_600_000),
+
   // M4-5: OIDC login. Every field is optional and the routes only mount when
   // both client credentials are present, because an instance that has not
   // configured an IdP must keep working exactly as before — token auth is the

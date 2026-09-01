@@ -16,6 +16,42 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## v0.6.0 — unreleased
 
+**Trajectory payloads have a retention window (#161).** Ambient capture (#149) started
+writing at a volume nobody had operated before, against an implicit promise of unbounded
+retention that nothing was going to keep — and the first operator to notice would have
+noticed as a disk alert. `PLAN.md` 3-6 is the real policy and waits on measurement; this
+is what happens in the meantime, and it is built so that nothing has to be unwound.
+
+**Reduce payloads, keep the chain.** Ninety days by default
+(`TRAJECTORY_RETENTION_DAYS`, `server.trajectoryRetentionDays`), overridable per org,
+where **null means "inherit" and 0 means "keep forever"** — an org that was never
+configured and one that chose to keep everything are different states, and only the second
+is spelled 0. An aged-out event keeps its sequence, its links, its hash and every typed
+column; what goes is the payload body. A reduced run still verifies.
+
+**And it says so, which is the third verification state 3-6 wanted a name for.**
+`not_retained` on a verification result is how many events in a range could only be taken
+as recorded rather than re-derived from their contents — reported as a count rather than
+folded into `ok`, because it is not a failure but a weaker claim about part of the range.
+
+**What that costs is stated rather than glossed.** For a reduced event the *typed columns*
+stop being independently verifiable too, because the hash covering them covers the payload
+as well and cannot be recomputed without it. A test asserts exactly that: an edit to a
+reduced event's `tokens_out` is not caught, and the same edit on a retained event is. What
+survives is the link, and any signed checkpoint head past the reduced region still pins the
+prefix — so a wholesale rewrite is still caught, which is the strongest guarantee available
+once a preimage is gone. #152's signed-head check turned out to be load-bearing for
+retention, not only for verification.
+
+**Upgrading an existing instance changes behaviour**, which is the honest cost of shipping
+a default instead of an implicit forever. The window is generous for that reason, the
+server logs which one it is at boot, each sweep records a `trajectory.reduce` operation so
+a missing payload can be accounted for rather than merely missed, and the org console shows
+what has been reduced and what is due next. Under #199's default
+`trajectory.payloads: structure` a reduced event loses a shape whose strings were already
+replaced by their byte counts; a repository on `payloads: full` is exactly the one whose
+org should set a window of its own.
+
 **The record is navigable in both directions (#157).** `getEvidenceBundle` has returned
 the change with its `intent_id` since M1 and the intent's title since #189, and the
 evidence view rendered neither — which is the exact point at which "when a change lands

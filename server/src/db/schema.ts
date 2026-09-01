@@ -66,6 +66,12 @@ export const orgs = pgTable("orgs", {
   // bigint, not integer: 2 GiB is a plausible ceiling for one org and would
   // overflow int4 as a *byte* count.
   maxStorageBytes: bigint("max_storage_bytes", { mode: "number" }),
+  // #161: how long this org keeps trajectory payloads, in days. Null means
+  // "use the instance default" — absence defers upward, like the land-policy
+  // floors and unlike M4-3's quotas above, where null means unlimited. Keeping
+  // payloads forever is spelled `0`, explicitly, so that it is a choice
+  // somebody made rather than a column nobody filled in.
+  trajectoryRetentionDays: integer("trajectory_retention_days"),
   // The meter's last reading, not a running total. Storage is measured on a
   // tick (core/storage-usage.ts) and enforcement reads this column, because
   // the alternative — counting bytes synchronously on every append — would
@@ -590,6 +596,21 @@ export const sessionEvents = pgTable(
     // includes the key only when set, so a `full`-mode event and every row
     // written before this column existed hash to what they always did.
     payloadDigest: text("payload_digest"),
+    // #161: whether ADP still holds this event's payload, or aged it out under
+    // the org's retention window. **Not covered by `eventHash`, and it cannot
+    // be** — every row written before this column existed would change what it
+    // hashes to, and `verifyChain` would report the whole corpus as tampered.
+    // The same reasoning `producerSeq`, `redactions` and `payloadDigest` are
+    // written down under: this is a fact about what ADP still *holds*, and the
+    // chain commits to what the producer *sent*.
+    //
+    // False costs something precise and worth stating: with the payload gone,
+    // that event's hash can no longer be re-derived from its contents, so its
+    // typed columns are no longer independently verifiable either. What still
+    // holds is the link — its stored hash is what the next event chains to —
+    // and any signed checkpoint head past it still pins the whole prefix, which
+    // is what keeps a wholesale rewrite detectable. See core/trajectory.ts.
+    payloadRetained: boolean("payload_retained").notNull().default(true),
     // When it happened, per the orchestrator, versus when ADP received it. Both,
     // because clock skew is real and neither answers the other's question.
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),

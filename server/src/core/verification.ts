@@ -152,6 +152,12 @@ export function serializeSessionVerification(v: SessionVerification) {
     // to see, since it is the difference between "recomputed" and "recomputed
     // and pinned to something that was signed at the time".
     attested_heads_checked: v.chain.attestedHeadsChecked,
+    // #161: events in the verified range whose payload was aged out under the
+    // retention window, so their hash was taken as recorded rather than
+    // re-derived. Reported rather than folded into `ok`, because it is not a
+    // failure — it is a weaker claim about part of the range, and the third
+    // verification state 3-6 wanted a name for.
+    not_retained: v.chain.notRetained,
     anchor: v.anchor
       ? {
           checkpoint_id: v.anchor.checkpointId,

@@ -83,6 +83,7 @@ would be the expensive kind of regression here.
 | `persistence.existingClaim` | — | You manage the volume yourself |
 | `secrets.existingSecret` | — | Your secrets come from a manager, not from `--set` |
 | `server.landPolicyFloor` | `gates_green` | The instance-wide floor no org or repo can remove. Add `one_approval` — `"gates_green,one_approval"` — once the instance has a second principal; it is author-independent, so a single-principal instance cannot satisfy it |
+| `server.trajectoryRetentionDays` | `90` | Your instance keeps `trajectory.payloads: full` repositories and you want their payloads kept longer — or `0` to keep them indefinitely. §5 |
 | `runner.*` | disabled | See §4 |
 
 ---
@@ -211,6 +212,27 @@ because refusing to would just push people into a worse improvisation.
   would ask two pods to hold one ReadWriteOnce volume and deadlock instead.
 - **Health.** `/healthz` is process liveness; `/readyz` queries Postgres. The chart uses the right
   one for each probe, which is what stops a database blip from restarting a healthy server in a loop.
+- **Trajectory retention.** Payloads are reduced after **90 days by default**
+  (`server.trajectoryRetentionDays`, or `TRAJECTORY_RETENTION_DAYS`). Set `0` to keep them
+  indefinitely; an org overrides the instance with `trajectory_retention_days` on
+  `PATCH /api/adp/orgs/{id}`, where **null means "inherit"** and `0` means "keep forever" — the two
+  are different states on purpose.
+
+  **Reducing a payload is not deleting an event.** The event keeps its sequence, its links, its
+  hash, and every typed column — tokens, cost, duration, tool identity, verdict, commit — so a
+  reduced run still verifies, and `GET .../runs/{id}/verify` reports `not_retained`: how many events
+  in a range it could only take as recorded rather than re-derive from their contents. What that
+  costs is worth knowing before you rely on it: for those events the typed columns are no longer
+  independently verifiable either, because the hash covering them cannot be recomputed without the
+  payload it also covers. A signed checkpoint head past them still pins the prefix, so a wholesale
+  rewrite is still caught.
+
+  **Upgrading an existing instance changes behaviour**, which is why the window is generous and the
+  override exists. Under the default `trajectory.payloads: structure` a reduced event loses a shape
+  whose strings were already replaced by their byte counts (`adp.yaml`); a repository that opted
+  into `payloads: full` is exactly the one whose org should set a window of its own. Each sweep
+  records a `trajectory.reduce` operation, so a payload that is gone can be accounted for rather
+  than merely missed, and the org console shows what has been reduced and what is due next.
 
 ---
 

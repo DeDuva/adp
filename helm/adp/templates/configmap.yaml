@@ -12,6 +12,10 @@ data:
   PUBLIC_URL: {{ include "adp.publicUrl" . | quote }}
   LAND_POLICY_FLOOR: {{ .Values.server.landPolicyFloor | quote }}
   GIT_MAX_PACK_BYTES: {{ .Values.server.gitMaxPackBytes | quote }}
+  # #161. Always emitted, unlike the OIDC block below: an operator has to be
+  # able to read what this instance's retention window is from the rendered
+  # config, and an absent key that means "90" is a promise nobody can see.
+  TRAJECTORY_RETENTION_DAYS: {{ .Values.server.trajectoryRetentionDays | quote }}
 {{- if .Values.oidc.clientId }}
   {{/*
     M4-5. Emitted only when a client id is set, because the server mounts the
