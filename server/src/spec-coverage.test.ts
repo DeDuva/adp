@@ -268,7 +268,6 @@ const RESPONSE_SCHEMA_DEBT = new Set<string>([
   "POST /api/adp/repos/{owner}/{repo}/candidate-sets",
   "POST /api/adp/repos/{owner}/{repo}/candidate-sets/{id}/resolve",
   "POST /api/adp/repos/{owner}/{repo}/candidate-sets/{id}/select",
-  "POST /api/adp/repos/{owner}/{repo}/operations/{id}/undo",
   "POST /api/adp/repos/{owner}/{repo}/runs",
   "POST /api/adp/repos/{owner}/{repo}/runs/{runId}/abandon",
   "POST /api/adp/repos/{owner}/{repo}/runs/{runId}/close",

@@ -1795,8 +1795,28 @@ paths:
     post:
       x-required-scope: "repo:write"
       summary: >
-        Undo an operation — operation-log undo with the causal record preserved,
-        not revert-as-new-commit. The undo is itself an operation.
+        Undo an operation. The undo is itself an operation, so the causal record
+        is preserved rather than erased.
+
+        **Two paths, and the response says which one ran** (#159). A *rollback*
+        winds the base ref back with the same compare-and-swap the merge used,
+        and is available only while the ref still points where the merge left
+        it — which is what makes it exact: nothing else landed, so nothing else
+        is lost. Once something has landed on top, that path is gone, and until
+        #159 so was undo: it worked right up until somebody else pushed.
+
+        A *compensating revert* is the second path. It produces the change that
+        takes the merge back out on top of whatever landed since, as a
+        **proposal** — so `undo_path: revert` means "here is the change that
+        undoes it", not "it is undone". That is deliberate: a revert is a
+        change, and an undo that bypassed the land policy would be a hole in the
+        gate opened by the one verb most likely to be used in a hurry. The
+        proposal's gates are enqueued from its own `adp.yaml`, because a
+        proposal nothing will ever report a gate result for cannot land under
+        the default floor.
+
+        A revert that conflicts with what landed after it is refused with the
+        conflicting paths named, never merged with markers left in the tree.
       security:
         - bearerAuth: []
       responses:
@@ -1807,13 +1827,24 @@ paths:
                 $ref: "#/components/schemas/Error"
           description: Missing or invalid token
         "200":
-          description: The recorded undo operation
+          description: >
+            The recorded undo operation, plus which path it took. The operation
+            is the top-level object, so a client reading only the operation
+            fields keeps working.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UndoResult"
         "422":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-          description: This operation is not undoable, or was already undone
+                $ref: "#/components/schemas/UndoRefusal"
+          description: >
+            Not undoable, already undone, or a compensating revert that could
+            not be produced — the branch's history was rewritten, the merge is
+            already reverted, or the revert conflicts (`conflicts` names the
+            paths).
   /api/adp/orgs:
     post:
       x-required-scope: "admin"
@@ -4274,6 +4305,80 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RunVerifySession"
+    Operation:
+      type: object
+      description: >
+        One entry in the operation log. Written in the same database transaction
+        as the change it records, which is the invariant the whole log rests on.
+      required: [id, actor_id, verb, target, before, after, parent_op, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        actor_id: { type: string, format: uuid }
+        verb:
+          type: string
+          description: "`proposal.merge`, `change.create`, `session.checkpoint`, … — dotted, and never branched on by a client."
+        target:
+          type: string
+          description: "What it acted on: `owner/name#7`, `owner/name@<sha>`, `owner/name@session:<uuid>`."
+        before: { nullable: true, description: State before, verb-specific. }
+        after: { nullable: true, description: State after, verb-specific. }
+        parent_op:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            The operation this one is a consequence of — how an undo is linked
+            to the merge it undoes, with no join table.
+        created_at: { type: string, format: date-time }
+    UndoResult:
+      allOf:
+        - $ref: "#/components/schemas/Operation"
+        - type: object
+          required: [undo_path]
+          properties:
+            undo_path:
+              type: string
+              enum: [rollback, revert]
+              description: >
+                #159: which path the undo took. `rollback` — the base ref was
+                wound back and the proposal reopened; the change is out of the
+                branch already. `revert` — the branch had moved, so a revert
+                proposal was opened and the change is **not** out of the branch
+                until that proposal lands. These are different facts about
+                history and the log keeps them apart: the verb is
+                `proposal.merge.undo` for the first and `proposal.merge.revert`
+                for the second.
+            proposal:
+              description: Present only when `undo_path` is `revert`.
+              type: object
+              required: [number, title, head_ref, head_sha, base_ref, state]
+              properties:
+                number: { type: integer }
+                title: { type: string }
+                head_ref: { type: string, description: "The branch ADP created, `adp/revert-<n>`." }
+                head_sha: { type: string }
+                base_ref: { type: string }
+                state: { type: string, enum: [open, closed, merged] }
+            gate_jobs_enqueued:
+              type: integer
+              description: >
+                Present only when `undo_path` is `revert`. How many gates were
+                enqueued against the revert commit, read from its own
+                `adp.yaml`. Zero means the repo declares no runner gates — not
+                that enqueueing failed.
+    UndoRefusal:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          description: >
+            #159: `conflicts` is present only when a compensating revert could
+            not be produced because the change has been built on since. Absent —
+            not empty — on every other refusal, so a caller cannot mistake "no
+            conflicts" for "a conflict with no files".
+          properties:
+            conflicts:
+              type: array
+              items: { type: string }
     LandRefusal:
       allOf:
         - $ref: "#/components/schemas/Error"

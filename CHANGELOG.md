@@ -44,6 +44,43 @@ either of the other two, which is why it has its own name rather than a bare
 `ok`. Signed heads falling inside a window are still checked: narrowing what you
 recompute is not a reason to stop comparing it against what was signed.
 
+**Undo survives the branch moving (#159).** Undo reverted a landed merge by winding
+the base ref back with the same compare-and-swap the merge used, and refused if the
+branch had moved since. The refusal was right — silently discarding what landed after
+would be far worse — but it meant undo worked exactly until somebody else pushed, which
+on an active repository is minutes. The honest total was: available for one verb,
+briefly.
+
+There is a second path now. When the ref has moved, undo produces the change that takes
+the merge back out on top of whatever landed since, computed as the three-way merge a
+revert actually is — `git merge-tree --write-tree` against the bare repository, so no
+worktree is created and no ref moves while the result is still being decided on.
+
+**The revert goes through the land policy, and that is the whole design rather than a
+limitation.** A revert is a change, and an undo that bypassed the gate would be a hole in
+the gate opened by the one verb most likely to be used in a hurry. So undo opens a
+*proposal* on `adp/revert-<n>` and stops: `undo_path: revert` means "here is the change
+that undoes it", not "it is undone", and the branch does not move until that proposal
+satisfies the same policy as everything else. It also enqueues the revert's own gates from
+its `adp.yaml`, because a proposal nothing will ever report a gate result for cannot land
+under the default floor — a refusal wearing the shape of a fix.
+
+**A conflicting revert is refused with the paths named.** A revert merged with conflict
+markers left in it would be a second outage caused by fixing the first. Two more cases
+refuse rather than guess: a branch whose history was rewritten out from under the record
+no longer contains the merge to revert, and a merge already reverted by hand produces the
+tree it started from, which would otherwise open an empty proposal nobody can review.
+
+**The operation log keeps the two apart.** `proposal.merge.undo` for a rollback,
+`proposal.merge.revert` for a revert, and `undo_path` on the response. These are different
+facts about history — one means the change was never in the branch you are looking at, the
+other means it was there and a second change took it back out — and a log that blurred
+them would be a log you cannot reconstruct from.
+
+The undo response is typed in the contract now (`UndoResult`, `UndoRefusal`, and the
+`Operation` shape underneath), which takes a line off `spec-coverage.test.ts`'s
+response-schema debt list. The operation stays the top-level object, so a client reading
+only the operation fields keeps working.
 **Verifying a trajectory costs a constant now, not a session (#152).**
 `verifyChain` selected every event of a session into an array, and
 `GET …/runs/{id}/verify` ran that over every session in the run at once, behind
