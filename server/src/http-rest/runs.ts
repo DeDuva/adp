@@ -21,7 +21,12 @@ import {
   trajectoryDigest,
   serializeRun,
 } from "../core/runs.js";
-import { serializeEvent, verifyChain, emitterContiguity, EVENT_KINDS } from "../core/trajectory.js";
+import { serializeEvent, EVENT_KINDS } from "../core/trajectory.js";
+import {
+  verifySessions,
+  serializeSessionVerification,
+  type VerifyCoverage,
+} from "../core/verification.js";
 import { recordEval, listEvals, serializeEval } from "../core/evals.js";
 
 const OpenRunBody = z.object({
@@ -308,23 +313,37 @@ export function registerRunRoutes(
         return;
       }
 
+      // #152: `from=checkpoint` starts each session's chain at the newest
+      // checkpoint whose signature verifies, so the work is bounded by what has
+      // happened since rather than by the age of the session. It is opt-in and
+      // never the default: a caller that reads only `ok` has to be reading the
+      // strong claim, and the weaker one is reached by asking for it.
+      const query = req.query as { from?: string };
+      const coverage: VerifyCoverage = query.from === "checkpoint" ? "from-checkpoint" : "full";
+
       const sessionRows = await db.select().from(sessions).where(eq(sessions.runId, runId));
-      const chainResults = await Promise.all(sessionRows.map((s) => verifyChain(db, s.id)));
-      const chainsOk = chainResults.every((c) => c.ok);
+      // Bounded fan-out rather than `Promise.all` over however many sessions
+      // the run has — see VERIFY_SESSION_CONCURRENCY.
+      const verified = await verifySessions(
+        db,
+        keyRegistry,
+        sessionRows.map((s) => s.id),
+        { coverage },
+      );
+      const chainsOk = verified.every((v) => v.chain.ok);
 
       // Two different guarantees, deliberately reported separately: the chain
       // says the events ADP holds were not edited, the emitter counter says ADP
       // was given all of them. A run can pass the first and fail the second.
-      const contiguity = new Map(
-        await Promise.all(
-          sessionRows.map(async (s) => [s.id, await emitterContiguity(db, s.id)] as const),
-        ),
-      );
-      const emittersOk = [...contiguity.values()].every((c) => !c.tracked || c.complete);
+      const emittersOk = verified.every((v) => !v.emitter.tracked || v.emitter.complete);
 
-      const chains = sessionRows.map((s) => {
-        const verified = chainResults.find((c) => c.sessionId === s.id)!;
-        return { sessionId: s.id, harness: s.harness, count: verified.count, head: verified.head };
+      // The digest is computed from each session's length and head, both of
+      // which an anchored verification still establishes — the head it arrives
+      // at is recomputed from the anchor forward, and the count is the tail's
+      // own seq. So `from=checkpoint` does not cost the attestation check.
+      const chains = sessionRows.map((s, i) => {
+        const chain = verified[i]!.chain;
+        return { sessionId: s.id, harness: s.harness, count: chain.count, head: chain.head };
       });
       const recomputedDigest = trajectoryDigest(chains);
 
@@ -347,6 +366,11 @@ export function registerRunRoutes(
         // chain that verifies perfectly but is missing events the emitter
         // numbered and never delivered.
         ok: chainsOk && emittersOk && envelopeVerified !== false && digestMatches !== false,
+        // #152: how much of each chain that `ok` was computed over. It is a
+        // required field rather than one present only on the anchored path,
+        // because a reader who has to notice an *absent* key to learn that a
+        // verification was partial will not notice it.
+        coverage,
         chains_ok: chainsOk,
         emitters_ok: emittersOk,
         envelope_verified: envelopeVerified,
@@ -355,20 +379,7 @@ export function registerRunRoutes(
         attested_trajectory_digest: run.trajectoryDigest,
         final_git_sha: run.finalGitSha,
         attested_subject_sha: subjectSha,
-        sessions: chainResults.map((c) => {
-          const emitter = contiguity.get(c.sessionId)!;
-          return {
-            session_id: c.sessionId,
-            ok: c.ok,
-            event_count: c.count,
-            head: c.head,
-            broke_at_seq: c.brokeAtSeq,
-            reason: c.reason,
-            emitter_tracked: emitter.tracked,
-            emitter_complete: emitter.complete,
-            emitter_first_gap: emitter.firstGap,
-          };
-        }),
+        sessions: verified.map(serializeSessionVerification),
         // Who scored this run, and whether that was somebody other than whoever
         // ran it.
         evals: (await listEvals(db, runId)).map((e) => ({

@@ -505,6 +505,70 @@ export async function listCheckpoints(db: Db, sessionId: string): Promise<Checkp
   return db.select().from(checkpoints).where(eq(checkpoints.sessionId, sessionId)).orderBy(checkpoints.seq);
 }
 
+// #152: a starting point for verification that is evidence rather than a
+// shortcut.
+export interface ChainAnchor {
+  checkpointId: string;
+  // The checkpoint's own sequence number, which is not the event count.
+  checkpointSeq: number;
+  // How many events the signature covers, and the head it commits to. Together
+  // these are what let `verifyChain` skip the prefix without taking it on
+  // trust: the stored event at `eventCount` has to carry `head`, and it cannot
+  // be made to unless the prefix hashes exactly as it did when this was signed.
+  eventCount: number;
+  head: string;
+}
+
+// Every checkpoint of a session whose envelope this instance can verify, in
+// ascending event count — each one a signed statement about where the chain had
+// reached, and therefore a point a recomputation can be checked against.
+//
+// A checkpoint whose envelope does not verify is skipped rather than fatal: one
+// signed by a key this instance no longer holds is a key-rotation artefact, not
+// a forgery. Skipping costs coverage, never assurance — every anchor dropped
+// here makes the verification claim *less*, which is the only direction a
+// verifier may fail in.
+export async function verifiedAnchors(db: Db, keys: KeyRegistry, sessionId: string): Promise<ChainAnchor[]> {
+  const rows = await db
+    .select({ id: checkpoints.id, seq: checkpoints.seq, envelope: checkpoints.envelope })
+    .from(checkpoints)
+    .where(eq(checkpoints.sessionId, sessionId))
+    .orderBy(checkpoints.seq);
+
+  const anchors: ChainAnchor[] = [];
+  for (const row of rows) {
+    const envelope = row.envelope as DsseEnvelope;
+    if (!verifyEnvelope(keys, envelope)) continue;
+    const statement = decodeStatement(envelope);
+    if (statement.predicateType !== CHECKPOINT_PREDICATE_TYPE) continue;
+    const predicate = statement.predicate as { trajectoryHead?: unknown; eventCount?: unknown };
+    // A checkpoint taken before the session had any events signs the genesis
+    // and covers nothing, so it is not an anchor — there is no stored row at
+    // seq 0 to check it against.
+    if (typeof predicate.trajectoryHead !== "string" || typeof predicate.eventCount !== "number") continue;
+    if (predicate.eventCount < 1) continue;
+    anchors.push({
+      checkpointId: row.id,
+      checkpointSeq: row.seq,
+      eventCount: predicate.eventCount,
+      head: predicate.trajectoryHead,
+    });
+  }
+  // Checkpoint seq and event count move together in practice, but the ordering
+  // that matters to a verifier is the one it walks the chain in.
+  return anchors.sort((a, b) => a.eventCount - b.eventCount);
+}
+
+// The newest usable anchor, or null — which a caller reads as "verify in full".
+export async function latestVerifiedAnchor(
+  db: Db,
+  keys: KeyRegistry,
+  sessionId: string,
+): Promise<ChainAnchor | null> {
+  const anchors = await verifiedAnchors(db, keys, sessionId);
+  return anchors.length > 0 ? anchors[anchors.length - 1]! : null;
+}
+
 // Walks the resume chain back to the session that started it. This is what
 // makes a resumed session's whole lineage retrievable without the caller
 // knowing how many harnesses it passed through.

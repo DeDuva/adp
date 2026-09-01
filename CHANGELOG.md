@@ -16,6 +16,52 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## Unreleased
 
+**Verifying a trajectory costs a constant now, not a session (#152).**
+`verifyChain` selected every event of a session into an array, and
+`GET …/runs/{id}/verify` ran that over every session in the run at once, behind
+a plain `repo:read` token — so the peak cost of one request was the number of
+sessions multiplied by the size of the largest, and a caller sets both. It reads
+in batches of 500 and fans out four sessions at a time. On a 200,000-event
+session the peak drops from 132.3 MiB to 1.6 MiB; at 50,000 events, from 38.8
+MiB to 0.4 MiB. `make measure-verify` reproduces both, and the emitter-contiguity
+check moved into one aggregate rather than a row per event beside it.
+
+**The endpoint that makes tamper-evidence falsifiable should be the last thing
+to become unreliable at volume**, which is why this was worth doing before
+anything else in 1c: ambient capture (#149) is what turns the worst case from a
+fixture into a real multi-hour run, and the verification route is simultaneously
+the most valuable thing in the native plane and the cheapest way to exhaust the
+server.
+
+**`?from=checkpoint` verifies from the newest signed head forward.** A
+checkpoint already signs the chain head it reached, so verification can start
+there instead of at the genesis — bounded by what has happened since rather than
+by the age of the session. It is opt-in, and the result says what it covers:
+`coverage` on the run, and per session `prefix`, `verified_from_seq`,
+`verified_to_seq` and the `anchor` it started from. A reader who has to notice an
+absent key to learn that a verification was partial will not notice it.
+
+**Chasing that turned up a hole in the check it was meant to be a cheaper
+version of.** Recomputing a chain from its genesis does not detect an edit made
+*consistently*: rewrite an event, repair every hash after it, and the chain
+verifies perfectly, because the genesis is derived from the session id and
+nothing pins the middle. What pins it is a signature over a head the rewrite
+would have had to change — which the checkpoints have held all along and nothing
+read. Full verification now checks every signed head it passes, reported as
+`attested_heads_checked`, so it catches the repaired edit as well as the careless
+one. `full` is therefore the stronger answer and not merely the slower one, which
+is the right way round for a default.
+
+**What each coverage does and does not catch is a test, not a caveat.**
+`server/test/e2e-verify-coverage.test.ts` tampers four ways and asserts both
+answers each time: an edit after the anchor (both catch it, at the same seq), a
+careless edit before it (only full), a rewrite that repaired its own hashes (both,
+by different routes), and a deletion reaching back past the anchor (both). It also
+asserts the one case neither catches — a truncation past the last signed head —
+because an incremental verifier that starts too late is a verifier that misses
+the tampering, and the boundary of the guarantee is worth pinning down rather
+than describing.
+
 **`adp connect <harness>` — one command, and then the harness records itself
 (#154).** Connecting used to mean minting a token by hand, writing an MCP config
 in the right format at the right path, knowing that `gh` reads
