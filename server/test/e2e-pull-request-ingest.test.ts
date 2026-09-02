@@ -229,10 +229,14 @@ describe.skipIf(skipWithoutDb)("#224: pull_request ingest", () => {
   });
 
   // A merge is `state: "closed"` with `merged: true` beside it, so reading
-  // `state` alone records every merge as an abandonment. The row is truthful
-  // here; the `proposal.merge` operation `adp undo` resolves is #225, and this
-  // asserts the gap deliberately rather than leaving it to be discovered.
-  it("records a merged pull request as merged, and does not yet write proposal.merge", async () => {
+  // `state` alone records every merge as an abandonment.
+  //
+  // No `merge_commit_sha` in this payload, so there is nothing for #225's merge
+  // recording to act on — which is the case that isolates the state transition
+  // from the operation. The `proposal.merge` operation itself, and the three
+  // sources it establishes its pre-merge base sha from, are pinned in
+  // e2e-merge-ingest.test.ts.
+  it("records a merged pull request as merged", async () => {
     const name = "merged-repo";
     const repo = await createRepo(name);
     const { webhook_secret } = await createMirror(name);
