@@ -114,6 +114,14 @@ function streamHttpBackend(
     contentType: string;
     contentLength: string | undefined;
     remoteUser: string;
+    // #229: the token's agent provenance tuple, forwarded into the hook
+    // environment beside REMOTE_USER. Ordinary environment inheritance —
+    // git-http-backend spawns receive-pack, which spawns the hooks, and none
+    // of them strips variables it does not recognise. Empty string rather than
+    // undefined for an absent value, because a CGI environment has no way to
+    // express "unset" that survives the round trip, and the hook treats empty
+    // as absent.
+    agentProvenance?: { harness: string; model: string; sessionId: string };
     body: Readable;
     maxBytes: number;
   },
@@ -131,6 +139,9 @@ function streamHttpBackend(
         CONTENT_TYPE: opts.contentType,
         CONTENT_LENGTH: opts.contentLength ?? "",
         REMOTE_USER: opts.remoteUser,
+        ADP_HARNESS: opts.agentProvenance?.harness ?? "",
+        ADP_MODEL: opts.agentProvenance?.model ?? "",
+        ADP_SESSION_ID: opts.agentProvenance?.sessionId ?? "",
         REMOTE_ADDR: "127.0.0.1",
         SERVER_PROTOCOL: "HTTP/1.1",
       },
@@ -267,6 +278,15 @@ export function registerGitHttpRoutes(
           // not its display name, since the hooks need to look the
           // identity back up unambiguously (principal isn't unique).
           remoteUser: req.identity.identityId,
+          // #229: harness, model and session_id travel with the push, so a
+          // change recorded by the ambient path carries the same provenance
+          // the explicit REST route has always written. Only the *push*
+          // direction needs them; a fetch records nothing.
+          agentProvenance: {
+            harness: req.identity.harness ?? "",
+            model: req.identity.model ?? "",
+            sessionId: req.identity.sessionId ?? "",
+          },
           body: (req.body as Readable | undefined) ?? req.raw,
           maxBytes,
         },

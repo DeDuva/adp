@@ -299,6 +299,18 @@ own directory, ignored by default, and never the place a project rule is written
   `docs/html/vendor/` now, from the pinned dependencies and byte-identical to what the CDN
   served. Adding a script, style or font from anywhere else re-opens that failure mode.
 
+- **How a change arrived must not determine the quality of its provenance.** A commit
+  pushed by a connected harness records the same `harness`, `model` and `session_id`
+  whether it came through `git push` or through `POST /changes` — the two blocks differ
+  only in `via`, and `server/test/e2e-push-provenance.test.ts` asserts that by comparing
+  them rather than by checking a shape. It is written down here because the failure was
+  silent for a whole release: `AuthenticatedIdentity` had carried all three since 1-1, the
+  REST route wrote all three, and the push path — the one 1b exists to make the *default*,
+  and therefore the only one an agent actually takes — wrote none of them. The provenance
+  block was present, signed, and merely thinner, which is indistinguishable from a human
+  pushing without a harness. Nothing could have caught it except a test that knows the two
+  routes are supposed to agree.
+
 - **The operation log is written in the same database transaction as the change.** Don't
   add a write path that records a change without it.
 - **The gate-job queue is bespoke, and that is a decision — not an omission.** The plan

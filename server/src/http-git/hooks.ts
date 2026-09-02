@@ -46,6 +46,14 @@ const PostReceiveBody = z.object({
   owner: z.string(),
   name: z.string(),
   identityId: z.string().uuid().nullable(),
+  // #229: nullish rather than required, so a hook script written into a bare
+  // repo before this existed keeps working. The scripts are rewritten only at
+  // repo creation (initBareRepo), so every repository that already exists is
+  // still running the old one until it is recreated — a required field here
+  // would turn that into a rejected recording on every push.
+  harness: z.string().nullish(),
+  model: z.string().nullish(),
+  sessionId: z.string().nullish(),
   updates: z.array(z.object({ oldSha: z.string(), newSha: z.string(), ref: z.string() })),
 });
 
@@ -108,7 +116,7 @@ export function registerHookRoutes(
       reply.code(400).send({ message: "malformed hook payload" });
       return;
     }
-    const { owner, name, identityId, updates } = parsed.data;
+    const { owner, name, identityId, harness, model, sessionId, updates } = parsed.data;
     const repo = await findRepo(db, owner, name);
     if (!repo) {
       reply.send({ ok: true });
@@ -139,7 +147,19 @@ export function registerHookRoutes(
           owner,
           name,
           repo.id,
-          { id: identity.id, kind: identity.kind, principal: identity.principal },
+          {
+            id: identity.id,
+            kind: identity.kind,
+            principal: identity.principal,
+            // #229: how a change arrived must not determine the quality of its
+            // provenance. This is the ambient path — the one 1b exists to make
+            // the default — and until now it was the only one that dropped
+            // these, silently, in a way no check could tell from a human
+            // pushing without a harness.
+            harness: harness ?? null,
+            model: model ?? null,
+            sessionId: sessionId ?? null,
+          },
           update.oldSha,
           update.newSha,
           "push",
