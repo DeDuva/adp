@@ -128,6 +128,34 @@ export function gitRemotes(dir: string): { name: string; url: string }[] {
   return [...seen].map(([name, url]) => ({ name, url }));
 }
 
+/**
+ * Point this checkout at the ADP repository, and report the name used.
+ *
+ * `adp init` created a repository on the server and then left the checkout
+ * unconnected to it — so the "Next" steps it printed went to `adp watch`, which
+ * truthfully answered "no open pull request yet" because nothing had ever been
+ * pushed, and `adp connect` refused outright with "no git remote points at
+ * <server>". The two commands #153 and #154 shipped are meant to be run back to
+ * back, and on the native path the second could not follow the first.
+ *
+ * `adp` rather than `origin`, and never over an existing name: on the mirror
+ * path the checkout already has an origin that matters, and a command that
+ * repoints origin is a command that loses somebody's upstream. If every
+ * candidate name is taken the caller is told rather than guessed at — see the
+ * `null` return.
+ */
+export function addRemote(dir: string, url: string): string | null {
+  const taken = new Set(gitRemotes(dir).map((r) => r.name));
+  const name = ["adp", "adp-origin"].find((candidate) => !taken.has(candidate));
+  if (!name) return null;
+  return git(dir, ["remote", "add", name, url]) === null ? null : name;
+}
+
+/** The branch a `git push -u` would be for, or null on an unborn or detached HEAD. */
+export function currentBranch(dir: string): string | null {
+  return git(dir, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+}
+
 export function remoteRepo(dir: string, serverUrl: string): { owner: string; repo: string } | null {
   const remotes = git(dir, ["remote", "-v"]);
   if (!remotes) return null;

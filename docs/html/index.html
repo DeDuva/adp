@@ -22,7 +22,7 @@
       <a href="./why/">Why ADP</a>
       <a href="https://github.com/DeDuva/adp">GitHub</a>
     </nav>
-    <span class="masthead__meta">Spec 0.5.0 · MIT</span></div>
+    <span class="masthead__meta">Spec 0.6.0 · MIT</span></div>
 </div>
 
 <header class="wrap sec sec--top">
@@ -382,6 +382,14 @@ gh pr merge</pre>
     OpenTelemetry: its win was not making tools talk to each other but standardising the record, so
     any backend could read all of them. Version control is one layer below, with the same problem and
     no such standard yet.</p>
+    <p class="sub">That is built, not planned, and <code>make demo</code> ends on it: one task is
+    started under Claude Code, stops mid-work, and is picked up by Codex — one continuous signed
+    history, with nothing calling <code>checkpoint</code> or <code>resume</code> by hand. The
+    recording happens out of band, by reading the event stream each harness already writes, so it
+    costs the agent nothing and needs no cooperation from the vendor: a reader is about two hundred
+    lines, and <code>harness</code> stays a string the server never branches on. One command per
+    harness connects a repository — <code>adp connect claude-code</code> — and then proves it worked
+    by opening and closing a real session.</p>
     <div class="grid grid--2">
       <div class="card"><h3>The harness should compete</h3><p>Planning, context, model quality, when to
       fan out — that is where a coding agent earns its place, and where vendors should compete
@@ -434,6 +442,9 @@ gh pr merge</pre>
           <tr><td data-th="Capability">Native plane over REST and MCP; read-only supervision UI</td><td data-th="State" class="tick">Shipped</td></tr>
           <tr><td data-th="Capability">Organizations: isolation, quotas, policy console, audit export, OIDC login</td><td data-th="State" class="tick">Shipped</td></tr>
           <tr><td data-th="Capability">Gate runner — isolated container, network denied, no host mounts</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">Trajectory recording out of band — hash-chained, from the stream the harness already writes</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">One task across two harnesses as one continuous signed history</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">One-command harness connect — Claude Code, Codex, Gemini CLI</td><td data-th="State" class="tick">Shipped</td></tr>
           <tr><td data-th="Capability">Self-hosting: Helm chart and Docker Compose</td><td data-th="State" class="tick">Shipped</td></tr>
           <tr><td data-th="Capability">Dependency admission beyond npm</td><td data-th="State" class="part">Partial — npm only</td></tr>
           <tr><td data-th="Capability">SCIM provisioning</td><td data-th="State" class="part">Not built</td></tr>
@@ -441,7 +452,7 @@ gh pr merge</pre>
       </table>
     </div>
     <p class="sub">The wire contract is published and versioned — currently
-    <code>0.5.0</code>, served as <code>ADP-API-Version</code> on every response, with the spec,
+    <code>0.6.0</code>, served as <code>ADP-API-Version</code> on every response, with the spec,
     the image and the git tag moving together. See
     <a href="https://github.com/DeDuva/adp/blob/main/docs/api-compatibility.md">what a version bump promises</a>.</p>
   </div>
@@ -459,7 +470,7 @@ gh pr merge</pre>
     <pre>git clone https://github.com/DeDuva/adp.git &amp;&amp; cd adp
 make demo</pre>
     <p class="sub">Needs Docker and Node 22. Nothing is installed, no account is created, and it all
-    tears down when you press Enter. Under five minutes.</p>
+    tears down when you press Enter. About a minute, most of it the first <code>npm ci</code>.</p>
     <div class="grid">
       <div class="card"><h3>Run your own instance</h3><p>Helm chart or Docker Compose, with the sharp
       edges written down — <a href="https://github.com/DeDuva/adp/blob/main/docs/self-hosting.md">self-hosting guide</a>.</p></div>

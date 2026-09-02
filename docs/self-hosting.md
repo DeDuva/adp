@@ -112,8 +112,8 @@ exposing it to the internet — [`docs/observability.md`](observability.md) §2.
 ## 3b. A local instance, for evaluation
 
 Neither path above is what you want on a laptop, and until #158 there was nothing that was.
-`make demo` is ephemeral by design and correct to be — five narrated minutes that install nothing
-and leave nothing — but a visitor who liked it had nowhere to go except the Helm chart.
+`make demo` is ephemeral by design and correct to be — a narrated minute that installs nothing
+and leaves nothing — but a visitor who liked it had nowhere to go except the Helm chart.
 
 ```bash
 make local

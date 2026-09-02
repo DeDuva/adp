@@ -21,6 +21,78 @@ backlog and becomes a ledger nobody trusts.
 
 ---
 
+## Phase 0 — What 0.6.0 must not ship without
+
+**Complete, in `fix/0.6.0-release`.** A first-run evaluation on 2026-09-01 cloned the repository
+fresh from GitHub and ran every command the README, the published site and the tooling tell a new
+user to run, in the order they tell them. It is the direct sequel to the 2026-08-24 evaluation that
+opened Phase 1, and it found the opposite shape of problem: Phase 1's finding was that the substrate
+was built and the bindings were missing; this one was that the bindings are built and **the path to
+them was broken**. `make demo` — the one command the README, the landing page and the CI gate all
+point a visitor at — failed eight seconds into a fresh clone, and three of the four surfaces that
+greet a visitor described something that was no longer true.
+
+Eighteen defects, all closed. What each of them was and what it cost is in `CHANGELOG.md` under
+v0.6.0; this file records what is left, so the table is gone with them. The membership rule that
+decided the phase is worth keeping, because the next release will need it: **a defect belongs in a
+release phase if a stranger meets it before they have formed an opinion, or if it is a published
+claim that is false.** Everything else, however real, waits.
+
+Four things it settled that the next person should not have to rediscover.
+
+**A gate that installs what a visitor would not is not a gate.** The CI `demo` job ran
+`npm ci --prefix server` immediately before `make demo`, so the one check whose whole purpose was to
+keep the visitor's path working was the only caller that never walked it — and it stayed green
+through every fresh-clone failure. The comment above it said the job brings up its own Postgres
+"because that is the path a visitor actually takes", one line below the step that made that false.
+Where a check exists to protect a first run, the setup it is allowed is the setup the first run has.
+
+**`check-release.sh` was watching four surfaces out of seven, and reported "consistent".** The site
+said 0.5.0, the recorder package said 0.5.0, and the Compose stack deployed v0.3.0, all while the
+script printed a pass. Three of the four blockers were that one gap. The lesson is not "add three
+checks" — it is that the list of surfaces is itself a thing that rots, and that adding a package or
+a published page to this repository includes adding it there. `recorder` was missing because it was
+created after the script was.
+
+**A published claim is a feature with no test.** The README promised that unimplemented endpoints
+name their ADP equivalent; one route in the server did. The site promised a contract version; it was
+a release behind. Both read as true for as long as nobody checked a second instance. Where prose
+makes a claim the code can answer, the claim wants an assertion —
+`server/src/http-rest/not-implemented.test.ts` and §3b of `check-release.sh` are those two.
+
+**The constraint that shaped the 404 fix is worth remembering.** `spec-coverage.test.ts` fails when
+the server serves a route the spec does not describe, so the answer could not be eleven families of
+stub routes: that would have meant eleven families of spec entries for endpoints that do nothing, or
+a hole in the guard. A not-found handler serves no route, appears in no route table, and changes no
+generated client. Enriching an error is not the same as adding a surface, and only the second one is
+a contract change.
+
+**Exit criterion, met:** someone who has never seen this project clones it, runs the command the
+front page gives them, and reaches the evidence bundle — without installing anything the
+documentation did not tell them to, and without being told a version, a URL or a command that is not
+true. Verified end to end from a clean `git clone`, twice.
+
+### What it deliberately did not fix
+
+**0-19 — `drizzle-orm@0.36.4` carries GHSA-gpj5-g38j-94v9** (high: SQL injection via improperly
+escaped SQL identifiers), fixed in 0.45.2, which is a breaking upgrade across nine minors of the
+data layer.
+
+**Not exposed as written, and that is a finding rather than a dismissal.** The advisory's path is an
+identifier built from untrusted input, and this codebase builds none: all seven `sql.raw` call sites
+take a compile-time literal — `"o"`, `"ol"`, `"TRUE"` in `http-rest/audit-log.ts`, and a module
+constant in `core/storage-usage.ts`. Every user-supplied value on those paths (`actor`, `verb`,
+`since`, `until`, the cursor) is bound as a parameter.
+
+It failed Phase 0's membership rule twice over — nobody meets it in the first five minutes, and no
+published claim was false while it stood — and bumping the ORM nine minors inside a release-polish
+branch is the kind of change that gets waved through on the strength of an advisory ID and then
+breaks a query nobody re-read. It wants its own branch, its own full-suite run, and someone reading
+drizzle's changelog. What this phase owed it is the analysis above, so that whoever picks it up
+starts from "no reachable path, upgrade on the merits" rather than from a red `npm audit`.
+
+---
+
 ## Phase 1 — Adoption: the bindings
 
 **Why now:** a first-contact evaluation (2026-08-24, umbrella #140) walked the product as a new

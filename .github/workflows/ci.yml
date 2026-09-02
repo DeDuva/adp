@@ -344,6 +344,13 @@ jobs:
   #
   # It brings up its own Postgres through scripts/dev/up.sh rather than a
   # services: block, because that is the path a visitor actually takes.
+  #
+  # And it installs nothing first, for the same reason. Until 2026-09-01 this
+  # job ran `npm ci --prefix server` immediately before `make demo` — so the
+  # one gate whose whole purpose is to keep the visitor's path working was the
+  # only caller that never walked it. `make demo` failed on any fresh clone and
+  # this job stayed green through every one of them. The setup-node cache stays
+  # (it makes the demo's own install fast); the install step is what had to go.
   demo:
     runs-on: ubuntu-latest
     env:
@@ -355,7 +362,6 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: server/package-lock.json
-      - run: npm ci --prefix server
       - run: make demo
       # The demo starts a database, a server and a proxy. If it can leak any of
       # them, so can every laptop that runs it.

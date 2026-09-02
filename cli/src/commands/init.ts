@@ -4,7 +4,7 @@ import path from "node:path";
 import { parseFlags, splitRepo } from "../args.js";
 import { apiRequest, ApiError } from "../api.js";
 import { loadConfig } from "../config.js";
-import { gitRemotes, repoRoot } from "../git.js";
+import { addRemote, currentBranch, gitRemotes, remoteRepo, repoRoot } from "../git.js";
 import { detectToolchain, renderAdpYaml, type RepoFiles } from "../toolchain.js";
 
 // #153. The strongest brake on adoption is not scepticism about signed evidence
@@ -46,9 +46,28 @@ export async function init(argv: string[]): Promise<void> {
   // 1. The org, then the repo. Both idempotent: `adp init` run twice is a
   //    repair, not a collision, which is the only way a command that does five
   //    things can be safe to re-run after one of them failed.
+  const inferred = !flags.repo;
   await ensureOrg(target.owner);
-  const created = await ensureRepo(target.owner, target.repo);
-  console.log(`  repo:      ${created ? "created" : "already there"}`);
+  const repoState = await ensureRepo(target.owner, target.repo).catch((err: unknown) =>
+    explainTargetFailure(err, target, inferred),
+  );
+  console.log(`  repo:      ${repoState.created ? "created" : "already there"}`);
+
+  // 1b. The remote, without which nothing else here reaches the repository
+  //     just created. See git.ts `addRemote` for why this is `adp` and not
+  //     `origin`, and why it never takes a name that is already in use.
+  const alreadyPointed = remoteRepo(root, config.serverUrl) !== null;
+  let pushRemote: string | null = null;
+  if (alreadyPointed) {
+    console.log("  remote:    already points at this server");
+  } else if (repoState.cloneUrl) {
+    pushRemote = addRemote(root, repoState.cloneUrl);
+    if (pushRemote) {
+      console.log(`  remote:    added '${pushRemote}' → ${repoState.cloneUrl}`);
+    } else {
+      console.log(`  remote:    add one by hand — git remote add adp ${repoState.cloneUrl}`);
+    }
+  }
 
   // 2. Mirror, unless told not to. This is the step that makes adoption
   //    additive rather than a migration.
@@ -71,9 +90,28 @@ export async function init(argv: string[]): Promise<void> {
   //    how one command still does it: the flag *is* the acknowledgement.
   reportRunner(flags.runner === "true");
 
+  // The push is the step that was missing, and its absence was invisible: every
+  // line above succeeded, and then `adp watch` answered "no open pull request
+  // yet" — correct, and describing a repository nothing had ever been pushed to.
   console.log("");
   console.log("Next:");
   console.log(`  git add adp.yaml && git commit -m "add adp.yaml"   # review it first`);
+  if (pushRemote) {
+    const branch = currentBranch(root);
+    console.log(`  git push -u ${pushRemote} ${branch ?? "<branch>"}`);
+    // The remote is added without a credential in it, so the first push asks
+    // for one — and "Username for https://…" is not a question whose answer is
+    // obvious, since the answer is a token in the password field and any string
+    // at all in the username. Saying it here costs a line; not saying it turns
+    // the step this command exists to unblock into a prompt nobody can answer.
+    //
+    // Deliberately not embedded in the remote URL. `adp connect` does write live
+    // tokens into the working tree, and gets away with it by excluding those
+    // files per clone — but a URL in `.git/config` is echoed by `git remote -v`
+    // and by every push's error output, which is a different exposure.
+    console.log("             git authenticates with your token as the password");
+    console.log("             (any username), or use a credential helper");
+  }
   console.log(`  adp watch --repo ${target.owner}/${target.repo}`);
 }
 
@@ -152,14 +190,56 @@ async function ensureOrg(owner: string): Promise<void> {
   }
 }
 
-async function ensureRepo(owner: string, repo: string): Promise<boolean> {
+type RepoState = { created: boolean; cloneUrl: string | null };
+
+function cloneUrlOf(body: unknown): string | null {
+  const url = (body as { clone_url?: unknown } | null)?.clone_url;
+  return typeof url === "string" && url ? url : null;
+}
+
+async function ensureRepo(owner: string, repo: string): Promise<RepoState> {
   try {
-    await apiRequest("POST", `/api/v3/repos/${owner}`, { name: repo });
-    return true;
+    const body = await apiRequest("POST", `/api/v3/repos/${owner}`, { name: repo });
+    return { created: true, cloneUrl: cloneUrlOf(body) };
   } catch (err) {
-    if (isAlreadyExists(err)) return false;
-    throw err;
+    if (!isAlreadyExists(err)) throw err;
+    // Re-reading it is what makes a second `adp init` a repair rather than a
+    // half-run: the remote below needs the clone URL whether or not this
+    // invocation is the one that created the repository.
+    const body = await apiRequest("GET", `/api/v3/repos/${owner}/${repo}`).catch(() => null);
+    return { created: false, cloneUrl: cloneUrlOf(body) };
   }
+}
+
+/**
+ * Say which organization was tried, where the name came from, and what
+ * overrides it.
+ *
+ * With no `--repo` and no upstream, the owner is inferred from the *parent
+ * directory name* — which is a reasonable default and a terrible thing to fail
+ * on silently. Run in `~/scratch/trial` against an instance whose org is
+ * `local`, `adp init` reported `Not a member of this organization (HTTP 403)`
+ * and stopped: no organization named, no hint that a directory name had been
+ * turned into one, and no mention of the flag that fixes it.
+ *
+ * The house standard is set twice over — `adp connect`'s refusal names both
+ * remedies, and the land-policy 422 names the command that satisfies each unmet
+ * requirement. This is that standard applied to the first command anyone runs.
+ */
+function explainTargetFailure(err: unknown, target: { owner: string; repo: string }, inferred: boolean): never {
+  if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
+    const source = inferred
+      ? "That name was inferred from the directory this repository sits in, not chosen."
+      : "That name came from --repo.";
+    throw new Error(
+      `${err.message}\n` +
+        `  organization: ${target.owner}   (repository ${target.repo})\n` +
+        `  ${source}\n` +
+        `  Name it explicitly with:  adp init --repo <owner>/${target.repo}\n` +
+        `  The owner has to be an organization your token is a member of.`,
+    );
+  }
+  throw err;
 }
 
 async function configureMirror(

@@ -287,8 +287,21 @@ exec env ADP_SERVER_URL=${shellQuote(serverUrl)} ADP_TOKEN=${shellQuote(token)} 
   chmodSync(launcher, 0o755);
 
   const relative = path.relative(root, launcher);
+  // The shape, not just the instruction. "Add it as a SessionStart hook in
+  // .claude/settings.json" is the last step of a command whose promise is *one*
+  // command and then the harness records itself — and it was the one step that
+  // asked for a hand edit while showing nothing to paste. Anyone who has not
+  // written a Claude Code hook before now has to go and find out what one looks
+  // like, at the exact point they were told they were finished.
+  //
+  // Not written for them: `.claude/settings.json` is a file the developer may
+  // already have, shared with their own hooks, and merging JSON someone else
+  // owns is how connect would come to own it. Printing it costs four lines and
+  // leaves the edit where it belongs.
   return harness.recording === "hook"
-    ? `wrote ${relative} — add it as a SessionStart hook in .claude/settings.json to record without being asked`
+    ? `wrote ${relative} — record without being asked by adding it to .claude/settings.json:\n` +
+        `      {"hooks": {"SessionStart": [{"hooks": [{"type": "command",\n` +
+        `        "command": "${relative}"}]}]}}`
     : `wrote ${relative} — run the harness through it: ./${relative} <the usual command>`;
 }
 
