@@ -7,6 +7,9 @@ import { ingestPullRequest, type PullRequestPayload } from "./pull-request-inges
 import { ingestIssue, type IssuePayload } from "./issue-ingest.js";
 import { ingestReview, type ReviewPayload } from "./review-ingest.js";
 import { resolveGitHubIdentity } from "./github-identity.js";
+import { publishChangeRecordCheck } from "./check-runs.js";
+import { proposals } from "../db/schema.js";
+import { and, eq } from "drizzle-orm";
 import type { RecordActor } from "./change-recorder.js";
 
 // One GitHub delivery, turned into ADP's record of it.
@@ -25,6 +28,8 @@ export interface DispatchDeps {
   credentialKey: string;
   /** Subject of the DSSE statement written for an ingested upstream run. */
   publicUrl: string;
+  /** Injectable so tests stand up a fake api.github.com for the check-run writes. */
+  fetchImpl?: typeof fetch;
 }
 
 export type GitHubEventPayload = {
@@ -67,7 +72,15 @@ export async function dispatchGitHubEvent(
       return { ok: true, skipped: "mirror has no ingest identity" };
     }
     const result = await ingestWorkflowRun(db, signer, publicUrl, repo, reporterId, payload);
-    return { ok: true, ...(result.recorded ? { recorded: result.gateName } : { skipped: result.reason }) };
+    // A gate result changes what the change-record check has to say, so the
+    // view is refreshed for whichever proposal that commit is the head of.
+    const headSha = payload.workflow_run?.head_sha;
+    const checks = headSha ? await publishChecksForHead(deps, repo, mirror, headSha) : [];
+    return {
+      ok: true,
+      ...(result.recorded ? { recorded: result.gateName } : { skipped: result.reason }),
+      ...(checks.length > 0 ? { checks } : {}),
+    };
   }
 
   // A pull request is the object the rest of companion mode hangs off: policy
@@ -85,12 +98,18 @@ export async function dispatchGitHubEvent(
     // is 5-4's whole problem.
     const opener = await resolveGitHubIdentity(db, host, payload.pull_request?.user);
     const result = await ingestPullRequest(db, gitBackend, repo, mirror.id, opener?.identityId ?? actorId, payload);
+    // #233: what ADP knows, published where the work already is. After the
+    // ingest rather than instead of it — the record is the product and the
+    // check run is a view of it, so a failed write here must never be able to
+    // undo an ingest that succeeded.
+    const checks = result.number ? await publishChecks(deps, repo, mirror, result.number) : [];
     return {
       ok: true,
       ...(result.recorded
         ? { recorded: `proposal#${result.number}`, change: result.change }
         : { skipped: result.reason }),
       ...(result.merge ? { merge: result.merge } : {}),
+      ...(checks.length > 0 ? { checks } : {}),
     };
   }
 
@@ -147,7 +166,55 @@ export async function dispatchGitHubEvent(
     branch,
     await commitAuthors(db, host, payload),
   );
-  return result.ok ? { ok: true } : { ok: false, reason: result.reason };
+  if (!result.ok) return { ok: false, reason: result.reason };
+
+  // A push moves a branch, and a proposal whose head that branch is now has a
+  // new commit — which means a new change record, and a check run that is out
+  // of date until it is rewritten.
+  const [onBranch] = await db
+    .select({ number: proposals.number })
+    .from(proposals)
+    .where(and(eq(proposals.repoId, repo.id), eq(proposals.headRef, branch), eq(proposals.state, "open")));
+  const checks = onBranch ? await publishChecks(deps, repo, mirror, onBranch.number) : [];
+  return { ok: true, ...(checks.length > 0 ? { checks } : {}) };
+}
+
+// The check runs for one proposal, reported rather than thrown.
+//
+// A publish that fails is not an ingest that failed: the record is complete and
+// only its view of itself is missing, and turning that into a non-2xx would make
+// GitHub redeliver a delivery that was already handled correctly.
+async function publishChecks(
+  deps: DispatchDeps,
+  repo: { id: string; owner: string; name: string },
+  mirror: MirrorRow,
+  proposalNumber: number,
+): Promise<{ name?: string; published: boolean; reason?: string; conclusion?: string }[]> {
+  const out = [];
+  out.push(
+    await publishChangeRecordCheck(
+      { db: deps.db, credentialKey: deps.credentialKey, publicUrl: deps.publicUrl, fetchImpl: deps.fetchImpl },
+      repo,
+      mirror,
+      proposalNumber,
+    ),
+  );
+  return out;
+}
+
+async function publishChecksForHead(
+  deps: DispatchDeps,
+  repo: { id: string; owner: string; name: string },
+  mirror: MirrorRow,
+  headSha: string,
+): Promise<{ name?: string; published: boolean; reason?: string; conclusion?: string }[]> {
+  const rows = await deps.db
+    .select({ number: proposals.number })
+    .from(proposals)
+    .where(and(eq(proposals.repoId, repo.id), eq(proposals.headSha, headSha)));
+  const out = [];
+  for (const row of rows) out.push(...(await publishChecks(deps, repo, mirror, row.number)));
+  return out;
 }
 
 // Who wrote each commit in a push, as far as the payload says.

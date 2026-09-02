@@ -11,6 +11,7 @@ import { ingestIssue } from "./issue-ingest.js";
 import { ingestReview } from "./review-ingest.js";
 import { ingestWorkflowRun, resolveMirrorReporter } from "./actions-ingest.js";
 import { resolveGitHubIdentity } from "./github-identity.js";
+import { publishChangeRecordCheck } from "./check-runs.js";
 import type { RecordActor } from "./change-recorder.js";
 
 // Inbound mirroring for an instance nothing can reach.
@@ -212,6 +213,16 @@ export async function pollMirror(
         { action: "poll", pull_request: { ...pull, merged: !!pull.merged_at } },
       );
       if (result.recorded) summary.pullRequests += 1;
+      // #233: the poller publishes the same check runs the webhook path does.
+      // An instance with no public hostname is the one whose developer most
+      // needs ADP's answer to appear on the pull request, since nothing else
+      // about ADP is in front of them.
+      await publishChangeRecordCheck(
+        { db, credentialKey, publicUrl, fetchImpl },
+        repo,
+        mirror,
+        pull.number,
+      );
     }
   } catch (err) {
     summary.errors.push(`pulls: ${message(err)}`);

@@ -50,6 +50,9 @@ export function registerMirrorWebhookRoutes(
   // Subject of the DSSE statement written for an ingested upstream run, same
   // role PUBLIC_URL plays for every other gate (http-rest/gates.ts).
   publicUrl: string,
+  // Injectable so tests stand up a fake api.github.com for #233's check-run
+  // writes, the same shape http-rest/actions.ts uses for the passthrough.
+  fetchImpl: typeof fetch = fetch,
 ) {
   app.post("/webhooks/github/:owner/:name", async (req, reply) => {
     const { owner, name } = req.params as { owner: string; name: string };
@@ -99,7 +102,7 @@ export function registerMirrorWebhookRoutes(
     // repository it is for.
     const event = (req.headers["x-github-event"] as string | undefined) ?? "push";
     reply.send(
-      await dispatchGitHubEvent({ db, gitBackend, signer, credentialKey, publicUrl }, event, payload, repo, mirror),
+      await dispatchGitHubEvent({ db, gitBackend, signer, credentialKey, publicUrl, fetchImpl }, event, payload, repo, mirror),
     );
   });
 }
