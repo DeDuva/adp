@@ -150,6 +150,34 @@ This landed ahead of 5-4 because 5-4 cannot work without it: `one_approval` is a
 construction (#121), so a proposal authored by the same system identity that ingests its approvals
 is one nothing can ever approve.
 
+### A GitHub approval satisfies `one_approval` (#227)
+
+`pull_request_review` deliveries become `reviews` rows against the shadow proposal, so the policy
+5c is about to publish stops refusing every mirrored pull request on a requirement GitHub has
+already met — which is worse than not publishing one, because a developer who has done what the
+policy asks and is told they have not stops believing the policy.
+
+**Two things `one_approval` now gets right that it did not before**, both of which ingest turns
+from a corner case into the ordinary shape of review on GitHub:
+
+- **A reviewer's current verdict counts, not every verdict they have held.** Approve, the branch
+  moves, ask for changes — the approval is no longer that reviewer's opinion, and GitHub has always
+  counted it that way. A native reviewer could already produce this and the stale approval went on
+  satisfying the requirement. `commented` is ignored rather than treated as a verdict, so a comment
+  cannot displace the approval it was left beside.
+- **A dismissed approval stops counting**, and the review is kept rather than deleted: an approval
+  that was withdrawn is a different fact from one that was never given.
+
+`reviews` gains `upstream_id` — GitHub redelivers, and a review has no natural key, since two
+approvals from one person on one proposal is an ordinary sequence rather than a duplicate — and
+`dismissed_at`. An ingested review carries **upstream's** submission time, not the time this
+instance heard about it, because that ordering is what decides whose opinion is current and a
+redelivery must not be able to change the answer.
+
+A review whose payload names no user records nothing and says so, rather than falling back to the
+mirror's system identity: that identity also authors ingested proposals, so the fallback would
+write an approval that can never count.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

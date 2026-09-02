@@ -12,6 +12,7 @@ import { decryptCredential, redactUrl } from "../core/mirror-crypto.js";
 import { ingestWorkflowRun, resolveMirrorReporter, type WorkflowRunPayload } from "../core/actions-ingest.js";
 import { ingestPullRequest, type PullRequestPayload } from "../core/pull-request-ingest.js";
 import { ingestIssue, type IssuePayload } from "../core/issue-ingest.js";
+import { ingestReview, type ReviewPayload } from "../core/review-ingest.js";
 import { resolveGitHubIdentity } from "../core/github-identity.js";
 import type { RecordActor } from "../core/change-recorder.js";
 
@@ -105,7 +106,8 @@ export function registerMirrorWebhookRoutes(
       head_commit?: { id?: string; author?: { username?: string | null } } | null;
     } & WorkflowRunPayload &
       PullRequestPayload &
-      IssuePayload;
+      IssuePayload &
+      ReviewPayload;
     try {
       payload = JSON.parse(rawBody.toString("utf8"));
     } catch {
@@ -161,6 +163,32 @@ export function registerMirrorWebhookRoutes(
           ? { recorded: `proposal#${result.number}`, change: result.change }
           : { skipped: result.reason }),
         ...(result.merge ? { merge: result.merge } : {}),
+      });
+      return;
+    }
+
+    // #227: a review submitted on GitHub, against the shadow proposal it
+    // belongs to. This is what stops 5c's policy check run refusing every
+    // mirrored pull request on a requirement GitHub has already met.
+    if (event === "pull_request_review") {
+      const reviewer = await resolveGitHubIdentity(
+        db,
+        upstreamHostOfMirror(mirror.remoteUrl),
+        payload.review?.user,
+      );
+      if (!reviewer) {
+        // Deliberately not falling back to the mirror's system identity. That
+        // identity also authors ingested proposals, and `one_approval` is
+        // author-independent (#121) — so the fallback would record an approval
+        // that can never count, which is worse than recording none and saying
+        // so.
+        reply.send({ ok: true, skipped: "review names no upstream user" });
+        return;
+      }
+      const result = await ingestReview(db, repo, reviewer.identityId, payload);
+      reply.send({
+        ok: true,
+        ...(result.recorded ? { recorded: `review:${result.state}` } : { skipped: result.reason }),
       });
       return;
     }
