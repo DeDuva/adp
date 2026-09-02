@@ -41,7 +41,12 @@ PORT="${ADP_CONFORMANCE_PORT:-$(adp_pick_port 20000)}"
 TLS_PORT="${ADP_CONFORMANCE_TLS_PORT:-$(adp_pick_port 20000)}"
 [ -n "$PORT" ] && [ -n "$TLS_PORT" ] || { echo "CONFORMANCE FAIL: could not find free ports" >&2; exit 1; }
 WORKDIR="$(mktemp -d)"
-GH_HOST="localhost:${TLS_PORT}"
+# Exported, not just assigned. Every other `gh` call in this file names the host
+# inside `--repo`, so the variable was only ever a string this script
+# interpolated — but `gh repo create <owner>/<name>` has nowhere to put a host
+# and reads it from the environment, which is how #196's first attempt at this
+# step ended up talking to api.github.com.
+export GH_HOST="localhost:${TLS_PORT}"
 
 SELF_PGID="$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')"
 
@@ -187,6 +192,22 @@ git clone "http://x-access-token:${TOKEN}@localhost:${PORT}/${OWNER}/widget.git"
 export GH_ENTERPRISE_TOKEN="$TOKEN"
 export SSL_CERT_FILE="$WORKDIR/cert.pem"
 REPO="${GH_HOST}/${OWNER}/widget"
+
+# #196: the first command in the first-contact journey, and the one step of it
+# that is not a `gh` command in any of this repo's own harnesses — which is
+# exactly why the README's "Functional" claim for it went stale unnoticed for
+# months while acceptance, `make demo` and this suite all created repositories
+# with a raw POST.
+#
+# A second repository rather than replacing the `widget` fixture above: every
+# later step in this file is written against `widget`, and threading a
+# gh-created repo through them would trade one untested path for a much larger
+# rewrite. What matters is that a real, unmodified `gh` can create at all.
+echo "-- gh repo create --"
+"$GH_BIN" repo create "${OWNER}/gh-created" --private >/dev/null || fail "gh repo create"
+curl -sf "http://localhost:${PORT}/api/v3/repos/${OWNER}/gh-created" \
+  -H "Authorization: Bearer ${TOKEN}" >/dev/null \
+  || fail "gh repo create reported success but the repository is not there"
 
 echo "-- gh issue create --"
 "$GH_BIN" issue create --repo "$REPO" --title "conformance issue" --body "body" \

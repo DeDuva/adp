@@ -97,6 +97,12 @@
 // Additive, and the callback is deliberately unauthenticated — it is reachable
 // only with a state this instance signed, the code it carries is single-use at
 // GitHub's end, and it refuses once an App exists.
+//
+// #196 adds GET /api/v3/users/{owner} and the GraphQL `createRepository`
+// mutation, which is what `gh repo create` actually uses. Additive: the route
+// is new, and the mutation was already in the published GitHub schema this
+// server serves — it simply had no resolver, which is a 500 rather than a
+// contract.
 export const API_VERSION = "0.7.0";
 
 export const API_VERSION_HEADER = "ADP-API-Version";

@@ -1,7 +1,7 @@
 import { GraphQLError } from "graphql";
 import { and, eq, sql } from "drizzle-orm";
 import { hasScope } from "../auth/plugin.js";
-import { identities, issueComments, issues, proposals, repos, reviews, intents } from "../db/schema.js";
+import { identities, issueComments, issues, orgs, proposals, repos, reviews, intents } from "../db/schema.js";
 import { findRepoAuthorized, mayAccessOrg } from "../core/repos-lookup.js";
 import { recordOperation } from "../core/operations.js";
 import type { LandRequirement } from "../core/repo-policy.js";
@@ -11,6 +11,7 @@ import { renderUnmet } from "../core/land-policy.js";
 import { latestGateResults } from "../core/gate-results-lookup.js";
 import { emitWebhookEvent } from "../core/webhooks.js";
 import { toGlobalId, fromGlobalId } from "./global-id.js";
+import { createRepo } from "../http-rest/repos.js";
 import { buildConnection, type ConnectionArgs } from "./connections.js";
 import type { GqlContext } from "./context.js";
 import type { ResolverMap } from "./attach-resolvers.js";
@@ -532,6 +533,77 @@ export function createResolvers(
     },
 
     Mutation: {
+      // #196: `gh repo create` creates here, not over REST. It resolves the
+      // owner with GET /api/v3/users/{owner} first — which is where the
+      // `ownerId` below comes from — and then sends exactly this mutation.
+      //
+      // The whole body is `createRepo` from http-rest/repos.ts rather than a
+      // second implementation. Two would disagree about the org row lock, the
+      // repo quota or the operations row inside a release, and the quota one is
+      // the kind of disagreement that is only noticed when somebody escapes it.
+      createRepository: async (
+        _root,
+        args: {
+          input: {
+            name: string;
+            ownerId?: string | null;
+            visibility?: string | null;
+            description?: string | null;
+          };
+        },
+        ctx: GqlContext,
+      ) => {
+        const identity = requireIdentity(ctx);
+        const { name, ownerId } = args.input;
+
+        // No `ownerId` means "create it under me", which on GitHub is a
+        // personal repository. ADP has no personal namespace — every owner is
+        // an org — so this refuses rather than guessing an org from the token,
+        // which would put a repository somewhere the caller did not name.
+        if (!ownerId) {
+          throw new GraphQLError(
+            "ADP has no personal repository namespace — every owner is an organization. " +
+              "Create it as `gh repo create <owner>/<name>`, or provision the org first with " +
+              "POST /api/adp/orgs.",
+            { extensions: { code: "BAD_USER_INPUT" } },
+          );
+        }
+
+        const decoded = fromGlobalId(ownerId);
+        if (!decoded || decoded.typeName !== "Organization") {
+          throw new GraphQLError(`'${ownerId}' is not an organization id`, {
+            extensions: { code: "BAD_USER_INPUT" },
+          });
+        }
+        const [org] = await ctx.db.select().from(orgs).where(eq(orgs.id, decoded.internalId));
+        if (!org) {
+          throw new GraphQLError("Organization not found", { extensions: { code: "NOT_FOUND" } });
+        }
+
+        const result = await createRepo(ctx.db, gitBackend, org.name, name, "main", identity);
+        if (result.status !== "created") {
+          const message =
+            result.status === "conflict"
+              ? `Repository ${org.name}/${name} already exists`
+              : result.status === "quota-exceeded"
+                ? `Org repo quota exceeded (max ${result.maxRepos})`
+                : result.status === "not-a-member"
+                  ? "Not a member of this organization"
+                  : result.status === "no-such-org"
+                    ? "Organization not found"
+                    : `'${org.name}' is not a valid repository owner`;
+          throw new GraphQLError(message, {
+            extensions: { code: result.status === "not-a-member" ? "FORBIDDEN" : "BAD_USER_INPUT" },
+          });
+        }
+
+        // `shapeRepository`, not a hand-built object: `Repository.owner` is a
+        // field resolver that reads `parent.__repo`, so anything shaped by hand
+        // here resolves `owner` to undefined — which is exactly how the first
+        // attempt at this failed, and only in `gh` rather than in any test that
+        // asked for the fields directly.
+        return { repository: shapeRepository(result.repo) };
+      },
       createIssue: async (
         _root,
         args: { input: { repositoryId: string; title: string; body?: string | null } },

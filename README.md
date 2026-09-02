@@ -275,7 +275,7 @@ data here. The `issue create/view` and `pr create/view/merge` paths are driven b
 |---|---|---|
 | `gh auth status` | Functional | |
 | `gh repo view` / `clone` | Functional | |
-| `gh repo create` | Not supported | it resolves the owner through `GET /api/v3/users/{owner}` before creating, and that route is not served. Create repositories with `POST /api/v3/repos/{owner}` — which is what the walkthrough, `make demo` and every harness here do |
+| `gh repo create <owner>/<name>` | Functional | resolves the owner through `GET /api/v3/users/{owner}`, then creates through the GraphQL `createRepository` mutation. The conformance suite runs it, so this row is enforced rather than asserted. The bare `gh repo create <name>` form is refused: ADP has no personal namespace, and every owner is an org |
 | `gh issue create` / `list` / `view` / `close` | Functional | |
 | `gh issue comment` | Functional | |
 | `gh pr create` / `list` / `view [--json]` | Functional | |

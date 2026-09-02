@@ -388,6 +388,39 @@ in `files`, a shebang on the entrypoint, and a build before every publish. That 
 than a note because each of those failures is silent: the release stays green and nobody finds out
 until a stranger tries to install it.
 
+### `gh repo create` works (#196)
+
+It failed on the **first** command of the first-contact journey, with a 404 that explained nothing:
+
+```
+$ gh repo create local/widget --private
+HTTP 404: Route GET:/api/v3/users/local not found
+```
+
+`gh` resolves the owner before creating, to decide whether it is a user or an organisation, and then
+creates through the GraphQL `createRepository` mutation using the node id that lookup returns. Both
+halves are needed and neither alone closes it, which the issue had guessed and a probe against a
+real `gh` confirmed.
+
+`GET /api/v3/users/{owner}` answers **`Organization`** — the honest answer rather than a convenient
+one, since ADP's owners *are* orgs (`repos.owner` is the org's immutable URL slug) and `gh` branches
+on that field. It returns the organisation and never its membership: the route is owner-shaped, not
+person-shaped, and must not become a way to enumerate principals.
+
+The mutation is `createRepo` from the REST path, not a second implementation. Two would disagree
+about the org row lock, the repo quota or the operations row inside a release — and the quota one is
+the kind of disagreement that is only noticed when somebody escapes it.
+
+**The bare `gh repo create <name>` form is refused**, naming the two-part form and where orgs come
+from. It used to exit 0 and create nothing reachable, because the owner it derives is the token's
+principal rather than an org; silence was the bug, and a refusal is the improvement.
+
+The conformance suite runs it against real, unmodified `gh`, so the README's compatibility row is
+enforced rather than asserted — that suite exists precisely because "gh works" is the kind of claim
+that rots silently. Getting there needed `GH_HOST` **exported** rather than only assigned: every
+other `gh` call in that file names the host inside `--repo`, so the variable had never had to be one
+the child process could see, and the first attempt talked to api.github.com.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran
