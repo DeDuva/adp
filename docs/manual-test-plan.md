@@ -284,6 +284,35 @@ would be a second outage caused by fixing the first.
 
 ---
 
+**C15. One task, two harnesses (#160).** The capability a forge with signed commits
+structurally cannot express — and the one whose argument was entirely structural until there was
+something to run. `make demo` walks it end to end; to do it by hand against the instance you
+already have:
+
+```bash
+adp-recorder wrap --repo <owner>/<repo> -- <a harness that stops mid-task>
+adp-recorder wrap --repo <owner>/<repo> --harness codex --continue -- <a second harness>
+```
+
+*Expect:* the first session **suspended** with a checkpoint to resume from — a harness that stopped
+without finishing says so, rather than looking finished — and the second linked to it. Nothing calls
+`checkpoint` or `resume`: `--continue` is the only instruction, and it exists because no stream can
+signal a handoff the other harness has never heard of.
+
+Then read it back where #160 asks for it — drawn rather than asserted:
+
+    /ui/ → Runs → the session → Lineage
+
+*Expect:* both harnesses, oldest first, with the resume drawn between them, and the chain verifying
+above it — recomputed from the stored rows by that request. These sessions belong to no run, which
+is precisely the case the session-scoped verify exists for: a developer handing work between their
+own harnesses is not an orchestrated fan-out.
+
+A demo driven by a script calling `resume` on the harnesses' behalf would prove only that a script
+can call two endpoints. This proves the recorder saw one harness stop and the next one start.
+
+---
+
 ## Part D — the M2 trust-plane ramp
 
 Everything in Part B and C is the M1 definition of done. M2 added six more

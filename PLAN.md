@@ -159,82 +159,60 @@ would multiply it — in exactly the measurement a prospect uses to compare us.
 Exit criterion: someone who has never read the API documentation answers "why does this line
 exist" from the browser in under a minute.
 
-| # | Item | Tracking | State |
-|---|---|---|---|
+**Release 1c is complete**, and the criterion is met the way 1a's was — by a path somebody can
+walk rather than by a claim. From a landed commit: the intent that asked for it, by issue number
+and title; the run that produced it; the session inside that run; the trajectory, with every typed
+column rendered as the thing it is; and back again. Its table is gone with it, because this file
+records what is left.
 
-**1-14 is finished, and it found the limit of its own exit criterion.** The M3 surface has a reader
-now — runs, run detail, the trajectory with its typed columns, verification as two separate answers,
-and session lineage across harnesses. What it cannot do is answer "what was this agent *saying* when
-it wrote this line", because under #199's default `trajectory.payloads: structure` the strings are
-replaced by their byte counts before the event is chained. The shape survives and the content does
-not. Everything the run *did* is there — the tool, its verdict, the tokens, the cost, the commit —
-and the view says which of the two it is showing rather than rendering the projection marker as
-though the agent had said it.
+For the record of which number was which. 1-12 was `adp init`, #153 — one command against a
+repository that already exists. 1-13 was the CLI's missing verbs, #155. 1-14 was the M3 surface
+getting a reader at all, #156. 1-15 was making the record navigable in both directions, #157. 1-16
+was the interim retention default, #161. 3-4 (#152), 2-2 (#159) and 2-3 (#160) landed here too and
+are gone from their own tables. Their numbers are not reused, per the rule under 1a.
 
-That is the right default and it is worth restating here because it prices 1-16 and 3-6: the
-structural projection is already a retention policy for the most valuable payloads, taken before
-anyone measured what retaining them would cost. A repo widens it with one line of `adp.yaml`, and
-`1-16`'s interim default should not quietly narrow it further on the same surface.
+Five things the release settled or discovered that the next person should not have to rediscover:
 
-**1-15 is finished**, and with 1-14 it settles 1c's exit criterion: the record is navigable in both
-directions, from a landed commit to the intent that asked for it and the trajectory that produced
-it, and back. It works for a commit made by a plain `git push` — which is the case that mattered,
-since a join over `session_events` alone would have answered only for commits some recorder happened
-to observe. A pushed commit names its session through the change's provenance instead, and the
-bundle now walks both routes.
+**The exit criterion has a limit the record itself imposes.** The UI answers "what was this agent
+*doing*" — the tool, its verdict, the tokens, the cost, the commit — and cannot answer what it was
+*saying*, because under #199's default `trajectory.payloads: structure` the strings are replaced by
+their byte counts before the event is chained. The view says which of the two it is showing rather
+than rendering the projection marker as though the agent had uttered it. That default is right, and
+it prices 3-6: the structural projection is already a retention policy for the most valuable
+payloads, taken before anyone measured what retaining them would cost.
 
-**1-16 is finished**, and it sharpened what 3-6 still has to decide. The interim window reduces
-payloads and keeps the chain — 90 days by default, per-org overridable, `0` meaning forever — so a
-reduced run still verifies and says how much of it it could only take as recorded. What that costs
-is now a measured fact rather than an assumption: a reduced event's *typed columns* stop being
-independently verifiable too, because the hash covering them covers the payload as well. A signed
-checkpoint head past them still pins the prefix, which is the strongest guarantee available once a
-preimage is gone, and it is the reason 3-4's signed-head check turned out to be load-bearing for
-retention rather than only for verification.
+**"The chain verifies" was a weaker statement than this backlog assumed.** Recomputing a chain from
+its genesis does not detect an edit made *consistently* — repair every hash behind the change and it
+verifies. What pins the middle is a signature over a head the rewrite would have had to move, which
+the checkpoints have held all along with nothing reading it. Verification checks them now, and that
+turned out to be load-bearing for retention as well: a reduced payload's event can no longer be
+re-derived, so a signed head past it is what keeps a wholesale rewrite detectable.
 
-**So 3-6 has one fewer degree of freedom.** "Attestations committing to digests never payloads" was
-the intended shape; what 1-16 shows is that the digest is not what makes a reduced event verifiable,
-because the chain does not commit to the digest — it commits to the payload, through the event's own
-hash. The honest third state is therefore "the link holds and the contents cannot be re-derived",
-which is what `not_retained` reports. 3-5's numbers still decide the window and the tiering; they no
-longer decide the verification vocabulary.
+**Retention costs more than "payload not retained" suggests, and 3-6 has one fewer degree of
+freedom.** An aged-out event's *typed columns* stop being independently verifiable too, because the
+hash covering them covers the payload as well. "Attestations committing to digests never payloads"
+was the intended shape; the digest is not what makes a reduced event verifiable, because the chain
+commits to the payload through the event's own hash and not to the digest. 3-5's numbers still
+decide the window and the tiering. They no longer decide the vocabulary.
 
-**1-13 is finished**, and it closes #159's last done-when along with its own: `adp undo` takes the
-commit `git log` shows rather than an operation id, and says which of undo's two paths it took —
-including the sentence that stops a revert being read as "done". The canonical walkthrough (Parts B
-and C of the manual test plan) reaches for `curl` nowhere now, and `scripts/check-docs.sh` fails the
-build if it starts to again; Part D is exempt by name, because registering a webhook and posting a
-lockfile diff are operator surfaces with no CLI verb by design.
+**Open question 4 is settled: mirror is the default**, and detected rather than asked for. Native
+mode asks a team to agree and mirror mode asks one developer to add a remote, and evaluation happens
+at the second price and never at the first.
 
-The one thing `adp watch` needed that did not exist was a way to ask **whether a change would land
-without trying to land it** — until now the only way to see a refusal was to attempt the merge.
-`GET /pulls/{n}?land=1` is that, opt-in so `gh pr view` pays nothing for it.
+**A later decision overrode an earlier done-when, once.** #153 asked `adp init` to leave a running
+gate runner behind; #155 then decided that a process mounting the Docker socket does not start
+without being told this is the right host. The later one won. Attaching a repository is not an
+instruction to hand root over the machine, so `init` says why it started none and prints the command
+that would.
 
-**1-12 is finished, and it settled open question 4.** Mirror is the default, and it is *detected*
-rather than asked for: a checkout with an upstream gets mirrored, one without gets a native
-repository, and `--no-mirror` is the override. The recommendation in #153 is now the behaviour, on
-the grounds it gave — native mode asks a team to agree and mirror mode asks one developer to add a
-remote, and evaluation happens at the second price and never at the first.
-
-Two of #153's positions survived contact and one did not. **Detect and write, don't prompt** held:
-`adp.yaml` is written from the lockfile and the scripts block, printed, and left uncommitted.
-**Mirror is the default** held. But #153 also asked `init` to leave a *running* gate runner behind,
-and #155 has since decided that a process mounting the Docker socket does not start without being
-told this is the right host. The later decision wins: `init` says why it started none, in one line,
-and prints the command. Attaching a repository is not an instruction to hand root over the machine.
-
-**The subcommand framework #153 predicted is half-bought.** The failure a framework would prevent
-here was never parsing — the flag parser is twenty lines and has never been the problem — it was
-drift between the dispatcher and the usage text, which were two hand-maintained lists of the same
-thing. There is one list now, dispatch and `--help` both read it, and a test asserts every entry is
-reachable and documented. A dependency would have bought the same property with an opinion about
-everything else attached.
-
-2-3 belongs to this release as well. So did 3-4 and 2-2, both finished: verification of a
-trajectory now costs a constant rather than a session, which is the precondition for 1-14 putting a
-verification badge on every run page; and undo has a second path, so it survives the branch moving —
-which on an active repository it does within minutes of any merge. What remains of 2-2 is 1-13's
-job, since the CLI is where a person actually reads which path an undo took.
+**2-3 is also the instrument for OD-3**, which is why it earned its place twice — and there is now
+something to take to a harness team rather than an argument. `make demo` ends on the handoff: one
+task, two harnesses, one continuous signed history, with nothing calling `checkpoint` or `resume` by
+hand. Two streams go through `adp-recorder wrap` and `--continue` is the only instruction, which was
+the ordering note's whole point: a demo driven by a script calling the API on the harnesses' behalf
+is evidence that a script can call two endpoints, not evidence of portability. What it shows a
+vendor is that a reader is ~200 lines in `recorder/src/readers/`, so `harness` stays a string the
+server never branches on.
 
 ### 1d — Legible before install: the published site
 
@@ -300,11 +278,15 @@ in Phase 1 to land in.
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 2-3 | Cross-harness checkpoint/resume demo | #160 | not started. Also the instrument for OD-3, which is why it earns its place twice. Waits on 1-10, without which it is a bespoke script rather than evidence of portability |
 | 2-4 | Provenance-priced approval — the approver differs by model, harness or session, not merely by identity | #176 | not started, and unblocked: 1-1 (#141) shipped, so a token carries `harness`, `model` and `session_id` over the wire and a signed change names them |
 
-Items 2-1 and 2-2 — author-independent approval, #121, and compensating-revert undo, #159 — shipped
-and are gone from this table. Their numbers are not reused, for the reason given under 1a.
+Items 2-1, 2-2 and 2-3 — author-independent approval (#121), compensating-revert undo (#159) and the
+cross-harness demo (#160) — shipped and are gone from this table. Their numbers are not reused, for
+the reason given under 1a. 2-2 and 2-3 landed inside release 1c, which is where what they settled is
+written down.
+
+**2-4 is the last of the three consequences the 2026-08-17 reweighting named**, and it is now the
+only one outstanding.
 
 2-1 was the first half of OD-2 below, and the half that had to come first: until it landed,
 `one_approval` was satisfiable by the principal it exists to constrain, so no bake-off's "landed"
