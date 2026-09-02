@@ -491,7 +491,7 @@ to work out.
 | 5-16 | Portability — a repository's record can leave the instance holding it | #239 | not started | See below. This is the item without which every adoption path in this phase is a trap |
 | 5-17 | Run lineage — `parent_run` plus a relationship of `retry`, `continue`, `reimplement` or `supersede` | #240 | shipped | Sessions model "Codex continued Claude's unfinished work" well and "GPT-8 independently reimplemented GPT-6's bad change" not at all. They are different historical facts and only the first has a column |
 | 5-18 | `adp reimplement <sha>` | #241 | shipped | Recover the intent, find the base before the change, open a related run, record the new trajectory, run the same evals, compare, and offer the replacement. Every ingredient exists; the verb does not — so it composes them and reverts nothing itself, because `adp undo` already takes a merge back out through the land policy |
-| 5-19 | Bake-off and reimplement launch the harness | #242 | not started | `adp bakeoff` opens the candidate set and the labelled runs and then prints instructions for wiring each harness in by hand. Powerful substrate, and the assembly is the user's |
+| 5-19 | Bake-off and reimplement launch the harness | #242 | shipped | `adp bakeoff` opens the candidate set and the labelled runs and then prints instructions for wiring each harness in by hand. Powerful substrate, and the assembly is the user's. `--launch` is opt-in and the flag is the acknowledgement, as `--runner` is on `adp init` |
 
 **5-16 exists because of what hosting would otherwise commit us to, and it is the item this phase
 would most regret deferring.** `PUBLIC_URL` is part of the signed record rather than a display

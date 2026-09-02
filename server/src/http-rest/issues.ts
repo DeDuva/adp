@@ -325,4 +325,62 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
       })),
     );
   });
+
+  // #241 needs the intent's own text, and nothing served it.
+  //
+  // Every route that touched an intent until now returned its *id* — the issue
+  // create, the change record, the run — or its title as one line inside the
+  // evidence bundle. So a client holding an intent id had no way to read what
+  // was actually asked for, which is precisely what `adp reimplement` and
+  // `adp bakeoff --launch` have to give the harness they are about to run: a
+  // bake-off whose arms were each given a different instruction would compare
+  // the instructions rather than the harnesses.
+  //
+  // On the native plane, because an intent has no GitHub analogue. Read-only:
+  // intents are created as a side effect of filing an issue, and a route that
+  // edited one would let the goal a run is scored against change after the
+  // scoring.
+  app.get(
+    "/api/adp/repos/:owner/:repo/intents/:id",
+    { preHandler: requireScope("repo:read") },
+    async (req, reply) => {
+      const { owner, repo: repoName, id } = req.params as { owner: string; repo: string; id: string };
+      const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
+      if (!repo) {
+        reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
+        return;
+      }
+      // Scoped to the repository: an intent id is caller input, and an
+      // unscoped read would let one repository's client read another's goals.
+      const [intent] = await db
+        .select()
+        .from(intents)
+        .where(and(eq(intents.id, id), eq(intents.repoId, repo.id)));
+      if (!intent) {
+        reply.code(404).send({ message: `Intent ${id} not found in this repository` });
+        return;
+      }
+
+      const [issue] = await db
+        .select({ number: issues.number })
+        .from(issues)
+        .where(and(eq(issues.repoId, repo.id), eq(issues.intentId, intent.id)))
+        .orderBy(asc(issues.number))
+        .limit(1);
+
+      reply.send({
+        id: intent.id,
+        title: intent.title,
+        body: intent.body,
+        source: intent.source,
+        issue_number: issue?.number ?? null,
+        // #226: where it came from, when it came from somewhere else.
+        upstream_host: intent.upstreamHost,
+        upstream_number: intent.upstreamNumber,
+        upstream_url: intent.upstreamUrl,
+        created_at: intent.createdAt.toISOString(),
+      });
+    },
+  );
+
 }

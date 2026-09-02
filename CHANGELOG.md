@@ -571,6 +571,41 @@ A change bound to no intent is refused and told what to do about it: an intent i
 attempt is an attempt *at*, which is why `runs.intentId` is not nullable. Where the original names
 no run, the second one still opens and the command says the comparison will have one side.
 
+### Bake-off and reimplement run the harnesses (#242)
+
+`adp bakeoff` created the candidate set and the labelled runs and then **explicitly did not launch
+anything** — it printed one `adp-recorder wrap …` line per harness and left the developer to wire
+each one in. That is a defensible boundary for a substrate and the wrong one for a product: the
+comparison a bake-off exists to produce is exactly what nobody assembles by hand N times, so the
+feature was used least where it is worth most.
+
+`--launch` runs them. **Opt-in, and the flag is the acknowledgement** — the shape `adp init` settled
+for the gate runner, which does not start without being told this is the right host. Launching a
+harness is a smaller grant than mounting the Docker socket and it is still a grant: it spends money,
+it edits files, and it does both without asking again.
+
+**A worktree per arm.** N agents cannot share one checkout — they edit the same files at the same
+time, and what results is a comparison of two agents fighting rather than of two agents working,
+which is a worse answer than no answer because it looks like a real one. `reimplement --launch` cuts
+its worktree at the **base**, which is what makes the independence `parent_relationship:
+"reimplement"` claims true rather than asserted: an attempt started from the branch containing the
+change it replaces would be looking at the answer.
+
+**Bounded, and the cost shown before the run.** Two at a time by default. An unbounded fan-out does
+not fail by being slow; it is N agents against one machine's rate limits, all degrading, producing a
+comparison of behaviour under contention rather than of the work.
+
+**The degraded path stays.** A harness with no known launch command, a binary not on PATH, or no
+built recorder is reported by name and gets the instructions that existed before — and the other
+arms still run. A bake-off with one harness missing should still produce the comparison between the
+ones that are there.
+
+Two supporting pieces: `GET /api/adp/repos/{owner}/{repo}/intents/{id}`, because every route that
+touched an intent returned its *id* and a client had no way to read what was asked for — and a
+bake-off whose arms were each given a different instruction would compare the instructions rather
+than the harnesses. And "where is the recorder" moved out of `connect.ts` into one module, since two
+answers to that is one too many the first time a build layout moves.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

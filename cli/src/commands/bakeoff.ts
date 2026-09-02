@@ -1,5 +1,9 @@
+import path from "node:path";
 import { parseFlags, splitRepo } from "../args.js";
 import { apiRequest } from "../api.js";
+import { repoRoot } from "../git.js";
+import { armWorktree, harnessAvailable, harnessCommand, runArms, type LaunchSpec } from "../launch.js";
+import { recorderBin, installRoot } from "../recorder-bin.js";
 
 interface Issue {
   number: number;
@@ -34,16 +38,26 @@ interface RunRow {
 //
 // Every server piece for this already existed — candidate sets, runs, labels,
 // `runs/compare` — and nothing drove them, so the capability GitHub
-// structurally cannot express was the one with no way to ask for it. This is
-// the driver, and deliberately nothing more: it opens the set and the runs, and
-// prints the comparison. It does not launch agents. What runs under each label
-// is the harness's business, and a bakeoff that owned that would be an
-// orchestrator rather than a command.
+// structurally cannot express was the one with no way to ask for it.
+//
+// **#242 changed the boundary.** This opened the set and the runs, printed one
+// `adp-recorder wrap …` line per harness, and explicitly did not launch
+// anything: what runs under each label is the harness's business, and a bakeoff
+// that owned it would be an orchestrator rather than a command. That is a
+// defensible boundary for a substrate and the wrong one for a product — the
+// comparison a bake-off exists to produce is exactly what nobody will assemble
+// by hand N times, so the feature was used least where it is worth most.
+//
+// So `--launch` runs them, and the printed instructions remain the answer
+// without it and for any harness that cannot be launched here. The flag is the
+// acknowledgement, exactly as `--runner` is on `adp init`: launching a harness
+// spends money and edits files, and does both without asking again.
 export async function bakeoff(argv: string[]): Promise<void> {
   const flags = parseFlags(argv);
   if (!flags.repo || !flags.intent || !flags.harness) {
     throw new Error(
-      "usage: adp bakeoff --repo <owner>/<repo> --intent <uuid|#issue> --harness <a,b,c> [--orchestrator <name>]",
+      "usage: adp bakeoff --repo <owner>/<repo> --intent <uuid|#issue> --harness <a,b,c> " +
+        "[--orchestrator <name>] [--launch] [--concurrency <n>]",
     );
   }
   const { owner, repo } = splitRepo(flags.repo);
@@ -86,14 +100,130 @@ export async function bakeoff(argv: string[]): Promise<void> {
     console.log(`  ${harness}: run ${run.id}`);
   }
 
-  console.log("");
-  console.log("Point each harness at its run, then read the table:");
-  for (const { harness, runId } of opened) {
-    console.log(`  ADP_RUN_ID=${runId} adp-recorder wrap --repo ${owner}/${repo} --run ${runId} -- <${harness}>`);
+  if (flags.launch === "true") {
+    await launch(owner, repo, intentId, opened, flags);
+  } else {
+    console.log("");
+    console.log("Point each harness at its run, then read the table:");
+    for (const { harness, runId } of opened) {
+      console.log(`  ADP_RUN_ID=${runId} adp-recorder wrap --repo ${owner}/${repo} --run ${runId} -- <${harness}>`);
+    }
+    console.log(`  adp bakeoff results --repo ${owner}/${repo} --intent ${intentId}`);
+    console.log("  …or pass --launch and let this run them.");
   }
-  console.log(`  adp bakeoff results --repo ${owner}/${repo} --intent ${intentId}`);
   console.log("");
   await results(owner, repo, intentId);
+}
+
+/**
+ * Run each arm, in its own worktree, through the recorder.
+ *
+ * The prompt is the intent, because that is what the arms are attempts at: a
+ * bake-off whose arms were each given a different instruction would compare the
+ * instructions rather than the harnesses.
+ */
+async function launch(
+  owner: string,
+  repo: string,
+  intentId: string,
+  opened: { harness: string; runId: string }[],
+  flags: Record<string, string | undefined>,
+): Promise<void> {
+  const root = repoRoot(process.cwd());
+  if (!root) throw new Error("--launch needs a git checkout to work in — run it inside the repository");
+
+  const recorder = recorderBin(installRoot());
+  if (!recorder) {
+    // Degrades to the path that existed before rather than failing: the runs
+    // are open and correct, and a developer with no built recorder can still
+    // drive them by hand.
+    console.log("");
+    console.log("no built recorder found — run `npm run build --prefix recorder`, then:");
+    for (const { harness, runId } of opened) {
+      console.log(`  ADP_RUN_ID=${runId} adp-recorder wrap --repo ${owner}/${repo} --run ${runId} -- <${harness}>`);
+    }
+    return;
+  }
+
+  const intent = await apiRequest<{ title: string; body: string }>(
+    "GET",
+    `/api/adp/repos/${owner}/${repo}/intents/${intentId}`,
+  ).catch(() => null);
+  const prompt = intent ? `${intent.title}\n\n${intent.body}`.trim() : `Work towards intent ${intentId}.`;
+  const base = flags.base ?? "HEAD";
+
+  const specs: LaunchSpec[] = [];
+  const skipped: { harness: string; runId: string; why: string }[] = [];
+  for (const { harness, runId } of opened) {
+    const command = harnessCommand(harness, prompt);
+    if (!command) {
+      skipped.push({ harness, runId, why: "no launch command is known for this harness" });
+      continue;
+    }
+    if (!harnessAvailable(command.command)) {
+      skipped.push({ harness, runId, why: `\`${command.command}\` is not on PATH here` });
+      continue;
+    }
+    // A worktree per arm. N agents cannot share one checkout: they edit the
+    // same files at the same time, and the comparison that results is of two
+    // agents fighting rather than of two agents working — a worse answer than
+    // no answer, because it looks like a real one.
+    const cwd = armWorktree(root, path.join(".adp", "arms", harness), `bakeoff/${harness}`, base);
+    specs.push({
+      arm: { harness, runId, label: harness },
+      command: process.execPath,
+      args: [
+        recorder,
+        "wrap",
+        "--repo",
+        `${owner}/${repo}`,
+        "--run",
+        runId,
+        "--harness",
+        harness,
+        "--dir",
+        cwd,
+        "--",
+        command.command,
+        ...command.args,
+      ],
+      cwd,
+      env: { ADP_RUN_ID: runId },
+    });
+  }
+
+  for (const s of skipped) {
+    console.log(`  ${s.harness}: not launched — ${s.why}`);
+    console.log(`             ADP_RUN_ID=${s.runId} adp-recorder wrap --repo ${owner}/${repo} --run ${s.runId} -- <${s.harness}>`);
+  }
+  if (specs.length === 0) {
+    console.log("nothing to launch here — the runs are open and can be driven by hand.");
+    return;
+  }
+
+  // **The cost is visible before the run rather than after.** N agents against
+  // one intent is the most expensive thing this CLI can do, and a command that
+  // spends it silently is one nobody runs twice.
+  const concurrency = Math.max(1, Number(flags.concurrency ?? 2));
+  console.log("");
+  console.log(`launching ${specs.length} arm(s), ${concurrency} at a time — each is a real agent session:`);
+  for (const spec of specs) console.log(`  ${spec.arm.harness} in ${path.relative(root, spec.cwd)}`);
+  console.log("");
+
+  const results = await runArms(specs, {
+    concurrency,
+    onStart: (spec) => console.log(`  ${spec.arm.harness}: started`),
+    onFinish: (r) =>
+      console.log(`  ${r.arm.harness}: ${r.status}${r.reason ? ` — ${r.reason}` : ""}`),
+  });
+
+  const failed = results.filter((r) => r.status !== "finished");
+  if (failed.length > 0) {
+    // Reported, not thrown: a bake-off where one harness fell over still has a
+    // comparison worth reading, and the table below is where that shows.
+    console.log("");
+    console.log(`${failed.length} arm(s) did not finish cleanly — their runs stay open and say so.`);
+  }
 }
 
 export async function bakeoffResults(argv: string[]): Promise<void> {

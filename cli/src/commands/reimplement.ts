@@ -3,6 +3,9 @@ import { apiRequest } from "../api.js";
 import { loadConfig } from "../config.js";
 import { repoRoot } from "../git.js";
 import { loadRepoIdentity } from "../repo-identity.js";
+import { armWorktree, harnessAvailable, harnessCommand, runArms } from "../launch.js";
+import { installRoot, recorderBin } from "../recorder-bin.js";
+import path from "node:path";
 
 // #241. "This landed change was produced by an older model, it turned out
 // badly, do it again properly and show me the difference."
@@ -136,12 +139,21 @@ export async function reimplement(argv: string[]): Promise<void> {
   }
 
   console.log("");
-  console.log("Next:");
-  console.log(`  git checkout -b reimplement-${sha.slice(0, 8)} ${base.sha}`);
-  console.log(
-    `  ADP_RUN_ID=${run.id} adp-recorder wrap --repo ${owner}/${repo} --run ${run.id} -- <${harness}>`,
-  );
-  console.log(`  adp reimplement ${sha} --compare        # the table, once both sides have run`);
+  if (flags.launch === "true") {
+    // #242: run it, rather than printing what to run. Opt-in, and the flag is
+    // the acknowledgement — the same shape `adp init --runner` settled, because
+    // launching a harness spends money and edits files and does both without
+    // asking again.
+    await launchOne(owner, repo, sha, base.sha, harness, run.id, bundle.change.intent_id!);
+  } else {
+    console.log("Next:");
+    console.log(`  git checkout -b reimplement-${sha.slice(0, 8)} ${base.sha}`);
+    console.log(
+      `  ADP_RUN_ID=${run.id} adp-recorder wrap --repo ${owner}/${repo} --run ${run.id} -- <${harness}>`,
+    );
+    console.log(`  adp reimplement ${sha} --compare        # the table, once both sides have run`);
+    console.log("  …or pass --launch and let this run it.");
+  }
   console.log("");
   // The original is taken back out by the verb that already does that safely.
   // `adp undo` resolves the merge and goes through the land policy, which is
@@ -249,4 +261,75 @@ function printTable(header: string[], rows: string[][]): void {
   console.log(line(header));
   console.log(line(widths.map((w) => "-".repeat(w))));
   for (const row of rows) console.log(line(row));
+}
+
+/**
+ * Run the second attempt, in its own worktree at the base.
+ *
+ * At the base rather than at HEAD, and that is the whole method: a
+ * reimplementation that started from the branch containing the change it is
+ * replacing would be looking at the answer. `runs.parentRelationship` says
+ * `reimplement` precisely because this attempt is independent, and a worktree
+ * cut from the pre-change base is what makes that true rather than asserted.
+ */
+async function launchOne(
+  owner: string,
+  repo: string,
+  sha: string,
+  base: string,
+  harness: string,
+  runId: string,
+  intentId: string,
+): Promise<void> {
+  const root = repoRoot(process.cwd());
+  if (!root) throw new Error("--launch needs a git checkout to work in — run it inside the repository");
+
+  const recorder = recorderBin(installRoot());
+  const command = harnessCommand(harness, "");
+  const printFallback = (why: string) => {
+    // Degrades to the path that existed before rather than failing: the run is
+    // open and correct, and it can still be driven by hand.
+    console.log(`not launched — ${why}`);
+    console.log(`  git checkout -b reimplement-${sha.slice(0, 8)} ${base}`);
+    console.log(`  ADP_RUN_ID=${runId} adp-recorder wrap --repo ${owner}/${repo} --run ${runId} -- <${harness}>`);
+  };
+  if (!recorder) return printFallback("no built recorder found — run `npm run build --prefix recorder`");
+  if (!command) return printFallback(`no launch command is known for '${harness}'`);
+  if (!harnessAvailable(command.command)) return printFallback(`\`${command.command}\` is not on PATH here`);
+
+  const intent = await apiRequest<{ title: string; body: string }>(
+    "GET",
+    `/api/adp/repos/${owner}/${repo}/intents/${intentId}`,
+  ).catch(() => null);
+  const prompt = intent ? `${intent.title}\n\n${intent.body}`.trim() : `Work towards intent ${intentId}.`;
+  const withPrompt = harnessCommand(harness, prompt)!;
+
+  const cwd = armWorktree(root, path.join(".adp", "arms", `reimplement-${sha.slice(0, 8)}`), `reimplement/${sha.slice(0, 8)}`, base);
+  console.log(`launching ${harness} in ${path.relative(root, cwd)} — a real agent session, at ${base.slice(0, 8)}`);
+  console.log("");
+
+  const [result] = await runArms([
+    {
+      arm: { harness, runId, label: harness },
+      command: process.execPath,
+      args: [
+        recorder,
+        "wrap",
+        "--repo",
+        `${owner}/${repo}`,
+        "--run",
+        runId,
+        "--harness",
+        harness,
+        "--dir",
+        cwd,
+        "--",
+        withPrompt.command,
+        ...withPrompt.args,
+      ],
+      cwd,
+      env: { ADP_RUN_ID: runId },
+    },
+  ]);
+  console.log(`${harness}: ${result!.status}${result!.reason ? ` — ${result!.reason}` : ""}`);
 }
