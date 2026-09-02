@@ -57,6 +57,18 @@
 // session `prefix`, `verified_from_seq`, `verified_to_seq`,
 // `attested_heads_checked`, `anchor`) and its optional `from` query parameter,
 // none of which move an existing field.
-export const API_VERSION = "0.6.0";
+// 0.7.0 — additive, and the contract half of Phase 5 (companion mode). A
+// repository whose pull requests live on GitHub gets an ADP proposal for each
+// of them — a *shadow* proposal, an ordinary `proposals` row so that policy
+// evaluation, the check runs and undo all keep taking the object they already
+// take. On the wire that is two new nullable fields on the proposal
+// representation, `upstream_number` and `upstream_url`, present and non-null
+// only on an ingested one. Additive in the strict sense: no existing field
+// changes shape or meaning, and a client generated against 0.6.0 keeps working
+// untouched. What changes for an *operator* is behaviour rather than contract —
+// a repository with inbound pull-request ingest enabled refuses natively
+// created proposals, because the shadow row adopts the upstream number and
+// `proposals` is unique on (repo_id, number).
+export const API_VERSION = "0.7.0";
 
 export const API_VERSION_HEADER = "ADP-API-Version";
