@@ -403,7 +403,14 @@ export interface SessionDetail extends SessionSummary {
 // #157: the edges out of a commit. Navigation rather than evidence — nothing
 // here is signed — but it is the difference between holding the identifier of
 // the thing you want and being able to follow it.
+export interface ObservedModel {
+  observed: string[];
+  asserted: string | null;
+  source: "observed" | "asserted" | "none";
+}
+
 export interface ProducedBy {
+  models: ObservedModel;
   sessions: { id: string; harness: string; run_id: string | null; seq: number }[];
   runs: { id: string; orchestrator: string; labels: Record<string, string>; status: RunStatus }[];
   proposals: { number: number; title: string; state: "open" | "closed" | "merged" }[];

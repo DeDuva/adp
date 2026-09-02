@@ -236,6 +236,35 @@ a webhook is upgraded the first time a poll sees the same person.
 
 `adp init` no longer presents the webhook as a prerequisite, because it is not one any more.
 
+### Which model produced a change is observed, not asserted (#231)
+
+`provenance.model` came from the token, which took it from whatever `adp connect` or the mint call
+said **once**, at connect time. A harness can change model inside a single run, and
+`session_events.model` has recorded it per event since the trajectory slice landed — because that
+was anticipated. So the field ADP published as "which model produced this" was an assertion, while
+the observation sat in the trajectory unread.
+
+That matters beyond tidiness: 2-4 (#176) prices an approval by the model and harness that produced
+the change, and pricing a separation-of-judgment control on a self-asserted string is the same
+category error 2-4 exists to correct one level down. `core/observed-model.ts` is what it can now be
+written against.
+
+**Both facts are reported, with a label saying which is load bearing.** A change is signed at push
+time and the trajectory arrives out of band, so signing an observation not yet made is not
+available — and the assertion is a real, weaker fact rather than a lie. The evidence bundle's
+`produced_by.models` carries `observed`, `asserted` and `source`:
+
+- `observed` is an **array**, in first-seen order. A run whose model changed is a different
+  historical fact from one that used a single model, and collapsing it to "the last" or "the most
+  common" would erase exactly the case #176 has to be able to price.
+- `source: "asserted"` is the documented degraded mode — a harness with no reader — said out loud.
+  The supervision UI renders it as *asserted by the harness at connect time*, and flags the case
+  where the trajectory disagrees with what the token claimed.
+
+The observation reads the typed `model` column rather than anything in the payload, so it survives
+#161's retention: an aged-out event keeps every typed column and loses only its payload body, and
+the observation outlives the transcript it was made from.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

@@ -85,6 +85,13 @@
 // have ever held, and excludes a dismissed one. A proposal whose reviewer
 // approved and then asked for changes stops satisfying it, which is what
 // GitHub has always done and what #121's reasoning requires.
+//
+// #231 adds `produced_by.models` to the evidence bundle — `observed`,
+// `asserted` and which of the two is load bearing. Additive, and deliberately
+// under `produced_by`, whose contract is already "joins over what is recorded,
+// not part of what is signed": the signed provenance keeps the token's claim,
+// because a change is signed at push time and the trajectory arrives out of
+// band.
 export const API_VERSION = "0.7.0";
 
 export const API_VERSION_HEADER = "ADP-API-Version";

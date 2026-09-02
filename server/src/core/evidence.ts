@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, or } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { changes, gateResults, intents, issues, proposals, runs, sessionEvents, sessions } from "../db/schema.js";
+import { modelFor, type ObservedModel } from "./observed-model.js";
 
 export interface EvidenceBundle {
   git_sha: string;
@@ -65,6 +66,18 @@ export interface EvidenceBundle {
    * join needs no payload parsing.
    */
   produced_by: {
+    /**
+     * #231: which model produced this, observed rather than asserted.
+     *
+     * `provenance.model` is what the token claimed once, at connect time; a
+     * harness can change model inside a run, and the trajectory records it per
+     * event. Both are here with a label saying which is load bearing, because
+     * a change is signed at push time and the trajectory arrives out of band —
+     * signing an observation not yet made is not available, and quietly
+     * showing the weaker fact as though it were the stronger one is the thing
+     * this exists to stop.
+     */
+    models: ObservedModel;
     sessions: { id: string; harness: string; run_id: string | null; seq: number }[];
     runs: { id: string; orchestrator: string; labels: Record<string, string>; status: string }[];
     proposals: { number: number; title: string; state: string }[];
@@ -235,6 +248,7 @@ async function producedByFor(
     .orderBy(asc(proposals.number));
 
   return {
+    models: await modelFor(db, repoId, sessionIds, provenance),
     sessions: sessionRows.map((s) => ({
       id: s.id,
       harness: s.harness,
