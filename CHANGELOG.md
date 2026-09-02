@@ -542,6 +542,35 @@ and a run that could be re-parented later is one whose history is editable. The 
 the repository, because a run id is caller input and lineage crossing repositories would let one
 repository's history name another's.
 
+### `adp reimplement <sha>` (#241)
+
+> *This landed change was produced by an older model, it turned out badly, do it again properly and
+> show me the difference.*
+
+**The sentence did not exist; every ingredient did.** ADP held `undo`, candidate sets and bake-off,
+cross-harness resume, run lineage and the comparison table, and asked the developer to compose them
+— which is the difference between a substrate and a product.
+
+The verb recovers the intent from the change's evidence bundle, finds the base the change was made
+on, opens a second run against that intent related to the first as `reimplement` (#240), and prints
+the comparison. The labels ride inside the signed run attestation, so "this second attempt was
+`<model>`" is attested rather than annotated.
+
+**The base comes from the recorded merge, not from the commit's parent.** `proposal.merge` carries
+the base sha before and after, and #225 makes that true for a merge that happened on GitHub as well
+as one ADP performed. The first parent is the fallback and is right for an ordinary commit — and
+wrong for a squash of several, which is exactly why the recorded fact is preferred over the
+convenient one.
+
+**It reverts nothing itself.** `adp undo <sha>` already takes a merge back out *through the land
+policy*, which is what 2-2 requires; a verb that reimplemented undo in order to feel complete would
+be a second path to the one operation that most needs exactly one. So it points at it, and the test
+asserts that nothing was undone, reverted or landed by this command.
+
+A change bound to no intent is refused and told what to do about it: an intent is what the second
+attempt is an attempt *at*, which is why `runs.intentId` is not nullable. Where the original names
+no run, the second one still opens and the command says the comparison will have one side.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

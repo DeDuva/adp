@@ -722,4 +722,178 @@ describe("adp CLI", () => {
       errSpy.mockRestore();
     });
   });
+
+  // #241 — the product verb.
+  //
+  // ADP held `undo`, candidate sets and bake-off, cross-harness resume, run
+  // lineage and the comparison table, and asked the developer to compose them.
+  // This is the composition, so what these tests pin is exactly that: which
+  // facts it recovers, what it opens, and what it refuses to do itself.
+  describe("reimplement", () => {
+    const sha = "8".repeat(40);
+    const base = "b".repeat(40);
+
+    const bundle = (over: Record<string, unknown> = {}) => ({
+      git_sha: sha,
+      change: {
+        intent_id: "intent-1",
+        intent: { id: "intent-1", title: "gate the job lease", issue_number: 92, upstream_url: null },
+        provenance: { model: "old-model" },
+      },
+      produced_by: {
+        models: { observed: ["old-model-v1"], asserted: "old-model", source: "observed" },
+        runs: [{ id: "run-original", orchestrator: "squad", labels: {}, status: "closed" }],
+      },
+      ...over,
+    });
+
+    function serve(over: Record<string, unknown> = {}) {
+      responder = ({ url, method }) => {
+        if (url.includes("/evidence/")) return { status: 200, body: bundle(over) };
+        if (url.includes("/operations?"))
+          return {
+            status: 200,
+            body: [
+              { verb: "proposal.merge", before: { baseSha: base }, after: { baseSha: sha, mergedInto: "main" } },
+            ],
+          };
+        if (url.includes("/runs/compare")) return { status: 200, body: { runs: [] } };
+        if (url.includes("/runs") && method === "POST") return { status: 201, body: { id: "run-new" } };
+        return { status: 404, body: {} };
+      };
+    }
+
+    it("opens a second run related to the first as a reimplementation", async () => {
+      serve();
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      expect(await run(["reimplement", sha, "--repo", "acme/widget", "--model", "new-model"])).toBe(0);
+      logSpy.mockRestore();
+
+      const opened = requests.find((r) => r.method === "POST" && r.url.endsWith("/runs"))!;
+      const body = JSON.parse(opened.body) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        intent_id: "intent-1",
+        // #240's relationship, and the reason it was a prerequisite: this
+        // attempt deliberately does not look at what the first produced, and
+        // an independent second attempt is evidence in a way a continuation is
+        // not.
+        parent_run: "run-original",
+        relationship: "reimplement",
+      });
+      // The labels ride inside the signed run attestation, which is what makes
+      // "this second attempt was new-model" attested rather than annotated.
+      expect(body.labels).toMatchObject({ model: "new-model", reimplements: sha });
+    });
+
+    // The recorded fact beats the convenient one: a squash merge's first parent
+    // is the pre-merge base, and for a merge commit it is not — so the merge
+    // operation, which #225 makes exist for a GitHub-native merge too, is read
+    // first.
+    it("takes the base from the recorded merge rather than from the commit's parent", async () => {
+      serve();
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      await run(["reimplement", sha, "--repo", "acme/widget"]);
+      const out = logSpy.mock.calls.flat().join("\n");
+      logSpy.mockRestore();
+
+      expect(out).toContain(base.slice(0, 8));
+      expect(out).toContain("the recorded merge");
+      // And it never had to ask git, which is the point of preferring the
+      // recorded fact.
+      expect(requests.some((r) => r.url.includes("/git/commits/"))).toBe(false);
+    });
+
+    it("falls back to the commit's first parent when no merge was recorded", async () => {
+      responder = ({ url, method }) => {
+        if (url.includes("/evidence/")) return { status: 200, body: bundle() };
+        if (url.includes("/operations?")) return { status: 200, body: [] };
+        if (url.includes("/git/commits/")) return { status: 200, body: { sha, message: "x", parents: [{ sha: base }] } };
+        if (url.includes("/runs/compare")) return { status: 200, body: { runs: [] } };
+        if (url.includes("/runs") && method === "POST") return { status: 201, body: { id: "run-new" } };
+        return { status: 404, body: {} };
+      };
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      await run(["reimplement", sha, "--repo", "acme/widget"]);
+      const out = logSpy.mock.calls.flat().join("\n");
+      logSpy.mockRestore();
+      expect(out).toContain("its first parent");
+    });
+
+    // An intent is what the second attempt is an attempt *at*. A run against no
+    // intent is a number nobody can interpret later, which is why runs.intentId
+    // is not nullable in the first place.
+    it("refuses a change bound to no intent, and says what to do about it", async () => {
+      serve({ change: { intent_id: null, intent: null, provenance: {} } });
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await run(["reimplement", sha, "--repo", "acme/widget"])).toBe(1);
+      expect(errSpy.mock.calls.flat().join("\n")).toContain("bound to no intent");
+      errSpy.mockRestore();
+    });
+
+    it("refuses a sha with no signed change record", async () => {
+      responder = ({ url }) => (url.includes("/evidence/") ? { status: 200, body: { git_sha: sha, change: null, produced_by: { models: {}, runs: [] } } } : { status: 404, body: {} });
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await run(["reimplement", sha, "--repo", "acme/widget"])).toBe(1);
+      expect(errSpy.mock.calls.flat().join("\n")).toContain("nothing here to reimplement");
+      errSpy.mockRestore();
+    });
+
+    // It composes rather than reimplements: `adp undo` already takes a merge
+    // back out through the land policy, which is what 2-2 requires, and a
+    // second path to that operation is the last thing this should add.
+    it("points at adp undo rather than reverting anything itself", async () => {
+      serve();
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      await run(["reimplement", sha, "--repo", "acme/widget"]);
+      const out = logSpy.mock.calls.flat().join("\n");
+      logSpy.mockRestore();
+
+      expect(out).toContain(`adp undo ${sha.slice(0, 8)}`);
+      // Nothing was undone, reverted or landed by this command.
+      expect(requests.some((r) => r.url.includes("/undo"))).toBe(false);
+      expect(requests.some((r) => r.method === "PUT")).toBe(false);
+    });
+
+    // A run with no parent is a complete and ordinary record; a comparison with
+    // one side is not what this command promises, so it says which you get.
+    it("still opens the run when the original names none, and says so", async () => {
+      serve({ produced_by: { models: { observed: [], asserted: null, source: "none" }, runs: [] } });
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      expect(await run(["reimplement", sha, "--repo", "acme/widget"])).toBe(0);
+      expect(logSpy.mock.calls.flat().join("\n")).toContain("no lineage recorded");
+      logSpy.mockRestore();
+
+      const opened = requests.find((r) => r.method === "POST" && r.url.endsWith("/runs"))!;
+      expect(JSON.parse(opened.body)).not.toHaveProperty("parent_run");
+    });
+
+    it("prints the comparison alone with --compare, opening nothing", async () => {
+      responder = ({ url }) => {
+        if (url.includes("/evidence/")) return { status: 200, body: bundle() };
+        if (url.includes("/runs/compare"))
+          return {
+            status: 200,
+            body: {
+              runs: [
+                { runId: "run-original", status: "closed", labels: { model: "old" }, events: 40, tokensIn: 1, tokensOut: 1, costMicroUsd: 900000, durationMs: 60000, toolCalls: 9, toolFailures: 1, finalGitSha: sha, eval: { name: "e", score: 0.4, passed: false } },
+                { runId: "run-new", status: "closed", labels: { model: "new", reimplements: sha }, events: 30, tokensIn: 1, tokensOut: 1, costMicroUsd: 400000, durationMs: 30000, toolCalls: 5, toolFailures: 0, finalGitSha: "c".repeat(40), eval: { name: "e", score: 0.9, passed: true } },
+              ],
+            },
+          };
+        return { status: 404, body: {} };
+      };
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      expect(await run(["reimplement", sha, "--repo", "acme/widget", "--compare"])).toBe(0);
+      const out = logSpy.mock.calls.flat().join("\n");
+      logSpy.mockRestore();
+
+      // The comparison is the deliverable as much as the reimplementation is:
+      // both attempts named, with the difference between them.
+      expect(out).toContain("original");
+      expect(out).toContain("new");
+      expect(out).toContain("0.4");
+      expect(out).toContain("0.9");
+      expect(requests.some((r) => r.method === "POST")).toBe(false);
+    });
+  });
 });
