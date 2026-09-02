@@ -215,6 +215,17 @@ else
 		note "               That is normal mid-development and fatal if it is forgotten:"
 		note "               0.4.0 and 0.5.0 both sat in exactly this state until 2026-08-23,"
 		note "               while the newest release said 0.3.0."
+		# The ordering, said here rather than only in this file's comments. On
+		# 2026-09-02 v0.6.0 was tagged while its heading still read
+		# "unreleased"; release.yml re-runs this script before publishing, so
+		# the tag existed with no image and no release page behind it, and the
+		# recovery was a second pull request and a moved tag. The note above
+		# told the reader the state was fatal if forgotten. It did not tell
+		# them which order the two steps go in, which is the part that bites.
+		note "               Date the heading in a pull request FIRST, then tag what lands:"
+		note "                 ## v$version — YYYY-MM-DD"
+		note "               release.yml reads the heading at the commit it tags, so tagging"
+		note "               ahead of the date publishes nothing and fails the release run."
 	fi
 fi
 

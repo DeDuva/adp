@@ -14,7 +14,7 @@ its spec-coverage guard.
 Until 2026-08-23 only one edge of that rule was enforced, and it was checked on
 the tag push — after publication. Two contract bumps slipped through it.
 
-## v0.6.0 — unreleased
+## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran
 every command the README, the published site and the tooling tell a new user to run, in that order,
