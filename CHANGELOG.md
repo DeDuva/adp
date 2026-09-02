@@ -14,6 +14,17 @@ its spec-coverage guard.
 Until 2026-08-23 only one edge of that rule was enforced, and it was checked on
 the tag push — after publication. Two contract bumps slipped through it.
 
+## v0.7.0 — unreleased
+
+**Companion mode: ADP underneath GitHub.** A product review on 2026-09-02 walked `main` as a
+GitHub developer rather than as an evaluator and landed on a seam the backlog had not named: the
+more faithfully a developer keeps GitHub as their workflow, the less of ADP's most interesting
+behaviour is authoritative. Mirror inbound handled two events — `push` and `workflow_run` — so a
+repository whose issues, pull requests, reviews and merges all live on GitHub handed ADP a stream
+of commits and CI verdicts and nothing that said what any of it was *for*. This release is mostly
+ingest, and what it buys is that land policy, `adp undo` and the evidence bundle all reach a
+change that arrived through GitHub. `PLAN.md` Phase 5 is the backlog; entries land here per item.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran
