@@ -606,6 +606,44 @@ bake-off whose arms were each given a different instruction would compare the in
 than the harnesses. And "where is the recorder" moved out of `connect.ts` into one module, since two
 answers to that is one too many the first time a build layout moves.
 
+### A repository's record can leave the instance holding it (#239)
+
+`PUBLIC_URL` is part of the signed record rather than a display string — the server signs evidence
+with it and hands it back in clone URLs, and `docs/self-hosting.md` states that as a property of the
+design. The consequence nobody had written down is that **the record could not move**. Every
+adoption path in this phase ends with a developer's record living on an instance chosen while they
+were evaluating alone, and if it cannot move when their company adopts, the funnel breaks precisely
+where it is supposed to pay off — for a reason that was designed in.
+
+`GET .../export` and `POST .../import` move it: the intents, issues, proposals, changes, gate
+results, runs and the operation log, together with the exporting instance's `PUBLIC_URL` and signing
+**public** key.
+
+**Nothing is re-signed, and that is the decision.** The honest answers were a small set — re-sign
+under the new instance; keep the original signatures and carry the old key's public half; or accept
+that history verifies only against an archived key. The last two are the same answer, one of them
+done properly, and it is the one taken: a signature says *this instance attested this, then*, and
+re-signing would let the receiving instance assert what it did not witness. The exporting key is
+archived on the receiving instance and history verifies against it — the same key-registry mechanism
+a retired key already used, pointed at a key this instance never held. The migration is recorded as
+a `repo.import` operation, because the imported log cannot say how it got there.
+
+**Two things the bundle deliberately does not carry.** Git history moves by `git push`, which is the
+tool that exists for it — a change record references a commit. And identities move as id, kind and
+principal only, with no tokens, links or memberships: what has to survive is who the record *names*,
+not the ability to act as them.
+
+That second one was found by **testing against two real databases rather than one**. A single shared
+database made every foreign key resolve by accident, which is exactly the failure a real migration
+would have hit and that test would not have — the imported operations, issues, proposals and runs
+all reference actors by id, and on a genuinely separate instance those rows do not exist.
+
+Import needs `admin` rather than `repo:write`: it writes signed records this instance did not
+produce and adds a verification key to it, which is a trust decision about another instance. The
+repository must already exist here — creating one as a side effect would let an import place a
+repository under an org the caller was never admitted to. And it is idempotent by row, because a
+migration that half-failed has to be safe to run again.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

@@ -33,6 +33,26 @@ offering a setting that silently corrupts data.
 hands it back in clone URLs, so changing it later changes URLs already embedded in landed
 provenance. Decide the hostname before the first real change lands.
 
+**That no longer means a record is stuck on the instance that made it** (#239). A repository's
+record moves with `GET .../export` and `POST .../import`: the bundle carries the intents, issues,
+proposals, changes, gate results, runs and the operation log, together with the exporting instance's
+`PUBLIC_URL` and signing **public** key.
+
+Nothing is re-signed. A signature says *this instance attested this, then*; re-signing under the
+receiving instance would let it assert what it did not witness. So the records keep their original
+signatures, the exporting key is archived on the receiving instance, and history verifies against
+it — the same key-registry mechanism a retired key already uses, pointed at a key this instance
+never held.
+
+Two things the bundle deliberately does not carry. **Git history**: a change record references a
+commit, and the commit travels by `git push`, which is the tool that exists for that. And **any
+ability to act as the principals it names**: identities move as id, kind and principal, without
+tokens, identity links or memberships, because what has to survive is who the record names.
+
+Importing needs the `admin` scope and a repository that already exists on the receiving instance —
+creating one as a side effect would let an import place a repository under an org the caller was
+never admitted to. It is idempotent, so a migration that half-failed is safe to run again.
+
 ---
 
 ## 2. Helm

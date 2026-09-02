@@ -87,6 +87,25 @@ export class KeyRegistry {
     }
   }
 
+  /**
+   * Take in a key this instance never held.
+   *
+   * #239: an imported record keeps its original signatures, so verifying it
+   * means resolving the *exporting* instance's keyid — which is the same
+   * problem #102 solved for a key this instance retired, pointed the other way.
+   * Added at import so the record verifies on this process immediately; the
+   * same keys are loaded at boot from `archived_keys`, and it is the pair that
+   * makes "import it and it verifies" true rather than "import it, then restart
+   * the server".
+   */
+  add(publicKeyHex: string): void {
+    const trimmed = publicKeyHex.trim();
+    // Never replaces an existing entry, and the active key least of all: a
+    // bundle that named this instance's own keyid must not be able to swap the
+    // verifier for one it supplied.
+    if (trimmed && !this.byKeyId.has(trimmed)) this.byKeyId.set(trimmed, new PublicKeyVerifier(trimmed));
+  }
+
   // Null for an unknown keyid — the caller treats that as verification
   // failure, never as "assume the active key": an envelope claiming a key
   // this instance has never heard of is precisely the forgery case.

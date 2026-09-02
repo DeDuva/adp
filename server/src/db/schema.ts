@@ -865,6 +865,38 @@ export const mirrors = pgTable(
   (table) => [unique().on(table.repoId)],
 );
 
+// #239: a key this instance did not sign with, kept so that records it did not
+// sign still verify.
+//
+// `PUBLIC_URL` is part of the signed record rather than a display string — the
+// server signs evidence with it and hands it back in clone URLs — so a
+// repository's record could not leave the instance holding it. Every adoption
+// story in Phase 5 ends with a developer's record living on an instance chosen
+// while they were evaluating alone, and if that record cannot move when their
+// company adopts, the funnel breaks exactly where it is supposed to pay off.
+//
+// **Nothing is re-signed on import, and that is the decision rather than a
+// simplification.** A signature says "this instance attested this, then";
+// re-signing under the receiving instance would let it assert what it did not
+// witness, which is precisely the substitution this product exists to prevent.
+// So the imported record keeps its original signatures and the exporting
+// instance's public key travels with it — the same mechanism #102 already built
+// for a key this instance retired, pointed at a key it never held.
+export const archivedKeys = pgTable(
+  "archived_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The keyid an envelope carries, which is the public key in hex.
+    publicKeyHex: text("public_key_hex").notNull(),
+    // The `PUBLIC_URL` the exporting instance signed under. Display and audit:
+    // "these records were attested by that instance" is the fact a reader of an
+    // imported bundle most needs, and it is not recoverable from the key alone.
+    publicUrl: text("public_url").notNull(),
+    importedAt: timestamp("imported_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique().on(table.publicKeyHex)],
+);
+
 // #232: the GitHub App this instance created for itself, and where it is
 // installed.
 //
