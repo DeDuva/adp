@@ -137,7 +137,10 @@ if [ ! -x "$GH_BIN" ]; then
     -o "$WORKDIR/gh.tar.gz" || die "could not download gh"
   tar -xzf "$WORKDIR/gh.tar.gz" -C "$GH_CACHE"
 fi
-ok "gh $("$GH_BIN" --version | head -1 | awk '{print $3}') — the real binary, unmodified"
+# Read from a file, not through `head`. See the note above the `gh issue view`
+# call below — the reason is the same and it is not obvious from here.
+"$GH_BIN" --version >"$WORKDIR/gh-version.txt"
+ok "gh $(awk 'NR==1 {print $3}' "$WORKDIR/gh-version.txt") — the real binary, unmodified"
 
 export GIT_ROOT="$WORKDIR/git"
 export SIGNING_KEY="demo-$(openssl rand -hex 8)"
@@ -227,7 +230,21 @@ api POST "/api/v3/repos/${OWNER}/${REPO}/issues" \
   -d '{"title":"Add a description to the README","body":"It only has a heading."}' -o /dev/null -f \
   || die "could not create the issue"
 info "$ gh issue view 1"
-gh_ issue view 1 --repo "$GH_REPO" | head -3 | sed 's/^/    /'
+# `| head -3` is what this used to be, and it failed the CI `demo` job with exit
+# 141 — SIGPIPE. `head` closes the pipe after three lines, and if `gh` still has
+# a write outstanding at that moment it dies of the signal, which `set -o
+# pipefail` then reports as the whole pipeline failing.
+#
+# It is a **race**, which is why it survived so long: `gh` usually finishes
+# writing its few hundred bytes before `head` exits, and the run where it does
+# not looks like a random failure of the one command the README, the landing
+# page and this gate all point a visitor at.
+#
+# `scripts/check-docs.sh` already learned this exactly once, and says so at
+# length in its own comments: a reader that exits early kills the writer, so
+# read from a file, which has no writer to kill.
+gh_ issue view 1 --repo "$GH_REPO" >"$WORKDIR/issue.txt"
+sed -n '1,3p' "$WORKDIR/issue.txt" | sed 's/^/    /'
 ok "the agent reads its task through gh, exactly as on GitHub"
 
 ( cd "$CLONE"
