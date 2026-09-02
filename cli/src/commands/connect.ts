@@ -14,7 +14,8 @@
 // anyone trusts: it exercises the credential, the server URL, the repository
 // resolution and the scope, and it fails loudly when any of them is wrong.
 import { existsSync } from "node:fs";
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseFlags, splitRepo } from "../args.js";
@@ -22,6 +23,7 @@ import { loadConfig } from "../config.js";
 import { apiRequest, ApiError } from "../api.js";
 import { findHarness, harnessNames, removeMcpServer, writeMcpServer, type Harness } from "../harnesses.js";
 import { excludePaths, hooksDir, installHook, removeHook, remoteRepo, repoRoot, unexcludePaths } from "../git.js";
+import { CLAUDE_SETTINGS, removeSessionStartHook, writeSessionStartHook } from "../harnesses.js";
 import { loadRepoIdentity, saveRepoIdentity } from "../repo-identity.js";
 
 interface MintedToken {
@@ -159,6 +161,14 @@ export async function disconnect(argv: string[]): Promise<void> {
     if (hook.removed) removed.push(path.relative(root, hook.file));
   }
 
+  // #237: connect writes the SessionStart hook, so disconnect takes it back
+  // out — matched on the command it runs, so a developer's own hooks in the
+  // same file are untouched.
+  const sessionStart = removeSessionStartHook(root, `./${path.relative(root, launcher)}`);
+  if (sessionStart.removed) removed.push(`the ADP hook in ${CLAUDE_SETTINGS}`);
+
+  if (stopWatcher(root, harness)) removed.push(`the transcript watcher for ${harness.name}`);
+
   if (unexcludePaths(process.cwd(), excludedFor(harness))) removed.push("its entries in .git/info/exclude");
 
   // The token is not revoked here, and saying so is better than leaving it to
@@ -256,8 +266,18 @@ ${MARKER}
 #
 # Claude Code hands a SessionStart hook the transcript path on stdin. That is
 # exactly what \`tail\` follows, so recording starts when a session does.
+#
+# \`--check\` resolves the path and prints it without starting anything, which is
+# how \`adp connect\` proves this script before telling anyone it is finished.
+# The line below is the step that fails silently when the payload shape moves:
+# it finds no path, the hook exits 0, and no session is ever recorded — which
+# looks exactly like nothing having happened.
 set -e
 transcript=$(sed -n 's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
+if [ "$1" = "--check" ]; then
+  printf '%s\\n' "$transcript"
+  exit 0
+fi
 [ -n "$transcript" ] || exit 0
 ADP_SERVER_URL=${shellQuote(serverUrl)} ADP_TOKEN=${shellQuote(token)} \\
   nohup ${shellQuote(process.execPath)} ${shellQuote(recorder)} tail \\
@@ -279,22 +299,109 @@ exec env ADP_SERVER_URL=${shellQuote(serverUrl)} ADP_TOKEN=${shellQuote(token)} 
   chmodSync(launcher, 0o755);
 
   const relative = path.relative(root, launcher);
-  // The shape, not just the instruction. "Add it as a SessionStart hook in
-  // .claude/settings.json" is the last step of a command whose promise is *one*
-  // command and then the harness records itself — and it was the one step that
-  // asked for a hand edit while showing nothing to paste. Anyone who has not
-  // written a Claude Code hook before now has to go and find out what one looks
-  // like, at the exact point they were told they were finished.
+
+  // #237: written, not instructed.
   //
-  // Not written for them: `.claude/settings.json` is a file the developer may
-  // already have, shared with their own hooks, and merging JSON someone else
-  // owns is how connect would come to own it. Printing it costs four lines and
-  // leaves the edit where it belongs.
-  return harness.recording === "hook"
-    ? `wrote ${relative} — record without being asked by adding it to .claude/settings.json:\n` +
-        `      {"hooks": {"SessionStart": [{"hooks": [{"type": "command",\n` +
-        `        "command": "${relative}"}]}]}}`
+  // "Add it as a SessionStart hook in .claude/settings.json" was the last step
+  // of a command whose promise is *one* command and then the harness records
+  // itself — and it failed silently when skipped, because a session that is not
+  // recorded looks exactly like a session that never happened.
+  //
+  // The reason it was not written before is real and is answered rather than
+  // ignored: `.claude/settings.json` may already hold the developer's own
+  // hooks, and merging JSON somebody else owns is how connect comes to own it.
+  // That is the same risk `.mcp.json` carries, and the answer is the same —
+  // ADP owns one entry, recognised by the command it runs, and never the file.
+  if (harness.recording === "hook") {
+    const written = writeSessionStartHook(root, `./${relative}`);
+    proveHook(launcher);
+    return `wrote ${relative} and registered it in ${CLAUDE_SETTINGS} — an ordinary session records itself${
+      written.created ? "" : " (your other hooks were left alone)"
+    }`;
+  }
+
+  // The harness has no hook, so nothing in it can start the recorder. `wrap`
+  // was the previous answer and is still written, because an explicit
+  // invocation is genuinely useful in CI — but it is the mechanism, not the
+  // interface: a command the developer types instead of their normal one is
+  // capture they perform, and it fails silently the first time they forget.
+  const sessions = harness.sessionsDir?.() ?? null;
+  if (!sessions) {
+    return `wrote ${relative} — run the harness through it: ./${relative} <the usual command>`;
+  }
+  const watcher = startWatcher(root, harness, recorder, serverUrl, token, repo, sessions);
+  return watcher
+    ? `wrote ${relative}, and watching ${sessions} — an ordinary session records itself. ` +
+        `Stop with \`adp disconnect ${harness.name}\``
     : `wrote ${relative} — run the harness through it: ./${relative} <the usual command>`;
+}
+
+/** Where the watcher's pid is kept, so disconnect can stop the one connect started. */
+function watcherPidPath(root: string, harness: Harness): string {
+  return path.join(root, ".adp", `watch-${harness.name}.pid`);
+}
+
+/**
+ * Start watching this harness's session directory, in the background.
+ *
+ * Detached, because it has to outlive the `adp connect` that started it — the
+ * whole point is that the developer types nothing further. Its pid is written
+ * down so `disconnect` stops exactly the process `connect` started, rather than
+ * pattern-matching the process table and hoping.
+ *
+ * **It does not survive a reboot, and that is stated rather than hidden.**
+ * A supervised service is the honest fix and it is a bigger decision than this
+ * item: it means deciding whose init system, and it means ADP running when
+ * nobody asked it to. Re-running `adp connect` is one command, and connect is
+ * already the command that means "set this up".
+ */
+function startWatcher(
+  root: string,
+  harness: Harness,
+  recorder: string,
+  serverUrl: string,
+  token: string,
+  repo: string,
+  sessions: string,
+): boolean {
+  stopWatcher(root, harness);
+  try {
+    const child = spawn(
+      process.execPath,
+      [recorder, "watch", "--repo", repo, "--harness", harness.name, "--sessions", sessions, "--dir", root],
+      {
+        detached: true,
+        stdio: "ignore",
+        env: { ...process.env, ADP_SERVER_URL: serverUrl, ADP_TOKEN: token },
+      },
+    );
+    child.unref();
+    if (!child.pid) return false;
+    mkdirSync(path.dirname(watcherPidPath(root, harness)), { recursive: true });
+    writeFileSync(watcherPidPath(root, harness), `${child.pid}\n`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Stop the watcher connect started here, if it is still running. */
+function stopWatcher(root: string, harness: Harness): boolean {
+  const file = watcherPidPath(root, harness);
+  if (!existsSync(file)) return false;
+  const pid = Number(readFileSync(file, "utf8").trim());
+  rmSync(file, { force: true });
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    // SIGTERM, not SIGKILL: the watcher stops its children the same way, and a
+    // transcript that is mid-delivery finishes delivering.
+    process.kill(pid, "SIGTERM");
+    return true;
+  } catch {
+    // Already gone — a reboot, or the developer stopped it. Nothing to do, and
+    // nothing worth reporting as a failure.
+    return false;
+  }
 }
 
 function shellQuote(value: string): string {
@@ -373,4 +480,35 @@ export function resolveRepoTarget(
     `this checkout is not attached to ${serverUrl} — run \`adp init\`, or name the repository ` +
       "with --repo <owner>/<repo>",
   );
+}
+
+/**
+ * Run the hook the way the harness will, and check it finds the transcript.
+ *
+ * `connect` already opens and closes a real session to prove the credential,
+ * on the reasoning that a config written to the wrong path fails silently and
+ * looks exactly like success. The ambient path deserves the same, and this is
+ * the step of it that can be wrong: the hook is handed a JSON payload on stdin
+ * and has to pull one field out of it. If that stops matching — a renamed key,
+ * a reshaped payload — the hook exits 0 having found nothing, no session is
+ * ever recorded, and it is indistinguishable from never having been wired.
+ *
+ * Deliberately not a live capture. Starting a real session here would mean
+ * polling for it to appear, which makes `adp connect` fail on a slow machine
+ * with a correct setup — the worst outcome available for a first-contact
+ * command. `--check` proves the same parsing with no timing in it.
+ */
+function proveHook(launcher: string): void {
+  const transcript = "/tmp/adp-connect-check.jsonl";
+  const result = spawnSync("/bin/sh", [launcher, "--check"], {
+    input: JSON.stringify({ session_id: "check", transcript_path: transcript }),
+    encoding: "utf8",
+  });
+  if (result.status !== 0 || result.stdout.trim() !== transcript) {
+    throw new Error(
+      `the hook was written but does not work: given a SessionStart payload it resolved ` +
+        `${JSON.stringify(result.stdout.trim())} instead of the transcript path. ` +
+        "Nothing would have been recorded, and nothing would have said so.",
+    );
+  }
 }
