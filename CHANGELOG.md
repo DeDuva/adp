@@ -58,6 +58,36 @@ the wrong reason. That is #225, and the test asserts the gap rather than leaving
 On the wire: `upstream_number` and `upstream_url` on the proposal representation, null on a
 natively created one. Additive — no existing field moves.
 
+### `adp undo` reaches a merge that happened on GitHub (#225)
+
+A pull request merged upstream now writes a real `proposal.merge` operation, which is the verb
+`undo.ts` resolves — so the one verb most worth having in the mode we tell people to adopt is no
+longer the one that mode cannot reach.
+
+**Most of the work is one value GitHub does not send.** Undo reads three things off the operation:
+the branch, where it ended up, and where it was. The first two are in the payload. The third is
+what the compensating revert actually computes against, and a guessed one would make undo run,
+succeed, and take out the wrong range — worse than the refusal this item exists to remove. So it is
+established as a fact or not at all, from three sources in order of how directly each one knows:
+
+- **the merge commit's first parent**, when it has two or more — true by construction, and what
+  GitHub's default merge button produces;
+- **the base ref here**, when it does not yet contain the merge — the `pull_request` and `push`
+  deliveries race, and this is the ordering where the answer can simply be read;
+- **`mirror_sync_log`**, when the push already landed — our own record of where the ref went, so
+  the row before the newest one is where it was.
+
+When none of them can answer — a squash or rebase whose push arrived first — nothing is recorded
+and the response says `merge_base_unknown`. A rebase of *n* commits leaves the pre-merge tip at
+`merge~n` and a squash leaves it at `merge~1`, and nothing in the payload distinguishes them. Undo
+then refuses because there is no merge recorded, which is true, rather than because a recorded one
+is unusable.
+
+The merge record is written **independently of the row update and is idempotent on its own**, so a
+redelivery arriving once the base branch has caught up can complete a record the first delivery
+could not. `mergeMethod` is `upstream`: GitHub does not report which of its three buttons was
+pressed, and the operation does not claim to know.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

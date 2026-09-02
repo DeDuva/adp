@@ -1,6 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { proposals } from "../db/schema.js";
+import type { GitBackend } from "./git-backend.js";
+import { mirrorSyncLog, operations, proposals } from "../db/schema.js";
 import { recordOperation } from "./operations.js";
 import { findMirror } from "./mirrors-lookup.js";
 
@@ -37,6 +38,8 @@ export interface PullRequestPayload {
     closed_at?: string | null;
     head?: { ref?: string; sha?: string };
     base?: { ref?: string };
+    /** Present on a merged pull request; the sha the base branch ends up at. */
+    merge_commit_sha?: string | null;
   };
 }
 
@@ -56,6 +59,13 @@ export interface PullRequestIngestResult {
   number?: number;
   /** `created` on first sight, `updated` when a field this row owns moved. */
   change?: "created" | "updated";
+  /**
+   * Whether this delivery wrote the `proposal.merge` operation `adp undo`
+   * resolves — and, when it did not, why. Reported separately from `recorded`
+   * because the two are independent: the row can be correctly marked merged by
+   * a delivery that could not establish the pre-merge base sha.
+   */
+  merge?: "recorded" | "already-recorded" | string;
 }
 
 type ProposalRow = typeof proposals.$inferSelect;
@@ -97,7 +107,9 @@ function desiredState(pr: NonNullable<PullRequestPayload["pull_request"]>): {
  */
 export async function ingestPullRequest(
   db: Db,
+  gitBackend: GitBackend,
   repo: { id: string; owner: string; name: string },
+  mirrorId: string | null,
   actorId: string,
   payload: PullRequestPayload,
 ): Promise<PullRequestIngestResult> {
@@ -114,7 +126,7 @@ export async function ingestPullRequest(
   const title = pr.title ?? `Pull request #${number}`;
   const body = pr.body ?? "";
 
-  return db.transaction(async (tx) => {
+  const outcome = await db.transaction(async (tx): Promise<PullRequestIngestResult & { row?: ProposalRow }> => {
     // The same repo-row lock the native create path takes to assign a number.
     // Here it is not assigning one — 5a settled that a shadow proposal adopts
     // the upstream number — but it serialises concurrent deliveries of the
@@ -187,7 +199,7 @@ export async function ingestPullRequest(
           upstreamUrl: row.upstreamUrl,
         },
       });
-      return { recorded: true, number, change: "created" };
+      return { recorded: true, number, change: "created", row };
     }
 
     const next: Partial<ProposalRow> = {};
@@ -207,7 +219,10 @@ export async function ingestPullRequest(
     // resolves to the same sha. All three are the same fact — this row is
     // already right — and none of them should append to an append-only log.
     if (Object.keys(next).length === 0) {
-      return { recorded: false, number, reason: "no change" };
+      // Not a return: a delivery that moves nothing about the row can still be
+      // the one that completes the merge record below, which is the whole
+      // point of keeping the two independent.
+      return { recorded: false, number, reason: "no change", row: existing };
     }
 
     await tx.update(proposals).set(next).where(eq(proposals.id, existing.id));
@@ -247,8 +262,25 @@ export async function ingestPullRequest(
       },
     });
 
-    return { recorded: true, number, change: "updated" };
+    return { recorded: true, number, change: "updated", row: { ...existing, ...next } as ProposalRow };
   });
+
+  // The merge, recorded outside the row's transaction and idempotently, so that
+  // a redelivery arriving after the base branch has caught up can still write
+  // the operation a first delivery could not.
+  const { row, ...result } = outcome;
+  if (row && row.state === "merged" && pr.merge_commit_sha) {
+    result.merge = await recordUpstreamMerge(
+      db,
+      gitBackend,
+      repo,
+      mirrorId,
+      actorId,
+      { id: row.id, number: row.number, baseRef: row.baseRef },
+      pr.merge_commit_sha,
+    );
+  }
+  return result;
 }
 
 /**
@@ -285,4 +317,181 @@ export function nativeProposalRefusal(owner: string, repoName: string) {
       "which is what keeps that number meaning one thing on both planes. Disable the mirror " +
       "first if this repository should own its own proposals.",
   };
+}
+
+// ---------------------------------------------------------------------------
+// The merge, and the one fact GitHub does not send.
+// ---------------------------------------------------------------------------
+//
+// `undo.ts` resolves a `proposal.merge` operation and reads three things off
+// it: `after.mergedInto` (the branch), `after.baseSha` (where that branch ended
+// up) and `before.baseSha` (where it was). The first two are in the webhook
+// payload. The third is not, and it is the one the compensating-revert path
+// actually computes against — `revertTree(onto, after.baseSha, before.baseSha)`
+// undoes exactly the range between them.
+//
+// So a guessed value here is worse than no operation at all. Undo would run,
+// succeed, and take out the wrong range; #225 exists because an operation
+// missing that state makes undo refuse "for the second reason instead of the
+// first", and a *wrong* one is a third and worse outcome. Everything below
+// therefore establishes it as a fact or declines to record the merge.
+//
+// Three sources, in order of how directly each one knows:
+//
+//   parent   — the merge commit has two or more parents, so it is a true merge
+//              commit and its first parent is the base tip it was made on.
+//              True by construction, and the case GitHub's default button
+//              produces.
+//   ref      — the base ref here does not yet contain the merge commit, so it
+//              still points where it pointed before. The `pull_request` and
+//              `push` deliveries race, and this is the ordering where we can
+//              simply read the answer.
+//   synclog  — the push already landed, and `mirror_sync_log` recorded where
+//              the ref went on each inbound. The row before the newest one for
+//              this ref is where it was. Our own record, not an inference.
+//
+// What is deliberately *not* here is a fourth guess for the remaining case: a
+// squash or rebase merge whose push landed before this delivery and whose
+// sync log has been pruned. A rebase merge of n commits leaves the pre-merge
+// tip at `merge~n`, a squash leaves it at `merge~1`, and nothing in the
+// payload distinguishes them. That case reports `merge_base_unknown` and
+// writes no operation, so `adp undo` refuses because there is no merge
+// recorded — which is true — rather than because a recorded one is unusable.
+export type MergeBaseSource = "parent" | "ref" | "synclog";
+
+export interface MergeBaseFact {
+  beforeBaseSha: string;
+  source: MergeBaseSource;
+}
+
+export async function resolveMergeBase(
+  db: Db,
+  gitBackend: GitBackend,
+  repo: { id: string; owner: string; name: string },
+  mirrorId: string | null,
+  baseRef: string,
+  mergeCommitSha: string,
+): Promise<MergeBaseFact | null> {
+  const commit = await gitBackend.getCommit(repo.owner, repo.name, mergeCommitSha);
+  if (commit && commit.parents.length >= 2) {
+    return { beforeBaseSha: commit.parents[0]!, source: "parent" };
+  }
+
+  const currentBase = await gitBackend.resolveRef(repo.owner, repo.name, baseRef);
+  if (currentBase) {
+    // "Does the branch already contain the merge?" rather than "is the ref
+    // equal to the merge commit?" — a push that carried the merge *and* a
+    // commit after it moves the ref past it, and the equality test would read
+    // that as "not yet merged" and hand back a sha that is no longer the
+    // pre-merge tip.
+    const contains =
+      currentBase === mergeCommitSha ||
+      (await gitBackend.isAncestor(repo.owner, repo.name, mergeCommitSha, currentBase));
+    if (!contains) return { beforeBaseSha: currentBase, source: "ref" };
+  }
+
+  if (mirrorId) {
+    const ref = `refs/heads/${baseRef}`;
+    const rows = await db
+      .select({ sha: mirrorSyncLog.sha })
+      .from(mirrorSyncLog)
+      .where(
+        and(
+          eq(mirrorSyncLog.mirrorId, mirrorId),
+          eq(mirrorSyncLog.direction, "inbound"),
+          eq(mirrorSyncLog.ref, ref),
+          eq(mirrorSyncLog.status, "success"),
+        ),
+      )
+      .orderBy(desc(mirrorSyncLog.createdAt))
+      .limit(2);
+    // rows[0] is where the ref went last (the merge); rows[1] is where it was
+    // before that. Only usable when the newest row really is the merge — if a
+    // later push has already been recorded, the pair describes a different
+    // move and answering from it would be the guess this function refuses to
+    // make.
+    if (rows.length === 2 && rows[0]!.sha === mergeCommitSha) {
+      return { beforeBaseSha: rows[1]!.sha, source: "synclog" };
+    }
+  }
+
+  return null;
+}
+
+// Whether this proposal already has its merge recorded. Checked by target
+// rather than by the proposal row's own state, because the state and the
+// operation are written by different deliveries and the operation is the thing
+// undo actually resolves.
+async function mergeAlreadyRecorded(db: Db, repoId: string, target: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: operations.id })
+    .from(operations)
+    .where(and(eq(operations.repoId, repoId), eq(operations.verb, "proposal.merge"), eq(operations.target, target)))
+    .limit(1);
+  return !!row;
+}
+
+/**
+ * Record the `proposal.merge` operation for a pull request merged on GitHub.
+ *
+ * Separate from the row update, and idempotent on its own, because the two can
+ * legitimately happen on different deliveries: the state is knowable from the
+ * payload alone and the pre-merge base sha sometimes is not, so a redelivery
+ * that arrives once the push has landed must still be able to complete the
+ * record. A `pull_request` update that changes nothing about the row will still
+ * write this if it is missing.
+ */
+export async function recordUpstreamMerge(
+  db: Db,
+  gitBackend: GitBackend,
+  repo: { id: string; owner: string; name: string },
+  mirrorId: string | null,
+  actorId: string,
+  proposal: { id: string; number: number; baseRef: string },
+  mergeCommitSha: string,
+): Promise<string> {
+  const target = `${repo.owner}/${repo.name}#${proposal.number}`;
+  if (await mergeAlreadyRecorded(db, repo.id, target)) return "already-recorded";
+
+  const fact = await resolveMergeBase(db, gitBackend, repo, mirrorId, proposal.baseRef, mergeCommitSha);
+  if (!fact) return "merge_base_unknown";
+
+  await db.transaction(async (tx) => {
+    // The race this closes: two deliveries of the same `closed` event both read
+    // "not recorded" above. The uniqueness undo depends on is "one merge per
+    // proposal", so it is asserted here by re-reading inside the transaction
+    // rather than by a constraint — `operations` is an append-only log and must
+    // not grow a unique index that a legitimate second merge of a reopened
+    // proposal would violate.
+    const [existing] = await tx
+      .select({ id: operations.id })
+      .from(operations)
+      .where(and(eq(operations.repoId, repo.id), eq(operations.verb, "proposal.merge"), eq(operations.target, target)))
+      .for("update")
+      .limit(1);
+    if (existing) return;
+
+    await recordOperation(tx, {
+      repoId: repo.id,
+      actorId,
+      verb: "proposal.merge",
+      target,
+      before: { baseSha: fact.beforeBaseSha },
+      after: {
+        baseSha: mergeCommitSha,
+        mergedInto: proposal.baseRef,
+        // GitHub does not report which of its three buttons was pressed, and
+        // the operation must not claim to know. `upstream` is what is true:
+        // this instance did not perform the merge and did not choose how.
+        mergeMethod: "upstream",
+        via: "mirror-inbound",
+        // How `before.baseSha` was established, kept in the record because a
+        // reader auditing an undo should be able to see which of the three
+        // sources answered rather than having to re-derive it.
+        baseShaSource: fact.source,
+      },
+    });
+  });
+
+  return "recorded";
 }

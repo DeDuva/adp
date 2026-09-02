@@ -397,7 +397,7 @@ the issue by title.
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
 | 5-1 | `pull_request` ingest — a GitHub pull request becomes a shadow proposal carrying its upstream number and URL | #224 | shipped | Every other item in this release hangs off the proposal row existing |
-| 5-2 | Merge ingest — a merged pull request writes a real `proposal.merge` operation | #225 | not started | What makes `adp undo` reach a GitHub-native merge. The operation must carry the before/after state `undo.ts` reads, or it refuses for the second reason instead of the first |
+| 5-2 | Merge ingest — a merged pull request writes a real `proposal.merge` operation | #225 | shipped | What makes `adp undo` reach a GitHub-native merge. The operation must carry the before/after state `undo.ts` reads, or it refuses for the second reason instead of the first — so it is established from one of three facts, or not written at all |
 | 5-3 | `issues` ingest — a GitHub issue becomes an intent with an upstream identity | #226 | not started | `intents` needs a column for the upstream reference; today `source` distinguishes `issue` from `api` but nothing records *which* issue, on whose host |
 | 5-4 | `pull_request_review` ingest — a GitHub approval satisfies `one_approval` | #227 | not started | Otherwise the policy in 5c refuses every mirrored pull request on a requirement GitHub already met, which is worse than not publishing it |
 | 5-5 | Poll what a webhook cannot reach | #228 | not started | Inbound needs a publicly reachable endpoint; `server/src/core/mirror-poller.ts` drains outbound only. A poller synthesising the same ingest events needs no public URL, and is what makes companion mode work from a laptop |

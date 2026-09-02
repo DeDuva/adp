@@ -127,12 +127,13 @@ export function registerMirrorWebhookRoutes(
         reply.send({ ok: true, skipped: "mirror has no ingest identity" });
         return;
       }
-      const result = await ingestPullRequest(db, repo, actorId, payload);
+      const result = await ingestPullRequest(db, gitBackend, repo, mirror.id, actorId, payload);
       reply.send({
         ok: true,
         ...(result.recorded
           ? { recorded: `proposal#${result.number}`, change: result.change }
           : { skipped: result.reason }),
+        ...(result.merge ? { merge: result.merge } : {}),
       });
       return;
     }
