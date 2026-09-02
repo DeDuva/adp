@@ -201,6 +201,41 @@ an `ADP-Session` trailer, the trailer wins over the token — the token says whi
 *push*, the trailer says which session produced *this commit*, and they differ whenever one push
 carries work from two sittings.
 
+### Companion mode runs on a laptop (#228)
+
+`adp init` configured the mirror and then printed a webhook URL and a secret for a human to paste
+into GitHub's settings. Until that was done by hand, inbound ingested nothing — the mode was
+configured, reported success, and recorded only what an outbound push already knew. A developer
+without a publicly reachable hostname could not do it at all, which is most people evaluating this
+on the machine they already have.
+
+**So the poller is not a degraded substitute for the webhook.** It is the version of companion mode
+that runs on a laptop, and it is on by default: making the mode that needs no public hostname the
+one you have to know to ask for would be exactly backwards. `MIRROR_INBOUND_POLL_INTERVAL_MS=0`
+turns it off on an instance that has a public URL and would rather spend the API calls elsewhere.
+
+**It produces the same record, not a similar one**, and that is a structural property rather than a
+promise: every fact goes through the function the webhook calls. Branch syncing was extracted to
+`core/mirror-inbound.ts` for exactly this reason — two copies of the divergence handling, the
+compare-and-swap and the sync-log accounting would have agreed on the day they were written and
+not for long after. Running the poller beside a configured webhook is therefore safe rather than
+merely unlikely to collide, since each ingest was already idempotent because GitHub redelivers.
+
+Two behaviours worth knowing:
+
+- **The cursor is the time the poll *started*.** Writing "now" at the end would open a window the
+  width of the poll, in which an update that landed while it ran is newer than the cursor and is
+  never looked at again. A poll that failed does not advance it at all, because the work in the
+  window it never read would otherwise be invisible forever.
+- **A failure in one section does not abandon the rest.** One repository with an expired credential
+  must not stop every other repository from syncing; errors are collected per mirror and reported.
+
+Commit attribution on this path is better than the webhook's: GitHub's commits API carries numeric
+user ids where a push payload names an author by login alone, so a login-keyed identity created by
+a webhook is upgraded the first time a poll sees the same person.
+
+`adp init` no longer presents the webhook as a prerequisite, because it is not one any more.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

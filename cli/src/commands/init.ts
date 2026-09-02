@@ -275,7 +275,13 @@ async function configureMirror(
   }
   console.log(`  mirror:    ${remoteUrl}, both directions`);
   console.log("             your remote and your pull requests do not change — the ADP record fills anyway.");
-  console.log("             Point a GitHub webhook at this ADP instance to make inbound immediate:");
+  // #228: this used to be an instruction, and it was the difference between
+  // companion mode working and not. Inbound ingests by polling now, so the
+  // webhook is the optimisation rather than the prerequisite — which matters
+  // most for the reader who cannot follow it at all, because no hostname of
+  // theirs is reachable from GitHub.
+  console.log("             Inbound arrives by polling, so there is nothing further to set up.");
+  console.log("             If this instance has a public URL, a webhook makes it immediate:");
   console.log(`             ${webhookUrlFor(target)}`);
   console.log(`             secret: ${secret}`);
 }

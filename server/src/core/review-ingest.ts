@@ -70,7 +70,15 @@ export async function ingestReview(
 ): Promise<ReviewIngestResult> {
   const review = payload.review;
   const number = payload.pull_request?.number;
-  if (!payload.action || !["submitted", "edited", "dismissed"].includes(payload.action)) {
+  // `poll` is #228's. A polled review is a *state* rather than an event, and
+  // the review list is where a dismissal is visible at all on that path —
+  // GitHub reports it as `state: "DISMISSED"` on the review itself rather than
+  // as a separate action — so a poll carrying that state is treated as the
+  // dismissal it is.
+  if (payload.action === "poll" && review?.state?.toLowerCase() === "dismissed") {
+    payload = { ...payload, action: "dismissed" };
+  }
+  if (!payload.action || !["submitted", "edited", "dismissed", "poll"].includes(payload.action)) {
     return { recorded: false, reason: `ignored action '${payload.action ?? "(none)"}'` };
   }
   if (!review?.id || !number) {

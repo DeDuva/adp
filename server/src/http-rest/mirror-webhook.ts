@@ -3,12 +3,10 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "../core/git-backend.js";
 import type { Signer } from "../core/signing.js";
-import { identities, mirrors, mirrorSyncLog } from "../db/schema.js";
-import { eq } from "drizzle-orm";
 import { findRepo } from "../core/repos-lookup.js";
 import { findMirror } from "../core/mirrors-lookup.js";
-import { recordPushedCommits } from "../core/change-recorder.js";
-import { decryptCredential, redactUrl } from "../core/mirror-crypto.js";
+import { decryptCredential } from "../core/mirror-crypto.js";
+import { syncBranchFromUpstream } from "../core/mirror-inbound.js";
 import { ingestWorkflowRun, resolveMirrorReporter, type WorkflowRunPayload } from "../core/actions-ingest.js";
 import { ingestPullRequest, type PullRequestPayload } from "../core/pull-request-ingest.js";
 import { ingestIssue, type IssuePayload } from "../core/issue-ingest.js";
@@ -231,90 +229,20 @@ export function registerMirrorWebhookRoutes(
       return;
     }
 
-    const currentSha = await gitBackend.resolveRef(owner, name, branch);
-
-    try {
-      // credential isn't needed to fetch a public repo, but mirrors are
-      // configured against the same PAT used for outbound pushes — reuse
-      // it here too so private GitHub repos work identically.
-      const url = new URL(mirror.remoteUrl);
-      url.username = "x-access-token";
-      url.password = decryptCredential(mirror.credentialCiphertext, credentialKey);
-
-      const fetchedSha = await gitBackend.fetchFromRemote(owner, name, url.toString(), remoteRef);
-
-      const isFastForward = currentSha === null || (await gitBackend.isAncestor(owner, name, currentSha, fetchedSha));
-      if (!isFastForward) {
-        await db.insert(mirrorSyncLog).values({
-          mirrorId: mirror.id,
-          direction: "inbound",
-          ref: remoteRef,
-          sha: fetchedSha,
-          status: "failed",
-          lastError: `diverged: refs/heads/${branch} is not an ancestor of the fetched commit`,
-        });
-        reply.send({ ok: false, reason: "diverged" });
-        return;
-      }
-
-      let moved: boolean;
-      if (currentSha) {
-        moved = await gitBackend.fastForwardRef(owner, name, branch, currentSha, fetchedSha);
-      } else {
-        await gitBackend.createRef(owner, name, `refs/heads/${branch}`, fetchedSha);
-        moved = true;
-      }
-      if (!moved) {
-        await db.insert(mirrorSyncLog).values({
-          mirrorId: mirror.id,
-          direction: "inbound",
-          ref: remoteRef,
-          sha: fetchedSha,
-          status: "failed",
-          lastError: "ref moved concurrently, retry",
-        });
-        reply.send({ ok: false, reason: "concurrent-update" });
-        return;
-      }
-
-      const [identity] = mirror.identityId ? await db.select().from(identities).where(eq(identities.id, mirror.identityId)) : [];
-      if (identity) {
-        await recordPushedCommits(
-          db,
-          gitBackend,
-          signer,
-          owner,
-          name,
-          repo.id,
-          { id: identity.id, kind: identity.kind, principal: identity.principal },
-          currentSha ?? "0".repeat(40),
-          fetchedSha,
-          "mirror-inbound",
-          await commitAuthors(db, upstreamHostOfMirror(mirror.remoteUrl), payload),
-        );
-      }
-
-      await db.insert(mirrorSyncLog).values({
-        mirrorId: mirror.id,
-        direction: "inbound",
-        ref: remoteRef,
-        sha: fetchedSha,
-        status: "success",
-      });
-      await db.update(mirrors).set({ lastInboundSha: fetchedSha, updatedAt: new Date() }).where(eq(mirrors.id, mirror.id));
-
-      reply.send({ ok: true });
-    } catch (err) {
-      await db.insert(mirrorSyncLog).values({
-        mirrorId: mirror.id,
-        direction: "inbound",
-        ref: remoteRef,
-        sha: payload.after,
-        status: "failed",
-        lastError: redactUrl(err instanceof Error ? err.message : String(err)),
-      });
-      reply.send({ ok: false, reason: "error" });
-    }
+    // #228: the same function the inbound poller calls. Two arrivals, one
+    // record — see core/mirror-inbound.ts for why that is a requirement rather
+    // than a convenience.
+    const result = await syncBranchFromUpstream(
+      db,
+      gitBackend,
+      signer,
+      credentialKey,
+      mirror,
+      repo,
+      branch,
+      await commitAuthors(db, upstreamHostOfMirror(mirror.remoteUrl), payload),
+    );
+    reply.send(result.ok ? { ok: true } : { ok: false, reason: result.reason });
   });
 }
 

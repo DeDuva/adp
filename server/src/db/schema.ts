@@ -814,6 +814,16 @@ export const mirrors = pgTable(
     enabled: boolean("enabled").notNull().default(true),
     lastOutboundSha: text("last_outbound_sha"),
     lastInboundSha: text("last_inbound_sha"),
+    // #228: the inbound poller's cursor. Null until the first poll, which is
+    // what makes that poll a backfill of everything currently open rather than
+    // a window nobody chose.
+    //
+    // It is a poll *time* rather than a per-object cursor because that is what
+    // GitHub's own filters take (`since` on issues, `sort=updated` on pulls),
+    // and because a single timestamp is the only cursor that stays correct when
+    // the poller is behind: falling further behind widens the window instead of
+    // skipping what happened while it was down.
+    lastPolledAt: timestamp("last_polled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
