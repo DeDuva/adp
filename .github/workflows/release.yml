@@ -19,6 +19,9 @@ on:
 permissions:
   contents: write
   packages: write
+  # #235: `npm publish --provenance` mints an OIDC token to attest the tarball
+  # to this workflow run.
+  id-token: write
 
 jobs:
   publish:
@@ -81,6 +84,37 @@ jobs:
           tags: |
             ghcr.io/deduva/adp-runner:${{ github.ref_name }}
             ghcr.io/deduva/adp-runner:latest
+
+      # #235: the CLI, on npm.
+      #
+      # Until this, `cli/package.json` was `private: true` and the documented
+      # install was a source build — so ADP could not be obtained without
+      # cloning it, and every front door this phase widened opened onto a
+      # building with no road.
+      #
+      # Publishes only when NPM_TOKEN is configured, and says so when it is not
+      # rather than failing the release. A repository fork, or this repository
+      # before the token exists, must still be able to cut a release that
+      # produces an image and a GitHub release — the npm registry is one
+      # distribution channel among several and not a precondition for the
+      # others.
+      - name: Publish the CLI to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "NPM_TOKEN is not configured — skipping the npm publish."
+            echo "The image and the GitHub release below are unaffected."
+            exit 0
+          fi
+          npm ci --prefix cli
+          npm run build --prefix cli
+          printf '//registry.npmjs.org/:_authToken=%s\n' "$NODE_AUTH_TOKEN" > cli/.npmrc
+          # --provenance ties the published tarball to this workflow run, which
+          # is the same claim the rest of this project is about: an artifact
+          # that says where it came from.
+          npm publish --prefix cli --provenance --access public
+          rm -f cli/.npmrc
 
       - name: Create GitHub release
         env:

@@ -355,17 +355,23 @@ ADP_SERVER_URL=https://adp.example.com ADP_TOKEN=<token> npm run mcp
 ### `adp` CLI
 
 A thin command-line wrapper over the REST endpoints above, for scripting and CI steps that would
-otherwise be a raw `curl`. Lives in `cli/`, built and installed separately from the server:
+otherwise be a raw `curl`. Published to npm as **`@deduva/adp`**, with no runtime dependencies:
 
 ```bash
-cd cli && npm ci && npm run build
-npm link                                                    # puts `adp` on your PATH
+npx @deduva/adp --help                                      # no install at all
+npm install -g @deduva/adp                                  # or put `adp` on your PATH
 adp login --server https://adp.example.com --token <token>  # writes ~/.adp/config.json
 ```
 
-`npm link` is what makes the rest of this section spellable as written. The package declares a
-`bin` and is `private`, so it is never published to npm — without the link, every `adp …` below is
-`node cli/dist/index.js …`. Undo it with `npm unlink -g @adp/cli`.
+Until #235 the package was `private: true` and the only documented install was a source build, so
+ADP could not be obtained without cloning it — every front door this project widened opened onto a
+building with no road. The source build still works and is what you want when developing the CLI
+itself:
+
+```bash
+cd cli && npm ci && npm run build
+npm link            # puts this checkout's `adp` on your PATH; undo with `npm unlink -g @deduva/adp`
+```
 
 | Command | Wraps |
 |---|---|

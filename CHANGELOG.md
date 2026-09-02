@@ -363,6 +363,31 @@ policy, so a proposal that would have satisfied it is refused for this reason ra
 into a merge. The refusal names GitHub as the merge authority and this check run as how the verdict
 acts.
 
+### The CLI is on npm (#235)
+
+`cli/package.json` was `"private": true` and the only documented install was a source build, so ADP
+could not be obtained without cloning it — every front door this phase widened opened onto a
+building with no road.
+
+```bash
+npx @deduva/adp --help
+npm install -g @deduva/adp
+```
+
+No runtime dependencies, so an install is one download and no tree. The release workflow publishes
+on tag with `--provenance`, which ties the tarball to the workflow run that built it — the same
+claim the rest of this project is about, applied to its own artifact.
+
+**It skips cleanly when `NPM_TOKEN` is not configured**, and says so, rather than failing the
+release. A fork must still be able to cut a release that produces an image and a GitHub release: the
+npm registry is one distribution channel among several, not a precondition for the others.
+
+`cli/test/package.test.ts` asserts the package stays installable — not private, scoped `public`
+(a scoped package defaults to restricted, which publishes successfully and is unreachable), `dist`
+in `files`, a shebang on the entrypoint, and a build before every publish. That is a test rather
+than a note because each of those failures is silent: the release stays green and nobody finds out
+until a stranger tries to install it.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

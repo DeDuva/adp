@@ -70,9 +70,11 @@ chart_app=$(grep -oE '^appVersion: *"?[^"]+"?' helm/adp/Chart.yaml | sed 's/^app
 # ---------------------------------------------------------------------------
 # 3. The workspace packages.
 # ---------------------------------------------------------------------------
-# All five are `private: true` and none is published to npm, which is exactly why they
-# were left at 0.0.0 and why that went unnoticed. They still land in the image, in
-# `npm ls` output, and in anything that reads a manifest to report what is running.
+# `cli` is published to npm as `@deduva/adp` since #235; the other four are
+# `private: true`. That the other four are unpublished is exactly why they were left at
+# 0.0.0 and why that went unnoticed — they still land in the image, in `npm ls` output,
+# and in anything that reads a manifest to report what is running. For `cli` the stakes
+# are now higher rather than lower: this version is the one a stranger installs.
 #
 # `recorder` is in this list since 2026-09-01 and was not before: it was added to the
 # tree after this script was written, so it sat at 0.5.0 through the release that was
