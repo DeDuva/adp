@@ -510,6 +510,38 @@ export const runs = pgTable(
     // mutable label would be a claim about the past that the past cannot check,
     // so there is no route that writes one.
     labels: jsonb("labels").$type<Record<string, string>>().notNull().default({}),
+    // #240: which run this one follows, and how.
+    //
+    // Sessions already model "Codex continued Claude's unfinished work" —
+    // `sessions.resumedFromSessionId` is exactly that edge. What they cannot
+    // model is "GPT-8 independently reimplemented GPT-6's bad change": that is
+    // not a continuation, it is a *second attempt at the same intent that
+    // started over*, and the two are different historical facts. Until this,
+    // only the first had a column, so the second was recorded as either a
+    // resume (a lie about the trajectory) or as nothing (a lie about the
+    // history).
+    //
+    // A relationship rather than a boolean, because there are four and they are
+    // not orderings of one thing:
+    //
+    //   retry        the same work, again, after something went wrong that was
+    //                not the work — a crashed harness, a rate limit.
+    //   continue     a different agent picked up where this one stopped. The
+    //                run-level statement of what sessions already record.
+    //   reimplement  the same intent, started over from the base, deliberately
+    //                not looking at what the parent produced. This is the one
+    //                #241's verb creates, and the one 2-4 needs to be able to
+    //                distinguish: an independent second attempt is evidence in
+    //                a way a continuation is not.
+    //   supersede    this run replaces the parent's result, which is a claim
+    //                about outcomes rather than about method.
+    //
+    // Nullable, together: a run with a parent and no relationship would be a
+    // lineage nobody can interpret, and the pair is validated at the route.
+    parentRunId: uuid("parent_run_id").references((): AnyPgColumn => runs.id),
+    parentRelationship: text("parent_relationship", {
+      enum: ["retry", "continue", "reimplement", "supersede"],
+    }),
     finalGitSha: text("final_git_sha"),
     // sha256 over every session's (id, harness, event count, chain head), sorted
     // by session id — one value naming the whole run's trajectory, stable to
@@ -522,6 +554,9 @@ export const runs = pgTable(
   (table) => [
     index("runs_repo_id_status_idx").on(table.repoId, table.status),
     index("runs_repo_id_intent_id_idx").on(table.repoId, table.intentId),
+    // "What followed from this run" is the question lineage exists to answer,
+    // and without this it is a sequential scan of every run in the instance.
+    index("runs_parent_run_id_idx").on(table.parentRunId),
     uniqueIndex("runs_repo_id_orchestrator_external_ref_idx")
       .on(table.repoId, table.orchestrator, table.externalRef)
       .where(sql`${table.externalRef} is not null`),

@@ -3506,6 +3506,29 @@ paths:
                     envelope and the row disagreeing. There is no update route.
                     Ranking consumers read these rather than parsing
                     `external_ref`, whose format nothing enforces.
+                parent_run:
+                  type: string
+                  format: uuid
+                  description: >
+                    #240: the run this one follows. Open-time only, for the same
+                    reason `labels` are — lineage is a fact about why this run
+                    exists, and a run that could be re-parented later is one
+                    whose history is editable. Must name a run in this
+                    repository, and must be given together with `relationship`:
+                    a parent with no relationship is a lineage nobody can
+                    interpret.
+                relationship:
+                  type: string
+                  enum: [retry, continue, reimplement, supersede]
+                  description: >
+                    How this run relates to its parent. Four, and they are not
+                    orderings of one thing. `retry` is the same work again after
+                    something that was not the work went wrong. `continue` is
+                    the run-level statement of what a resumed session already
+                    records. `reimplement` starts over from the base without
+                    looking at what the parent produced — an independent second
+                    attempt, which is evidence in a way a continuation is not.
+                    `supersede` is a claim about outcomes rather than method.
       responses:
         "401":
           content:
