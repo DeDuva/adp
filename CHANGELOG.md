@@ -16,6 +16,38 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## v0.6.0 — unreleased
 
+**`make demo` ends on the handoff: one task, two harnesses, one continuous signed
+history (#160).** D2 is the capability that most distinguishes ADP from a forge with
+signed commits, and the argument for it was entirely structural — the endpoints existed,
+`resumed_from_session_id` was self-referencing so a chain across three harnesses was
+walkable without a join table, and none of it had been shown working.
+
+**Nothing calls `checkpoint` or `resume`.** Two streams go through `adp-recorder wrap`,
+one shaped like Claude Code's `--output-format stream-json` and one like Codex's
+`exec --json`, and `--continue` is the only instruction — it exists because no stream can
+signal a handoff the other harness has never heard of. That is the ordering note #160
+made and the reason it waited for #151: a demo driven by a script calling the API on the
+harnesses' behalf is evidence that a script can call two endpoints, not evidence of
+portability.
+
+The first harness exits non-zero mid-task, which is what a handoff looks like from
+outside, and #151 turns that into a **suspended** session with a checkpoint to resume
+from rather than one that looks finished. The op log reads
+`session.start → session.checkpoint → session.suspend → workspace.create → session.resume
+→ session.checkpoint → session.close`.
+
+**Both halves of "one continuous signed history" are checked, not claimed.** The lineage
+is walked back from the session that finished the work, and every session in the chain is
+verified per session — recomputed from the stored rows by that request — using the
+session-scoped endpoint #152 added. These sessions belong to no run: a developer handing
+work between their own harnesses is not an orchestrated fan-out, and until that endpoint
+existed there was no way to verify them at all.
+
+It lives in `make demo` rather than a script of its own, because that script's port
+picking, process-group kill and log-line readiness checks each exist because something
+failed in a way that cost a debugging session — and a third copy of them would reacquire
+the same bugs.
+
 **`adp init` — one command, against a repository that already exists (#153).** The
 strongest brake on adoption was never scepticism about signed evidence; it is that moving
 repositories is unthinkable. ADP already had the answer — mirror mode makes it additive to

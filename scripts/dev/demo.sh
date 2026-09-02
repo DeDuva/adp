@@ -9,8 +9,9 @@
 #
 # The success state, stated so it can be judged: you used ordinary git and an
 # unmodified `gh` to land a change, watched the server refuse that same change
-# while it lacked evidence, and then read the signed record of why it was
-# allowed.
+# while it lacked evidence, read the signed record of why it was allowed — and
+# watched one task pass between two harnesses as one continuous signed history
+# (#160), which is the part a forge with signed commits structurally cannot do.
 #
 # Everything is ephemeral. Postgres runs in a container on a random port, the
 # server and its TLS proxy are children of this script, and the git repos live
@@ -298,6 +299,134 @@ MAIN_AFTER=$(git --git-dir="${GIT_ROOT}/${OWNER}/${REPO}.git" rev-parse main)
 ok "landed — main is now ${MAIN_AFTER:0:8}"
 
 # ---------------------------------------------------------------------------
+# D2, and #160: one continuous signed history across two harnesses.
+#
+# This is the capability that most distinguishes ADP from a forge with signed
+# commits, and until now the argument for it was entirely structural — the
+# endpoints existed and nothing had been shown using them. #160 is explicit
+# that a demo driven by a bespoke script calling `resume` on the harnesses'
+# behalf is not evidence of portability: it is evidence that a script can call
+# two endpoints.
+#
+# So nothing here calls `checkpoint` or `resume`. Two streams go through
+# `adp-recorder wrap`, one shaped like Claude Code's and one like Codex's, and
+# the recorder does the rest — because that is what a real harness would be
+# doing. `--continue` is the only instruction, and it exists because no stream
+# can signal a handoff the other harness has never heard of.
+step "One session, two harnesses (D2)"
+
+RECORDER_MAIN="recorder/dist/main.js"
+if [ ! -f "$RECORDER_MAIN" ]; then
+  info "building adp-recorder"
+  npm ci --prefix recorder >"$WORKDIR/recorder-build.log" 2>&1     || { tail -20 "$WORKDIR/recorder-build.log"; die "could not install adp-recorder"; }
+  npm run build --prefix recorder >>"$WORKDIR/recorder-build.log" 2>&1     || { tail -20 "$WORKDIR/recorder-build.log"; die "could not build adp-recorder"; }
+fi
+
+HANDOFF_SPOOL="$WORKDIR/spool"
+recorder_() {
+  ADP_SERVER_URL="http://localhost:${PORT}" ADP_TOKEN="$TOKEN"   ADP_RECORDER_SPOOL="$HANDOFF_SPOOL" ADP_RECORDER_ID="demo-recorder"     node "$RECORDER_MAIN" "$@"
+}
+
+# Claude Code's own `--output-format stream-json` shape. Written to a file and
+# `cat`-ed rather than mocked: the reader under test is the one that parses a
+# real harness's stream, and a shape invented here would prove nothing.
+cat >"$WORKDIR/harness-a.jsonl" <<'STREAM'
+{"type":"system","subtype":"init","session_id":"demo-a","model":"claude-opus-5"}
+{"type":"assistant","message":{"model":"claude-opus-5","content":[{"type":"text","text":"I will add the health endpoint and a test."}],"usage":{"input_tokens":1800,"output_tokens":220}}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"npm test"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"1 failing"}]}}
+STREAM
+
+# `exit 3` is a harness that stopped without finishing, which is what a handoff
+# looks like from outside. #151 turns that into a *suspended* session with a
+# checkpoint to resume from, rather than one that looks finished.
+info "$ adp-recorder wrap --repo ${OWNER}/${REPO} -- claude --output-format stream-json"
+recorder_ wrap --repo "${OWNER}/${REPO}" --dir "$CLONE"   -- sh -c "cat '$WORKDIR/harness-a.jsonl'; exit 3" >"$WORKDIR/handoff-a.log" 2>&1 || true
+ok "claude-code stopped mid-task — suspended, with a checkpoint to resume from"
+
+# Codex's own `codex exec --json` shape, from its exec_events schema.
+cat >"$WORKDIR/harness-b.jsonl" <<'STREAM'
+{"type":"thread.started","thread_id":"demo-b"}
+{"type":"item.completed","item":{"id":"m1","type":"agent_message","text":"Picking up where the last session left off."}}
+{"type":"item.started","item":{"id":"c1","type":"command_execution","command":"npm test","status":"in_progress"}}
+{"type":"item.completed","item":{"id":"c1","type":"command_execution","aggregated_output":"12 passed","exit_code":0,"status":"completed"}}
+{"type":"turn.completed","usage":{"input_tokens":900,"cached_input_tokens":0,"output_tokens":40,"reasoning_output_tokens":0}}
+STREAM
+
+info "$ adp-recorder wrap --harness codex --continue -- codex exec --json"
+recorder_ wrap --repo "${OWNER}/${REPO}" --dir "$CLONE" --harness codex --continue   -- cat "$WORKDIR/harness-b.jsonl" >"$WORKDIR/handoff-b.log" 2>&1   || { cat "$WORKDIR/handoff-b.log"; die "the codex session did not record"; }
+ok "codex picked it up — one continuous history, and nothing called resume by hand"
+
+# Which session finished the work, read out of the recorder's own spool. There
+# is no session-list route, and that is fine: the recorder is the thing that
+# opened the session, so its spool is where the id honestly lives — asking the
+# server to list them would be inventing a route to avoid reading a file.
+HANDOFF_SESSION=$(node -e '
+  const fs = require("fs"), path = require("path");
+  let found = "";
+  for (const f of fs.readdirSync(process.argv[1])) {
+    if (!f.endsWith(".meta.json")) continue;
+    try {
+      const m = JSON.parse(fs.readFileSync(path.join(process.argv[1], f), "utf8"));
+      if (m.harness === "codex" && m.sessionId) found = m.sessionId;
+    } catch { /* a half-written spool file is not a reason to fail the demo */ }
+  }
+  process.stdout.write(found);
+' "$HANDOFF_SPOOL" 2>/dev/null) || true
+
+if [ -n "$HANDOFF_SESSION" ]; then
+  LINEAGE=$(api GET "/api/adp/repos/${OWNER}/${REPO}/sessions/${HANDOFF_SESSION}")
+  echo "$LINEAGE" >"$WORKDIR/lineage.json"
+  say ""
+  say "  ${c_b}The lineage${c_0} — walked back from the session that finished the work:"
+  node -e '
+const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+const chain = s.lineage || [];
+if (chain.length < 2) { console.log("    (only one session — the handoff did not link)"); process.exit(1); }
+chain.forEach((link, i) => {
+  console.log("    " + (i > 0 ? "  ↳ resumed as " : "") + "[1m" + link.harness + "[0m  " +
+    "[2m" + link.id.slice(0, 8) + " · " + link.status + "[0m");
+});
+console.log("");
+console.log("    [2mNothing called resume by hand. The recorder saw one harness stop and the");
+console.log("    next one start, and linked them — which is what makes this portability");
+console.log("    rather than a script that can call two endpoints.[0m");
+' "$WORKDIR/lineage.json" || die "#160: the two harnesses did not form one lineage"
+  # "One continuous *signed* history" is two claims, and the lineage above is
+  # only the first. This is the second: every session in the chain verifies —
+  # recomputed from the stored rows by this request, not taken on trust.
+  #
+  # Verified per *session* rather than per run, because these sessions belong to
+  # no run: a developer handing work between their own harnesses is not an
+  # orchestrated fan-out, and #152's session-scoped endpoint exists for exactly
+  # that case.
+  say ""
+  say "  ${c_b}Verification${c_0} — each chain recomputed from the stored rows, just now:"
+  HANDOFF_OK=1
+  for link in $(node -e '
+const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+process.stdout.write((s.lineage || []).map((l) => l.id + ":" + l.harness).join(" "));
+' "$WORKDIR/lineage.json"); do
+    link_id="${link%%:*}"; link_harness="${link##*:}"
+    V=$(api GET "/api/adp/repos/${OWNER}/${REPO}/sessions/${link_id}/verify") || V=""
+    node -e '
+const v = JSON.parse(process.argv[1] || "{}");
+const row = (t) => console.log("    [2m" + process.argv[2].padEnd(13) + "[0m" + t);
+if (v.ok !== true) { row("does not verify — " + (v.reason || "unknown")); process.exit(1); }
+row(v.verified_to_seq + " events, chain " + (v.head || "").slice(0, 12) + "…" +
+  (v.not_retained ? "  (" + v.not_retained + " payloads aged out)" : ""));
+' "$V" "$link_harness" || HANDOFF_OK=0
+  done
+  [ "$HANDOFF_OK" = "1" ] || die "#160: a session in the cross-harness chain does not verify"
+  ok "verified: one continuous signed history across claude-code and codex"
+  if [ "$INTERACTIVE" = "1" ] && [ -d server/web/dist ]; then
+    info "see it drawn: http://localhost:${PORT}/ui/ → Runs → the session → Lineage"
+  fi
+else
+  die "#160: could not find the resumed session"
+fi
+
+# ---------------------------------------------------------------------------
 step "What you can now read back"
 
 BUNDLE=$(api GET "/api/adp/repos/${OWNER}/${REPO}/evidence/${HEAD_SHA}")
@@ -352,6 +481,10 @@ say ""
 say "${c_g}${c_b}Done.${c_0} You landed a policy-compliant change with ordinary git and gh,"
 say "watched ADP refuse it while it lacked evidence — and again when the agent"
 say "tried to approve itself — and read the signed record of why it was allowed."
+say ""
+say "And you watched one task pass between two harnesses as one continuous signed"
+say "history. That is the thing a forge with signed commits cannot do: the record"
+say "survives the tool, because it was never the tool's to keep."
 say ""
 say "  Run your own instance   ${c_c}docs/self-hosting.md${c_0}"
 say "  What the contract promises   ${c_c}docs/api-compatibility.md${c_0}"
