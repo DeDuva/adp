@@ -6,6 +6,8 @@
     "DELETE /api/v3/repos/{owner}/{repo}/hooks/{hookId}",
     "DELETE /api/v3/repos/{owner}/{repo}/mirror",
     "GET /api/adp/gate-jobs/{id}/checkout",
+    "GET /api/adp/github-app",
+    "GET /api/adp/github-app/callback",
     "GET /api/adp/orgs",
     "GET /api/adp/orgs/{orgId}",
     "GET /api/adp/orgs/{orgId}/audit-log",

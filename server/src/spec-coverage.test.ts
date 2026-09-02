@@ -31,6 +31,14 @@ const UNDOCUMENTED: { pattern: RegExp; why: string }[] = [
     why: "inbound receiver for GitHub's own webhook shape; the payload contract is GitHub's, not ADP's",
   },
   {
+    pattern: /^\/github-app\/new$/,
+    why:
+      "HTML, not an API. GitHub accepts an App manifest only as a form POST from a browser to " +
+      "github.com/settings/apps/new — there is no API for it, and that is what lets a self-hosted " +
+      "instance create its own App with no hosted control plane in the middle. The credential-bearing " +
+      "half of the flow is /api/adp/github-app/callback, which is in the spec",
+  },
+  {
     pattern: /\.git(\/|$)/,
     why: "git smart-HTTP wire protocol, specified by git itself and proxied verbatim to git-http-backend",
   },

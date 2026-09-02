@@ -442,7 +442,7 @@ ADP's verdict a required check without ADP becoming the merge authority.
 
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
-| 5-9 | A GitHub App, created from a manifest by the instance itself | #232 | not started | Replaces the personal access token and the hand-made webhook 5-5 describes. The manifest flow keeps this available to a self-hosted instance: GitHub creates the App in the user's own org and hands the credentials back, so it needs no hosted control plane |
+| 5-9 | A GitHub App, created from a manifest by the instance itself | #232 | shipped | Replaces the personal access token and the hand-made webhook 5-5 describes. The manifest flow keeps this available to a self-hosted instance: GitHub creates the App in the user's own org and hands the credentials back, so it needs no hosted control plane. It also unblocks 5-10 and 5-11, which a PAT cannot reach at all — GitHub's Checks API refuses one |
 | 5-10 | Publish `ADP / change record` as a check run | #233 | not started | Intent, producer, trajectory and evidence, on the pull request, where the work already is. This is the whole additive claim made visible |
 | 5-11 | Publish `ADP / policy` as a check run | #234 | not started | Branch protection then enforces it. GitHub stays the merge authority and will not merge until ADP agrees, which is the resolution of the seam this phase opens on |
 

@@ -92,6 +92,11 @@
 // not part of what is signed": the signed provenance keeps the token's claim,
 // because a change is signed at push time and the trajectory arrives out of
 // band.
+//
+// #232 adds two operations: GET /api/adp/github-app and its manifest callback.
+// Additive, and the callback is deliberately unauthenticated — it is reachable
+// only with a state this instance signed, the code it carries is single-use at
+// GitHub's end, and it refuses once an App exists.
 export const API_VERSION = "0.7.0";
 
 export const API_VERSION_HEADER = "ADP-API-Version";

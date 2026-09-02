@@ -1864,6 +1864,93 @@ paths:
             not be produced — the branch's history was rewritten, the merge is
             already reverted, or the revert conflicts (`conflicts` names the
             paths).
+  /api/adp/github-app:
+    get:
+      x-required-scope: "repo:read"
+      summary: >
+        #232: the GitHub App this instance created for itself, if it has one.
+        Setting up companion mode used to cost a personal access token and a
+        webhook made by hand in GitHub's settings; an App replaces both, and
+        it is the only credential GitHub's Checks API accepts at all, which is
+        what the `ADP / change record` and `ADP / policy` check runs need.
+
+        Never returns a secret, not even truncated: the private key can mint an
+        installation token for every repository the App is installed on, and a
+        read route that can leak one is a read route somebody eventually points
+        at a log.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The instance's GitHub App
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitHubApp"
+        "401":
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: >
+            This instance has no GitHub App. Not a misconfiguration — it is an
+            instance that has not run the manifest flow, and the body names
+            where to start it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/adp/github-app/callback:
+    get:
+      summary: >
+        #232: where GitHub redirects after the App manifest is converted,
+        carrying a single-use code this instance exchanges for the App's
+        credentials.
+
+        Deliberately unauthenticated, and safe to be. It is reachable only with
+        a `state` this instance signed, the code is single-use and short-lived
+        at GitHub's end, and it refuses outright once an App exists — so the
+        worst a stranger can do with it is spend a code they do not have.
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: GitHub's single-use manifest conversion code
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The signed state issued by GET /github-app/new
+      responses:
+        "200":
+          description: The App GitHub created, and where to install it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitHubAppCreated"
+        "400":
+          description: Missing or expired state, or no conversion code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: This instance already has a GitHub App
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: GitHub refused the manifest conversion
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/adp/orgs:
     post:
       x-required-scope: "admin"
@@ -4047,6 +4134,42 @@ components:
         events:
           type: array
           items: { $ref: "#/components/schemas/TrajectoryEvent" }
+    GitHubApp:
+      type: object
+      required: [app_id, slug, name, html_url, client_id, created_at]
+      properties:
+        app_id:
+          type: string
+          description: GitHub's numeric app id, as a string — it is the JWT `iss` claim, not a number anything counts with.
+        slug:
+          type: string
+        name:
+          type: string
+        html_url:
+          type: string
+        client_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    GitHubAppCreated:
+      type: object
+      required: [app_id, slug, name, html_url, install_url]
+      properties:
+        app_id:
+          type: string
+        slug:
+          type: string
+        name:
+          type: string
+        html_url:
+          type: string
+        install_url:
+          type: string
+          description: >
+            Where the installer goes next. Named rather than redirected to: a
+            redirect out of an API response is a surprise for the agent calling
+            it and a convenience only for a browser.
     OrgSummary:
       type: object
       required: [id, name, kill_switch]
