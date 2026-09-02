@@ -383,9 +383,10 @@ about their worth: those are a differentiator, a durability measurement and thre
 questions, and none of them changes whether anyone adopts. Numbers here are identity, not sequence
 — the same rule that stops item numbers being reused under 1a.
 
-**The items below carry no issue numbers yet.** That is a debt against this file's own rule and it
-is recorded rather than hidden: the phase was written before the issues were filed, and the first
-change to land against any item files it.
+**Every item below was filed on 2026-09-02**, as #224–#242 in item order, so this file's own rule
+holds over the largest phase in it: `check-docs` compares each `#NNN` here against its real state,
+and a phase whose items named no issue would have left that guard inert over exactly the work most
+likely to drift.
 
 ### 5a — The record covers GitHub's own lifecycle
 
@@ -395,11 +396,11 @@ the issue by title.
 
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
-| 5-1 | `pull_request` ingest — a GitHub pull request becomes a shadow proposal carrying its upstream number and URL | — | not started | Every other item in this release hangs off the proposal row existing |
-| 5-2 | Merge ingest — a merged pull request writes a real `proposal.merge` operation | — | not started | What makes `adp undo` reach a GitHub-native merge. The operation must carry the before/after state `undo.ts` reads, or it refuses for the second reason instead of the first |
-| 5-3 | `issues` ingest — a GitHub issue becomes an intent with an upstream identity | — | not started | `intents` needs a column for the upstream reference; today `source` distinguishes `issue` from `api` but nothing records *which* issue, on whose host |
-| 5-4 | `pull_request_review` ingest — a GitHub approval satisfies `one_approval` | — | not started | Otherwise the policy in 5c refuses every mirrored pull request on a requirement GitHub already met, which is worse than not publishing it |
-| 5-5 | Poll what a webhook cannot reach | — | not started | Inbound needs a publicly reachable endpoint; `server/src/core/mirror-poller.ts` drains outbound only. A poller synthesising the same ingest events needs no public URL, and is what makes companion mode work from a laptop |
+| 5-1 | `pull_request` ingest — a GitHub pull request becomes a shadow proposal carrying its upstream number and URL | #224 | not started | Every other item in this release hangs off the proposal row existing |
+| 5-2 | Merge ingest — a merged pull request writes a real `proposal.merge` operation | #225 | not started | What makes `adp undo` reach a GitHub-native merge. The operation must carry the before/after state `undo.ts` reads, or it refuses for the second reason instead of the first |
+| 5-3 | `issues` ingest — a GitHub issue becomes an intent with an upstream identity | #226 | not started | `intents` needs a column for the upstream reference; today `source` distinguishes `issue` from `api` but nothing records *which* issue, on whose host |
+| 5-4 | `pull_request_review` ingest — a GitHub approval satisfies `one_approval` | #227 | not started | Otherwise the policy in 5c refuses every mirrored pull request on a requirement GitHub already met, which is worse than not publishing it |
+| 5-5 | Poll what a webhook cannot reach | #228 | not started | Inbound needs a publicly reachable endpoint; `server/src/core/mirror-poller.ts` drains outbound only. A poller synthesising the same ingest events needs no public URL, and is what makes companion mode work from a laptop |
 
 **5-5 is the item that decides who can adopt at all, and it was nearly missed.** `adp init`
 configures the mirror and then prints a webhook URL and a secret for a human to paste into GitHub's
@@ -415,9 +416,9 @@ provenance blocks that differ only in `via`.
 
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
-| 5-6 | Carry `harness`, `model` and `session_id` through the push path | — | not started | A defect against 1-1 rather than new work — see below |
-| 5-7 | Resolve the GitHub author to a real identity | — | not started | Mirror inbound attributes every commit to `mirror:github:<owner>/<repo>`. `external_identities` is already `(issuer, subject)`-keyed and provider-generic (`server/src/db/schema.ts`), so a GitHub link needs no new table |
-| 5-8 | Observe the model rather than trusting the token's claim | — | not started | A harness can change model inside one run, and the session events already record it per event. 2-4 prices a decision on this field; an asserted `--model` is the wrong thing to price it on |
+| 5-6 | Carry `harness`, `model` and `session_id` through the push path | #229 | not started | A defect against 1-1 rather than new work — see below |
+| 5-7 | Resolve the GitHub author to a real identity | #230 | not started | Mirror inbound attributes every commit to `mirror:github:<owner>/<repo>`. `external_identities` is already `(issuer, subject)`-keyed and provider-generic (`server/src/db/schema.ts`), so a GitHub link needs no new table |
+| 5-8 | Observe the model rather than trusting the token's claim | #231 | not started | A harness can change model inside one run, and the session events already record it per event. 2-4 prices a decision on this field; an asserted `--model` is the wrong thing to price it on |
 
 **5-6 is a bug, and finding it is the argument for having reviewed the implementation rather than
 the positioning.** `AuthenticatedIdentity` carries `harness`, `model` and `sessionId`
@@ -441,9 +442,9 @@ ADP's verdict a required check without ADP becoming the merge authority.
 
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
-| 5-9 | A GitHub App, created from a manifest by the instance itself | — | not started | Replaces the personal access token and the hand-made webhook 5-5 describes. The manifest flow keeps this available to a self-hosted instance: GitHub creates the App in the user's own org and hands the credentials back, so it needs no hosted control plane |
-| 5-10 | Publish `ADP / change record` as a check run | — | not started | Intent, producer, trajectory and evidence, on the pull request, where the work already is. This is the whole additive claim made visible |
-| 5-11 | Publish `ADP / policy` as a check run | — | not started | Branch protection then enforces it. GitHub stays the merge authority and will not merge until ADP agrees, which is the resolution of the seam this phase opens on |
+| 5-9 | A GitHub App, created from a manifest by the instance itself | #232 | not started | Replaces the personal access token and the hand-made webhook 5-5 describes. The manifest flow keeps this available to a self-hosted instance: GitHub creates the App in the user's own org and hands the credentials back, so it needs no hosted control plane |
+| 5-10 | Publish `ADP / change record` as a check run | #233 | not started | Intent, producer, trajectory and evidence, on the pull request, where the work already is. This is the whole additive claim made visible |
+| 5-11 | Publish `ADP / policy` as a check run | #234 | not started | Branch protection then enforces it. GitHub stays the merge authority and will not merge until ADP agrees, which is the resolution of the seam this phase opens on |
 
 **5-11 is the item that makes mirror mode's enforcement story true rather than aspirational**, and
 it is deliberately a *check* rather than a merge gate of our own. Asking a developer to choose
@@ -457,10 +458,11 @@ has a reader.
 
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
-| 5-12 | Publish the CLI | — | not started | `cli/package.json` is `"private": true` and the documented install is a source build, so ADP cannot currently be obtained without cloning it. Everything else in this phase is a bigger front door on a building with no road |
-| 5-13 | A Gemini CLI reader | — | not started | `adp connect gemini-cli` works and gets the commit-trailer half; turn-level trajectory is the documented degraded mode. Harness independence is the strategic claim, and two readers out of three connected harnesses is where it is measured |
-| 5-14 | Connect finishes the job | — | not started | Claude Code is told to add a `SessionStart` hook by hand; Codex leaves a wrapper the developer has to remember to invoke instead of their normal command. Both are `connect` stopping one step short of the thing it exists to do |
-| 5-15 | Companion mode needs no ADP git remote, and no command infers one | — | not started | `adp init` adds an `adp` remote and `adp connect` finds the repository by looking for it. That composes today, and it composes by coincidence: the repository's identity is *derived* from a remote rather than *recorded*, so renaming the remote breaks every subsequent command. In companion mode there is nothing to push to ADP at all, and the remote should not exist |
+| 5-12 | Publish the CLI | #235 | not started | `cli/package.json` is `"private": true` and the documented install is a source build, so ADP cannot currently be obtained without cloning it. Everything else in this phase is a bigger front door on a building with no road |
+| 5-13 | A Gemini CLI reader | #236 | not started | `adp connect gemini-cli` works and gets the commit-trailer half; turn-level trajectory is the documented degraded mode. Harness independence is the strategic claim, and two readers out of three connected harnesses is where it is measured |
+| 5-14 | Connect finishes the job | #237 | not started | Claude Code is told to add a `SessionStart` hook by hand; Codex leaves a wrapper the developer has to remember to invoke instead of their normal command. Both are `connect` stopping one step short of the thing it exists to do |
+| 5-15 | Companion mode needs no ADP git remote, and no command infers one | #238 | not started | `adp init` adds an `adp` remote and `adp connect` finds the repository by looking for it. That composes today, and it composes by coincidence: the repository's identity is *derived* from a remote rather than *recorded*, so renaming the remote breaks every subsequent command. In companion mode there is nothing to push to ADP at all, and the remote should not exist |
+| 5-20 | `gh repo create` resolves the owner through an endpoint the server does not serve | #196 | not started | It fails against ADP, and it fails on the first-contact path: creating the repository is step one of every walkthrough that does not start from `adp init`. Filed 2026-08-30 and, until now, in no phase — which this file's own rule forbids and `check-docs` cannot catch, because it validates the numbers that are present rather than noticing an issue that names none |
 
 **5-15 is the residual of a defect the review reported as larger than it is**, and the correction
 is worth recording because the shape recurs. It read `init` and `connect` as not composing at all;
@@ -486,10 +488,10 @@ to work out.
 
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
-| 5-16 | Portability — a repository's record can leave the instance holding it | — | not started | See below. This is the item without which every adoption path in this phase is a trap |
-| 5-17 | Run lineage — `parent_run` plus a relationship of `retry`, `continue`, `reimplement` or `supersede` | — | not started | Sessions model "Codex continued Claude's unfinished work" well and "GPT-8 independently reimplemented GPT-6's bad change" not at all. They are different historical facts and only the first has a column |
-| 5-18 | `adp reimplement <sha>` | — | not started | Recover the intent, find the base before the change, open a related run, record the new trajectory, run the same evals, compare, and offer the replacement. Every ingredient exists; the verb does not |
-| 5-19 | Bake-off and reimplement launch the harness | — | not started | `adp bakeoff` opens the candidate set and the labelled runs and then prints instructions for wiring each harness in by hand. Powerful substrate, and the assembly is the user's |
+| 5-16 | Portability — a repository's record can leave the instance holding it | #239 | not started | See below. This is the item without which every adoption path in this phase is a trap |
+| 5-17 | Run lineage — `parent_run` plus a relationship of `retry`, `continue`, `reimplement` or `supersede` | #240 | not started | Sessions model "Codex continued Claude's unfinished work" well and "GPT-8 independently reimplemented GPT-6's bad change" not at all. They are different historical facts and only the first has a column |
+| 5-18 | `adp reimplement <sha>` | #241 | not started | Recover the intent, find the base before the change, open a related run, record the new trajectory, run the same evals, compare, and offer the replacement. Every ingredient exists; the verb does not |
+| 5-19 | Bake-off and reimplement launch the harness | #242 | not started | `adp bakeoff` opens the candidate set and the labelled runs and then prints instructions for wiring each harness in by hand. Powerful substrate, and the assembly is the user's |
 
 **5-16 exists because of what hosting would otherwise commit us to, and it is the item this phase
 would most regret deferring.** `PUBLIC_URL` is part of the signed record rather than a display
