@@ -34,7 +34,7 @@ It ends where the point is. The merge is **refused** while the change has no gat
 approval, and allowed once it has both. You then read the signed evidence bundle and the operation
 log that record why.
 
-Needs Docker and Node 22 (`make doctor` checks). Under five minutes.
+Needs Docker and Node 22 (`make doctor` checks). About a minute, most of it the first `npm ci`.
 
 Liked it and want one that is still there tomorrow?
 
@@ -359,8 +359,13 @@ otherwise be a raw `curl`. Lives in `cli/`, built and installed separately from 
 
 ```bash
 cd cli && npm ci && npm run build
-node dist/index.js login --server https://adp.example.com --token <token>   # writes ~/.adp/config.json
+npm link                                                    # puts `adp` on your PATH
+adp login --server https://adp.example.com --token <token>  # writes ~/.adp/config.json
 ```
+
+`npm link` is what makes the rest of this section spellable as written. The package declares a
+`bin` and is `private`, so it is never published to npm — without the link, every `adp …` below is
+`node cli/dist/index.js …`. Undo it with `npm unlink -g @adp/cli`.
 
 | Command | Wraps |
 |---|---|
@@ -412,18 +417,18 @@ Lives in `recorder/`, built like the CLI, and needs only `repo:write` — the sc
 token already carries, so it runs as the developer rather than as infrastructure:
 
 ```bash
-cd recorder && npm ci && npm run build
+cd recorder && npm ci && npm run build && npm link   # puts `adp-recorder` on your PATH
 export ADP_SERVER_URL=https://adp.example.com ADP_TOKEN=<token>
 
 # follow a transcript the harness is already writing — it needs no flag and no
 # knowledge that anything is watching
-node dist/main.js tail --repo <owner>/<repo> --file ~/.claude/projects/.../session.jsonl
+adp-recorder tail --repo <owner>/<repo> --file ~/.claude/projects/.../session.jsonl
 
 # or run the harness through it
-node dist/main.js wrap --repo <owner>/<repo> --harness codex -- codex exec --json "fix the flake"
+adp-recorder wrap --repo <owner>/<repo> --harness codex -- codex exec --json "fix the flake"
 
 # and finish anything a previous recorder left undelivered
-node dist/main.js flush
+adp-recorder flush
 ```
 
 **The session lifecycle needs nothing typed.** A session opens when the recorder attaches, bound to
@@ -439,7 +444,7 @@ machine's last suspended session in the repository left off, across harnesses �
 that results was assembled by nobody:
 
 ```bash
-node dist/main.js wrap --repo <owner>/<repo> --harness codex --continue -- codex exec --json "carry on"
+adp-recorder wrap --repo <owner>/<repo> --harness codex --continue -- codex exec --json "carry on"
 ```
 
 **Which harnesses are covered.** A reader translates one harness's private event names into ADP's

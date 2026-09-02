@@ -130,7 +130,13 @@ for pkg in $ADP_DEP_PACKAGES; do
     ;;
   missing)
     if [ "$pkg" = "server" ]; then
-      fail "server/node_modules missing"
+      # A warning, not a failure, since 2026-09-01. The README sends a reader
+      # here to answer "have I got Docker and Node 22" — and on a fresh clone
+      # this line failed the whole command while both of those passed, over a
+      # directory that no command has yet had the chance to create. `make demo`
+      # installs it, `make deps` installs it, `make test-all` refuses without
+      # it; doctor is the one that is only ever asked a question.
+      warn "server/node_modules missing — nothing can run until it is installed"
     elif [ "$pkg" = "server/web" ]; then
       warn "server/web/node_modules missing — the UI will not build"
       hint "main.ts silently skips serving /ui/* when server/web/dist is absent, so"

@@ -85,12 +85,31 @@ trap cleanup EXIT INT TERM
 # ---------------------------------------------------------------------------
 say ""
 say "${c_b}ADP — the agent-native forge${c_0}"
-say "${c_dim}A five-minute test drive. Nothing is installed; everything is torn down at the end.${c_0}"
+say "${c_dim}About a minute. Nothing is installed; everything is torn down at the end.${c_0}"
 
 step "Bringing up an ephemeral instance"
 
 command -v docker >/dev/null 2>&1 || die "docker is required (it runs the throwaway Postgres). See 'make doctor'."
 command -v node   >/dev/null 2>&1 || die "node 22+ is required. See 'make doctor'."
+
+# A fresh clone has no dependency trees, and this is the first command the
+# README, the landing page and `make help` all point a visitor at. Without this
+# the demo died eight seconds in on `sh: 1: tsx: not found`, reported as
+# "migrations failed" — the exact failure §A worktree per task is written
+# around, naming neither the cause nor the remedy, at the one moment where the
+# reader has no context to guess from.
+#
+# It installs rather than refusing with a hint, which is the opposite of what
+# `local.sh` does with the same check, and the difference is the audience. The
+# README promises *one* command; someone evaluating ADP has not agreed to
+# debug it yet. The recorder build below already installs its own tree on the
+# same reasoning, so this is that decision applied consistently rather than a
+# new one.
+if [ ! -d server/node_modules ]; then
+  info "installing the server's dependencies (first run in this checkout)"
+  npm ci --prefix server >"$WORKDIR/deps.log" 2>&1 ||
+    { tail -20 "$WORKDIR/deps.log"; die "could not install the server's dependencies — try 'make deps'"; }
+fi
 
 if [ -f .env.test ]; then
   info "reusing the stack you already have up"
@@ -341,6 +360,8 @@ STREAM
 # looks like from outside. #151 turns that into a *suspended* session with a
 # checkpoint to resume from, rather than one that looks finished.
 info "$ adp-recorder wrap --repo ${OWNER}/${REPO} -- claude --output-format stream-json"
+  info "  ${c_dim}↳ the harness's own stream shape, replayed from a fixture — the reader,${c_0}"
+  info "  ${c_dim}  the session lifecycle and the chain below are the real ones${c_0}"
 recorder_ wrap --repo "${OWNER}/${REPO}" --dir "$CLONE"   -- sh -c "cat '$WORKDIR/harness-a.jsonl'; exit 3" >"$WORKDIR/handoff-a.log" 2>&1 || true
 ok "claude-code stopped mid-task — suspended, with a checkpoint to resume from"
 
@@ -354,6 +375,7 @@ cat >"$WORKDIR/harness-b.jsonl" <<'STREAM'
 STREAM
 
 info "$ adp-recorder wrap --harness codex --continue -- codex exec --json"
+  info "  ${c_dim}↳ replayed the same way, from codex exec --json's own event schema${c_0}"
 recorder_ wrap --repo "${OWNER}/${REPO}" --dir "$CLONE" --harness codex --continue   -- cat "$WORKDIR/harness-b.jsonl" >"$WORKDIR/handoff-b.log" 2>&1   || { cat "$WORKDIR/handoff-b.log"; die "the codex session did not record"; }
 ok "codex picked it up — one continuous history, and nothing called resume by hand"
 
@@ -435,17 +457,30 @@ say "  ${c_b}The evidence bundle${c_0} — signed, and bound to the change rathe
 node -e '
 const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
 const p = (b.change && b.change.provenance) || {};
-const g = (b.gates || [])[0] || {};
+// Every gate, not gates[0]. The bundle is sorted newest-first and `sbom` is
+// generated at merge — after the `test` result the visitor just watched unblock
+// the merge — so taking the first one deterministically showed the one gate
+// they had nothing to do with, and hid the one whose absence caused the 422
+// three steps earlier. The closing argument here is: read the signed record of
+// WHY this was allowed. So the record has to name the reason.
+//
+// (No apostrophes in this block. It is the body of a node -e script inside
+// single quotes, and one of them silently ended the string.)
+const gates = b.gates || [];
 const row = (k, v) => console.log("    \x1b[2m" + k.padEnd(11) + "\x1b[0m" + v);
 const opt = (k, v) => v && row(k, v);
 row("commit", b.git_sha.slice(0, 12));
 row("actor", [p.kind, p.principal].filter(Boolean).join(" ") || "(unattributed)");
 opt("harness", [p.harness, p.model].filter(Boolean).join(" / "));
 opt("session", p.session_id);
-row("gate", g.name + ": " + g.status + (g.summary ? " — " + g.summary : ""));
+if (gates.length === 0) row("gate", "(none)");
+gates.forEach((g, i) => {
+  row(i === 0 ? "gates" : "", g.name + ": " + g.status + (g.summary ? " — " + g.summary : ""));
+});
 row("signature", b.change && b.change.signature
   ? String(b.change.signature).slice(0, 32) + "…" : "(unsigned)");
-row("attested", g.envelope ? "DSSE envelope over the gate result" : "(no envelope)");
+row("attested", gates.some((g) => g.envelope)
+  ? "DSSE envelope over each gate result" : "(no envelope)");
 ' "$WORKDIR/evidence.json" || { info "(raw bundle)"; head -c 400 "$WORKDIR/evidence.json" | sed "s/^/    /"; say ""; }
 
 OPS=$(api GET "/api/adp/repos/${OWNER}/${REPO}/operations")

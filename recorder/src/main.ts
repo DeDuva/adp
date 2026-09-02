@@ -1,3 +1,9 @@
+#!/usr/bin/env node
+// The shebang is load-bearing: package.json declares `adp-recorder` as a
+// `bin`, so `npm link` / `npm i -g` symlink this file onto PATH and exec it
+// directly. Without it the kernel has no interpreter, the shell falls back
+// to running JavaScript as sh, and the command hangs with no output — which
+// is what it did, for as long as nothing documented how to install it.
 // `adp-recorder` — three verbs, and no fourth.
 //
 //   tail   follow a transcript the harness is writing, and record it

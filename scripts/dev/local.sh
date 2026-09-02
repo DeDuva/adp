@@ -21,7 +21,7 @@
 # got none of it.
 #
 # THE DEMO/INSTANCE SPLIT. `make demo` is ephemeral by design and correct to
-# be: it is a narrated five minutes that installs nothing and leaves nothing.
+# be: it is a narrated minute that installs nothing and leaves nothing.
 # The gap was that a visitor who liked it had nowhere to go but the Helm chart.
 # This is the same thing with a longer lifetime — the same server from source,
 # the same proxy, the same bootstrap — rather than a separate code path with
@@ -111,7 +111,16 @@ print_details() {
 
   section "your instance"
   info "API and git      https://localhost:${TLS_PORT}"
-  info "supervision UI   https://localhost:${TLS_PORT}/ui/"
+  # main.ts skips /ui/* entirely when server/web/dist is absent, and says so in
+  # a log line nobody running this has any reason to open. Printing the URL
+  # regardless meant a fresh checkout was handed a 404 as its first link. The
+  # UI is built during startup now (see cmd_up); this is the belt to that
+  # braces, and it matches what demo.sh has always done with the same URL.
+  if [ -d server/web/dist ]; then
+    info "supervision UI   https://localhost:${TLS_PORT}/ui/"
+  else
+    info "supervision UI   not built — 'npm run build --prefix server/web', then 'make local'"
+  fi
   info "plain HTTP       http://localhost:${HTTP_PORT}   (behind the proxy; gh will not use it)"
   info "database         postgres://adp:adp@localhost:${PG_PORT}/adp"
   info "logs             $STATE/server.log, $STATE/tls-proxy.log"
@@ -122,7 +131,12 @@ print_details() {
   info "With SSL_CERT_FILE exported as above:"
   printf '        export GH_HOST=localhost:%s\n' "$TLS_PORT"
   printf '        export GH_ENTERPRISE_TOKEN=%s\n' "$token"
-  printf '        gh repo create %s/widget\n' "$(grep '^ADP_ORG=' "$ENV_FILE" | cut -d= -f2-)"
+  # NOT `gh repo create`. That command resolves the owner through
+  # GET /api/v3/users/{owner} before it creates anything, that route is not
+  # served, and the README's compatibility table has listed it as unsupported
+  # all along — so the last line this script printed was a command guaranteed
+  # to 404, as the very first thing anyone did with their new instance.
+  printf '        gh api -X POST /repos/%s -f name=widget\n' "$(grep '^ADP_ORG=' "$ENV_FILE" | cut -d= -f2-)"
   echo
   info "Everything above is also written to $ENV_FILE — source it with:"
   printf '        set -a; . %s; set +a\n' "$ENV_FILE"
@@ -145,6 +159,15 @@ cmd_status() {
   if alive "$SERVER_PID_FILE"; then ok "server running on :${HTTP_PORT} (pid $(cat "$SERVER_PID_FILE"))"; else info "server not running"; up=1; fi
   if alive "$PROXY_PID_FILE"; then ok "TLS proxy running on :${TLS_PORT} (pid $(cat "$PROXY_PID_FILE"))"; else info "TLS proxy not running"; up=1; fi
   [ -f "$CERT" ] && ok "certificate at $CERT" || info "no certificate yet"
+  # The non-zero exit is the contract — `if make local-status` is how a script
+  # asks — but make renders it as a bare `*** Error 1`, which reads as this
+  # command having failed rather than as the answer it is. So say which it is
+  # before make gets the chance to.
+  if [ "$up" -ne 0 ]; then
+    echo
+    info "not up — 'make local' starts it. (This command exits 1 when anything is"
+    info "down, so it can be tested; the error make prints next is that answer.)"
+  fi
   return $up
 }
 
@@ -237,6 +260,22 @@ EOF
   else
     ( cd server && npm run migrate ) >"$STATE/migrate.log" 2>&1 \
       || { tail -20 "$STATE/migrate.log"; fail "migrations failed"; exit 1; }
+    # main.ts decides whether to serve /ui/* once, at boot, from whether
+    # server/web/dist exists — so an instance started before the UI was built
+    # serves a 404 there until it is restarted, however many times the UI is
+    # rebuilt underneath it. `make deps` installs web's tree and does not build
+    # it, which made "never" the default state of a fresh checkout.
+    #
+    # An evaluation instance without the supervision UI is missing the thing
+    # most worth evaluating, so this builds rather than warns. Only when it is
+    # absent: the build is ~4s and this is the persistent instance, not the
+    # ephemeral one, so paying it on every `make local` would be a tax on the
+    # restart path for no gain.
+    if [ ! -d server/web/dist ] && [ -d server/web/node_modules ]; then
+      info "building the supervision UI (first run in this checkout)"
+      npm run build --prefix server/web >"$STATE/web-build.log" 2>&1 \
+        || { tail -20 "$STATE/web-build.log"; fail "the supervision UI did not build"; exit 1; }
+    fi
     # setsid so the instance outlives this shell — that is what "persistent"
     # means here, and it is the one place this differs from demo.sh, whose
     # whole design is that nothing survives it.

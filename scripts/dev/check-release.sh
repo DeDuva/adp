@@ -70,10 +70,16 @@ chart_app=$(grep -oE '^appVersion: *"?[^"]+"?' helm/adp/Chart.yaml | sed 's/^app
 # ---------------------------------------------------------------------------
 # 3. The workspace packages.
 # ---------------------------------------------------------------------------
-# All four are `private: true` and none is published to npm, which is exactly why they
+# All five are `private: true` and none is published to npm, which is exactly why they
 # were left at 0.0.0 and why that went unnoticed. They still land in the image, in
 # `npm ls` output, and in anything that reads a manifest to report what is running.
-for pkg in server cli runner adapters; do
+#
+# `recorder` is in this list since 2026-09-01 and was not before: it was added to the
+# tree after this script was written, so it sat at 0.5.0 through the release that was
+# *about* it while everything else moved. Adding a package here is part of adding a
+# package to the repository — the whole point of this file is that no surface is
+# checked by remembering.
+for pkg in server cli runner adapters recorder; do
 	pkg_version=$(grep -m1 -oE '"version": *"[^"]+"' "$pkg/package.json" |
 		grep -oE '"[^"]+"$' | tr -d '"')
 	[ "$pkg_version" = "$version" ] ||
@@ -86,6 +92,54 @@ for pkg in server cli runner adapters; do
 	[ "$lock_version" = "$version" ] ||
 		bad "$pkg/package-lock.json is $lock_version, api-version.ts says $version."
 done
+
+# ---------------------------------------------------------------------------
+# 3b. The published site.
+# ---------------------------------------------------------------------------
+# `docs/html/` is deployed straight from the tree by pages.yml on every push to main,
+# so a version string there is a *published* version string — the first one a visitor
+# reads, and the only one they read before deciding whether to clone.
+#
+# It went stale immediately and invisibly. On 2026-09-01 all three pages said
+# "Spec 0.5.0" while the server served 0.6.0, and both gates that could have caught it
+# passed: this script did not look at docs/html at all, and `make site` drives every
+# page in a real browser without reading a word of their content.
+#
+# Matched loosely on purpose. The masthead is `Spec X.Y.Z · MIT` on each page and the
+# prose is `<code>X.Y.Z</code>, served as <code>ADP-API-Version</code>`; pinning the
+# exact markup would turn a restyle into a release failure, so this asks the weaker and
+# more durable question: does any version-shaped string on a published page disagree
+# with what the server serves?
+site_pages=$(git ls-files 'docs/html/*.html' 'docs/html/**/*.html' 2>/dev/null || true)
+for page in $site_pages; do
+	# Every X.Y.Z that is introduced as a spec/contract version, in either spelling.
+	claimed=$(grep -oE '(Spec|spec|contract|currently)[^0-9]{0,40}[0-9]+\.[0-9]+\.[0-9]+' "$page" |
+		grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u)
+	for c in $claimed; do
+		[ "$c" = "$version" ] ||
+			bad "$page claims contract $c, api-version.ts says $version."
+	done
+done
+
+# ---------------------------------------------------------------------------
+# 3c. The image the Compose path deploys.
+# ---------------------------------------------------------------------------
+# docs/self-hosting.md §3 is one of two supported deployment paths, and the comment
+# above this line promises "the released image by default". It defaulted to v0.3.0
+# through two whole releases, so an operator who ran `docker compose up -d` without
+# `--build` got a server three contract versions behind every document describing it.
+#
+# The chart's appVersion was checked from the day this script existed; the compose
+# file's tag was the other half of the same claim and was never checked.
+compose_tag=$(grep -oE 'ADP_IMAGE:-ghcr\.io/deduva/adp:v?[0-9]+\.[0-9]+\.[0-9]+' deploy/docker-compose.yml |
+	grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)
+if [ -z "$compose_tag" ]; then
+	bad "deploy/docker-compose.yml no longer pins a versioned ADP_IMAGE default."
+	note "            That default is what an operator gets from 'docker compose up -d'."
+else
+	[ "$compose_tag" = "$version" ] ||
+		bad "deploy/docker-compose.yml deploys v$compose_tag, api-version.ts says $version."
+fi
 
 # ---------------------------------------------------------------------------
 # 4. The CHANGELOG entry.
@@ -171,4 +225,4 @@ if [ "$fail" -ne 0 ]; then
 	exit 1
 fi
 
-printf 'check-release: %s consistent across spec, chart, packages and CHANGELOG.\n' "$version"
+printf 'check-release: %s consistent across spec, chart, packages, site, compose and CHANGELOG.\n' "$version"

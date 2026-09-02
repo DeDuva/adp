@@ -27,6 +27,7 @@ import { registerSessionRoutes } from "./http-rest/sessions.js";
 import { registerRunRoutes } from "./http-rest/runs.js";
 import { registerMirrorRoutes } from "./http-rest/mirrors.js";
 import { registerActionsRoutes } from "./http-rest/actions.js";
+import { registerNotImplementedHandler } from "./http-rest/not-implemented.js";
 import { registerMirrorWebhookRoutes } from "./http-rest/mirror-webhook.js";
 import { registerCandidateSetRoutes } from "./http-rest/candidate-sets.js";
 import { registerWebhookRoutes } from "./http-rest/webhooks.js";
@@ -90,6 +91,11 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.addHook("onRequest", async (_req, reply) => {
     reply.header(API_VERSION_HEADER, API_VERSION);
   });
+
+  // Before the routes, so it is in place whatever registration order does.
+  // It serves no route — see not-implemented.ts on why that is the whole
+  // point — so it cannot shadow one.
+  registerNotImplementedHandler(app);
 
   registerIdentityRoutes(app, publicUrl);
   registerRepoRoutes(app, db, gitBackend, publicUrl);

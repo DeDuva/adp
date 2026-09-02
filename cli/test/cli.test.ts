@@ -526,6 +526,57 @@ describe("adp CLI", () => {
       logSpy.mockRestore();
     });
 
+    // The step whose absence was invisible: every line init printed succeeded,
+    // and then `adp connect` refused with "no git remote points at <server>"
+    // and `adp watch` described a repository nothing had ever been pushed to.
+    it("points the checkout at the repository it just created", async () => {
+      responder = ({ url, method }) => {
+        if (url === "/api/adp/orgs" && method === "POST") return { status: 201, body: { id: "org-1" } };
+        return { status: 201, body: { clone_url: "https://adp.example.com/acme/widget.git" } };
+      };
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      expect(await run(["init", "--repo", "acme/widget"])).toBe(0);
+
+      const remotes = execFileSync("git", ["remote", "-v"], { cwd: repo }).toString();
+      expect(remotes).toContain("adp");
+      expect(remotes).toContain("https://adp.example.com/acme/widget.git");
+
+      // And says so, including the push — the Next block used to jump straight
+      // to `adp watch`, skipping the one step that puts code on the server.
+      const out = logSpy.mock.calls.flat().join("\n");
+      expect(out).toContain("git push -u adp main");
+      logSpy.mockRestore();
+    });
+
+    // `origin` on a mirrored checkout is somebody's upstream, and a command
+    // that repoints it is a command that loses it.
+    it("never takes a remote name that is already in use", async () => {
+      execFileSync("git", ["remote", "add", "adp", "https://elsewhere.example.com/x.git"], { cwd: repo });
+      responder = () => ({ status: 201, body: { clone_url: "https://adp.example.com/acme/widget.git" } });
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      await run(["init", "--repo", "acme/widget"]);
+
+      const remotes = execFileSync("git", ["remote", "-v"], { cwd: repo }).toString();
+      expect(remotes).toContain("https://elsewhere.example.com/x.git");
+      expect(remotes).toContain("adp-origin\thttps://adp.example.com/acme/widget.git");
+      logSpy.mockRestore();
+    });
+
+    // The owner is inferred from the parent directory name when --repo is
+    // absent. That is a fine default and was a terrible thing to fail on
+    // silently: a bare "Not a member of this organization (HTTP 403)" named no
+    // org, no source for the name, and not the flag that overrides it.
+    it("says which organization it tried, where the name came from, and what overrides it", async () => {
+      responder = () => ({ status: 403, body: { message: "Not a member of this organization" } });
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await run(["init"])).not.toBe(0);
+      const out = errSpy.mock.calls.flat().join("\n");
+      expect(out).toContain("organization:");
+      expect(out).toContain("inferred from the directory");
+      expect(out).toContain("--repo");
+      errSpy.mockRestore();
+    });
+
     it("leaves an adp.yaml that is already there alone", async () => {
       writeFileSync(path.join(repo, "adp.yaml"), "gates: [mine]\n");
       responder = () => ({ status: 201, body: {} });

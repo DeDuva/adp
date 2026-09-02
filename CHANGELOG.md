@@ -16,6 +16,100 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## v0.6.0 — unreleased
 
+**The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran
+every command the README, the published site and the tooling tell a new user to run, in that order,
+against a fresh `git clone`. The product held up — the whole suite, 772 tests with zero skipped plus
+conformance and acceptance, went green in 2m39s on the first attempt. The path to it did not.
+
+**`make demo` failed eight seconds into a fresh clone.** `sh: 1: tsx: not found`, reported as
+`demo failed: migrations failed` — naming neither the cause nor the remedy, on the one command the
+README, the landing page and `make help` all point a visitor at. It never installed the server's
+dependencies, and the CI job that exists to keep this path working ran `npm ci --prefix server`
+immediately before it: the only caller of `make demo` that never walked a visitor's path was its
+own gate. The install moved into the demo, that step came out of CI, and the failure this
+repository already knew as `sh: 1: vitest: not found` is now closed at the front door too.
+
+**The published site advertised contract 0.5.0 while the server served 0.6.0** — three mastheads
+and one paragraph, deployed straight from the tree on every push to `main`. That was one defect
+wearing three hats: `recorder` was stamped 0.5.0 in the release that is *about* the recorder, and
+`deploy/docker-compose.yml` deployed `v0.3.0` under a comment promising the released image.
+`check-release.sh` reported "consistent" through all three, because it watched four surfaces where
+there were seven. It watches the site, the compose tag and the recorder now, and each new check was
+tested by breaking the thing it guards.
+
+**`make local` ended by telling you to run a command this project documents as unsupported.**
+`gh repo create` resolves the owner through `GET /api/v3/users/{owner}` before it creates anything,
+that route is not served, and the README's compatibility table has said so all along — so the last
+line the script printed was a guaranteed 404, as the first thing anyone did with a new instance. It
+prints `gh api -X POST /repos/{org} -f name=widget` now. It also advertised a supervision UI that
+returned 404: `main.ts` decides whether to serve `/ui/*` once, at boot, from whether
+`server/web/dist` exists, and `make deps` never built it. `make local` builds the UI when it is
+missing, and says so plainly when it is not there rather than printing a dead link.
+
+**`adp init` left a repository in a state `adp connect` refused.** #153 created the repo on the
+server and added no git remote; #154 then declined with "no git remote points at <server>". The two
+commands this release is about are meant to run back to back, and on the native path the second
+could not follow the first — while `adp watch`, which `init` recommended next, truthfully answered
+"no open pull request yet" about a repository nothing had ever been pushed to. `init` adds the
+remote (`adp`, never over an existing name — repointing someone's `origin` is how an upstream gets
+lost), names the push in its Next block, and says how git authenticates here, because
+"Username for https://…" is not a question whose answer is obvious.
+
+Its failure mode is answerable now too. With no `--repo`, `init` infers the owner from the *parent
+directory name*, which is a reasonable default and was a terrible thing to fail on silently: it
+reported `Not a member of this organization (HTTP 403)` and stopped, naming no organization, no
+source for the name, and not the flag that overrides it. The house standard was already set twice —
+`adp connect`'s refusal names both remedies, and the land-policy 422 names the command that
+satisfies each unmet requirement.
+
+**The README's promise about 404s held for one of the eleven families it lists.** "Unimplemented
+REST endpoints return 404 with a body naming the ADP equivalent. A broken call that explains itself
+costs an agent one turn" — kept by the Actions passthrough alone, while search, releases, users,
+branch protection and the rest returned Fastify's stock body, which names nothing. The worst case
+was `/users/{owner}`: the route whose absence breaks `gh repo create`, whose replacement the README
+knows and whose 404 did not say it.
+
+It is a **not-found handler and not a set of routes**, which is the only shape that could work here:
+`spec-coverage.test.ts` fails when the server serves a route `spec/openapi.yaml` does not describe,
+and it is right to — the spec is a published contract and a downstream consumer generates its client
+from it. Eleven families of stubs would have meant eleven families of spec entries for endpoints
+that do nothing, or a hole in the guard. A not-found handler serves no route, appears in no route
+table, and changes no generated client. The rule for adding an entry is in the file: name the ADP
+capability that replaces it, or do not add one.
+
+**`adp-recorder` declared a `bin` that could not execute.** `dist/main.js` had no shebang, so the
+symlink `npm link` and `npm i -g` create ran JavaScript as `sh` and hung with no output. Nothing had
+caught it because nothing documented installing it — the README showed `node dist/index.js` once and
+then wrote `adp …` and `adp-recorder …` about twenty times, with no bridge between the two. Both are
+`npm link` now, said where the build is, and `cli/`, `runner/` and `recorder/` have README files
+that point at the reference rather than copying it. The runner names how it is actually
+started — `adp runner up --here` — because it declares no `bin` at all.
+
+**Two blemishes at the demo's own ending.** The evidence bundle rendered `gates[0]`, and the bundle
+is sorted newest-first with `sbom` generated at merge — so the closing artifact deterministically
+showed the one gate the visitor had nothing to do with, and hid the `test` result whose absence
+caused the 422 three steps earlier. It prints every gate now. And the handoff section printed
+`$ adp-recorder wrap … -- claude --output-format stream-json` for a stream that is replayed from a
+fixture; the recorder, the readers, the session lifecycle and the chain are all real, and the
+comments in `demo.sh` were scrupulous about which is which, but comments are not what a visitor
+reads and a `$` prompt is a claim. Both lines are labelled.
+
+Smaller, and each a published claim that was not true: `make doctor` failed on a fresh clone over a
+missing dependency tree rather than over either prerequisite it is advertised as checking (a warning
+now — it is the one command that is only ever asked a question); the demo announced "a five-minute
+test drive" for a run that takes well under one; `make local-status` rendered "not running" as a
+bare `make: *** Error 1`; and `adp connect` ended by asking for a `.claude/settings.json` edit whose
+shape it never showed.
+
+Also cleared: `fast-uri` (high) and `hono` (moderate, via the MCP SDK) in the server's production
+dependencies, both by a semver-compatible `npm audit fix`. The *critical* that `npm ci` prints in
+every tree is `vitest`/`vite` and is dev-only. One production advisory is deliberately left:
+`drizzle-orm` <0.45.2, GHSA-gpj5-g38j-94v9, whose fix is a breaking upgrade across nine minors of
+the data layer. The exploit path is an identifier built from untrusted input, and this codebase
+builds none — all seven `sql.raw` call sites take a compile-time literal, and every user-supplied
+value on those paths is bound as a parameter. It is tracked in `PLAN.md` as 0-19 with that analysis,
+so it is picked up on the merits rather than waved through on an advisory ID inside a release branch.
+
 **`make demo` ends on the handoff: one task, two harnesses, one continuous signed
 history (#160).** D2 is the capability that most distinguishes ADP from a forge with
 signed commits, and the argument for it was entirely structural — the endpoints existed,
