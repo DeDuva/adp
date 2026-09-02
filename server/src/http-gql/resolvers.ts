@@ -16,7 +16,8 @@ import type { GqlContext } from "./context.js";
 import type { ResolverMap } from "./attach-resolvers.js";
 import type { GitBackend } from "../core/git-backend.js";
 import type { Signer } from "../core/signing.js";
-import { nativeProposalRefusal, pullRequestIngestEnabled } from "../core/pull-request-ingest.js";
+import { nativeProposalRefusal } from "../core/pull-request-ingest.js";
+import { upstreamIngestEnabled } from "../core/mirrors-lookup.js";
 
 type Repo = typeof repos.$inferSelect;
 type IssueRow = typeof issues.$inferSelect;
@@ -671,7 +672,7 @@ export function createResolvers(
         // (#224). It has to be on both: `gh pr create` goes through GraphQL,
         // so a guard only on /api/v3 would be a guard the incumbent client
         // walks straight past.
-        if (await pullRequestIngestEnabled(ctx.db, repo.id)) {
+        if (await upstreamIngestEnabled(ctx.db, repo.id)) {
           const refusal = nativeProposalRefusal(repo.owner, repo.name);
           throw new GraphQLError(`${refusal.message} — ${refusal.remedy}`, {
             extensions: { code: "FORBIDDEN", reason: refusal.reason },

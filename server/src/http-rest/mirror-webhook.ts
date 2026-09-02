@@ -11,6 +11,7 @@ import { recordPushedCommits } from "../core/change-recorder.js";
 import { decryptCredential, redactUrl } from "../core/mirror-crypto.js";
 import { ingestWorkflowRun, resolveMirrorReporter, type WorkflowRunPayload } from "../core/actions-ingest.js";
 import { ingestPullRequest, type PullRequestPayload } from "../core/pull-request-ingest.js";
+import { ingestIssue, type IssuePayload } from "../core/issue-ingest.js";
 
 // GitHub calls this route directly — it can't carry an ADP bearer token, so
 // trust here is entirely the HMAC signature over the raw body (verified
@@ -83,7 +84,7 @@ export function registerMirrorWebhookRoutes(
       return;
     }
 
-    let payload: { ref?: string; after?: string } & WorkflowRunPayload & PullRequestPayload;
+    let payload: { ref?: string; after?: string } & WorkflowRunPayload & PullRequestPayload & IssuePayload;
     try {
       payload = JSON.parse(rawBody.toString("utf8"));
     } catch {
@@ -134,6 +135,25 @@ export function registerMirrorWebhookRoutes(
           ? { recorded: `proposal#${result.number}`, change: result.change }
           : { skipped: result.reason }),
         ...(result.merge ? { merge: result.merge } : {}),
+      });
+      return;
+    }
+
+    // #226: the other half of "what was this for". An issue becomes an intent
+    // carrying which issue it is and on whose host, plus the issue row that
+    // makes `ADP-Intent: #92` in a commit message resolve to it.
+    if (event === "issues") {
+      const actorId = await resolveMirrorReporter(db, mirror.identityId);
+      if (!actorId) {
+        reply.send({ ok: true, skipped: "mirror has no ingest identity" });
+        return;
+      }
+      const result = await ingestIssue(db, repo, actorId, payload);
+      reply.send({
+        ok: true,
+        ...(result.recorded
+          ? { recorded: `issue#${result.number}`, change: result.change, intent_id: result.intentId }
+          : { skipped: result.reason }),
       });
       return;
     }

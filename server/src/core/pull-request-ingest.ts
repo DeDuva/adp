@@ -3,7 +3,6 @@ import type { Db } from "../db/client.js";
 import type { GitBackend } from "./git-backend.js";
 import { mirrorSyncLog, operations, proposals } from "../db/schema.js";
 import { recordOperation } from "./operations.js";
-import { findMirror } from "./mirrors-lookup.js";
 
 // Ingest for a mirrored repo's upstream pull requests — the object companion
 // mode was missing.
@@ -281,20 +280,6 @@ export async function ingestPullRequest(
     );
   }
   return result;
-}
-
-/**
- * Whether this repository takes its pull requests from upstream.
- *
- * The signal is the mirror, not a separate switch: an enabled mirror that can
- * receive is a repository whose pull requests are GitHub's, because that is
- * what inbound means. A second flag would be a second thing to get wrong, and
- * the failure it would allow — ingest on, native creation also on — is exactly
- * the collision the numbering decision exists to prevent.
- */
-export async function pullRequestIngestEnabled(db: Db, repoId: string): Promise<boolean> {
-  const mirror = await findMirror(db, repoId);
-  return !!mirror?.enabled && (mirror.direction === "inbound" || mirror.direction === "both");
 }
 
 /**

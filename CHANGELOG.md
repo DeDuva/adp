@@ -88,6 +88,37 @@ redelivery arriving once the base branch has caught up can complete a record the
 could not. `mergeMethod` is `upstream`: GitHub does not report which of its three buttons was
 pressed, and the operation does not claim to know.
 
+### A GitHub issue is an intent, and a commit trailer naming it binds (#226)
+
+`intents.source` distinguished `issue` from `api` and stopped there, so a team organising its work
+in GitHub Issues got an ADP intent universe *beside* theirs rather than under it — nothing could
+join the two except by comparing titles. An intent ingested from an `issues` delivery now records
+`upstream_host`, `upstream_number` and `upstream_url`.
+
+**The host is its own column rather than something parsed back out of the URL**, because it is the
+identity half and the URL is a display string: a proxy, an enterprise hostname change or a
+repository transfer all rewrite the second and none of them change the first. 5-16 has to carry an
+intent to another instance intact, and "issue 92" means nothing without saying whose 92.
+
+**Two rows are written, exactly as the native path writes two.** The issue row is not bookkeeping:
+`resolveTrailers` binds `ADP-Intent: #92` by looking up issue 92 in the repository and taking its
+intent, and in companion mode #92 is a GitHub issue number — the only number the developer has ever
+seen. Without it the trailer they actually write resolves to nothing.
+
+That makes 5a's exit criterion reachable end to end, and the test walks it with no ADP command in
+it: a GitHub issue arrives by webhook, a plain `git push` carries a commit naming it, and the
+evidence bundle names the issue **by title**. The bundle's `change.intent` grows an `upstream_url`
+beside the `issue_number` #157 put there, because a number in a per-repo sequence is not something
+a reader on another instance can navigate to.
+
+Natively filed issues are refused on an ingesting repository, on the same numbering grounds as
+#224's proposals. That incidentally closes a fidelity gap `schema.ts` records as deliberate: ADP
+numbers issues and proposals from two independent sequences where GitHub shares one, and on an
+ingesting repository both numbers come from upstream, which never issues the same one twice.
+
+A pull request delivered over the `issues` event is skipped — upstream they are the same object,
+here they are not, and ingesting one twice would give a single piece of work two intents.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

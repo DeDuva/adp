@@ -8,6 +8,8 @@ import { issues, issueComments, intents } from "../db/schema.js";
 import { requireScope } from "../auth/plugin.js";
 import { recordOperation } from "../core/operations.js";
 import { findRepoAuthorized } from "../core/repos-lookup.js";
+import { upstreamIngestEnabled } from "../core/mirrors-lookup.js";
+import { nativeIssueRefusal } from "../core/issue-ingest.js";
 
 const CreateIssueBody = z.object({
   title: z.string().min(1),
@@ -59,6 +61,14 @@ export function registerIssueRoutes(app: FastifyInstance, db: Db) {
       const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
+        return;
+      }
+
+      // #226: a shadow issue adopts its upstream number, so on an ingesting
+      // repository a natively filed one is a collision waiting for upstream to
+      // reach the same number — the same reasoning #224 applies to proposals.
+      if (await upstreamIngestEnabled(db, repo.id)) {
+        reply.code(409).send(nativeIssueRefusal(owner, repoName));
         return;
       }
 

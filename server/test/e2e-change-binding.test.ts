@@ -215,7 +215,16 @@ describe.skipIf(skipWithoutDb)("#143: one change row per sha, and a deterministi
     // #157 added the issue number beside the title, for the same reason #189
     // added the title beside the id: a reader needs something to navigate to,
     // and a uuid is not it.
-    expect(change.intent).toEqual({ id: row!.intentId, title: "bind me", issue_number: 1 });
+    // `toEqual`, not `toMatchObject`: the bundle's intent block is contract,
+    // and a field appearing in it without anyone deciding to add it is the
+    // drift spec-coverage exists to catch elsewhere. `upstream_url` is #226's,
+    // and null here because this issue was filed natively.
+    expect(change.intent).toEqual({
+      id: row!.intentId,
+      title: "bind me",
+      issue_number: 1,
+      upstream_url: null,
+    });
   });
 
   // Unbound is an ordinary state, not an error: a commit pushed with no intent
