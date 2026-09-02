@@ -10,6 +10,7 @@ import { findMirror } from "../core/mirrors-lookup.js";
 import { recordPushedCommits } from "../core/change-recorder.js";
 import { decryptCredential, redactUrl } from "../core/mirror-crypto.js";
 import { ingestWorkflowRun, resolveMirrorReporter, type WorkflowRunPayload } from "../core/actions-ingest.js";
+import { ingestPullRequest, type PullRequestPayload } from "../core/pull-request-ingest.js";
 
 // GitHub calls this route directly — it can't carry an ADP bearer token, so
 // trust here is entirely the HMAC signature over the raw body (verified
@@ -82,7 +83,7 @@ export function registerMirrorWebhookRoutes(
       return;
     }
 
-    let payload: { ref?: string; after?: string } & WorkflowRunPayload;
+    let payload: { ref?: string; after?: string } & WorkflowRunPayload & PullRequestPayload;
     try {
       payload = JSON.parse(rawBody.toString("utf8"));
     } catch {
@@ -107,6 +108,32 @@ export function registerMirrorWebhookRoutes(
       }
       const result = await ingestWorkflowRun(db, signer, publicUrl, repo, reporterId, payload);
       reply.send({ ok: true, ...(result.recorded ? { recorded: result.gateName } : { skipped: result.reason }) });
+      return;
+    }
+
+    // A pull request is the object the rest of companion mode hangs off:
+    // policy evaluation, undo and the evidence bundle all take a proposal, and
+    // until this there was none for the work a companion-mode developer
+    // actually does. Handled beside workflow_run rather than in the push
+    // branch because the two are independent — a pull request exists before
+    // any of its commits reach this instance, and its commits reach here
+    // whether or not it is ever opened.
+    if (event === "pull_request") {
+      const actorId = await resolveMirrorReporter(db, mirror.identityId);
+      if (!actorId) {
+        // Same hard-FK problem workflow_run has: proposals.authorId and
+        // operations.actorId both reference identities, and an outbound-only
+        // mirror has no system identity to attribute an ingested row to.
+        reply.send({ ok: true, skipped: "mirror has no ingest identity" });
+        return;
+      }
+      const result = await ingestPullRequest(db, repo, actorId, payload);
+      reply.send({
+        ok: true,
+        ...(result.recorded
+          ? { recorded: `proposal#${result.number}`, change: result.change }
+          : { skipped: result.reason }),
+      });
       return;
     }
 
