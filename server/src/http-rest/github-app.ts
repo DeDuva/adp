@@ -7,6 +7,7 @@ import { requireScope } from "../auth/plugin.js";
 import { findMirrorsByUpstream } from "../core/mirrors-lookup.js";
 import { decryptCredential } from "../core/mirror-crypto.js";
 import { dispatchGitHubEvent, type GitHubEventPayload } from "../core/github-event-dispatch.js";
+import type { LandRequirement } from "../core/repo-policy.js";
 import {
   appManifest,
   convertAppManifest,
@@ -66,6 +67,7 @@ export function registerGitHubAppRoutes(
   credentialKey: string,
   publicUrl: string,
   fetchImpl: typeof fetch = fetch,
+  instanceFloor: LandRequirement[] = [],
 ) {
   // The form. Self-submitting, because the page exists only to carry a POST
   // the browser has to make and nothing here benefits from a click.
@@ -257,7 +259,7 @@ export function registerGitHubAppRoutes(
       results.push({
         repo: `${repo.owner}/${repo.name}`,
         ...(await dispatchGitHubEvent(
-          { db, gitBackend, signer, credentialKey, publicUrl, fetchImpl },
+          { db, gitBackend, signer, credentialKey, publicUrl, fetchImpl, instanceFloor },
           event,
           payload,
           repo,

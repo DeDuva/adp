@@ -17,6 +17,9 @@ import { Signer } from "../src/core/signing.js";
 import { registerRepoRoutes } from "../src/http-rest/repos.js";
 import { registerMirrorRoutes } from "../src/http-rest/mirrors.js";
 import { registerMirrorWebhookRoutes, registerMirrorWebhookRawBodyParser } from "../src/http-rest/mirror-webhook.js";
+import { registerProposalRoutes } from "../src/http-rest/proposals.js";
+import { landProposal } from "../src/core/land.js";
+import { proposals, reviews } from "../src/db/schema.js";
 import { registerGitHubAppRoutes } from "../src/http-rest/github-app.js";
 import { resetInstallationTokenCache } from "../src/core/github-app.js";
 import { findRepo } from "../src/core/repos-lookup.js";
@@ -43,6 +46,7 @@ describe.skipIf(skipWithoutDb)("#233: the change-record check run", () => {
   let port: number;
   let token: string;
   let identityId: string;
+  let gitBackendRef: GitBackend;
   const owner = `check-run-owner-${Date.now()}`;
   const run = Date.now();
   const upstreamOwner = `upstream-${run}`;
@@ -92,6 +96,7 @@ describe.skipIf(skipWithoutDb)("#233: the change-record check run", () => {
 
     gitRoot = await mkdtemp(path.join(tmpdir(), "adp-e2e-check-runs-"));
     const gitBackend = new GitBackend(gitRoot);
+    gitBackendRef = gitBackend;
     const signer = new Signer(SIGNING_KEY);
 
     app = Fastify({ logger: false });
@@ -99,7 +104,10 @@ describe.skipIf(skipWithoutDb)("#233: the change-record check run", () => {
     await app.register(authPlugin(db));
     registerRepoRoutes(app, db, gitBackend, PUBLIC_URL);
     registerMirrorRoutes(app, db, CREDENTIAL_KEY);
-    registerMirrorWebhookRoutes(app, db, gitBackend, signer, CREDENTIAL_KEY, PUBLIC_URL, fetchImpl);
+    // `one_approval` as the instance floor, so the policy check has something
+    // real to refuse and then satisfy.
+    registerMirrorWebhookRoutes(app, db, gitBackend, signer, CREDENTIAL_KEY, PUBLIC_URL, fetchImpl, ["one_approval"]);
+    registerProposalRoutes(app, db, gitBackend, CREDENTIAL_KEY, ["one_approval"]);
     registerGitHubAppRoutes(app, db, gitBackend, signer, CREDENTIAL_KEY, PUBLIC_URL, fetchImpl);
 
     await app.listen({ host: "127.0.0.1", port: 0 });
@@ -217,7 +225,8 @@ describe.skipIf(skipWithoutDb)("#233: the change-record check run", () => {
 
     await deliverPull("record-repo", webhook_secret, headSha);
 
-    expect(checkWrites).toHaveLength(1);
+    // Two now: what this change is, then whether it may land (#234).
+    expect(checkWrites.map((w) => w.body.name)).toEqual(["ADP / change record", "ADP / policy"]);
     const write = checkWrites[0]!;
     expect(write.method).toBe("POST");
     expect(write.body).toMatchObject({
@@ -275,8 +284,7 @@ describe.skipIf(skipWithoutDb)("#233: the change-record check run", () => {
     existingCheckId = 777;
 
     await deliverPull("update-repo", webhook_secret, "d".repeat(40));
-    expect(checkWrites).toHaveLength(1);
-    expect(checkWrites[0]!.method).toBe("PATCH");
+    expect(checkWrites.every((w) => w.method === "PATCH")).toBe(true);
     expect(checkWrites[0]!.url).toContain("/check-runs/777");
   });
 
@@ -302,5 +310,100 @@ describe.skipIf(skipWithoutDb)("#233: the change-record check run", () => {
     const res = await deliverPull("uninstalled-repo", webhook_secret, "f".repeat(40));
     const body = (await res.json()) as { checks?: { reason: string }[] };
     expect(body.checks![0]!.reason).toContain(`not installed on ${upstreamOwner}`);
+  });
+
+  // #234 — the enforceable half.
+  //
+  // It is a check rather than a merge gate of ADP's own, and that is the
+  // resolution of the seam this phase opens on: asking a developer to choose
+  // between GitHub's merge plane and ADP's is the choice mirror mode exists to
+  // avoid.
+  describe("#234: the policy check run", () => {
+    it("fails while a requirement is unmet, and names the remedy and the command", async () => {
+      await installApp(upstreamOwner);
+      const { webhook_secret } = await seed("policy-repo", "policy-repo");
+
+      await deliverPull("policy-repo", webhook_secret, "1".repeat(40));
+      const policy = checkWrites.find((w) => w.body.name === "ADP / policy")!;
+      expect(policy.body).toMatchObject({ conclusion: "failure" });
+
+      const summary = (policy.body.output as { summary: string }).summary;
+      expect(summary).toContain("one_approval");
+      // #145's remedy and its literal command survive onto the surface most
+      // people will meet the refusal on for the first time.
+      expect(summary).toContain("gh pr review 482 --approve");
+      // And the sentence that makes the enforcement story true rather than
+      // aspirational.
+      expect(summary).toContain("ADP does not merge this pull request — GitHub does");
+    });
+
+    // Only honest because #227 landed: before ingest carried approvals this
+    // would have refused every mirrored pull request on a requirement GitHub
+    // had already met.
+    it("passes once a GitHub approval satisfies the requirement", async () => {
+      await installApp(upstreamOwner);
+      const { repo, webhook_secret } = await seed("policy-green-repo", "policy-green-repo");
+      await deliverPull("policy-green-repo", webhook_secret, "2".repeat(40));
+
+      const payload = JSON.stringify({
+        action: "submitted",
+        review: {
+          id: 8801,
+          state: "APPROVED",
+          body: "",
+          submitted_at: "2026-09-02T10:00:00Z",
+          user: { id: 9911, login: `approver-${run}`, type: "User" },
+        },
+        pull_request: { number: 482 },
+      });
+      checkWrites = [];
+      await fetch(`http://127.0.0.1:${port}/webhooks/github/${owner}/policy-green-repo`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-GitHub-Event": "pull_request_review",
+          "X-Hub-Signature-256": "sha256=" + createHmac("sha256", webhook_secret).update(payload).digest("hex"),
+        },
+        body: payload,
+      });
+
+      // An approval changes the verdict, so it republishes rather than waiting
+      // for the next push.
+      const policy = checkWrites.find((w) => w.body.name === "ADP / policy")!;
+      expect(policy.body).toMatchObject({ conclusion: "success" });
+      expect((policy.body.output as { summary: string }).summary).toContain("Every requirement");
+
+      const [proposal] = await db.select().from(proposals).where(eq(proposals.repoId, repo.id));
+      expect(await db.select().from(reviews).where(eq(reviews.proposalId, proposal!.id))).toHaveLength(1);
+    });
+
+    // 5c's second open decision, settled: evaluable, not landable. A shadow
+    // proposal is an ordinary row so that policy and undo can take it, which
+    // also makes it one `land` could merge — and two writers against one branch
+    // is the failure mirror mode exists to avoid.
+    it("refuses to land an ingested proposal, naming GitHub as the merge authority", async () => {
+      await installApp(upstreamOwner);
+      const { repo, webhook_secret } = await seed("no-land-repo", "no-land-repo");
+      await deliverPull("no-land-repo", webhook_secret, "3".repeat(40));
+
+      const [proposal] = await db.select().from(proposals).where(eq(proposals.repoId, repo.id));
+      const result = await landProposal(
+        { db, gitBackend: gitBackendRef, instanceFloor: [] },
+        { id: repo.id, owner, name: "no-land-repo", orgId: null },
+        proposal!,
+        "merge",
+        { identityId, principal: "someone" },
+      );
+
+      expect(result.ok).toBe(false);
+      expect((result as { status: number }).status).toBe(409);
+      expect((result as { message: string }).message).toContain("ADP does not merge on GitHub's behalf");
+      expect((result as { message: string }).message).toContain("ADP / policy");
+      // Refused *before* the policy is evaluated, so a proposal that would have
+      // satisfied it is refused for this reason rather than passing into a
+      // merge.
+      const [after] = await db.select().from(proposals).where(eq(proposals.id, proposal!.id));
+      expect(after!.state).toBe("open");
+    });
   });
 });

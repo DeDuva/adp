@@ -7,6 +7,7 @@ import { findRepo } from "../core/repos-lookup.js";
 import { findMirror } from "../core/mirrors-lookup.js";
 import { decryptCredential } from "../core/mirror-crypto.js";
 import { dispatchGitHubEvent, type GitHubEventPayload } from "../core/github-event-dispatch.js";
+import type { LandRequirement } from "../core/repo-policy.js";
 
 // GitHub calls this route directly — it can't carry an ADP bearer token, so
 // trust here is entirely the HMAC signature over the raw body (verified
@@ -53,6 +54,10 @@ export function registerMirrorWebhookRoutes(
   // Injectable so tests stand up a fake api.github.com for #233's check-run
   // writes, the same shape http-rest/actions.ts uses for the passthrough.
   fetchImpl: typeof fetch = fetch,
+  // #234: the instance floor the policy check evaluates against — the same
+  // value the land routes are given, so the verdict published on the pull
+  // request and the verdict `adp land` would compute cannot disagree.
+  instanceFloor: LandRequirement[] = [],
 ) {
   app.post("/webhooks/github/:owner/:name", async (req, reply) => {
     const { owner, name } = req.params as { owner: string; name: string };
@@ -102,7 +107,7 @@ export function registerMirrorWebhookRoutes(
     // repository it is for.
     const event = (req.headers["x-github-event"] as string | undefined) ?? "push";
     reply.send(
-      await dispatchGitHubEvent({ db, gitBackend, signer, credentialKey, publicUrl, fetchImpl }, event, payload, repo, mirror),
+      await dispatchGitHubEvent({ db, gitBackend, signer, credentialKey, publicUrl, fetchImpl, instanceFloor }, event, payload, repo, mirror),
     );
   });
 }

@@ -7,10 +7,11 @@ import { ingestPullRequest, type PullRequestPayload } from "./pull-request-inges
 import { ingestIssue, type IssuePayload } from "./issue-ingest.js";
 import { ingestReview, type ReviewPayload } from "./review-ingest.js";
 import { resolveGitHubIdentity } from "./github-identity.js";
-import { publishChangeRecordCheck } from "./check-runs.js";
+import { publishChangeRecordCheck, publishPolicyCheck } from "./check-runs.js";
 import { proposals } from "../db/schema.js";
 import { and, eq } from "drizzle-orm";
 import type { RecordActor } from "./change-recorder.js";
+import type { LandRequirement } from "./repo-policy.js";
 
 // One GitHub delivery, turned into ADP's record of it.
 //
@@ -30,6 +31,12 @@ export interface DispatchDeps {
   publicUrl: string;
   /** Injectable so tests stand up a fake api.github.com for the check-run writes. */
   fetchImpl?: typeof fetch;
+  /**
+   * The instance land-policy floor, for #234's policy check. Defaulted to empty
+   * rather than required so that every existing caller keeps compiling — an
+   * empty floor is what a deployment that has configured none actually has.
+   */
+  instanceFloor?: LandRequirement[];
 }
 
 export type GitHubEventPayload = {
@@ -126,7 +133,15 @@ export async function dispatchGitHubEvent(
       return { ok: true, skipped: "review names no upstream user" };
     }
     const result = await ingestReview(db, repo, reviewer.identityId, payload);
-    return { ok: true, ...(result.recorded ? { recorded: `review:${result.state}` } : { skipped: result.reason }) };
+    // An approval is the requirement `one_approval` reads, so the policy
+    // verdict on the pull request is stale the moment one arrives.
+    const number = payload.pull_request?.number;
+    const checks = number ? await publishChecks(deps, repo, mirror, number) : [];
+    return {
+      ok: true,
+      ...(result.recorded ? { recorded: `review:${result.state}` } : { skipped: result.reason }),
+      ...(checks.length > 0 ? { checks } : {}),
+    };
   }
 
   // #226: the other half of "what was this for". An issue becomes an intent
@@ -190,16 +205,23 @@ async function publishChecks(
   mirror: MirrorRow,
   proposalNumber: number,
 ): Promise<{ name?: string; published: boolean; reason?: string; conclusion?: string }[]> {
-  const out = [];
-  out.push(
-    await publishChangeRecordCheck(
-      { db: deps.db, credentialKey: deps.credentialKey, publicUrl: deps.publicUrl, fetchImpl: deps.fetchImpl },
+  const base = {
+    db: deps.db,
+    credentialKey: deps.credentialKey,
+    publicUrl: deps.publicUrl,
+    fetchImpl: deps.fetchImpl,
+  };
+  // Both, in this order, because that is the order a reader meets them: what
+  // this change is, then whether it may land.
+  return [
+    await publishChangeRecordCheck(base, repo, mirror, proposalNumber),
+    await publishPolicyCheck(
+      { ...base, gitBackend: deps.gitBackend, instanceFloor: deps.instanceFloor ?? [] },
       repo,
       mirror,
       proposalNumber,
     ),
-  );
-  return out;
+  ];
 }
 
 async function publishChecksForHead(
