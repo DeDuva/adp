@@ -37,6 +37,8 @@ export interface PullRequestPayload {
     closed_at?: string | null;
     head?: { ref?: string; sha?: string };
     base?: { ref?: string };
+    /** Who opened it upstream — resolved to a real identity by #230. */
+    user?: { id?: number | null; login?: string | null; type?: string | null };
     /** Present on a merged pull request; the sha the base branch ends up at. */
     merge_commit_sha?: string | null;
   };

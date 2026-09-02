@@ -112,6 +112,7 @@ async function recordCommitsBatch(
   actor: RecordActor,
   commits: CommitInfo[],
   via: "push" | "mirror-inbound",
+  actorForSha?: Map<string, RecordActor>,
 ): Promise<number> {
   if (commits.length === 0) return 0;
   const shas = commits.map((c) => c.sha);
@@ -137,6 +138,13 @@ async function recordCommitsBatch(
   await db.transaction(async (tx) => {
     for (const commit of toRecord) {
       const trailers = trailersBySha.get(commit.sha)!;
+      // #230: who wrote this commit, when the caller could work that out.
+      // Mirror inbound used to attribute every commit to the mirror's own
+      // system identity — a statement about how the record arrived, written
+      // into the field that says who made the change. The direct push path has
+      // one actor for the whole push and passes no map, which is correct there:
+      // a push has exactly one pusher.
+      const commitActor = actorForSha?.get(commit.sha) ?? actor;
       const intentId = trailers.intent ? (resolved.intents.get(trailers.intent) ?? null) : null;
       const sessionId = trailers.session ? (resolved.sessions.get(trailers.session) ?? null) : null;
 
@@ -145,8 +153,8 @@ async function recordCommitsBatch(
       // off the token — so both paths produce the same shape, and the signature
       // covers it either way.
       const provenance = {
-        kind: actor.kind,
-        principal: actor.principal,
+        kind: commitActor.kind,
+        principal: commitActor.principal,
         via,
         ...(sessionId ? { session_id: sessionId } : {}),
       };
@@ -174,7 +182,7 @@ async function recordCommitsBatch(
 
       await recordOperation(tx, {
         repoId,
-        actorId: actor.id,
+        actorId: commitActor.id,
         verb: "change.create",
         target: `${owner}/${name}@${commit.sha}`,
         after: {
@@ -213,6 +221,13 @@ export async function recordPushedCommits(
   oldSha: string,
   newSha: string,
   via: "push" | "mirror-inbound",
+  // #230: per-commit attribution, where the caller has it. The inbound mirror
+  // builds this from the push payload's `commits[].author.username`; a commit
+  // the payload does not name (GitHub caps that array at 20, and a first import
+  // walks history nothing ever delivered) falls back to `actor`, which is the
+  // mirror's system identity and remains the honest answer for a commit whose
+  // author this instance has no way to know.
+  actorForSha?: Map<string, RecordActor>,
 ): Promise<void> {
   if (newSha === ZERO_SHA) return;
 
@@ -244,7 +259,7 @@ export async function recordPushedCommits(
   for (;;) {
     const batch = await gitBackend.log(owner, name, range, RECORD_BATCH_SIZE, skip);
     if (batch.length === 0) break;
-    const recorded = await recordCommitsBatch(db, signer, repoId, owner, name, actor, batch, via);
+    const recorded = await recordCommitsBatch(db, signer, repoId, owner, name, actor, batch, via, actorForSha);
     if (oldSha === ZERO_SHA && recorded === 0) break;
     if (batch.length < RECORD_BATCH_SIZE) break;
     skip += RECORD_BATCH_SIZE;

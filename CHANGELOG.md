@@ -119,6 +119,37 @@ ingesting repository both numbers come from upstream, which never issues the sam
 A pull request delivered over the `issues` event is skipped — upstream they are the same object,
 here they are not, and ingesting one twice would give a single piece of work two intents.
 
+### A change that arrived through GitHub is attributed to its author (#230)
+
+Mirror inbound attributed everything it recorded to `mirror:github:<owner>/<name>` — every commit,
+and every proposal and issue the two items above added. That is a statement about how the record
+*arrived*, written into the field that says who made the change. Now a GitHub user resolves to a
+real ADP identity, and the signed provenance names them.
+
+**No new table.** `external_identities` is already `(issuer, subject)`-keyed and provider-generic —
+it exists so that a deployment with two OIDC providers cannot collide two people onto one identity,
+and a mirror host is another such provider. The issuer comes from the mirror's own remote URL, so
+an instance mirroring GitHub Enterprise gets that hostname and the same login on two hosts stays two
+people.
+
+**The subject is the numeric user id wherever GitHub sends one**, because a login is renameable and
+an id is not. The difficulty is that GitHub does not send one everywhere: a `push` payload names a
+commit's author by `username` alone, while `pull_request`, `issues` and `pull_request_review` all
+carry `user.id`. Keying on whichever happened to be present would give one person two identities the
+first time they both pushed and opened a pull request — so a login-only sighting is keyed
+`login:<login>` and **upgraded in place** the first time that person is seen with an id, and an
+id-keyed row is found from a later login-only sighting through the principal it created.
+
+Attribution is per commit, and deliberately partial. GitHub caps a push payload's commit array at
+20, and a first mirror import walks history nothing was ever delivered for, so a commit the payload
+does not name keeps falling back to the mirror identity — which remains the honest answer for one
+whose author this instance has no way to know. A `Bot` account becomes an `agent` identity rather
+than a human one.
+
+This landed ahead of 5-4 because 5-4 cannot work without it: `one_approval` is author-independent by
+construction (#121), so a proposal authored by the same system identity that ingests its approvals
+is one nothing can ever approve.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

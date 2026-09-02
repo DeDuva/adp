@@ -33,6 +33,8 @@ export interface IssuePayload {
     closed_at?: string | null;
     /** Present on a pull request delivered over the `issues` event; skipped. */
     pull_request?: unknown;
+    /** Who filed it upstream — resolved to a real identity by #230. */
+    user?: { id?: number | null; login?: string | null; type?: string | null };
   };
   repository?: { html_url?: string };
 }

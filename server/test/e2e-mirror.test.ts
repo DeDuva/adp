@@ -193,6 +193,58 @@ describe.skipIf(skipWithoutDb)("M2: mirror mode", () => {
     expect(mirror!.lastInboundSha).toBe(sha);
   });
 
+  // #230: mirror inbound used to attribute every commit it recorded to
+  // `mirror:github:<owner>/<name>` — a statement about how the record arrived,
+  // written into the field that says who made the change. The push payload
+  // names each commit's author by login, so where it does, that is who the
+  // change is signed as having come from.
+  //
+  // The second half of this is the more important one. GitHub caps that array
+  // at 20 and a first import walks history nothing was ever delivered for, so
+  // the map is partial by construction — and a commit it does not cover has to
+  // keep falling back to the mirror rather than being attributed to whoever
+  // happened to be resolved last.
+  it("inbound: attributes each commit to the author the payload names, and falls back where it names none", async () => {
+    const { webhook_secret } = await createMirror("inbound");
+
+    const cloneDir = await mkdtemp(path.join(tmpdir(), "adp-e2e-mirror-attrib-"));
+    await execFileAsync("git", ["clone", githubStandIn.repoPath(owner, repoName), cloneDir]);
+    await execFileAsync("git", ["checkout", "-B", "main"], { cwd: cloneDir });
+    await execFileAsync("git", ["config", "user.email", "frank@example.com"], { cwd: cloneDir });
+    await execFileAsync("git", ["config", "user.name", "Frank"], { cwd: cloneDir });
+    await execFileAsync("sh", ["-c", "echo named > named.txt"], { cwd: cloneDir });
+    await execFileAsync("git", ["add", "."], { cwd: cloneDir });
+    await execFileAsync("git", ["commit", "-m", "named in the payload"], { cwd: cloneDir });
+    const namedSha = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: cloneDir })).stdout.trim();
+    await execFileAsync("sh", ["-c", "echo unnamed > unnamed.txt"], { cwd: cloneDir });
+    await execFileAsync("git", ["add", "."], { cwd: cloneDir });
+    await execFileAsync("git", ["commit", "-m", "not in the payload"], { cwd: cloneDir });
+    const unnamedSha = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: cloneDir })).stdout.trim();
+    await execFileAsync("git", ["push", "origin", "main"], { cwd: cloneDir });
+    await rm(cloneDir, { recursive: true, force: true });
+
+    // Only the first commit is named — exactly the shape of a push whose
+    // commit list GitHub truncated.
+    const payload = JSON.stringify({
+      ref: "refs/heads/main",
+      after: unnamedSha,
+      commits: [{ id: namedSha, author: { username: "frank" } }],
+    });
+    const signature = "sha256=" + createHmac("sha256", webhook_secret).update(payload).digest("hex");
+    const res = await fetch(`http://127.0.0.1:${port}/webhooks/github/${owner}/${repoName}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Hub-Signature-256": signature },
+      body: payload,
+    });
+    expect(res.status).toBe(200);
+
+    const [named] = await db.select().from(changes).where(eq(changes.gitSha, namedSha));
+    expect((named!.provenance as { principal: string }).principal).toBe("github:frank");
+
+    const [unnamed] = await db.select().from(changes).where(eq(changes.gitSha, unnamedSha));
+    expect((unnamed!.provenance as { principal: string }).principal).toBe(`mirror:github:${owner}/${repoName}`);
+  });
+
   // M2's exit criterion in its own words: "a mirrored repo with a >500-commit
   // history has a signed change recorded for every commit". The suite already
   // covered the *chunking* half (e2e-hooks.test.ts) but did so by pushing a
