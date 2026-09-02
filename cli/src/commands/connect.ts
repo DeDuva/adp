@@ -22,6 +22,7 @@ import { loadConfig } from "../config.js";
 import { apiRequest, ApiError } from "../api.js";
 import { findHarness, harnessNames, removeMcpServer, writeMcpServer, type Harness } from "../harnesses.js";
 import { excludePaths, hooksDir, installHook, removeHook, remoteRepo, repoRoot, unexcludePaths } from "../git.js";
+import { loadRepoIdentity, saveRepoIdentity } from "../repo-identity.js";
 
 interface MintedToken {
   token: string;
@@ -72,16 +73,7 @@ export async function connect(argv: string[]): Promise<void> {
   const root = repoRoot(process.cwd());
   if (!root) throw new Error("run this inside a git repository — connect writes its configuration into the repo");
 
-  // Derivable, so not typed: the remote pointing at *this* server says which
-  // repository this checkout is.
-  const target = flags.repo
-    ? splitRepo(flags.repo)
-    : remoteRepo(root, config.serverUrl);
-  if (!target) {
-    throw new Error(
-      `no git remote points at ${config.serverUrl} — add one, or name the repository with --repo <owner>/<repo>`,
-    );
-  }
+  const target = resolveRepoTarget(root, config.serverUrl, flags.repo);
 
   const mcp = mcpCommand(installRoot());
   if (!mcp) {
@@ -346,4 +338,39 @@ async function proveRoundTrip(
     throw new Error(`opened session ${session.id} but could not close it: HTTP ${closed.status}`);
   }
   return `verified with a real session (${session.id}), opened and closed`;
+}
+
+/**
+ * Which ADP repository this checkout is.
+ *
+ * Read from what `adp init` recorded (#238), not inferred from a git remote.
+ * The inference is kept as a last resort so that a checkout set up before this
+ * existed keeps working — and when it answers, the answer is written down, so
+ * a clone infers at most once and every command after that is immune to the
+ * remote being renamed or removed.
+ *
+ * In companion mode there is no ADP remote to infer from at all: the developer
+ * pushes to GitHub and ADP observes, which is why the remote stopped being
+ * added unconditionally.
+ */
+export function resolveRepoTarget(
+  root: string,
+  serverUrl: string,
+  flag: string | undefined,
+): { owner: string; repo: string } {
+  if (flag) return splitRepo(flag);
+
+  const recorded = loadRepoIdentity(root, serverUrl);
+  if (recorded) return { owner: recorded.owner, repo: recorded.repo };
+
+  const inferred = remoteRepo(root, serverUrl);
+  if (inferred) {
+    saveRepoIdentity(root, { serverUrl, owner: inferred.owner, repo: inferred.repo, mode: "native" });
+    return inferred;
+  }
+
+  throw new Error(
+    `this checkout is not attached to ${serverUrl} — run \`adp init\`, or name the repository ` +
+      "with --repo <owner>/<repo>",
+  );
 }

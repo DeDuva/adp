@@ -252,7 +252,7 @@ describe.skipIf(skipWithoutDb)("#154: adp connect, against a live ADP", () => {
     expect(existsSync(path.join(work, ".adp", "record-claude-code"))).toBe(false);
   }, 180_000);
 
-  it("refuses outside a repository, and where no remote names this server", async () => {
+  it("refuses outside a repository, and where nothing attaches this checkout", async () => {
     // Both failures are silent-in-the-wrong-place otherwise: connect would
     // write a config nothing reads, or connect a checkout of somebody else's
     // forge and report success.
@@ -264,8 +264,15 @@ describe.skipIf(skipWithoutDb)("#154: adp connect, against a live ADP", () => {
     const elsewhere = await scratchDir("adp-e2e-connect-other-");
     await execFileAsync("git", ["init", "-q", "-b", "main"], { cwd: elsewhere });
     await execFileAsync("git", ["remote", "add", "origin", "https://github.com/acme/widget.git"], { cwd: elsewhere });
+    // #238: the refusal names the command that attaches a checkout, not the
+    // absence of a remote. A remote is no longer how identity is established —
+    // it is recorded — so an error about remotes would be describing a
+    // mechanism that is not the one in use.
     await expect(adp(["connect", "claude-code"], elsewhere)).rejects.toMatchObject({
-      stderr: expect.stringContaining("no git remote points at"),
+      stderr: expect.stringContaining("this checkout is not attached to"),
+    });
+    await expect(adp(["connect", "claude-code"], elsewhere)).rejects.toMatchObject({
+      stderr: expect.stringContaining("adp init"),
     });
 
   }, 180_000);

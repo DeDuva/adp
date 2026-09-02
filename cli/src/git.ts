@@ -143,6 +143,13 @@ export function gitRemotes(dir: string): { name: string; url: string }[] {
  * repoints origin is a command that loses somebody's upstream. If every
  * candidate name is taken the caller is told rather than guessed at — see the
  * `null` return.
+ *
+ * Since #238 this is called on the **native** path only. In companion mode
+ * there is nothing to push to ADP — the developer pushes to GitHub and ADP
+ * observes — so an `adp` remote there is an artifact of a mode they are not in,
+ * and `init` leaves their remotes exactly as it found them. It is also no
+ * longer how any command works out which repository a checkout is: that is
+ * recorded (`repo-identity.ts`) rather than derived from mutable git state.
  */
 export function addRemote(dir: string, url: string): string | null {
   const taken = new Set(gitRemotes(dir).map((r) => r.name));
