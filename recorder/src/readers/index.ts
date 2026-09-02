@@ -26,6 +26,7 @@ import path from "node:path";
 import type { TrajectoryEvent } from "../events.js";
 import { ClaudeCodeReader } from "./claude-code.js";
 import { CodexReader } from "./codex.js";
+import { GeminiCliReader } from "./gemini-cli.js";
 
 /** What the reader learned about the session itself, as opposed to what happened in it. */
 export interface SessionFacts {
@@ -92,6 +93,11 @@ export const BUILTIN_READERS: HarnessReader[] = [
     harness: "codex",
     stream: "`codex exec --json`",
     create: () => new CodexReader(),
+  },
+  {
+    harness: "gemini-cli",
+    stream: "`gemini --output-format json`, and the streaming form where the CLI offers one",
+    create: () => new GeminiCliReader(),
   },
 ];
 
