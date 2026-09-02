@@ -288,11 +288,39 @@ export const proposals = pgTable(
     candidateSetId: uuid("candidate_set_id"),
     state: text("state", { enum: ["open", "closed", "merged"] }).notNull().default("open"),
     authorId: uuid("author_id").notNull().references(() => identities.id),
+    // #224: the upstream pull request this proposal shadows, when it shadows
+    // one. Both null on a natively-created proposal, and that nullness is the
+    // only thing distinguishing the two kinds — deliberately, because every
+    // capability companion mode wants back (evaluateLandPolicy, undo, the
+    // check runs) already takes a proposal, and a parallel "external pull
+    // request" type would mean reimplementing each of them against a second
+    // shape.
+    //
+    // `upstreamNumber` is recorded even though `number` is currently equal to
+    // it. The two are equal by *decision* — 5a's numbering question, settled
+    // as "adopt the upstream number so `gh pr view 482` means one thing on
+    // both planes" — and a decision is exactly the kind of thing that gets
+    // revisited. A reader asking "which GitHub pull request is this?" must not
+    // have to know that answer, and a query for "every ingested proposal"
+    // must not be a query for "every proposal whose number happens to match
+    // something upstream".
+    upstreamNumber: integer("upstream_number"),
+    upstreamUrl: text("upstream_url"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     closedAt: timestamp("closed_at", { withTimezone: true }),
     mergedAt: timestamp("merged_at", { withTimezone: true }),
   },
-  (table) => [unique().on(table.repoId, table.number)],
+  (table) => [
+    unique().on(table.repoId, table.number),
+    // Partial, because it says something only about ingested rows: one
+    // shadow proposal per upstream pull request. GitHub redelivers webhooks
+    // routinely, so this is the same reasoning as gate_results' partial
+    // unique on (repo_id, external_id) — idempotency belongs in the database
+    // rather than in a read-then-write every delivery has to get right.
+    uniqueIndex("proposals_repo_upstream_number_idx")
+      .on(table.repoId, table.upstreamNumber)
+      .where(sql`${table.upstreamNumber} is not null`),
+  ],
 );
 
 // Native-plane-only concept ("the only MVP

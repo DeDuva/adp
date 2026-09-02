@@ -14,6 +14,7 @@ import { emitWebhookEvent } from "../core/webhooks.js";
 import { landProposal } from "../core/land.js";
 import { landRefusalBody, evaluateLandPolicy } from "../core/land-policy.js";
 import { findOrgLandContext } from "../core/org-lookup.js";
+import { nativeProposalRefusal, pullRequestIngestEnabled } from "../core/pull-request-ingest.js";
 
 const CreateProposalBody = z.object({
   title: z.string().min(1),
@@ -44,6 +45,12 @@ function serializeProposal(proposal: typeof proposals.$inferSelect, owner: strin
     created_at: proposal.createdAt.toISOString(),
     closed_at: proposal.closedAt?.toISOString() ?? null,
     merged_at: proposal.mergedAt?.toISOString() ?? null,
+    // #224: null on a natively created proposal, set on one shadowing an
+    // upstream pull request. Present unconditionally rather than omitted when
+    // null, so a client can tell "not ingested" from "this server is too old
+    // to say" without inspecting the ADP-API-Version header.
+    upstream_number: proposal.upstreamNumber,
+    upstream_url: proposal.upstreamUrl,
     html_url: `/${owner}/${repoName}/pulls/${proposal.number}`,
   };
 }
@@ -77,6 +84,18 @@ export function registerProposalRoutes(
       const repo = await findRepoAuthorized(db, req.identity!, owner, repoName);
       if (!repo) {
         reply.code(404).send({ message: `Repository ${owner}/${repoName} not found` });
+        return;
+      }
+
+      // #224: a shadow proposal adopts its upstream pull request's number, and
+      // `proposals` is unique on (repo_id, number) — so on a repository that
+      // ingests, a natively created proposal is a collision waiting for the
+      // first upstream pull request to reach the same number. Refused here
+      // rather than resolved later: renumbering after the fact would move a
+      // number a developer has already seen, and 5a's numbering decision is
+      // that the number means one thing on both planes.
+      if (await pullRequestIngestEnabled(db, repo.id)) {
+        reply.code(409).send(nativeProposalRefusal(owner, repoName));
         return;
       }
 

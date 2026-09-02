@@ -25,6 +25,39 @@ of commits and CI verdicts and nothing that said what any of it was *for*. This 
 ingest, and what it buys is that land policy, `adp undo` and the evidence bundle all reach a
 change that arrived through GitHub. `PLAN.md` Phase 5 is the backlog; entries land here per item.
 
+### A GitHub pull request is a proposal in ADP (#224)
+
+`pull_request` deliveries — `opened`, `reopened`, `synchronize`, `edited`, `closed` — become a
+**shadow proposal**: an ordinary `proposals` row carrying the upstream number and URL. Opening a
+pull request on a mirrored GitHub repository now produces one with no ADP command run;
+synchronising the branch moves `head_sha`; closing it without merging closes the proposal.
+
+It is an ordinary row on purpose. `evaluateLandPolicy`, `undo` and the evidence bundle are each
+already written against a proposal, so a parallel "external pull request" type would have meant
+reimplementing all three against a second shape — and companion mode's whole claim is that a change
+arriving through GitHub is not a second class of change.
+
+**The shadow proposal adopts the upstream number**, which is 5a's first open decision, settled. It
+keeps `gh pr view 482` meaning one thing on both planes, and it costs the repository the ability to
+create proposals natively while ingest is on: `proposals` is unique on `(repo_id, number)`, so both
+create paths now refuse with a 409 that names what to do instead. Both, because `gh pr create` goes
+through GraphQL and a guard on `/api/v3` alone is a guard the incumbent client walks straight past.
+A proposal that predates the mirror keeps its number — ingest declines to overwrite it rather than
+destroying a record to make room for a mirror of one.
+
+Idempotency is a partial unique index on `(repo_id, upstream_number)` and a "nothing moved" check,
+not a delivery id: GitHub redelivers routinely, and it also sends `edited` for a label change and
+`synchronize` for a force-push that resolves to the same sha. All three mean the row is already
+right, and none of them may append to an append-only log.
+
+What this deliberately does *not* do is write `proposal.merge` for a merged pull request. The row
+records the merge truthfully, but that verb carries the before/after base sha `undo.ts` reads and
+the webhook payload does not contain it — recording one without it would make `adp undo` refuse for
+the wrong reason. That is #225, and the test asserts the gap rather than leaving it to be found.
+
+On the wire: `upstream_number` and `upstream_url` on the proposal representation, null on a
+natively created one. Additive — no existing field moves.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

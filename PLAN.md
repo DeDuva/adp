@@ -396,7 +396,7 @@ the issue by title.
 
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
-| 5-1 | `pull_request` ingest — a GitHub pull request becomes a shadow proposal carrying its upstream number and URL | #224 | not started | Every other item in this release hangs off the proposal row existing |
+| 5-1 | `pull_request` ingest — a GitHub pull request becomes a shadow proposal carrying its upstream number and URL | #224 | shipped | Every other item in this release hangs off the proposal row existing |
 | 5-2 | Merge ingest — a merged pull request writes a real `proposal.merge` operation | #225 | not started | What makes `adp undo` reach a GitHub-native merge. The operation must carry the before/after state `undo.ts` reads, or it refuses for the second reason instead of the first |
 | 5-3 | `issues` ingest — a GitHub issue becomes an intent with an upstream identity | #226 | not started | `intents` needs a column for the upstream reference; today `source` distinguishes `issue` from `api` but nothing records *which* issue, on whose host |
 | 5-4 | `pull_request_review` ingest — a GitHub approval satisfies `one_approval` | #227 | not started | Otherwise the policy in 5c refuses every mirrored pull request on a requirement GitHub already met, which is worse than not publishing it |
@@ -514,7 +514,7 @@ migrate by hand.
 
 | Decision | Why it cannot be deferred past 5a |
 |---|---|
-| **Proposal numbering in mirror mode.** A shadow proposal can adopt the upstream pull request's number — which keeps `gh pr view 482` meaning one thing on both planes — or take its own from the per-repo sequence | `proposals` is unique on `(repo_id, number)`. Adopting upstream numbers collides with any natively-created proposal in the same repository, so the answer decides whether native proposals are refused while ingest is on |
+| ~~**Proposal numbering in mirror mode.**~~ **Answered in #224: adopt the upstream number.** `gh pr view 482` means one thing on both planes, and a repository with inbound ingest enabled refuses natively created proposals — on both REST and GraphQL, because `gh pr create` uses the second | `proposals` is unique on `(repo_id, number)`. The cost of the answer is that a repository cannot mix native and ingested proposals, and a proposal that predates the mirror keeps its number: ingest refuses to overwrite it rather than destroying a record to make room for a mirror of one |
 | **Whether an ingested pull request may be landed through ADP.** A shadow proposal that `evaluateLandPolicy` can evaluate is also one `land` could merge | Two writers against one branch. The likely answer is that ingest-mode proposals are evaluable and not landable, and 5-11 is how the verdict acts — but "likely" is not a decision, and the refusal has to name the reason |
 | **What a free or evaluating instance may claim about durability.** M4-8 and M4-10 are deferred on budget, and `docs/self-hosting.md` correctly claims nothing about backup or PITR until a restore drill has been executed | Companion mode changes the stakes rather than the engineering: where GitHub stays the merge authority, losing an ADP instance degrades the record and loses no code. That is a real argument and it is worth writing down as a position with a tripwire, not left as a consolation |
 
