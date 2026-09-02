@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { createServer, type Server, type IncomingMessage } from "node:http";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { execFileSync, } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { run } from "../src/index.js";
@@ -463,6 +465,157 @@ describe("adp CLI", () => {
       expect(errSpy.mock.calls.flat().join(" ")).toContain("--state must be one of");
       errSpy.mockRestore();
       expect(requests).toHaveLength(0);
+    });
+  });
+
+  // ── #153: adp init ───────────────────────────────────────────────────────
+
+  describe("init", () => {
+    let repo: string;
+    let cwd: string;
+
+    beforeEach(async () => {
+      repo = await mkdtemp(path.join(tmpdir(), "adp-init-"));
+      execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
+      cwd = process.cwd();
+      process.chdir(repo);
+    });
+
+    afterEach(async () => {
+      process.chdir(cwd);
+      await rm(repo, { recursive: true, force: true });
+    });
+
+    it("creates the org and the repo, and writes an adp.yaml it does not commit", async () => {
+      writeFileSync(path.join(repo, "package.json"), JSON.stringify({ scripts: { test: "vitest" } }));
+      writeFileSync(path.join(repo, "package-lock.json"), "{}");
+      responder = ({ url, method }) => {
+        if (url === "/api/adp/orgs" && method === "POST") return { status: 201, body: { id: "org-1" } };
+        return { status: 201, body: {} };
+      };
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      expect(await run(["init", "--repo", "acme/widget"])).toBe(0);
+      expect(requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+        "POST /api/adp/orgs",
+        "POST /api/v3/repos/acme",
+      ]);
+
+      const yaml = readFileSync(path.join(repo, "adp.yaml"), "utf8");
+      expect(yaml).toContain("npm ci");
+      expect(yaml).toContain("run: npm run test");
+      // Written, never committed: committing on somebody's behalf puts
+      // something in their history they did not read, and the whole design
+      // position is write it, print it, tell them to review it.
+      expect(execFileSync("git", ["status", "--porcelain"], { cwd: repo }).toString()).toContain("?? adp.yaml");
+      expect(logSpy.mock.calls.flat().join("\n")).toContain("review");
+      logSpy.mockRestore();
+    });
+
+    // Run twice is a repair, not a collision — the only way a command that does
+    // five things is safe to re-run after one of them failed.
+    it("is idempotent: an existing org and repo are not an error", async () => {
+      // 422, not 409: both create routes report a conflict with the same status
+      // they use for a malformed name, so init matches the sentence. A test
+      // asserting 409 would have passed against a server that does not exist —
+      // which is exactly what it did until acceptance ran it for real.
+      responder = () => ({ status: 422, body: { message: "Repository acme/widget already exists" } });
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      expect(await run(["init", "--repo", "acme/widget"])).toBe(0);
+      expect(logSpy.mock.calls.flat().join("\n")).toContain("already there");
+      logSpy.mockRestore();
+    });
+
+    it("leaves an adp.yaml that is already there alone", async () => {
+      writeFileSync(path.join(repo, "adp.yaml"), "gates: [mine]\n");
+      responder = () => ({ status: 201, body: {} });
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      await run(["init", "--repo", "acme/widget"]);
+      expect(readFileSync(path.join(repo, "adp.yaml"), "utf8")).toBe("gates: [mine]\n");
+      expect(logSpy.mock.calls.flat().join("\n")).toContain("left alone");
+      logSpy.mockRestore();
+    });
+
+    // Mirror is the default because native mode asks a team to agree and mirror
+    // mode asks one developer to add a remote — evaluation happens at the
+    // second price and never at the first.
+    it("mirrors the upstream it finds, without being asked", async () => {
+      execFileSync("git", ["remote", "add", "origin", "https://github.com/acme/payments.git"], { cwd: repo });
+      responder = () => ({ status: 201, body: {} });
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await run(["init", "--credential", "ghp_test"]);
+      const mirror = requests.find((r) => r.url.endsWith("/mirror"));
+      expect(mirror, "no mirror was configured for a checkout with a GitHub remote").toBeTruthy();
+      const body = JSON.parse(mirror!.body);
+      expect(body.remote_url).toBe("https://github.com/acme/payments.git");
+      expect(body.direction).toBe("both");
+      // Generated, not asked for: a shared secret between two machines, and
+      // neither of them is the person typing.
+      expect(body.webhook_secret).toMatch(/^[0-9a-f]{48}$/);
+      // The name comes from the upstream, so ADP's repo is the same repo.
+      expect(requests.some((r) => r.url === "/api/v3/repos/acme")).toBe(true);
+      logSpy.mockRestore();
+    });
+
+    it("stops at the one input only a human can supply, and prints the command that resumes", async () => {
+      execFileSync("git", ["remote", "add", "origin", "https://github.com/acme/payments.git"], { cwd: repo });
+      delete process.env.GITHUB_TOKEN;
+      responder = () => ({ status: 201, body: {} });
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await run(["init"]);
+      expect(requests.some((r) => r.url.endsWith("/mirror"))).toBe(false);
+      const out = logSpy.mock.calls.flat().join("\n");
+      expect(out).toContain("needs a credential");
+      expect(out).toContain("adp init --credential");
+      logSpy.mockRestore();
+    });
+
+    it("honours --no-mirror, and says a repo with no upstream is native", async () => {
+      execFileSync("git", ["remote", "add", "origin", "https://github.com/acme/payments.git"], { cwd: repo });
+      responder = () => ({ status: 201, body: {} });
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      await run(["init", "--no-mirror", "--credential", "ghp_test"]);
+      expect(requests.some((r) => r.url.endsWith("/mirror"))).toBe(false);
+      expect(logSpy.mock.calls.flat().join("\n")).toContain("--no-mirror");
+      logSpy.mockRestore();
+    });
+
+    // #155 decided a runner must not start without being told this is the right
+    // host. #153 asked init to start one. The later decision wins, and init
+    // says so in one line rather than forking a process that mounts the Docker
+    // socket as a side effect of attaching a repository.
+    it("never starts a runner as a side effect, and names the reason", async () => {
+      responder = () => ({ status: 201, body: {} });
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      await run(["init", "--repo", "acme/widget"]);
+      const out = logSpy.mock.calls.flat().join("\n");
+      expect(out).toContain("root on this host");
+      expect(out).toContain("adp runner up --here");
+      logSpy.mockRestore();
+    });
+
+    // The one 422 that must not be swallowed: it means the name was guessed
+    // wrong, which is the failure a person has to see.
+    it("does not mistake an invalid name for an existing one", async () => {
+      responder = () => ({
+        status: 422,
+        body: { message: "Validation failed: owner 'Acme Corp' is not a valid repository owner" },
+      });
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      expect(await run(["init", "--repo", "acme/widget"])).toBe(1);
+      expect(errSpy.mock.calls.flat().join(" ")).toContain("not a valid repository owner");
+      vi.restoreAllMocks();
+    });
+
+    it("refuses outside a git repository, and says what to do instead", async () => {
+      process.chdir(tmpdir());
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await run(["init"])).toBe(1);
+      expect(errSpy.mock.calls.flat().join(" ")).toContain("not a git repository");
+      errSpy.mockRestore();
     });
   });
 });

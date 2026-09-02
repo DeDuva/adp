@@ -110,6 +110,24 @@ export function hooksDir(dir: string): string | null {
  * connected — guessing from `origin` alone would cheerfully connect a GitHub
  * clone to an ADP instance and report success.
  */
+/**
+ * Every remote this checkout has, as name and URL.
+ *
+ * #153 needs the remotes a checkout points at *elsewhere* — the upstream it
+ * would be mirrored from — which is the complement of what `remoteRepo` below
+ * looks for, so both read the same output rather than each shelling out.
+ */
+export function gitRemotes(dir: string): { name: string; url: string }[] {
+  const remotes = git(dir, ["remote", "-v"]);
+  if (!remotes) return [];
+  const seen = new Map<string, string>();
+  for (const line of remotes.split("\n")) {
+    const [name, url] = line.split(/\s+/);
+    if (name && url && !seen.has(name)) seen.set(name, url);
+  }
+  return [...seen].map(([name, url]) => ({ name, url }));
+}
+
 export function remoteRepo(dir: string, serverUrl: string): { owner: string; repo: string } | null {
   const remotes = git(dir, ["remote", "-v"]);
   if (!remotes) return null;

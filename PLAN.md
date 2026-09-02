@@ -161,7 +161,6 @@ exist" from the browser in under a minute.
 
 | # | Item | Tracking | State |
 |---|---|---|---|
-| 1-12 | `adp init` — attach to a repo that already exists, and detect the toolchain | #153 | not started. Mirror mode is the way in: it asks one developer to add a remote rather than a team to agree |
 
 **1-14 is finished, and it found the limit of its own exit criterion.** The M3 surface has a reader
 now — runs, run detail, the trajectory with its typed columns, verification as two separate answers,
@@ -210,6 +209,26 @@ lockfile diff are operator surfaces with no CLI verb by design.
 The one thing `adp watch` needed that did not exist was a way to ask **whether a change would land
 without trying to land it** — until now the only way to see a refusal was to attempt the merge.
 `GET /pulls/{n}?land=1` is that, opt-in so `gh pr view` pays nothing for it.
+
+**1-12 is finished, and it settled open question 4.** Mirror is the default, and it is *detected*
+rather than asked for: a checkout with an upstream gets mirrored, one without gets a native
+repository, and `--no-mirror` is the override. The recommendation in #153 is now the behaviour, on
+the grounds it gave — native mode asks a team to agree and mirror mode asks one developer to add a
+remote, and evaluation happens at the second price and never at the first.
+
+Two of #153's positions survived contact and one did not. **Detect and write, don't prompt** held:
+`adp.yaml` is written from the lockfile and the scripts block, printed, and left uncommitted.
+**Mirror is the default** held. But #153 also asked `init` to leave a *running* gate runner behind,
+and #155 has since decided that a process mounting the Docker socket does not start without being
+told this is the right host. The later decision wins: `init` says why it started none, in one line,
+and prints the command. Attaching a repository is not an instruction to hand root over the machine.
+
+**The subcommand framework #153 predicted is half-bought.** The failure a framework would prevent
+here was never parsing — the flag parser is twenty lines and has never been the problem — it was
+drift between the dispatcher and the usage text, which were two hand-maintained lists of the same
+thing. There is one list now, dispatch and `--help` both read it, and a test asserts every entry is
+reachable and documented. A dependency would have bought the same property with an opinion about
+everything else attached.
 
 2-3 belongs to this release as well. So did 3-4 and 2-2, both finished: verification of a
 trajectory now costs a constant rather than a session, which is the precondition for 1-14 putting a

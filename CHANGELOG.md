@@ -16,6 +16,37 @@ the tag push — after publication. Two contract bumps slipped through it.
 
 ## v0.6.0 — unreleased
 
+**`adp init` — one command, against a repository that already exists (#153).** The
+strongest brake on adoption was never scepticism about signed evidence; it is that moving
+repositories is unthinkable. ADP already had the answer — mirror mode makes it additive to
+a repo that stays on GitHub — and offered it as an operator feature reached through
+`adp repo mirror` with a remote URL, a secret and a credential to assemble by hand.
+
+Now: the org, the repo, the mirror, and an `adp.yaml` detected from what the repository
+already says about itself. **Mirror is the default and it is detected rather than asked
+for** — a checkout with an upstream gets mirrored, one without gets a native repository,
+`--no-mirror` overrides. That is #153's open question 4, settled on the grounds it gave:
+native mode asks a team to agree and mirror mode asks one developer to add a remote, and
+evaluation happens at the second price and never at the first.
+
+**Detect and write, don't prompt.** `adp.yaml` asks for the gate names, the runner image,
+its setup and what each gate runs — and the lockfile and the scripts block have already
+answered all four. Detection is right most of the time and a wrong default is a two-line
+edit, where a prompt is a decision the user is least equipped to make on the day they know
+least. So it writes, prints what it wrote, says to review it — and **does not commit it**,
+because committing on somebody's behalf puts something in their history they did not read.
+
+**It starts no runner, and says why in one line.** #153 asked for one; #155 has since
+decided a process that mounts the Docker socket does not start without being told this is
+the right host. The later decision wins — attaching a repository is not an instruction to
+hand root over the machine.
+
+**One command table, so the dispatcher and the usage text cannot drift.** #153 predicted
+the CLI would earn a subcommand framework here. The half that is actually earned is this:
+the failure a framework would prevent was never parsing, it was two hand-maintained lists
+of the same commands. There is one now, `--help` renders it, and a test asserts every
+entry is reachable and documented.
+
 **Four verbs the native plane had no command for (#155).** `cli/` wrapped five REST
 calls, and several of ADP's most distinctive capabilities had none — so the documented
 way to reach them was an HTTP request assembled by hand, which is a strange thing to ask
