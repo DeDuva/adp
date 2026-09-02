@@ -364,6 +364,7 @@ node dist/index.js login --server https://adp.example.com --token <token>   # wr
 
 | Command | Wraps |
 |---|---|
+| `adp init [--mirror <url>] [--credential <token>]` | attaches ADP to the repository you are standing in: org, repo, mirror, and an `adp.yaml` detected from what the repo already says |
 | `adp login --server <url> --token <token>` | writes `~/.adp/config.json` (or set `ADP_SERVER_URL`/`ADP_TOKEN`) |
 | `adp repo mirror <owner>/<repo> --remote-url <url> --secret <secret> --credential <credential> [--direction outbound\|inbound\|both]` | `POST .../mirror` |
 | `adp gate report --repo <owner>/<repo> --sha <sha> --name <name> --status <success\|failure\|pending>` | `POST .../gates` |

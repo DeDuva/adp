@@ -1,124 +1,109 @@
 #!/usr/bin/env node
 import { login } from "./commands/login.js";
+import { init } from "./commands/init.js";
 import { repoMirror } from "./commands/repo-mirror.js";
 import { gateReport } from "./commands/gate-report.js";
 import { prList } from "./commands/pr-list.js";
 import { prMerge } from "./commands/pr-merge.js";
-import { connect, disconnect } from "./commands/connect.js";
 import { prReview } from "./commands/pr-review.js";
+import { connect, disconnect } from "./commands/connect.js";
 import { watch } from "./commands/watch.js";
 import { undo } from "./commands/undo.js";
 import { bakeoff, bakeoffResults } from "./commands/bakeoff.js";
 import { runnerUp } from "./commands/runner.js";
 import { ApiError } from "./api.js";
 
-const USAGE = `adp — a CLI for ADP servers
+export interface Command {
+  /** The words that select it, in order: `["pr", "merge"]`. */
+  path: string[];
+  /** The rest of the usage line, after the words above. */
+  args: string;
+  /** One line, present tense, describing what it does rather than what it wraps. */
+  summary: string;
+  run(argv: string[]): Promise<void>;
+}
 
-Usage:
-  adp login --server <url> --token <token>
-  adp repo mirror <owner>/<repo> --remote-url <url> --secret <secret> --credential <credential> [--direction outbound|inbound|both]
-  adp gate report --repo <owner>/<repo> --sha <sha> --name <name> --status <success|failure|pending> [--summary <text>]
-  adp pr list --repo <owner>/<repo>
-  adp pr merge --repo <owner>/<repo> --number <n> [--method merge|squash|rebase]
-  adp pr review --repo <owner>/<repo> --number <n> --state <approved|changes_requested|commented> [--body <text>]
-  adp watch --repo <owner>/<repo> [--pr <n>] [--interval <seconds>] [--once]
-  adp undo <sha> --repo <owner>/<repo>
-  adp bakeoff --repo <owner>/<repo> --intent <uuid|#issue> --harness <a,b,c> [--orchestrator <name>]
-  adp bakeoff results --repo <owner>/<repo> --intent <uuid|#issue>
-  adp runner up --here [--server <url>] [--token <token>]
-  adp connect <claude-code|codex|gemini-cli> [--repo <owner>/<repo>] [--model <name>]
-  adp disconnect <claude-code|codex|gemini-cli>
-`;
-
-// Thin REST wrappers reusing the same bearer-token auth every other client (gh,
-// the MCP server) already uses against server/src/http-rest/*, plus the three
-// that are not: `connect` writes files and then proves they work (#154),
-// `runner up` starts another process, and `bakeoff` drives four calls to open
-// what a comparison needs.
+// #153 argues that `init`, `connect`, `watch`, `bakeoff`, `undo` and `runner`
+// are "a different shape of program" from five thin REST wrappers, and that
+// this is where the CLI earns a subcommand framework.
 //
-// Still no subcommand framework. #153 argues these are "a different shape of
-// program" and will want one; what is here is thirteen commands two levels deep
-// with a flag parser in twenty lines, and a framework bought now would be bought
-// before the shape it is meant to fit exists. cli/src/args.ts's comment applies.
+// This is the half of that which is actually earned. The failure a framework
+// would prevent here is not parsing — the flag parser is twenty lines and has
+// never been the problem — it is **drift between the dispatcher and the usage
+// text**, which were two hand-maintained lists of the same thing. So there is
+// one list: dispatch reads it, `--help` renders it, and a test asserts every
+// entry is reachable. A dependency would have bought the same property along
+// with an opinion about everything else.
+export const COMMANDS: Command[] = [
+  { path: ["init"], args: "[--repo <owner>/<repo>] [--mirror <url>] [--no-mirror] [--credential <token>]",
+    summary: "attach ADP to this repository — org, repo, mirror, adp.yaml", run: init },
+  { path: ["login"], args: "--server <url> --token <token>",
+    summary: "store the server and token this CLI uses", run: login },
+  { path: ["watch"], args: "--repo <owner>/<repo> [--pr <n>] [--interval <seconds>] [--once]",
+    summary: "the proposal, its gates, its runs, and whether it would land", run: watch },
+  { path: ["undo"], args: "<sha> --repo <owner>/<repo>",
+    summary: "undo the merge that produced a commit, by rollback or by revert", run: undo },
+  { path: ["bakeoff"], args: "--repo <owner>/<repo> --intent <uuid|#issue> --harness <a,b,c> [--orchestrator <name>]",
+    summary: "one intent, one run per harness, one comparison", run: bakeoff },
+  { path: ["bakeoff", "results"], args: "--repo <owner>/<repo> --intent <uuid|#issue>",
+    summary: "the comparison for an intent that already has runs", run: bakeoffResults },
+  { path: ["runner", "up"], args: "--here [--server <url>] [--token <token>]",
+    summary: "start a gate runner, or refuse and say why not here", run: runnerUp },
+  { path: ["gate", "report"], args: "--repo <owner>/<repo> --sha <sha> --name <name> --status <success|failure|pending> [--summary <text>]",
+    summary: "attest a gate result against a commit", run: gateReport },
+  { path: ["pr", "list"], args: "--repo <owner>/<repo>", summary: "list proposals", run: prList },
+  { path: ["pr", "merge"], args: "--repo <owner>/<repo> --number <n> [--method merge|squash|rebase]",
+    summary: "land a proposal, or read the refusal", run: prMerge },
+  { path: ["pr", "review"], args: "--repo <owner>/<repo> --number <n> --state <approved|changes_requested|commented> [--body <text>]",
+    summary: "record a typed review", run: prReview },
+  { path: ["repo", "mirror"], args: "<owner>/<repo> --remote-url <url> --secret <secret> --credential <credential> [--direction outbound|inbound|both]",
+    summary: "configure mirror mode by hand — `adp init` does this for you", run: repoMirror },
+  { path: ["connect"], args: "<claude-code|codex|gemini-cli> [--repo <owner>/<repo>] [--model <name>]",
+    summary: "write a harness's own configuration, then prove it works", run: connect },
+  { path: ["disconnect"], args: "<harness>", summary: "undo exactly what connect wrote", run: disconnect },
+];
+
+export function usage(): string {
+  const lines = ["adp — a CLI for ADP servers", "", "Usage:"];
+  const width = Math.max(...COMMANDS.map((c) => c.path.join(" ").length));
+  for (const command of COMMANDS) {
+    lines.push(`  adp ${command.path.join(" ")} ${command.args}`);
+    lines.push(`  ${" ".repeat(width + 4)}${command.summary}`);
+  }
+  return lines.join("\n") + "\n";
+}
+
+// Longest path first, so `bakeoff results` is matched before `bakeoff` and
+// `runner up` before a bare `runner` that does not exist.
+export function match(argv: string[]): { command: Command; rest: string[] } | null {
+  for (const command of [...COMMANDS].sort((a, b) => b.path.length - a.path.length)) {
+    if (command.path.every((word, i) => argv[i] === word)) {
+      return { command, rest: argv.slice(command.path.length) };
+    }
+  }
+  return null;
+}
+
 export async function run(argv: string[]): Promise<number> {
-  const [cmd, ...rest] = argv;
+  if (argv[0] === "--help" || argv[0] === "-h" || argv[0] === "help") {
+    console.log(usage());
+    return 0;
+  }
+
+  const matched = match(argv);
+  if (!matched) {
+    console.log(usage());
+    return argv.length > 0 ? 1 : 0;
+  }
 
   try {
-    switch (cmd) {
-      case "login":
-        await login(rest);
-        return 0;
-      case "connect":
-        await connect(rest);
-        return 0;
-      case "disconnect":
-        await disconnect(rest);
-        return 0;
-      // #155: the four verbs the native plane's most distinctive capabilities
-      // had no command for, so the documented way to reach them was `curl`.
-      case "watch":
-        await watch(rest);
-        return 0;
-      case "undo":
-        await undo(rest);
-        return 0;
-      case "bakeoff": {
-        if (rest[0] === "results") {
-          await bakeoffResults(rest.slice(1));
-          return 0;
-        }
-        await bakeoff(rest);
-        return 0;
-      }
-      case "runner": {
-        const [sub, ...args] = rest;
-        if (sub === "up") {
-          await runnerUp(args);
-          return 0;
-        }
-        break;
-      }
-      case "repo": {
-        const [sub, ...args] = rest;
-        if (sub === "mirror") {
-          await repoMirror(args);
-          return 0;
-        }
-        break;
-      }
-      case "gate": {
-        const [sub, ...args] = rest;
-        if (sub === "report") {
-          await gateReport(args);
-          return 0;
-        }
-        break;
-      }
-      case "pr": {
-        const [sub, ...args] = rest;
-        if (sub === "list") {
-          await prList(args);
-          return 0;
-        }
-        if (sub === "merge") {
-          await prMerge(args);
-          return 0;
-        }
-        if (sub === "review") {
-          await prReview(args);
-          return 0;
-        }
-        break;
-      }
-    }
+    await matched.command.run(matched.rest);
+    return 0;
   } catch (err) {
     const status = err instanceof ApiError ? ` (HTTP ${err.status})` : "";
     console.error(`adp: ${err instanceof Error ? err.message : String(err)}${status}`);
     return 1;
   }
-
-  console.log(USAGE);
-  return cmd ? 1 : 0;
 }
 
 if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {

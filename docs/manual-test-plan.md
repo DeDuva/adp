@@ -57,6 +57,29 @@ set -a; . .env.test; set +a
 
 ---
 
+## Part A2 — attaching ADP to a repository that already exists
+
+**A4. `adp init`.** Everything below sets up a fresh ADP repository by hand, which is the right
+shape for a walkthrough and the wrong shape for adoption: moving a repository is unthinkable, and
+mirror mode is what makes ADP additive to one that stays where it is. From inside a checkout that
+already has a remote:
+
+```bash
+adp init --credential <a token ADP can push with>
+```
+
+*Expect:* the org and the repo created, a mirror configured in both directions against the remote
+you already had, and an `adp.yaml` written from the repository's own lockfile and scripts block —
+printed, and **not committed**. Your remote and your pull requests do not change; the ADP record
+fills anyway.
+
+*Also expect:* no runner. It says why in one line — a runner mounts the Docker socket, which is
+root on the host — and prints `adp runner up --here` for a host where that is acceptable.
+
+Run it twice. The second run is a repair, not a collision.
+
+---
+
 ## Part B — the agent's loop
 
 This is the part an unmodified agent does. Nothing below requires ADP-specific knowledge; every

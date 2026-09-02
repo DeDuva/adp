@@ -572,6 +572,63 @@ RUNNER_OUT=$(ADP_RUNNER_TOKEN=placeholder adp runner up 2>&1) && fail "D14b: adp
 grep -q "root on this host" <<<"$RUNNER_OUT" || fail "D14b: adp runner up refused without naming the reason"
 pass "D14b adp runner up refuses to start here without being told this is the right host"
 
+# D14c — `adp init` (#153), the command that makes adoption additive rather than
+# a migration. One invocation, against a checkout that already has an upstream,
+# and nothing else run: the org, the repo, the mirror and an adp.yaml.
+#
+# The upstream is a plain local bare repo standing in for GitHub, the same
+# pattern D19 below uses — the mechanism is the git wire protocol and a webhook
+# shape, and neither needs a live GitHub credential to be proven.
+INIT_UPSTREAM="$WORKDIR/init-upstream.git"
+git init --bare -q --initial-branch main "$INIT_UPSTREAM"
+INIT_WORK="$WORKDIR/init-work"
+mkdir -p "$INIT_WORK"
+(
+  cd "$INIT_WORK"
+  git init -q -b main
+  git config user.email "acceptance@example.com"
+  git config user.name "Acceptance"
+  # A repository that already says what it is: a lockfile and a scripts block.
+  printf '{"name":"payments","scripts":{"test":"vitest","lint":"eslint ."}}\n' > package.json
+  printf '{}\n' > package-lock.json
+  git add . && git commit -q -m "seed"
+  git remote add origin "file://${INIT_UPSTREAM}"
+) || fail "D14c: could not seed the init fixture"
+
+# Output captured before the status check, not after: a failing `adp init` is
+# the case whose output is worth having, and `x=$(...) || fail` throws it away.
+set +e
+INIT_OUT=$(cd "$INIT_WORK" && ADP_SERVER_URL="http://localhost:${PORT}" ADP_TOKEN="$TOKEN" \
+  node "$CLI_BIN" init --repo "${OWNER}/init-demo" --credential "unused-for-file-remote" 2>&1)
+INIT_CODE=$?
+set -e
+printf '%s\n' "$INIT_OUT" > "$ARTIFACTS/adp-init.txt"
+[ "$INIT_CODE" -eq 0 ] || { printf '%s\n' "$INIT_OUT" >&2; fail "D14c: adp init exited $INIT_CODE"; }
+
+# The repository exists on the server, created by init and nothing else.
+api GET "/api/v3/repos/${OWNER}/init-demo" -o /dev/null -f || fail "D14c: adp init did not create the repo"
+
+# The mirror is configured, so the developer's remote and pull requests do not
+# change and the ADP record fills anyway.
+grep -q "file://${INIT_UPSTREAM}" <<<"$INIT_OUT" || fail "D14c: adp init did not mirror the upstream it found"
+MIRROR_SHOWN=$(api GET "/api/v3/repos/${OWNER}/init-demo/mirror") || fail "D14c: mirror was not configured"
+grep -q "file://${INIT_UPSTREAM}" <<<"$MIRROR_SHOWN" || fail "D14c: the server has no mirror for init-demo"
+
+# The adp.yaml is written from what the repository already stated — and left
+# uncommitted, because committing on somebody's behalf puts something in their
+# history they did not read.
+[ -f "$INIT_WORK/adp.yaml" ] || fail "D14c: adp init wrote no adp.yaml"
+grep -q "npm ci" "$INIT_WORK/adp.yaml" || fail "D14c: adp.yaml did not detect the lockfile"
+grep -q "npm run test" "$INIT_WORK/adp.yaml" || fail "D14c: adp.yaml did not detect the scripts block"
+git -C "$INIT_WORK" status --porcelain | grep -q "?? adp.yaml" \
+  || fail "D14c: adp init committed adp.yaml instead of leaving it to be reviewed"
+
+# And it does not fork a runner. #155 decided that a process mounting the Docker
+# socket does not start without being told this is the right host, and attaching
+# a repository is not that instruction.
+grep -q "root on this host" <<<"$INIT_OUT" || fail "D14c: adp init did not say why it started no runner"
+pass "D14c adp init: org, repo, mirror and a detected adp.yaml, in one command"
+
 # D15 — outbound webhooks: register a hook, then trigger a real signed
 # delivery against a real local listener (not a mock of core/webhooks.ts).
 WEBHOOK_SECRET="acceptance-webhook-$(openssl rand -hex 8)"
