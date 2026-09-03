@@ -103,6 +103,11 @@
 // is new, and the mutation was already in the published GitHub schema this
 // server serves — it simply had no resolver, which is a 500 rather than a
 // contract.
+//
+// #240 adds `parent_run` and `relationship` to the run-open body, and
+// `parent_run` / `parent_relationship` to the run representation. Additive:
+// both request fields are optional, and the response fields are null on a run
+// that follows nothing.
 export const API_VERSION = "0.7.0";
 
 export const API_VERSION_HEADER = "ADP-API-Version";

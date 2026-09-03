@@ -22,6 +22,7 @@ import {
   asRunStatus,
   trajectoryDigest,
   serializeRun,
+  RUN_RELATIONSHIPS,
 } from "../core/runs.js";
 import { serializeEvent, EVENT_KINDS } from "../core/trajectory.js";
 import {
@@ -41,6 +42,11 @@ const OpenRunBody = z.object({
   // ride in the run attestation, so a label that could change afterwards would
   // put the envelope and the row into disagreement.
   labels: z.record(z.string()).optional(),
+  // #240. Open-time only, like labels and for the same reason: lineage is a
+  // fact about why this run exists, and a run that could be re-parented later
+  // is one whose history is editable.
+  parent_run: z.string().uuid().optional(),
+  relationship: z.enum(RUN_RELATIONSHIPS).optional(),
 });
 
 const CloseRunBody = z.object({
@@ -116,6 +122,8 @@ export function registerRunRoutes(
         orchestrator: parsed.data.orchestrator,
         externalRef: parsed.data.external_ref ?? null,
         ...(parsed.data.labels ? { labels: parsed.data.labels } : {}),
+        parentRunId: parsed.data.parent_run ?? null,
+        parentRelationship: parsed.data.relationship ?? null,
       },
       req.identity!.identityId,
     );

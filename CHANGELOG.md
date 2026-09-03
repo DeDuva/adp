@@ -511,6 +511,37 @@ Written against the CLI's documented output rather than a captured transcript �
 under `custom` with its own name, and a format this is wrong about degrades to "recorded,
 unclassified" rather than to silence.
 
+### Reimplementation and continuation are different facts (#240)
+
+`sessions.resumedFromSessionId` already models "Codex continued Claude's unfinished work" — #151
+built the whole cross-harness resume on it. What it cannot model is "GPT-8 independently
+reimplemented GPT-6's bad change": that is not a continuation, it is a second attempt at the same
+intent that deliberately started over. Only the first had a column, so the second could be recorded
+as a resume — a lie about the trajectory — or as nothing, which is a lie about the history.
+
+A run now carries `parent_run` and a relationship. Four, because they are not orderings of one
+thing:
+
+| | |
+|---|---|
+| `retry` | the same work again, after something that was **not** the work went wrong |
+| `continue` | the run-level statement of what a resumed session already records |
+| `reimplement` | started over from the base, deliberately not looking at what the parent produced |
+| `supersede` | this run replaces the parent's result — a claim about outcomes rather than method |
+
+2-4 (#176) needs the third to be distinguishable from the second, because an independent second
+attempt is evidence in a way a continuation is not. #241's verb is what creates one.
+
+**Half a lineage is refused in either direction.** A parent with no relationship is a lineage nobody
+can interpret; a relationship with no parent is a claim about a run nobody named. A run with no
+lineage at all is ordinary and complete, and says so — the fields are present and null rather than
+absent, so a client can tell that from a server too old to answer.
+
+Open-time only, like `labels` and for the same reason: lineage is a fact about why this run exists,
+and a run that could be re-parented later is one whose history is editable. The parent is scoped to
+the repository, because a run id is caller input and lineage crossing repositories would let one
+repository's history name another's.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

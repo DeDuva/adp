@@ -117,6 +117,11 @@ export async function openRun(
     // a retry change what it says about itself is how a comparison stops being
     // evidence.
     labels?: Record<string, string>;
+    // #240: which run this one follows, and how. Open-time only for the same
+    // reason labels are — lineage is a fact about why this run exists, and a
+    // run that could be re-parented later is one whose history is editable.
+    parentRunId?: string | null;
+    parentRelationship?: RunRelationship | null;
   },
   actorId: string,
 ): Promise<{ ok: true; run: RunRow; created: boolean } | RunError> {
@@ -125,6 +130,29 @@ export async function openRun(
     .from(intents)
     .where(and(eq(intents.id, input.intentId), eq(intents.repoId, repo.id)));
   if (!intent) return { ok: false, status: 422, message: `intent ${input.intentId} not found in this repository` };
+
+  // #240: the pair is refused rather than half-accepted. A parent with no
+  // relationship is a lineage nobody can interpret, and a relationship with no
+  // parent is a claim about a run that was never named — both are worse than a
+  // run with no lineage at all, which is an ordinary and complete state.
+  if ((input.parentRunId ? 1 : 0) !== (input.parentRelationship ? 1 : 0)) {
+    return {
+      ok: false,
+      status: 422,
+      message: "parent_run and relationship go together — a lineage needs both ends to mean anything",
+    };
+  }
+  if (input.parentRunId) {
+    const [parent] = await db
+      .select({ id: runs.id })
+      .from(runs)
+      .where(and(eq(runs.id, input.parentRunId), eq(runs.repoId, repo.id)));
+    // Scoped to this repository: a run id is caller input, and lineage that
+    // crossed repositories would let one repository's history name another's.
+    if (!parent) {
+      return { ok: false, status: 422, message: `run ${input.parentRunId} not found in this repository` };
+    }
+  }
 
   // Re-opening an assignment after an orchestrator crash must resolve to the
   // run that already exists, or the trajectory forks into two halves that each
@@ -162,6 +190,8 @@ export async function openRun(
         orchestrator: input.orchestrator,
         externalRef: input.externalRef ?? null,
         labels: input.labels ?? {},
+        parentRunId: input.parentRunId ?? null,
+        parentRelationship: input.parentRelationship ?? null,
         actorId,
       })
       .returning();
@@ -177,6 +207,9 @@ export async function openRun(
         orchestrator: input.orchestrator,
         externalRef: input.externalRef ?? null,
         labels: input.labels ?? {},
+        ...(input.parentRunId
+          ? { parentRunId: input.parentRunId, parentRelationship: input.parentRelationship }
+          : {}),
       },
     });
 
@@ -708,10 +741,29 @@ export async function compareRuns(
   });
 }
 
+/**
+ * How a run relates to the one it follows.
+ *
+ * Four, and they are not orderings of one thing. `retry` is the same work again
+ * after something that was not the work went wrong. `continue` is the run-level
+ * statement of what `sessions.resumedFromSessionId` already records. `reimplement`
+ * starts over from the base without looking at what the parent produced — the
+ * one #241's verb creates, and the one 2-4 has to be able to distinguish,
+ * because an independent second attempt is evidence in a way a continuation is
+ * not. `supersede` is a claim about outcomes rather than about method.
+ */
+export const RUN_RELATIONSHIPS = ["retry", "continue", "reimplement", "supersede"] as const;
+export type RunRelationship = (typeof RUN_RELATIONSHIPS)[number];
+
 export function serializeRun(row: RunRow) {
   return {
     id: row.id,
     intent_id: row.intentId,
+    // #240: null on a run that follows nothing, which is the ordinary state.
+    // Present unconditionally rather than omitted, so a client can tell "this
+    // run has no lineage" from "this server is too old to say".
+    parent_run: row.parentRunId,
+    parent_relationship: row.parentRelationship,
     orchestrator: row.orchestrator,
     external_ref: row.externalRef,
     labels: row.labels,

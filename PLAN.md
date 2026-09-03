@@ -489,7 +489,7 @@ to work out.
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
 | 5-16 | Portability — a repository's record can leave the instance holding it | #239 | not started | See below. This is the item without which every adoption path in this phase is a trap |
-| 5-17 | Run lineage — `parent_run` plus a relationship of `retry`, `continue`, `reimplement` or `supersede` | #240 | not started | Sessions model "Codex continued Claude's unfinished work" well and "GPT-8 independently reimplemented GPT-6's bad change" not at all. They are different historical facts and only the first has a column |
+| 5-17 | Run lineage — `parent_run` plus a relationship of `retry`, `continue`, `reimplement` or `supersede` | #240 | shipped | Sessions model "Codex continued Claude's unfinished work" well and "GPT-8 independently reimplemented GPT-6's bad change" not at all. They are different historical facts and only the first has a column |
 | 5-18 | `adp reimplement <sha>` | #241 | not started | Recover the intent, find the base before the change, open a related run, record the new trajectory, run the same evals, compare, and offer the replacement. Every ingredient exists; the verb does not |
 | 5-19 | Bake-off and reimplement launch the harness | #242 | not started | `adp bakeoff` opens the candidate set and the labelled runs and then prints instructions for wiring each harness in by hand. Powerful substrate, and the assembly is the user's |
 
