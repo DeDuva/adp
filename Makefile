@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps check-deps worktree worktree-remove worktree-list test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner recorder helm dc-runtime site land local local-status local-down local-destroy measure-ops measure-verify
+.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps check-deps worktree worktree-remove worktree-list test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner recorder helm dc-runtime og site land local local-status local-down local-destroy measure-ops measure-verify
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -136,6 +136,19 @@ dc-runtime: ## Rebuild the published site's runtime from dc-runtime/src and asse
 	npm ci --prefix dc-runtime
 	npm run typecheck --prefix dc-runtime
 	npm run check --prefix dc-runtime
+
+og: ## Rebuild the published site's share cards from dc-runtime/og/card.html
+	npm ci --prefix dc-runtime
+	@if [ -x "$${ADP_CHROMIUM_PATH:-}" ]; then \
+		echo "using ADP_CHROMIUM_PATH=$$ADP_CHROMIUM_PATH — skipping the pinned download"; \
+	else \
+		npx --prefix dc-runtime playwright install chromium; \
+	fi
+	@# Not part of `make check`, unlike `make dc-runtime`. A screenshot is not
+	@# byte-reproducible across Chromium versions, so regenerating on every run
+	@# would fail the build on a Playwright bump — dc-runtime/og/render.mjs says
+	@# so at length. `make site` asserts the committed cards instead.
+	node dc-runtime/og/render.mjs
 
 site: ## Assert the published pages meet #163's exit criteria, in a real browser
 	npm ci --prefix dc-runtime

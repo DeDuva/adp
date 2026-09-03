@@ -280,6 +280,17 @@ own directory, ignored by default, and never the place a project rule is written
   working here could reach, which made a 69 KB dependency of the front page unfixable.
   `dc-runtime/README.md` records how it was recovered and how that recovery was verified.
 
+  **The share cards are the exception, and the exception is reasoned.** `docs/html/og.png`,
+  `why/og.png`, `sdlc/og.png` and `apple-touch-icon.png` are generated the same way — by
+  `make og`, from `dc-runtime/og/card.html` — but they are *not* byte-checked, because a
+  screenshot is not reproducible the way an esbuild bundle is: Chromium's glyph
+  rasterisation moves with the browser version and the faces come from Google Fonts at
+  render time. A byte guard would fail on a Playwright bump rather than on a change anyone
+  made, and a guard that cries wolf gets deleted. `make site` asserts what does go wrong
+  instead — they exist, they are PNGs at exactly 1200×630, they are small enough to fetch,
+  and every share asset a page names resolves. Don't add `make og` to `make check` on the
+  strength of the paragraph above this one.
+
 - **`docs/html/site.css` is the site's only design system, and neither page may grow a
   second one.** The palette, a seven-step type ramp and an 8-base spacing scale live there;
   no page declares a colour or a static inline `style=` of its own, and the essay's

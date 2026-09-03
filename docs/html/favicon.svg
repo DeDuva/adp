@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ADP">
+  <!-- The Blueprint grammar at 16px: drawn structure, square corners, one
+       accent. A plate with a seal on it — the site's whole argument, reduced
+       to the two shapes that survive being 16 pixels wide.
+
+       Colours are literal here because an SVG served as an <img> gets no
+       stylesheet: site.css cannot reach a favicon, so this file is the one
+       place the palette is repeated. Keep it in step with site.css's
+       --rule-strong, --paper and --accent by hand. -->
+  <rect width="64" height="64" fill="#101317"/>
+  <rect x="14.5" y="14.5" width="35" height="35" fill="none" stroke="#f1f3f6" stroke-width="5"/>
+  <rect x="32" y="32" width="17.5" height="17.5" fill="#1c4fd8"/>
+</svg>
