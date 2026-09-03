@@ -76,6 +76,15 @@
 // there. Null on a natively filed intent. A repository with inbound ingest
 // enabled likewise refuses natively filed issues, for the same numbering
 // reason as proposals.
+//
+// #227 and #230 add no wire surface: an ingested review is an ordinary
+// `reviews` row and an ingested author is an ordinary `identities` row, both
+// already served by the operations they belong to. What changes is behaviour,
+// and one piece of it reaches a native repository too — `one_approval` now
+// counts each reviewer's most recent verdict rather than every verdict they
+// have ever held, and excludes a dismissed one. A proposal whose reviewer
+// approved and then asked for changes stops satisfying it, which is what
+// GitHub has always done and what #121's reasoning requires.
 export const API_VERSION = "0.7.0";
 
 export const API_VERSION_HEADER = "ADP-API-Version";

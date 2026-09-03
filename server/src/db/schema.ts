@@ -378,15 +378,33 @@ export const candidateSets = pgTable("candidate_sets", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const reviews = pgTable("reviews", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  proposalId: uuid("proposal_id").notNull().references(() => proposals.id),
-  reviewerId: uuid("reviewer_id").notNull().references(() => identities.id),
-  state: text("state", { enum: ["approved", "changes_requested", "commented"] }).notNull(),
-  body: text("body").notNull().default(""),
-  annotations: jsonb("annotations"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const reviews = pgTable(
+  "reviews",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    proposalId: uuid("proposal_id").notNull().references(() => proposals.id),
+    reviewerId: uuid("reviewer_id").notNull().references(() => identities.id),
+    state: text("state", { enum: ["approved", "changes_requested", "commented"] }).notNull(),
+    body: text("body").notNull().default(""),
+    annotations: jsonb("annotations"),
+    // #227: the upstream review's own id, when this row shadows one. Null on a
+    // review submitted here. GitHub redelivers, and a review has no natural
+    // key — two approvals from one person on one proposal is an ordinary
+    // sequence, not a duplicate — so without this there is nothing to dedup on.
+    upstreamId: text("upstream_id"),
+    // #227: GitHub can dismiss a review, and a dismissed approval must stop
+    // counting toward `one_approval`. Recorded rather than deleted: the review
+    // happened, and an approval that was withdrawn is a different fact from one
+    // that was never given.
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("reviews_proposal_upstream_id_idx")
+      .on(table.proposalId, table.upstreamId)
+      .where(sql`${table.upstreamId} is not null`),
+  ],
+);
 
 // One row per gate report against a commit — the evidence bundle IS the
 // `envelope` column (a signed DSSE envelope wrapping an in-toto Statement,

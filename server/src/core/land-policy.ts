@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import type { GitBackend } from "./git-backend.js";
 import { reviews } from "../db/schema.js";
@@ -256,10 +256,18 @@ export async function evaluateLandPolicy(
     // with three approvals all from its author is as unapproved as one with
     // none, and says so differently, because the two are fixed by different
     // actions.
-    const approvals = await db
-      .select({ reviewerId: reviews.reviewerId })
-      .from(reviews)
-      .where(and(eq(reviews.proposalId, proposal.id), eq(reviews.state, "approved")));
+    // #227: the reviewer's *current* opinion, not every opinion they have ever
+    // held. GitHub counts the most recent non-comment review per reviewer, and
+    // until ingest existed the difference could not arise here — a native
+    // reviewer who approved and then requested changes left both rows, and the
+    // approval went on satisfying the requirement it no longer meant.
+    //
+    // Ingest makes that an ordinary sequence rather than a corner case: a
+    // reviewer approving, the branch moving, and the same reviewer asking for
+    // changes is what review on GitHub looks like. So the rule matches the
+    // incumbent's, for the same reason #121 gave for author-independence — a
+    // requirement that binds self-attestation must not be weaker than GitHub's.
+    const approvals = await latestReviewPerReviewer(db, proposal.id);
     const independent = approvals.filter((a) => a.reviewerId !== proposal.authorId);
     if (independent.length === 0) {
       unmet.push({
@@ -278,6 +286,37 @@ export async function evaluateLandPolicy(
   }
 
   return { allowed: unmet.length === 0, unmet, advisories, quarantined };
+}
+
+// Every reviewer's latest standing verdict, as GitHub computes it: the most
+// recent review that expressed one, with `commented` ignored because a comment
+// is not a verdict and must not displace the approval it was left beside. A
+// dismissed review is excluded outright — the review happened, which is why the
+// row is kept rather than deleted, and it no longer counts.
+async function latestReviewPerReviewer(db: Db, proposalId: string): Promise<{ reviewerId: string }[]> {
+  const rows = await db
+    .select({
+      reviewerId: reviews.reviewerId,
+      state: reviews.state,
+      createdAt: reviews.createdAt,
+      dismissedAt: reviews.dismissedAt,
+    })
+    .from(reviews)
+    .where(eq(reviews.proposalId, proposalId))
+    .orderBy(asc(reviews.createdAt));
+
+  const latest = new Map<string, string>();
+  for (const row of rows) {
+    if (row.dismissedAt) {
+      // A dismissal removes that verdict; it does not reinstate an older one,
+      // which is also how GitHub behaves.
+      latest.delete(row.reviewerId);
+      continue;
+    }
+    if (row.state === "commented") continue;
+    latest.set(row.reviewerId, row.state);
+  }
+  return [...latest.entries()].filter(([, state]) => state === "approved").map(([reviewerId]) => ({ reviewerId }));
 }
 
 function confidenceFailures(
