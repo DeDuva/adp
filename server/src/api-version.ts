@@ -108,6 +108,11 @@
 // `parent_run` / `parent_relationship` to the run representation. Additive:
 // both request fields are optional, and the response fields are null on a run
 // that follows nothing.
+//
+// #242 adds GET /api/adp/repos/{owner}/{repo}/intents/{id} — the intent's own
+// text, which nothing served. Read-only and additive: intents are created as a
+// side effect of filing an issue, and a route that edited one would let the
+// goal a run is scored against change after the scoring.
 export const API_VERSION = "0.7.0";
 
 export const API_VERSION_HEADER = "ADP-API-Version";

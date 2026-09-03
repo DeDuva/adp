@@ -17,7 +17,6 @@ import { existsSync } from "node:fs";
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { parseFlags, splitRepo } from "../args.js";
 import { loadConfig } from "../config.js";
 import { apiRequest, ApiError } from "../api.js";
@@ -25,15 +24,12 @@ import { findHarness, harnessNames, removeMcpServer, writeMcpServer, type Harnes
 import { excludePaths, hooksDir, installHook, removeHook, remoteRepo, repoRoot, unexcludePaths } from "../git.js";
 import { CLAUDE_SETTINGS, removeSessionStartHook, writeSessionStartHook } from "../harnesses.js";
 import { loadRepoIdentity, saveRepoIdentity } from "../repo-identity.js";
+// #242: one answer to "where is the recorder", shared with `bakeoff --launch`.
+import { installRoot, recorderBin } from "../recorder-bin.js";
 
 interface MintedToken {
   token: string;
   scopes: string[];
-}
-
-/** The checkout this CLI was installed from — where the MCP server and the recorder live. */
-function installRoot(): string {
-  return path.resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 }
 
 /**
@@ -53,11 +49,6 @@ function mcpCommand(root: string): { command: string; args: string[] } | null {
   const source = path.join(root, "server", "src", "mcp", "server.ts");
   if (existsSync(tsx) && existsSync(source)) return { command: tsx, args: [source] };
   return null;
-}
-
-function recorderBin(root: string): string | null {
-  const built = path.join(root, "recorder", "dist", "main.js");
-  return existsSync(built) ? built : null;
 }
 
 /** Marker on every file connect generates whole, so disconnect removes only its own. */

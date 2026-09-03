@@ -16,6 +16,7 @@
     "GET /api/adp/repos/{owner}/{repo}/candidate-sets/{id}",
     "GET /api/adp/repos/{owner}/{repo}/evidence/{sha}",
     "GET /api/adp/repos/{owner}/{repo}/gate-jobs",
+    "GET /api/adp/repos/{owner}/{repo}/intents/{id}",
     "GET /api/adp/repos/{owner}/{repo}/operations",
     "GET /api/adp/repos/{owner}/{repo}/operations/{id}",
     "GET /api/adp/repos/{owner}/{repo}/runs",

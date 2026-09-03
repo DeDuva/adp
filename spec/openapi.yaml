@@ -1907,6 +1907,55 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/adp/repos/{owner}/{repo}/intents/{id}:
+    get:
+      x-required-scope: "repo:read"
+      summary: >
+        #241: the intent's own text.
+
+        Every route that touched an intent returned its *id* — the issue create,
+        the change record, the run — or its title as one line inside an evidence
+        bundle. A client holding an intent id had no way to read what was
+        actually asked for, which is exactly what `adp reimplement` and
+        `adp bakeoff --launch` have to give the harness they are about to run: a
+        bake-off whose arms were each given a different instruction would compare
+        the instructions rather than the harnesses.
+
+        Read-only. Intents are created as a side effect of filing an issue, and a
+        route that edited one would let the goal a run is scored against change
+        after the scoring.
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema: { type: string }
+        - name: repo
+          in: path
+          required: true
+          schema: { type: string }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The intent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Intent"
+        "401":
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No such repository, or no such intent in it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/adp/github-app:
     get:
       x-required-scope: "repo:read"
@@ -4200,6 +4249,37 @@ components:
         events:
           type: array
           items: { $ref: "#/components/schemas/TrajectoryEvent" }
+    Intent:
+      type: object
+      required: [id, title, body, source, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        body:
+          type: string
+        source:
+          type: string
+          enum: [issue, task, api]
+        issue_number:
+          type: integer
+          nullable: true
+          description: The issue carrying this intent, where one does.
+        upstream_host:
+          type: string
+          nullable: true
+          description: "#226: which host the issue this came from lives on. Null on a natively filed intent."
+        upstream_number:
+          type: integer
+          nullable: true
+        upstream_url:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
     Owner:
       type: object
       required: [login, id, node_id, type]
