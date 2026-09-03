@@ -265,6 +265,48 @@ The observation reads the typed `model` column rather than anything in the paylo
 #161's retention: an aged-out event keeps every typed column and loses only its payload body, and
 the observation outlives the transcript it was made from.
 
+### The instance creates its own GitHub App (#232)
+
+Setting up companion mode cost a personal access token and a webhook created by hand in GitHub's
+settings, using a URL `adp init` prints as `<your ADP public URL>/…` because it does not know it.
+Three manual steps and one secret before anything worked — and a PAT is the wrong credential shape
+regardless: it carries the developer's whole account scope, it expires on their schedule rather than
+the installation's, and revoking it breaks unrelated things.
+
+**It also cannot do what the next two items need.** GitHub's Checks API refuses personal access
+tokens outright, so `ADP / change record` and `ADP / policy` are unreachable from one however it is
+scoped. That is why this landed first.
+
+**The manifest flow matters more than the App does.** GitHub creates the App in the *user's own*
+organisation, from a manifest this instance serves, and hands the credentials back to whoever served
+it — so a self-hosted deployment gets one-click installation with no hosted control plane in the
+middle holding everyone's keys. `GET /github-app/new` is HTML rather than an API because a browser
+form POST is the only thing GitHub accepts a manifest as; the spec-coverage exemption says so.
+
+Everything the conversion returns is stored encrypted with the same key and mechanism as mirror
+credentials, and no read route serves any of it back — the private key can mint an installation
+token for every repository the App is installed on. Installation tokens are minted on demand and
+cached in process rather than written down: a credential with a one-hour life that is persisted
+becomes a thing that has to be cleaned up.
+
+The manifest asks for exactly the permissions items in this phase use, and no more — an installation
+prompt is read by the person deciding whether to trust this, and a permission with no caller is a
+request that cannot be justified when they ask. `pull_requests` is **read**, because 5a settled that
+GitHub stays the merge authority.
+
+The App's single endpoint delivers every installation's events, so unlike the per-repository webhook
+it has to find its way back from `repository.full_name` — and it delivers to **every** ADP repository
+mirroring that upstream, because nothing stops two of them and picking one would make which gets the
+record an arbitrary function of insertion order. What the dispatch then *does* moved into
+`core/github-event-dispatch.ts`, shared with the per-repository receiver for the reason #228 shares
+branch syncing with the poller: inbound now has three arrivals and they must produce one record.
+
+Uninstalling marks the installation gone and keeps the row. "Clean" means ADP stops receiving
+events, not that the record of what it ingested while installed disappears.
+
+The PAT path still works, and 5-5's poller is still necessary either way: an App also delivers to a
+reachable URL, and a laptop has none.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

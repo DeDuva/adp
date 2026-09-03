@@ -830,6 +830,62 @@ export const mirrors = pgTable(
   (table) => [unique().on(table.repoId)],
 );
 
+// #232: the GitHub App this instance created for itself, and where it is
+// installed.
+//
+// A row here is credentials, not configuration. Setting up companion mode used
+// to cost a personal access token and a webhook created by hand in GitHub's
+// settings — three manual steps and one secret before anything worked, and a
+// PAT is the wrong credential shape regardless: it carries the developer's
+// whole account scope, it expires on their schedule rather than the
+// installation's, and revoking it breaks unrelated things.
+//
+// **The manifest flow matters more than the App.** GitHub creates the App in
+// the user's own organisation and hands the credentials back to the instance
+// that served the manifest, so a self-hosted ADP gets one-click installation
+// with no hosted control plane in the middle — which is what keeps this
+// unblocked by the budget decision that defers hosted preview.
+//
+// One app per instance rather than per org. The App is *this deployment's*
+// identity to GitHub; an org here is a tenant inside it, and giving each tenant
+// its own App would mean each of them running the manifest flow, which is the
+// manual setup this replaces.
+export const githubApps = pgTable("github_apps", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // GitHub's numeric app id, which is what the JWT's `iss` claim carries.
+  appId: text("app_id").notNull().unique(),
+  slug: text("slug").notNull(),
+  name: text("name").notNull(),
+  htmlUrl: text("html_url").notNull(),
+  clientId: text("client_id").notNull(),
+  // All three encrypted with the same key and mechanism as mirror credentials
+  // (core/mirror-crypto.ts). The private key in particular is the App: anyone
+  // holding it can mint an installation token for every repository the App is
+  // installed on.
+  clientSecretCiphertext: text("client_secret_ciphertext").notNull(),
+  privateKeyCiphertext: text("private_key_ciphertext").notNull(),
+  webhookSecretCiphertext: text("webhook_secret_ciphertext").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const githubAppInstallations = pgTable(
+  "github_app_installations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    appId: uuid("app_id").notNull().references(() => githubApps.id),
+    installationId: text("installation_id").notNull(),
+    // The GitHub account the App is installed on — an org or a user.
+    account: text("account").notNull(),
+    // Set when the App is uninstalled. The row is kept rather than deleted:
+    // "uninstalling is clean" means ADP stops receiving events, not that the
+    // record of what was ingested while it was installed disappears — every
+    // change, proposal and gate result it produced still points at it.
+    suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique().on(table.appId, table.installationId)],
+);
+
 // Outbox for outbound pushes (populated inside post-receive's transaction,
 // drained by core/mirror-poller.ts) and audit trail for both directions
 // (inbound rows are written synchronously, already resolved).
