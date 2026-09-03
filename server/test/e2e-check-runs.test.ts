@@ -388,7 +388,7 @@ describe.skipIf(skipWithoutDb)("#233: the change-record check run", () => {
 
       const [proposal] = await db.select().from(proposals).where(eq(proposals.repoId, repo.id));
       const result = await landProposal(
-        { db, gitBackend: gitBackendRef, instanceFloor: [] },
+        { db, gitBackend: gitBackendRef, instanceFloor: [], logError: () => {} },
         { id: repo.id, owner, name: "no-land-repo", orgId: null },
         proposal!,
         "merge",
