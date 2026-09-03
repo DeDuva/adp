@@ -130,6 +130,27 @@ scraper would ever have seen a single tag of it, because none of them run JavaSc
 
 `/why/` also gained a `lang="en"` it had never declared.
 
+### Every numbered section is a link, and so is every move (#276)
+
+The front page had seven numbered sections and one usable anchor. `/sdlc/` had seven and none;
+`/why/` had six and none. People share the passage that convinced them rather than the domain, and
+there was no way to send anyone a passage.
+
+All twenty sections across the three pages are now addressable, and **the number in the band is the
+link** — it fills the box, so the whole `01` is the target, and it stays the ink colour it always
+was until you hover it. The band is otherwise unchanged; nothing new appears on the page at rest.
+
+The interactive demo in the hero is the most shareable thing on the site, and it was the least
+linkable: three buttons and no URL between them. Each move is now `#move-refuse`, `#move-undo` or
+`#move-swap`. Arriving on one scrolls the demo into view and plays it; clicking one puts it in the
+address bar with `replaceState`, so the URL is copyable and the back button still leaves the page
+instead of walking backwards through every demo somebody clicked.
+
+`make site` grew four assertions for this, and one of them is the one worth naming: every band link
+must resolve to an actual `<section>`, and no page may carry a duplicate id. A slug that collides
+with one of the demo's own element handles would have pointed a permalink at a div inside the
+animation, and it would have looked like a working link.
+
 ### A GitHub pull request is a proposal in ADP (#224)
 
 `pull_request` deliveries — `opened`, `reopened`, `synchronize`, `edited`, `closed` — become a

@@ -154,6 +154,15 @@ p { margin: 0; max-width: var(--measure); text-wrap: pretty; }
                font: 500 var(--t2)/1 var(--mono); letter-spacing: .2em;
                text-transform: uppercase; color: var(--dim); }
 
+/* The number is the section's permalink (#276). People share the passage that
+   convinced them, not the domain, and until this the front page had seven
+   numbered sections and one anchor. Styled to disappear: the band looks
+   exactly as it did, the link fills the box so the whole number is the target,
+   and it announces itself on hover and through the shared focus ring. */
+.band__n a { color: inherit; display: flex; align-items: center;
+             justify-content: center; width: 100%; height: 100%; }
+.band__n a:hover { color: var(--accent); text-decoration: none; }
+
 /* Content beside a margin column. Collapses to one column on narrow screens. */
 .split { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: var(--s5);
          align-items: start; width: 100%; }

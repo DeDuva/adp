@@ -84,8 +84,8 @@
 </header>
 
 <!-- ══════════════════════ 01 WHY ══════════════════════ -->
-<section class="wrap sec">
-<div class="band"><span class="band__n">01</span><span class="band__label">WHY</span></div>
+<section class="wrap sec" id="why">
+<div class="band"><span class="band__n"><a href="#why" aria-label="Link to section 01, WHY">01</a></span><span class="band__label">WHY</span></div>
 <div class="flow flow--loose">
 <h2>Verification is the new bottleneck</h2>
 <p class="b">For seventy years, writing code was the expensive part, so every practice we have — pull requests, line-by-line review, branch protection, CI on the branch head — amortizes verification against slow authoring. Agents inverted the ratio. Teams using AI merge <strong class="strong">98% more pull requests</strong>, while review time per change rises <strong class="strong">91%</strong><a class="ref" href="#ref-4">4</a>. Developer trust in AI output fell to <strong class="strong">29%</strong> in the same period<a class="ref" href="#ref-5">5</a> — the code got faster and less trusted at once.</p>
@@ -121,8 +121,8 @@
 </section>
 
 <!-- ══════════════════════ 02 HOW AGENTS SHIP ══════════════════════ -->
-<section class="wrap sec">
-<div class="band"><span class="band__n">02</span><span class="band__label">HOW AGENTS ACTUALLY SHIP</span></div>
+<section class="wrap sec" id="how-agents-ship">
+<div class="band"><span class="band__n"><a href="#how-agents-ship" aria-label="Link to section 02, HOW AGENTS ACTUALLY SHIP">02</a></span><span class="band__label">HOW AGENTS ACTUALLY SHIP</span></div>
 <div class="flow flow--loose">
 <h2>The loop: iterate, believe, merge</h2>
 <p class="b">The observed pattern is not a swarm. It is <strong class="k strong">one capable agent iterating against CI until green, then submitting</strong> — and increasingly, merging. The field data points one way: fully autonomous agent-authored merges are still a rounding error — a few hundred out of 153,000 measured — while AI assistance already touches at least 1 in 7 private merges, and that floor is rising<a class="ref" href="#ref-14">14</a>. Where agents do author whole fixes, 65% merge, and the top failure modes are exactly the loop's: tests fail (18.1%), or the fix is wrong beneath a green build (15.3%)<a class="ref" href="#ref-15">15</a>. Even the vendors shipping parallel agents describe fan-out as the exception: Cursor's own guidance reserves multi-model ensembles for "hard problems," and uses parallelism for <em class="em">independent</em> tasks in separate worktrees<a class="ref" href="#ref-18">18</a>. The economics agree — multi-agent coordination pays +81% on parallelizable work but degrades sequential work 39–70%<a class="ref" href="#ref-6">6</a> at 4–220× the token cost<a class="ref" href="#ref-7">7</a>. We measured it ourselves rather than resting on other people's numbers. A pre-registered arm, 20 of 20 trials verified, found swarm topology cost <strong class="strong">3.6× the tokens and wall clock and 2.8× the tool calls</strong> of a single agent, for <strong class="strong">no measurable quality difference</strong><a class="ref" href="#ref-19">19</a>. Both tasks were solvable in one pass, which is the limit on what that arm can conclude and is stated as such in its own report.</p>
@@ -207,8 +207,8 @@
 </section>
 
 <!-- ══════════════════════ 03 THE INVARIANT ══════════════════════ -->
-<section class="wrap sec">
-<div class="band"><span class="band__n">03</span><span class="band__label">THE INVARIANT</span></div>
+<section class="wrap sec" id="the-invariant">
+<div class="band"><span class="band__n"><a href="#the-invariant" aria-label="Link to section 03, THE INVARIANT">03</a></span><span class="band__label">THE INVARIANT</span></div>
 <div class="flow flow--loose">
 <h2>What survives every scenario</h2>
 <p class="b">The two shapes stress different machinery. The serial stream — the base case — breaks the <em class="k">trust path</em>: it needs evidence the author can't grade for itself, an authoritative operation log, durable checkpoints, universal undo, and history that survives its own author rewriting it. Fan-out — the mode fleets enter for hard problems and mass remediation — breaks the <em class="warn">merge path</em>: it needs attempts as first-class objects, conflicts that don't halt pipelines, and a queue that tests merged states before landing. The mix will shift with model capability and token prices; the machinery has to serve both, weighted toward the one that's actually here.</p>
@@ -229,8 +229,8 @@
 </section>
 
 <!-- ══════════════════════ 04 GROUND TRUTH ══════════════════════ -->
-<section class="wrap sec">
-<div class="band"><span class="band__n">04</span><span class="band__label">GROUND TRUTH</span></div>
+<section class="wrap sec" id="ground-truth">
+<div class="band"><span class="band__n"><a href="#ground-truth" aria-label="Link to section 04, GROUND TRUTH">04</a></span><span class="band__label">GROUND TRUTH</span></div>
 <div class="flow flow--loose">
 <h2>Why git and the forge can't just be patched</h2>
 <p class="b">None of this is a criticism of git — it is a mechanical description of a system designed, brilliantly, for a different workload. Six properties that were fine for one human on one branch are structural at agent scale. Expand any of them; each is stated mechanically, most with a simulation you can step through. No familiarity with git internals assumed.</p>
@@ -487,8 +487,8 @@
 </section>
 
 <!-- ══════════════════════ 05 THE PROTOCOL ══════════════════════ -->
-<section class="wrap sec">
-<div class="band"><span class="band__n">05</span><span class="band__label">THE PROTOCOL</span></div>
+<section class="wrap sec" id="the-protocol">
+<div class="band"><span class="band__n"><a href="#the-protocol" aria-label="Link to section 05, THE PROTOCOL">05</a></span><span class="band__label">THE PROTOCOL</span></div>
 <div class="flow flow--loose">
 <h2>A typed transaction, and a server that gates on it</h2>
 <p class="b">ADP is two things. A <strong class="strong">schema</strong>: every change is one signed record — intent → diff → evidence → provenance — with the git object graph as the store, so <span class="mono em">git clone</span> and every existing tool keep working. And a <strong class="strong">gate</strong>: changes are admitted by policy that evaluates the record — tests and evals against the merged state, secrets blocked at the receive path, dependency changes checked at admission, org-level rules no agent can bypass. The verdict returns to the authoring agent as a typed object it can act on in-trajectory, rather than an alert in a queue a human never empties.</p>
@@ -504,8 +504,8 @@
 </section>
 
 <!-- ══════════════════════ 06 LANDSCAPE ══════════════════════ -->
-<section class="wrap sec">
-<div class="band"><span class="band__n">06</span><span class="band__label">LANDSCAPE</span></div>
+<section class="wrap sec" id="landscape">
+<div class="band"><span class="band__n"><a href="#landscape" aria-label="Link to section 06, LANDSCAPE">06</a></span><span class="band__label">LANDSCAPE</span></div>
 <div class="flow flow--loose">
 <h2>Everyone solved a piece. Nobody solved trust.</h2>
 <p class="b">Between February and June 2026, five well-resourced teams shipped systems on these premises — independent convergence by an ex-GitHub CEO, an IDE company, a game engine, a Perforce challenger, and an indie is the strongest available evidence the architecture is right. The matrix below scores each against the capabilities both futures require, from public sources as of August 2026. Every row expands to the evidence; ● shipped and verifiable, ◐ partial or announced, ○ absent or unpublished. Corrections welcome — <a href="https://github.com/DeDuva/adp/issues">file an issue</a>.</p>

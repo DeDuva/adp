@@ -108,9 +108,9 @@
       </div>
       <div class="stage-bar" id="stBar">
         <span class="stage-bar__lab">Try the moves —</span>
-        <button class="btn" type="button" id="stBtnRefuse">Push without evidence</button>
-        <button class="btn" type="button" id="stBtnUndo">Undo the last merge</button>
-        <button class="btn" type="button" id="stBtnSwap">Hand off to another agent</button>
+        <button class="btn" type="button" id="stBtnRefuse" data-move="refuse">Push without evidence</button>
+        <button class="btn" type="button" id="stBtnUndo" data-move="undo">Undo the last merge</button>
+        <button class="btn" type="button" id="stBtnSwap" data-move="swap">Hand off to another agent</button>
       </div>
     </div>
 
@@ -123,8 +123,8 @@
   </div>
 </header>
 
-<section class="wrap sec">
-  <div class="band"><span class="band__n">01</span><span class="band__label">The lifecycle</span></div>
+<section class="wrap sec" id="lifecycle">
+  <div class="band"><span class="band__n"><a href="#lifecycle" aria-label="Link to section 01, The lifecycle">01</a></span><span class="band__label">The lifecycle</span></div>
   <div class="flow flow--loose">
     <h2>The AI-native SDLC, enforced</h2>
     <p class="sub">The published playbooks for agentic development converge on the same shape: six
@@ -221,8 +221,8 @@
   </div>
 </section>
 
-<section class="wrap sec">
-  <div class="band"><span class="band__n">02</span><span class="band__label">Adoption</span></div>
+<section class="wrap sec" id="adoption">
+  <div class="band"><span class="band__n"><a href="#adoption" aria-label="Link to section 02, Adoption">02</a></span><span class="band__label">Adoption</span></div>
   <div class="flow flow--loose">
     <h2>Your repository does not move</h2>
     <p class="sub">Companion mode. Your issues, branches, pull requests and Actions stay exactly
@@ -291,8 +291,8 @@ gh pr merge --squash</pre>
   </div>
 </section>
 
-<section class="wrap sec">
-  <div class="band"><span class="band__n">03</span><span class="band__label">The record</span></div>
+<section class="wrap sec" id="record">
+  <div class="band"><span class="band__n"><a href="#record" aria-label="Link to section 03, The record">03</a></span><span class="band__label">The record</span></div>
   <div class="flow flow--loose">
     <h2>Every change carries its proof</h2>
     <p class="sub">Git records <em>what</em> changed and discards <em>why</em> and <em>whether anyone
@@ -423,8 +423,8 @@ gh pr merge --squash</pre>
   </div>
 </section>
 
-<section class="wrap sec">
-  <div class="band"><span class="band__n">04</span><span class="band__label">After it lands</span></div>
+<section class="wrap sec" id="after-it-lands">
+  <div class="band"><span class="band__n"><a href="#after-it-lands" aria-label="Link to section 04, After it lands">04</a></span><span class="band__label">After it lands</span></div>
   <div class="flow flow--loose">
     <h2>The record outlives the session</h2>
     <p class="sub">Verification is the bottleneck — and it is not the finish line. Past review sit
@@ -476,8 +476,8 @@ gh pr merge --squash</pre>
   </div>
 </section>
 
-<section class="wrap sec">
-  <div class="band"><span class="band__n">05</span><span class="band__label">What that buys you</span></div>
+<section class="wrap sec" id="what-that-buys-you">
+  <div class="band"><span class="band__n"><a href="#what-that-buys-you" aria-label="Link to section 05, What that buys you">05</a></span><span class="band__label">What that buys you</span></div>
   <div class="flow flow--loose">
     <h2>What that buys you</h2>
     <div class="table-scroll">
@@ -500,8 +500,8 @@ gh pr merge --squash</pre>
   </div>
 </section>
 
-<section class="wrap sec">
-  <div class="band"><span class="band__n">06</span><span class="band__label">Status</span></div>
+<section class="wrap sec" id="status">
+  <div class="band"><span class="band__n"><a href="#status" aria-label="Link to section 06, Status">06</a></span><span class="band__label">Status</span></div>
   <div class="flow flow--loose">
     <h2>Working today</h2>
     <div class="table-scroll">
@@ -540,7 +540,7 @@ gh pr merge --squash</pre>
 </section>
 
 <section class="wrap sec" id="try-it">
-  <div class="band"><span class="band__n">07</span><span class="band__label">Try it</span></div>
+  <div class="band"><span class="band__n"><a href="#try-it" aria-label="Link to section 07, Try it">07</a></span><span class="band__label">Try it</span></div>
   <div class="flow flow--loose">
     <h2>Try it</h2>
     <p class="sub">One command starts a throwaway ADP against an ephemeral PostgreSQL, then uses
@@ -751,16 +751,29 @@ make demo</pre>
     });
   }
 
-  function wire(id, fn) {
+  function run(fn) {
+    if (state.busy) return Promise.resolve();
+    state.busy = true;
+    var btns = document.querySelectorAll('.stage-bar .btn');
+    btns.forEach(function (b) { b.disabled = true; });
+    return fn().catch(function () {}).then(function () {
+      state.busy = false;
+      btns.forEach(function (b) { b.disabled = false; });
+    });
+  }
+
+  /* #276: each move is addressable, so the thing people actually want to send
+     someone — "watch it refuse a push with no evidence" — is a URL and not a
+     paragraph of instructions. replaceState rather than pushState: the address
+     bar carries the move for copying, and the back button still leaves the
+     page rather than walking three demos backwards. In a try/catch because a
+     file:// copy of this page is a different origin every time and throws. */
+  var MOVES = { refuse: seqRefuse, undo: seqUndo, swap: seqSwap };
+
+  function wire(id, name) {
     $(id).addEventListener('click', function () {
-      if (state.busy) return;
-      state.busy = true;
-      var btns = document.querySelectorAll('.stage-bar .btn');
-      btns.forEach(function (b) { b.disabled = true; });
-      fn().catch(function () {}).then(function () {
-        state.busy = false;
-        btns.forEach(function (b) { b.disabled = false; });
-      });
+      try { history.replaceState(null, '', '#move-' + name); } catch (e) {}
+      run(MOVES[name]);
     });
   }
 
@@ -773,19 +786,21 @@ make demo</pre>
   log('<span class="dim">op_0117</span> <span class="ok">land ch_411 · evidence e_968 (DSSE) · signed</span> · claude-code');
   log('<span class="dim">op_0118</span> <span class="ok">land ch_412 · evidence e_969 (DSSE) · signed</span> · claude-code');
   $('stBar').classList.add('is-live');
-  wire('stBtnRefuse', seqRefuse);
-  wire('stBtnUndo', seqUndo);
-  wire('stBtnSwap', seqSwap);
+  wire('stBtnRefuse', 'refuse');
+  wire('stBtnUndo', 'undo');
+  wire('stBtnSwap', 'swap');
+
+  /* Arriving on a move link plays it. The hash names no element, so the browser
+     does not scroll — which is why this scrolls the stage into view itself. */
+  var arriving = (location.hash || '').replace(/^#move-/, '');
+  if (location.hash.indexOf('#move-') === 0 && MOVES[arriving]) {
+    stage.scrollIntoView({ block: 'center' });
+    run(MOVES[arriving]);
+  }
 
   function ambient() {
-    if (state.busy || document.visibilityState !== 'visible') return;
-    state.busy = true;
-    var btns = document.querySelectorAll('.stage-bar .btn');
-    btns.forEach(function (b) { b.disabled = true; });
-    seqLand().catch(function () {}).then(function () {
-      state.busy = false;
-      btns.forEach(function (b) { b.disabled = false; });
-    });
+    if (document.visibilityState !== 'visible') return;
+    run(seqLand);
   }
   setTimeout(ambient, 1200);
   setInterval(ambient, 32000);

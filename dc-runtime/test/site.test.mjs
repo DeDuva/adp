@@ -251,3 +251,53 @@ for (const { at, up } of SHARE) {
     }
   });
 }
+
+// ─────────────────────────────────────────────────────────────── #276 ──
+// People share the passage that convinced them, not the domain. The front page
+// had seven numbered sections and one anchor.
+for (const path of PAGES) {
+  test(`${path}: every numbered section is linkable, and the links land`, async ({ page }) => {
+    await page.goto(site.base + path, { waitUntil: 'networkidle' });
+    const result = await page.evaluate(() => {
+      const nums = [...document.querySelectorAll('.band__n')];
+      const bad = [], hrefs = [];
+      for (const n of nums) {
+        const a = n.querySelector('a[href^="#"]');
+        if (!a) { bad.push('band ' + n.textContent.trim() + ' has no link'); continue; }
+        const id = a.getAttribute('href').slice(1);
+        hrefs.push(id);
+        // The anchor has to reach a section, not merely be well-formed: a slug
+        // that matches nothing scrolls nowhere and looks like a working link.
+        const target = document.getElementById(id);
+        if (!target) bad.push('#' + id + ' matches no element');
+        else if (target.tagName !== 'SECTION') bad.push('#' + id + ' is a ' + target.tagName);
+      }
+      // A slug colliding with one of the script's own handles would silently
+      // point the permalink at a div inside the demo.
+      const ids = [...document.querySelectorAll('[id]')].map((e) => e.id);
+      const dupes = ids.filter((v, i) => ids.indexOf(v) !== i);
+      return { count: nums.length, bad, dupes, hrefs };
+    });
+    expect(result.count, 'numbered sections found').toBeGreaterThan(4);
+    expect(result.bad, 'section anchors').toEqual([]);
+    expect(result.dupes, 'duplicate ids').toEqual([]);
+  });
+}
+
+// The interactive demo is the most shareable thing on the site, and the whole
+// point of an anchor for it is that the link plays the move on arrival.
+test('/#move-undo plays the undo, and clicking a move puts it in the URL', async ({ page }) => {
+  await page.goto(site.base + '/#move-undo', { waitUntil: 'networkidle' });
+  // Only seqUndo writes an `undo` row; boot seeds two `land` rows.
+  await expect(page.locator('#stLedger')).toContainText('undo op_', { timeout: 15000 });
+
+  await page.goto(site.base + '/', { waitUntil: 'networkidle' });
+  expect(new URL(page.url()).hash, 'no hash before a click').toBe('');
+  const before = await page.evaluate(() => history.length);
+  await page.locator('#stBtnSwap').click();
+  await expect.poll(() => new URL(page.url()).hash, { timeout: 10000 }).toBe('#move-swap');
+  // replaceState, not pushState: the address bar carries the move for copying,
+  // and the history does not grow — so back leaves the page rather than walking
+  // backwards through every demo somebody clicked.
+  expect(await page.evaluate(() => history.length), 'history entries added').toBe(before);
+});
