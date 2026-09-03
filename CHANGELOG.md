@@ -482,6 +482,35 @@ worst outcome available for a first-contact command.
 that ingested the back catalogue on every start would re-record every past session each time someone
 reconnected.
 
+### A Gemini CLI reader, and what a third reader found (#236)
+
+`adp connect gemini-cli` minted a token, wrote the configuration and installed the commit hook, and
+then recorded no turn-level detail at all, because no reader shipped for it. Harness independence is
+this project's strategic claim, and two readers across three connected harnesses is exactly where
+that claim is measured.
+
+**A third reader is the test of whether the fixed vocabulary generalises or was fitted to two
+cases**, so it is worth recording what it found. Claude Code assembles one `tool_call` from a pair
+of lines; Codex collapses three lines carrying one item id; Gemini's non-interactive run is neither
+— it produces a single object at the end, with the answer and aggregate statistics. The interesting
+question was therefore not correlation but what to do when a harness reports **counts** where the
+vocabulary wants events.
+
+The answer is the clause the issue asked for: **report rather than coerce.** Nine tool calls that
+arrived as the number nine are recorded as the number nine, in an event that says so — inventing
+nine `tool_call` events with no name, no argument and no outcome would make the corpus claim detail
+it never had. Where the streaming form does report calls individually, they are recorded as calls
+and the aggregate is dropped, because recording both would double every count.
+
+The reader's `end()` returns nothing, and that is evidence rather than an omission: the correlation
+the other two readers do is a property of *those harnesses* rather than something the contract
+requires.
+
+Written against the CLI's documented output rather than a captured transcript — the same weakness
+`codex.ts` states about itself — so it is deliberately forgiving: an unrecognised event type is kept
+under `custom` with its own name, and a format this is wrong about degrades to "recorded,
+unclassified" rather than to silence.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

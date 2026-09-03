@@ -88,10 +88,11 @@ export const HARNESSES: Harness[] = [
     configPath: path.join(".gemini", "settings.json"),
     format: "json",
     recording: "wrap",
-    // Said plainly rather than implied: #150 ships two readers, and this is
-    // not one of them. Everything that rides on git and the commit trailer
-    // works; the trajectory does not.
-    stream: "no reader ships for it — commit-level provenance only, see README",
+    // #236 shipped the reader this used to say did not exist. What it reads is
+    // the CLI's own JSON output; what it can report from the summary form is
+    // aggregate rather than per-call, and the reader says so in the record
+    // rather than inventing the calls.
+    stream: "`gemini --output-format json`, through `adp-recorder`",
   },
 ];
 

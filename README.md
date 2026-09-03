@@ -454,13 +454,19 @@ adp-recorder wrap --repo <owner>/<repo> --harness codex --continue -- codex exec
 ```
 
 **Which harnesses are covered.** A reader translates one harness's private event names into ADP's
-fixed vocabulary. Two ship, chosen for having a stable machine-readable event stream rather than for
-being the most popular:
+fixed vocabulary. One ships for every harness `adp connect` offers, chosen for having a stable
+machine-readable event stream rather than for being the most popular:
 
 | `--harness` | Reads | Gets |
 |---|---|---|
 | `claude-code` (default) | `claude --output-format stream-json`, or the session transcript it writes | messages, model calls, tool calls with their outcomes, denied calls as `rejected`, per-session cost |
 | `codex` | `codex exec --json` | messages and reasoning, shell and `apply_patch` and MCP calls with their outcomes, declined calls as `rejected`, per-turn tokens (Codex reports no cost) |
+| `gemini-cli` | `gemini --output-format json`, and the streaming form where the CLI offers one | the answer, per-model token and latency totals, and tool calls with their outcomes where the stream reports them individually — where it reports only counts, **the counts, said to be counts** |
+
+That last cell is the interesting one, and it is why a third reader was worth having. Gemini's
+non-interactive run reports aggregate tool statistics rather than one event per call, and the reader
+records nine calls that arrived as the number nine *as the number nine* — a trajectory that claims
+detail it never had is worse than one that says what it has.
 
 **And what an uncovered harness still gets, which is most of it.** Commit-level provenance, intent
 binding, gates, evidence bundles and land policy all ride on `git` and the commit trailer rather

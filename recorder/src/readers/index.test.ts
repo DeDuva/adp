@@ -20,11 +20,13 @@ function writeReaderModule(body: string): string {
 }
 
 describe("the reader registry", () => {
-  it("ships two harnesses, and the default is one of them", () => {
-    // #150's shape, not an arbitrary count: one reader is an implementation
-    // detail of the recorder, and two is the point at which the interface has
-    // to be real.
-    expect(builtinHarnesses()).toEqual(["claude-code", "codex"]);
+  it("ships a reader for every harness `adp connect` offers, and the default is one of them", () => {
+    // #150 shipped two, on the reasoning that one reader is an implementation
+    // detail of the recorder and two is the point at which the interface has to
+    // be real. #236 added the third, which is where the *claim* is measured
+    // rather than the interface: harness independence with two readers across
+    // three connected harnesses was a claim with a footnote.
+    expect(builtinHarnesses()).toEqual(["claude-code", "codex", "gemini-cli"]);
     expect(builtinHarnesses()).toContain(DEFAULT_HARNESS);
   });
 
