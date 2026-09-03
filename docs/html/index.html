@@ -199,22 +199,65 @@
 </section>
 
 <section class="wrap sec">
-  <div class="band"><span class="band__n">02</span><span class="band__label">Compatibility</span></div>
+  <div class="band"><span class="band__n">02</span><span class="band__label">Adoption</span></div>
   <div class="flow flow--loose">
-    <h2>Your tools do not change</h2>
-    <p class="sub">ADP speaks git's wire protocol and a compatible subset of GitHub's REST and GraphQL
-    APIs. An unmodified agent clones, reads an issue, pushes, opens a proposal, watches checks, and
-    merges — without knowing ADP exists.</p>
-    <pre><span class="c"># the same commands, pointed at your own instance</span>
-git clone https://adp.example.com/acme/service.git
-gh issue view 41
-gh pr create --fill
-gh pr checks        <span class="c"># gate results, each linked to a signed evidence bundle</span>
-gh pr merge</pre>
+    <h2>Your repository does not move</h2>
+    <p class="sub">Companion mode. Your issues, branches, pull requests and Actions stay exactly
+    where they are, and ADP fills its record as you work — no migration, no second place to look,
+    and nothing about the day changes. The loop below is on GitHub, and none of it is an ADP
+    command.</p>
+    <pre><span class="c"># your usual loop, on github.com, unchanged</span>
+gh issue create --title "Rate limiter drops bursts"
+git switch -c fix/rate-limiter
+git push origin fix/rate-limiter
+gh pr create --fill  <span class="c"># your Actions run on GitHub's runners, as before</span>
+gh pr merge --squash</pre>
+
+    <figure class="flow flow--tight">
+      <div class="steps">
+        <div class="step"><span class="step__n">Intent</span><span class="step__h">The issue you filed
+        becomes the goal on the record</span><span class="step__b">By number and title, bound to the
+        commits that answer it — a commit trailer naming <code>#41</code> resolves to the GitHub
+        issue, because that is the only number you have ever seen.</span></div>
+        <div class="step"><span class="step__n">Proposal</span><span class="step__h">Your pull request
+        becomes a proposal</span><span class="step__b">Carrying its upstream number, so
+        <code>gh pr view 482</code> means one thing on both planes. Reviews and approvals come with
+        it.</span></div>
+        <div class="step"><span class="step__n">Evidence</span><span class="step__h">Your Actions
+        results become signed attestations</span><span class="step__b">GitHub's runners keep
+        executing the workflows you already have. ADP does not run them; it records what they
+        said, as DSSE envelopes bound to the commit.</span></div>
+        <div class="step"><span class="step__n">Provenance</span><span class="step__h">Who and what
+        produced it</span><span class="step__b">The author, the harness, the session — and the model
+        <em>observed in the trajectory</em> rather than the one a token claimed.</span></div>
+        <div class="step"><span class="step__n">Merge</span><span class="step__h">The merge is a real
+        operation, so it can be taken back</span><span class="step__b">Merging on GitHub writes the
+        operation <code>adp undo</code> resolves, so the one verb you most want after a bad change
+        works on a merge ADP never performed.</span></div>
+      </div>
+      <figcaption>Recorded without being asked. The developer above ran no ADP command, and the
+      record is complete enough to answer what the change was for, what produced it, how it was
+      verified, and how to reverse it.</figcaption>
+    </figure>
+
+    <h3>And two checks appear on the pull request</h3>
+    <p>Where the work already is, rather than in a console somebody has to remember to open.</p>
+    <div class="grid grid--2">
+      <div class="card"><h3><code>ADP / change record</code></h3><p>The intent, the producer, the
+      trajectory and the evidence, linked. Never a verdict — it reports what ADP knows and never
+      blocks a merge. A commit bound to no intent says so, rather than leaving the line out.</p></div>
+      <div class="card"><h3><code>ADP / policy</code></h3><p>The land verdict, with the unmet
+      requirement and the command that satisfies it. Require it in branch protection and GitHub will
+      not merge until ADP agrees.</p></div>
+    </div>
+    <p class="note"><strong>GitHub stays the merge authority.</strong> Publishing a verdict GitHub
+    already knows how to require is the same enforcement with none of the migration — so ADP refuses
+    to merge an ingested pull request itself, and says why. Choosing between two merge planes is the
+    thing companion mode exists to avoid.</p>
 
     <figure class="flow flow--tight">
       <div class="plate__scroll">
-        <svg class="diagram diagram--wider" viewBox="0 0 960 330" role="img" aria-label="Unmodified agents and tools above; ADP's compatibility and native planes with the gate between them; the gate runner, your delivery stack and a GitHub mirror below.">
+        <svg class="diagram diagram--wider" viewBox="0 0 960 330" role="img" aria-label="Unmodified agents and tools above; ADP's compatibility and native planes with the gate between them; the gate runner, your delivery stack and GitHub in companion mode below.">
           <defs>
             <marker id="fc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
               <path class="diagram__arrowhead" d="M0 0 L10 5 L0 10 z"/>
@@ -252,32 +295,34 @@ gh pr merge</pre>
             <text class="diagram__t diagram__t--sm" x="352" y="303">consumes the record:</text>
             <text class="diagram__t diagram__t--sm" x="352" y="318">identify, attribute, reverse</text>
             <rect class="diagram__box" x="648" y="266" width="288" height="56"/>
-            <text class="diagram__n" x="664" y="286">GITHUB — MIRROR MODE</text>
-            <text class="diagram__t diagram__t--sm" x="664" y="303">the repository can stay;</text>
-            <text class="diagram__t diagram__t--sm" x="664" y="318">adopting ADP is additive</text>
+            <text class="diagram__n" x="664" y="286">GITHUB — COMPANION MODE</text>
+            <text class="diagram__t diagram__t--sm" x="664" y="303">issues, pulls, reviews, Actions in;</text>
+            <text class="diagram__t diagram__t--sm" x="664" y="318">two checks published back</text>
           </g>
         </svg>
       </div>
 
       <!-- The same picture below 700px, read top to bottom. -->
-      <div class="steps diagram--stacked" role="img" aria-label="Unmodified agents and tools above; ADP's compatibility and native planes with the gate between them; the gate runner, your delivery stack and a GitHub mirror below.">
+      <div class="steps diagram--stacked" role="img" aria-label="Unmodified agents and tools above; ADP's compatibility and native planes with the gate between them; the gate runner, your delivery stack and GitHub in companion mode below.">
         <div class="step"><span class="step__n">Above</span><span class="step__h">Your agents and tools — unmodified</span><span class="step__b">git · gh · Octokit and CI libraries · any coding agent, over the same protocols or MCP.</span></div>
         <div class="step"><span class="step__n">ADP</span><span class="step__h">Two planes over one domain model</span><span class="step__b">The compatibility plane speaks GitHub's protocols; the native plane serves the operation log, undo, evidence bundles, workspaces and candidate sets. Between them, the gate: signed evidence required, or the merge is refused.</span></div>
-        <div class="step"><span class="step__n">Around it</span><span class="step__h">Your runner, your stack, your GitHub</span><span class="step__b">Gates execute in an isolated, network-denied container; your delivery and observability stacks consume the record; mirror mode lets the repository stay on GitHub.</span></div>
+        <div class="step"><span class="step__n">Around it</span><span class="step__h">Your runner, your stack, your GitHub</span><span class="step__b">Gates execute in an isolated, network-denied container; your delivery and observability stacks consume the record; in companion mode the repository stays on GitHub, its lifecycle is ingested, and two checks are published back.</span></div>
       </div>
 
-      <figcaption>Nothing above ADP changes and nothing below it is replaced: tools speak the protocols
-      they already speak, gates execute on your infrastructure, and mirror mode means adopting ADP is
-      not a migration.</figcaption>
+      <figcaption>Nothing above ADP changes and nothing below it is replaced: tools speak the
+      protocols they already speak, gates execute on your infrastructure, and companion mode means
+      adopting ADP is not a migration.</figcaption>
     </figure>
 
     <div class="grid">
+      <div class="card"><h3>Nothing to migrate</h3><p>The repository stays on GitHub. Its issues,
+      pull requests, reviews and Actions results are ingested; ADP's verdict is published back as a
+      check. Point it at a repository you already have.</p></div>
+      <div class="card"><h3>Runs on a laptop</h3><p>Inbound arrives by polling as well as by
+      webhook, so an instance nothing on the internet can reach still fills its record. No public
+      hostname, no port to open.</p></div>
       <div class="card"><h3>Compatible where it counts</h3><p>Validated in CI against the real,
       unmodified <code>gh</code> binary — not a mock, and not a claim of full parity.</p></div>
-      <div class="card"><h3>Additive first</h3><p>Mirror mode lets ADP sit alongside a repository that
-      stays on GitHub, so adopting it is not a migration.</p></div>
-      <div class="card"><h3>Self-hosted</h3><p>Helm chart or Docker Compose. Your data, your policy,
-      your keys — no account to create.</p></div>
     </div>
   </div>
 </section>
@@ -436,6 +481,11 @@ gh pr merge</pre>
         <thead><tr><th>Capability</th><th>State</th></tr></thead>
         <tbody>
           <tr><td data-th="Capability">Git smart-HTTP, REST and GraphQL compat, driven by unmodified <code>gh</code> in CI</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">Companion mode — GitHub issues, pull requests, reviews and merges ingested, with no ADP command run</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability"><code>ADP / change record</code> and <code>ADP / policy</code> published as check runs on the pull request</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">GitHub App created from a manifest the instance serves — no personal access token</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">Inbound by polling as well as webhook, so an instance needs no public hostname</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability"><code>adp undo</code> reaches a merge that happened on GitHub</td><td data-th="State" class="tick">Shipped</td></tr>
           <tr><td data-th="Capability">Signed change records, DSSE evidence bundles, SBOM per landed change</td><td data-th="State" class="tick">Shipped</td></tr>
           <tr><td data-th="Capability">Three-level land policy, push protection, dependency admission</td><td data-th="State" class="tick">Shipped</td></tr>
           <tr><td data-th="Capability">Operation log with guarded undo; sessions, checkpoints, workspaces, candidate sets</td><td data-th="State" class="tick">Shipped</td></tr>
@@ -445,6 +495,9 @@ gh pr merge</pre>
           <tr><td data-th="Capability">Trajectory recording out of band — hash-chained, from the stream the harness already writes</td><td data-th="State" class="tick">Shipped</td></tr>
           <tr><td data-th="Capability">One task across two harnesses as one continuous signed history</td><td data-th="State" class="tick">Shipped</td></tr>
           <tr><td data-th="Capability">One-command harness connect — Claude Code, Codex, Gemini CLI</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">The CLI on npm — <code>npx @deduva/adp</code></td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability"><code>adp reimplement</code> — do a landed change again, and compare the two attempts</td><td data-th="State" class="tick">Shipped</td></tr>
+          <tr><td data-th="Capability">A repository's record moves between instances with its signatures unchanged</td><td data-th="State" class="tick">Shipped</td></tr>
           <tr><td data-th="Capability">Self-hosting: Helm chart and Docker Compose</td><td data-th="State" class="tick">Shipped</td></tr>
           <tr><td data-th="Capability">Dependency admission beyond npm</td><td data-th="State" class="part">Partial — npm only</td></tr>
           <tr><td data-th="Capability">SCIM provisioning</td><td data-th="State" class="part">Not built</td></tr>

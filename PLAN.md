@@ -456,7 +456,7 @@ something.
 
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
-| 6-4 | §02 rewritten around companion mode; §06 Status describes 0.7.0 | #272 | not started | Deferred by Phase 5 until the evidence existed. It does. The hero stays — see the decision above |
+| 6-4 | §02 rewritten around companion mode; §06 Status describes 0.7.0 | #272 | shipped | Deferred by Phase 5 until the evidence existed. It does. The hero stays — see the decision above |
 | 6-5 | `og:` and `twitter:` tags, an `og:image` from the site's own design system, favicon, canonical | #273 | not started | The highest ratio of reach to effort in the doc set: one `<head>` block per page and one image. The image is a build output shipped as an input, on `support.js`'s terms — committed and regenerable, or it becomes another dependency nobody can rebuild |
 | 6-6 | An anchor per numbered section, and a linkable *Try the moves* | #276 | not started | People share the paragraph that convinced them, not the domain |
 
