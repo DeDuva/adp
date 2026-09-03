@@ -19,15 +19,37 @@ on:
 permissions:
   contents: write
   packages: write
-  # #235: `npm publish --provenance` mints an OIDC token to attest the tarball
-  # to this workflow run.
+  # The OIDC token npm's trusted publisher authenticates against. It is also
+  # what attests the tarball's provenance — under trusted publishing npm does
+  # that automatically, which is why the publish below passes no
+  # `--provenance` flag.
   id-token: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # The GitHub Actions environment npm's trusted publisher is bound to. The
+    # OIDC claim carries this name, so it and the one configured on the package
+    # must match exactly or authentication fails outright — and it is where a
+    # required reviewer goes, on the one job in this repository that does
+    # something irreversible in public. npm's unpublish window is 72 hours, and
+    # after it the version number is spent for good.
+    environment: npm
     steps:
       - uses: actions/checkout@v4
+
+      # Pinned from .nvmrc rather than taking whatever the runner ships: `cli`
+      # declares `engines: node >=22`, and until now this job built it on the
+      # image's default.
+      #
+      # Deliberately no `registry-url`. That would write an `.npmrc` whose auth
+      # token expands from `NODE_AUTH_TOKEN`, which under trusted publishing does
+      # not exist — leaving an empty credential for npm to trip over. The default
+      # registry is already registry.npmjs.org, and OIDC needs no credential
+      # file at all, so the safest thing to write is nothing.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
 
       - name: Tag matches the served contract version
         run: |
@@ -92,29 +114,34 @@ jobs:
       # cloning it, and every front door this phase widened opened onto a
       # building with no road.
       #
-      # Publishes only when NPM_TOKEN is configured, and says so when it is not
-      # rather than failing the release. A repository fork, or this repository
-      # before the token exists, must still be able to cut a release that
-      # produces an image and a GitHub release — the npm registry is one
-      # distribution channel among several and not a precondition for the
-      # others.
+      # It publishes by OIDC now, against the trusted publisher configured on
+      # the package, and holds no credential at all.
+      #
+      # What that costs is the graceful skip this step used to have: it ran only
+      # when NPM_TOKEN was set, so a fork could still cut a release that produced
+      # an image and a GitHub release. A fork will now *fail* here, because it is
+      # not the trusted publisher — which is the correct answer for this
+      # repository and a sharp edge for anyone else's. The old behaviour was
+      # worse in the way that matters more: under trusted publishing there is no
+      # token, so an unchanged skip would have looked at an empty NODE_AUTH_TOKEN
+      # and silently published nothing, on a release that went green.
       - name: Publish the CLI to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "NPM_TOKEN is not configured — skipping the npm publish."
-            echo "The image and the GitHub release below are unaffected."
-            exit 0
-          fi
+          # Trusted publishing needs npm 11.5.1 or newer, and Node 22 ships npm
+          # 10 — so the version pinned above is the right Node and the wrong
+          # npm. Upgraded to a floor rather than to `@latest`, so a future npm
+          # major cannot arrive unannounced in the middle of a release.
+          npm install -g npm@^11.5.1
           npm ci --prefix cli
           npm run build --prefix cli
-          printf '//registry.npmjs.org/:_authToken=%s\n' "$NODE_AUTH_TOKEN" > cli/.npmrc
-          # --provenance ties the published tarball to this workflow run, which
-          # is the same claim the rest of this project is about: an artifact
-          # that says where it came from.
-          npm publish --prefix cli --provenance --access public
-          rm -f cli/.npmrc
+          # No token, and no `.npmrc`. The credential is the OIDC token the
+          # `id-token: write` permission mints, exchanged against the trusted
+          # publisher configured on the package — so there is nothing here to
+          # leak, nothing to rotate, and nothing left on disk if this step
+          # fails. Provenance is attested automatically under trusted
+          # publishing, which is why `--provenance` is gone rather than
+          # forgotten.
+          npm publish --prefix cli --access public
 
       - name: Create GitHub release
         env:
