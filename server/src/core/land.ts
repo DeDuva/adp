@@ -57,6 +57,31 @@ export async function landProposal(
     return { ok: false, status: 422, message: "Cannot merge a closed proposal" };
   }
 
+  // 5c's second open decision, settled: an ingested proposal is **evaluable and
+  // not landable**.
+  //
+  // A shadow proposal is an ordinary row precisely so that `evaluateLandPolicy`
+  // and `undo` can take it — which also makes it one this function could merge.
+  // It must not. The branch lives on GitHub, GitHub's own merge button is the
+  // thing a companion-mode developer uses, and two writers against one branch is
+  // the failure mode mirror mode exists to avoid. So the verdict acts through
+  // #234's check run — a thing GitHub already knows how to require — rather than
+  // through a second merge authority.
+  //
+  // The refusal names the reason rather than only refusing, on #145's grounds:
+  // a user told only that something is refused goes back to the documentation
+  // at the moment the product was about to explain itself.
+  if (proposal.upstreamNumber !== null) {
+    return {
+      ok: false,
+      status: 409,
+      message:
+        `#${proposal.number} is a shadow of an upstream pull request, and ADP does not merge on ` +
+        "GitHub's behalf. Merge it there — ADP's verdict is published as the `ADP / policy` check " +
+        "run, and requiring that check in branch protection is what makes it binding.",
+    };
+  }
+
   // M4-2: one lookup, reused by both evaluateLandPolicy calls below — the org
   // context (kill switch, policy repo) doesn't change within one land attempt.
   const org = await findOrgLandContext(db, repo.orgId);

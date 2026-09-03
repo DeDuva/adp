@@ -335,6 +335,34 @@ An instance still on the personal-access-token path publishes nothing and says w
 write never fails the ingest that preceded it: the record is the product and the check run is a view
 of it.
 
+### `ADP / policy` is a check GitHub can require (#234)
+
+The land policy's verdict, published where branch protection can enforce it. **It is a check rather
+than a merge gate of ADP's own, and that is the resolution of the seam this whole phase opens on:**
+asking a developer to choose between GitHub's merge plane and ADP's is the choice mirror mode exists
+to avoid, and publishing a verdict GitHub already knows how to require is the same enforcement with
+none of the migration. GitHub will not merge until ADP agrees — because the repository owner made
+the check required, not because ADP took the button away.
+
+`failure` when a requirement is unmet, `success` when none is. Each unmet requirement keeps the
+remedy and the literal command #145 gave it, because a check run is where most people will meet an
+ADP refusal for the first time, and dropping the remedy to keep the summary short would undo exactly
+what #145 bought. Advisories are reported either way: a quarantined gate that silently stops
+mattering is worse than a flaky one.
+
+It republishes when an approval arrives and not only on a push, since an approval is what
+`one_approval` reads. And it is only honest at all because #227 landed first — before ingest carried
+approvals it would have refused every mirrored pull request on a requirement GitHub had already met.
+
+**5c's second open decision, settled: an ingested proposal is evaluable and not landable.** A shadow
+proposal is an ordinary row precisely so `evaluateLandPolicy` and `undo` can take it, which also
+makes it one `land` could merge. It must not — the branch lives on GitHub, GitHub's merge button is
+what a companion-mode developer uses, and two writers against one branch is the failure mirror mode
+exists to avoid. `land` now refuses a proposal carrying an upstream number, *before* evaluating the
+policy, so a proposal that would have satisfied it is refused for this reason rather than passing
+into a merge. The refusal names GitHub as the merge authority and this check run as how the verdict
+acts.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

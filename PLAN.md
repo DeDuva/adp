@@ -444,7 +444,7 @@ ADP's verdict a required check without ADP becoming the merge authority.
 |---|---|---|---|---|
 | 5-9 | A GitHub App, created from a manifest by the instance itself | #232 | shipped | Replaces the personal access token and the hand-made webhook 5-5 describes. The manifest flow keeps this available to a self-hosted instance: GitHub creates the App in the user's own org and hands the credentials back, so it needs no hosted control plane. It also unblocks 5-10 and 5-11, which a PAT cannot reach at all — GitHub's Checks API refuses one |
 | 5-10 | Publish `ADP / change record` as a check run | #233 | shipped | Intent, producer, trajectory and evidence, on the pull request, where the work already is. This is the whole additive claim made visible |
-| 5-11 | Publish `ADP / policy` as a check run | #234 | not started | Branch protection then enforces it. GitHub stays the merge authority and will not merge until ADP agrees, which is the resolution of the seam this phase opens on |
+| 5-11 | Publish `ADP / policy` as a check run | #234 | shipped | Branch protection then enforces it. GitHub stays the merge authority and will not merge until ADP agrees, which is the resolution of the seam this phase opens on |
 
 **5-11 is the item that makes mirror mode's enforcement story true rather than aspirational**, and
 it is deliberately a *check* rather than a merge gate of our own. Asking a developer to choose
@@ -515,7 +515,7 @@ migrate by hand.
 | Decision | Why it cannot be deferred past 5a |
 |---|---|
 | ~~**Proposal numbering in mirror mode.**~~ **Answered in #224: adopt the upstream number.** `gh pr view 482` means one thing on both planes, and a repository with inbound ingest enabled refuses natively created proposals — on both REST and GraphQL, because `gh pr create` uses the second | `proposals` is unique on `(repo_id, number)`. The cost of the answer is that a repository cannot mix native and ingested proposals, and a proposal that predates the mirror keeps its number: ingest refuses to overwrite it rather than destroying a record to make room for a mirror of one |
-| **Whether an ingested pull request may be landed through ADP.** A shadow proposal that `evaluateLandPolicy` can evaluate is also one `land` could merge | Two writers against one branch. The likely answer is that ingest-mode proposals are evaluable and not landable, and 5-11 is how the verdict acts — but "likely" is not a decision, and the refusal has to name the reason |
+| ~~**Whether an ingested pull request may be landed through ADP.**~~ **Answered in #234: evaluable, not landable.** `land` refuses a proposal carrying an upstream number, before evaluating the policy, and the refusal names GitHub as the merge authority and the `ADP / policy` check run as how the verdict acts | Two writers against one branch. The cost of the answer is that `adp land` is unavailable on an ingesting repository — which is the point: requiring the check in branch protection is the same enforcement with none of the migration |
 | **What a free or evaluating instance may claim about durability.** M4-8 and M4-10 are deferred on budget, and `docs/self-hosting.md` correctly claims nothing about backup or PITR until a restore drill has been executed | Companion mode changes the stakes rather than the engineering: where GitHub stays the merge authority, losing an ADP instance degrades the record and loses no code. That is a real argument and it is worth writing down as a position with a tripwire, not left as a consolation |
 
 ---

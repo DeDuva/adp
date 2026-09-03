@@ -123,8 +123,8 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   registerSessionRoutes(app, db, gitBackend, signer, publicUrl, keyRegistry);
   registerRunRoutes(app, db, gitBackend, signer, publicUrl, keyRegistry);
   registerMirrorRoutes(app, db, credentialKey);
-  registerMirrorWebhookRoutes(app, db, gitBackend, signer, credentialKey, publicUrl);
-  registerGitHubAppRoutes(app, db, gitBackend, signer, credentialKey, publicUrl);
+  registerMirrorWebhookRoutes(app, db, gitBackend, signer, credentialKey, publicUrl, fetch, instanceFloor);
+  registerGitHubAppRoutes(app, db, gitBackend, signer, credentialKey, publicUrl, fetch, instanceFloor);
   registerActionsRoutes(app, db, credentialKey);
   registerCandidateSetRoutes(app, db, gitBackend, instanceFloor, { signer, publicUrl });
   registerWebhookRoutes(app, db, credentialKey);

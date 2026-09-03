@@ -4,6 +4,11 @@ import { proposals } from "../db/schema.js";
 import { parseGitHubRemote } from "../http-rest/actions.js";
 import { findGitHubApp, findInstallation, installationToken } from "./github-app.js";
 import { getEvidenceBundle } from "./evidence.js";
+import { evaluateLandPolicy, renderUnmet } from "./land-policy.js";
+import { findOrgLandContext } from "./org-lookup.js";
+import { repos } from "../db/schema.js";
+import type { LandRequirement } from "./repo-policy.js";
+import type { GitBackend } from "./git-backend.js";
 import type { MirrorRow } from "./mirror-inbound.js";
 
 // What ADP knows about a pull request, published where the work already is.
@@ -225,4 +230,97 @@ function renderChangeRecord(
   lines.push("");
   lines.push(`The record is signed. [Full evidence bundle](${detailsUrl})`);
   return lines.join("\n\n");
+}
+
+export const POLICY_CHECK = "ADP / policy";
+
+/**
+ * `ADP / policy` — the land policy's verdict, published where branch protection
+ * can require it.
+ *
+ * **This is a check, not a merge gate of our own, and that is the resolution of
+ * the seam this whole phase opens on.** Asking a developer to choose between
+ * GitHub's merge plane and ADP's is the choice mirror mode exists to avoid;
+ * publishing a verdict GitHub already knows how to require is the same
+ * enforcement with none of the migration. GitHub stays the merge authority and
+ * will not merge until ADP agrees, because the repository owner made this
+ * required — not because ADP took the button away.
+ *
+ * It only became honest once #227 landed. Before ingest carried approvals, this
+ * would have refused every mirrored pull request on `one_approval` — a
+ * requirement GitHub had already met — which is worse than publishing nothing,
+ * because a developer who has done what the policy asks and is told they have
+ * not stops believing the policy.
+ */
+export async function publishPolicyCheck(
+  deps: CheckRunDeps & { gitBackend: GitBackend; instanceFloor: LandRequirement[] },
+  repo: { id: string; owner: string; name: string },
+  mirror: MirrorRow,
+  proposalNumber: number,
+): Promise<CheckRunOutcome> {
+  const [proposal] = await deps.db
+    .select()
+    .from(proposals)
+    .where(and(eq(proposals.repoId, repo.id), eq(proposals.number, proposalNumber)));
+  if (!proposal) return { published: false, reason: `no proposal #${proposalNumber}` };
+
+  const upstream = await upstreamCheckContext(deps, mirror);
+  if ("reason" in upstream) return { published: false, reason: upstream.reason };
+
+  const [repoRow] = await deps.db.select({ orgId: repos.orgId }).from(repos).where(eq(repos.id, repo.id));
+  const org = await findOrgLandContext(deps.db, repoRow?.orgId ?? null);
+  const verdict = await evaluateLandPolicy(
+    deps.db,
+    deps.gitBackend,
+    deps.instanceFloor,
+    repo,
+    proposal,
+    org,
+  );
+
+  return publishCheckRun(deps, upstream, {
+    name: POLICY_CHECK,
+    headSha: proposal.headSha,
+    conclusion: verdict.allowed ? "success" : "failure",
+    title: verdict.allowed ? "Land policy satisfied" : `${verdict.unmet.length} requirement(s) unmet`,
+    summary: renderPolicy(verdict),
+    detailsUrl: `${deps.publicUrl.replace(/\/$/, "")}/api/adp/repos/${repo.owner}/${repo.name}/evidence/${proposal.headSha}`,
+  });
+}
+
+/**
+ * The verdict, in Markdown.
+ *
+ * Each unmet requirement keeps the remedy and the literal command #145 gave it.
+ * A refusal that explains itself is the moment a first-time user sees the thesis
+ * work, and a check run is the surface where most of them will meet it for the
+ * first time — so dropping the remedy here to keep the summary short would undo
+ * exactly what #145 bought.
+ */
+function renderPolicy(verdict: Awaited<ReturnType<typeof evaluateLandPolicy>>): string {
+  const lines: string[] = [];
+  if (verdict.allowed) {
+    lines.push("Every requirement this repository's `adp.yaml` declares is satisfied.");
+  } else {
+    lines.push("This change does not yet satisfy the land policy:");
+    lines.push("");
+    for (const unmet of verdict.unmet) lines.push(`- ${renderUnmet(unmet)}`);
+  }
+
+  // Advisories are reported whether or not the verdict allowed the land. A
+  // quarantined gate that silently stops mattering is worse than a flaky gate,
+  // which is the reason the quarantine is an advisory rather than a silence.
+  if (verdict.advisories.length > 0) {
+    lines.push("");
+    lines.push("**Advisories**");
+    lines.push("");
+    for (const advisory of verdict.advisories) lines.push(`- ${advisory}`);
+  }
+
+  lines.push("");
+  lines.push(
+    "ADP does not merge this pull request — GitHub does. Requiring this check in branch protection " +
+      "is what makes the verdict binding.",
+  );
+  return lines.join("\n");
 }
