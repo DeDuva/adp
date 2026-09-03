@@ -178,6 +178,29 @@ A review whose payload names no user records nothing and says so, rather than fa
 mirror's system identity: that identity also authors ingested proposals, so the fallback would
 write an approval that can never count.
 
+### A plain `git push` no longer drops the harness that made the change (#229)
+
+`AuthenticatedIdentity` has carried `harness`, `model` and `sessionId` since 1-1, and
+`POST /changes` has always written all three. The push path wrote none of them — so every change
+captured by the ambient path 1b exists to make the default was signed with a provenance block that
+named no harness.
+
+**The failure was silent, and that is the interesting part.** The block was present, signed, and
+merely thinner, which is indistinguishable from a human pushing without a harness. Nothing could
+have caught it except a check that knows the two routes are supposed to agree, so the invariant is
+now written into `AGENTS.md` and asserted by comparing the two blocks rather than by checking a
+shape: **how a change arrived must not determine the quality of its provenance.**
+
+The tuple travels as three environment variables set alongside `REMOTE_USER`, inherited by
+`receive-pack` and the hooks it spawns, and read by the hook script into its post-receive body.
+The hook route accepts them as nullish, because a bare repository created before this still runs
+its old hook script and a required field would turn that into a rejected recording on every push.
+
+Absent stays absent: a push from a token with no harness claims none. And where a commit carries
+an `ADP-Session` trailer, the trailer wins over the token — the token says which session did the
+*push*, the trailer says which session produced *this commit*, and they differ whenever one push
+carries work from two sittings.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

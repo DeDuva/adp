@@ -26,6 +26,18 @@ export interface RecordActor {
   id: string;
   kind: string;
   principal: string;
+  // #229: the agent provenance tuple the token was minted with. Optional
+  // because a human PAT carries none of it, and absent-means-absent — a change
+  // pushed by a person must not claim a harness.
+  //
+  // These are on the *actor* rather than passed alongside it because the actor
+  // is what a change is attributed to, and #230 made that per commit: a push
+  // whose commits have different authors has different provenance per commit,
+  // and splitting "who" from "how they were working" would let the two drift
+  // apart one caller at a time.
+  harness?: string | null;
+  model?: string | null;
+  sessionId?: string | null;
 }
 
 // What a batch's trailers resolved to, keyed by the raw token as written so a
@@ -152,11 +164,27 @@ async function recordCommitsBatch(
       // which is where the explicit change route already puts the one it reads
       // off the token — so both paths produce the same shape, and the signature
       // covers it either way.
+      //
+      // #229: and so do `harness` and `model`, which is the whole of that
+      // defect. `AuthenticatedIdentity` has carried all three since 1-1, the
+      // explicit REST route has always written all three, and the push path —
+      // the one 1b exists to make *ambient*, and therefore the only one an
+      // agent actually takes — wrote none of them. The failure was silent: the
+      // provenance block was present, signed, and merely thinner, which no
+      // check could distinguish from a human pushing without a harness.
+      //
+      // The trailer wins over the token for `session_id` because it is the more
+      // specific claim: the token says which session did the *push*, and the
+      // trailer says which session produced *this commit*. They differ whenever
+      // one push carries work from more than one session, which is the ordinary
+      // shape of a branch that took two sittings.
       const provenance = {
         kind: commitActor.kind,
         principal: commitActor.principal,
         via,
-        ...(sessionId ? { session_id: sessionId } : {}),
+        ...(commitActor.harness ? { harness: commitActor.harness } : {}),
+        ...(commitActor.model ? { model: commitActor.model } : {}),
+        ...(sessionId ?? commitActor.sessionId ? { session_id: sessionId ?? commitActor.sessionId } : {}),
       };
       const signature = signer.sign({
         repo: `${owner}/${name}`,

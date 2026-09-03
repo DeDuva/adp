@@ -109,7 +109,19 @@ process.stdin.on("end", async () => {
     const res = await fetch(\`\${internalUrl}/internal/hooks/${kind}\`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ owner, name, identityId: process.env.REMOTE_USER || null, updates }),
+      body: JSON.stringify({
+        owner,
+        name,
+        identityId: process.env.REMOTE_USER || null,
+        // #229: the pushing token's agent provenance tuple, set by
+        // http-git/proxy.ts and inherited down through receive-pack. Empty
+        // means absent — a CGI environment cannot express "unset" across the
+        // round trip, and a human PAT legitimately carries none of these.
+        harness: process.env.ADP_HARNESS || null,
+        model: process.env.ADP_MODEL || null,
+        sessionId: process.env.ADP_SESSION_ID || null,
+        updates,
+      }),
     });
     const body = await res.json();
     if (body.block) {
