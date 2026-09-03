@@ -100,6 +100,36 @@ Written entirely in the existing design system — no new class, no colour, no i
 `make site` still passes all 29 assertions: five widths with no horizontal scroll, tables readable
 at 375px, a focus ring on every interactive element, and nothing loaded from a third party.
 
+### A link to the site now unfurls as a card (#273)
+
+Every share of any of the three pages — Slack, X, LinkedIn, Discord, an internal wiki, a Hacker News
+submission — rendered as bare text. There were no `og:` tags, no `twitter:` tags, no image, no
+favicon and no canonical URL on any page. There was a good `<meta name="description">` and nothing
+that draws.
+
+All three now carry the full set, and each has **its own card**, so a link to `/why/` unfurls as
+*Code got cheap. Trust didn't.* rather than as the front page. The cards are drawn in `site.css` —
+the real one, linked, not a copy of its values — so the palette, the seven-step type ramp, the
+8-base spacing scale and the 24px blueprint grid are the site's own. `dc-runtime/og/card.html` is
+the source and `dc-runtime/og/render.mjs` screenshots it; `make og` regenerates all three plus the
+apple-touch icon.
+
+**They are not byte-checked, and that is the interesting part.** `docs/html/support.js` is, because
+esbuild is deterministic. A screenshot is not: Chromium's glyph rasterisation moves with the browser
+version and the faces are fetched at render time, so a byte comparison would fail on a Playwright
+bump rather than on a change anyone made — a guard that cries wolf is a guard that gets deleted.
+What `make site` asserts instead is what actually goes wrong: the files exist, they are PNGs, they
+are exactly the 1200×630 every platform crops to, they are small enough to fetch, and every asset
+each page names resolves rather than 404ing into a blank card. The regenerability the byte check was
+a proxy for comes from the committed source, not from the comparison.
+
+One more assertion earns its place. The metadata must sit in the **static** `<head>`, and the test
+reads the file rather than the DOM. `/why/` is compiled by the runtime from a template with its own
+`<helmet>`, which is where this block first landed — the page looked perfect in a browser, and no
+scraper would ever have seen a single tag of it, because none of them run JavaScript.
+
+`/why/` also gained a `lang="en"` it had never declared.
+
 ### A GitHub pull request is a proposal in ADP (#224)
 
 `pull_request` deliveries — `opened`, `reopened`, `synchronize`, `edited`, `closed` — become a
