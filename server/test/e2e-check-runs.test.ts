@@ -8,6 +8,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { skipWithoutDb } from "./require-db.js";
+import { lockInstanceApp, type InstanceAppLock } from "./instance-app-lock.js";
 import { changes, githubAppInstallations, githubApps, identities, intents, issues } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { grantOwner } from "./org-fixture.js";
@@ -42,6 +43,9 @@ describe.skipIf(skipWithoutDb)("#233: the change-record check run", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;
+  // `github_apps` holds one row per instance, so two suites cannot own it at
+  // once — see instance-app-lock.ts.
+  let appLock: InstanceAppLock;
   let gitRoot: string;
   let port: number;
   let token: string;
@@ -93,6 +97,7 @@ describe.skipIf(skipWithoutDb)("#233: the change-record check run", () => {
   beforeAll(async () => {
     ({ db, pool } = createDb(process.env.DATABASE_URL!));
     await migrate(db, { migrationsFolder: new URL("../drizzle", import.meta.url).pathname });
+    appLock = await lockInstanceApp(pool);
 
     gitRoot = await mkdtemp(path.join(tmpdir(), "adp-e2e-check-runs-"));
     const gitBackend = new GitBackend(gitRoot);
@@ -121,10 +126,15 @@ describe.skipIf(skipWithoutDb)("#233: the change-record check run", () => {
     identityId = identity!.id;
     token = await mintToken(db, identityId, ["repo:read", "repo:write", "admin"]);
     await grantOwner(db, identityId, owner);
-  });
+  },
+  // Longer than the 20s default, because this hook now *waits*: the
+  // advisory lock above blocks until the other App suite has finished, and
+  // legitimate blocking must not read as a hang on a loaded CI box.
+  60_000);
 
   afterAll(async () => {
     await app.close();
+    await appLock.release();
     await pool.end();
     await rm(gitRoot, { recursive: true, force: true });
   });

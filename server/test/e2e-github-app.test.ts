@@ -8,6 +8,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq } from "drizzle-orm";
 import { createDb, type Db } from "../src/db/client.js";
 import { skipWithoutDb } from "./require-db.js";
+import { lockInstanceApp, type InstanceAppLock } from "./instance-app-lock.js";
 import { githubAppInstallations, githubApps, identities, proposals } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { grantOwner } from "./org-fixture.js";
@@ -45,6 +46,9 @@ describe.skipIf(skipWithoutDb)("#232: the GitHub App manifest flow", () => {
   let app: FastifyInstance;
   let db: Db;
   let pool: import("pg").Pool;
+  // `github_apps` holds one row per instance, so two suites cannot own it at
+  // once — see instance-app-lock.ts.
+  let appLock: InstanceAppLock;
   let gitRoot: string;
   let port: number;
   let token: string;
@@ -91,6 +95,7 @@ describe.skipIf(skipWithoutDb)("#232: the GitHub App manifest flow", () => {
   beforeAll(async () => {
     ({ db, pool } = createDb(process.env.DATABASE_URL!));
     await migrate(db, { migrationsFolder: new URL("../drizzle", import.meta.url).pathname });
+    appLock = await lockInstanceApp(pool);
 
     gitRoot = await mkdtemp(path.join(tmpdir(), "adp-e2e-gh-app-"));
     const gitBackend = new GitBackend(gitRoot);
@@ -112,10 +117,15 @@ describe.skipIf(skipWithoutDb)("#232: the GitHub App manifest flow", () => {
       .returning();
     token = await mintToken(db, identity!.id, ["repo:read", "repo:write", "admin"]);
     await grantOwner(db, identity!.id, owner);
-  });
+  },
+  // Longer than the 20s default, because this hook now *waits*: the
+  // advisory lock above blocks until the other App suite has finished, and
+  // legitimate blocking must not read as a hang on a loaded CI box.
+  60_000);
 
   afterAll(async () => {
     await app.close();
+    await appLock.release();
     await pool.end();
     await rm(gitRoot, { recursive: true, force: true });
   });
