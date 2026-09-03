@@ -556,6 +556,7 @@ the same loop, so the "brand new machine" path stays verified rather than assume
 
 | Document | What it is |
 |---|---|
+| [`docs/companion-mode.md`](docs/companion-mode.md) | ADP underneath GitHub: what stays on github.com, what ADP records without a command being run, the two checks that appear on the pull request, and what it deliberately refuses to do. |
 | [`docs/self-hosting.md`](docs/self-hosting.md) | Running your own instance: the Helm chart, the Compose path, what the chart refuses to guess and why, and where the sharp edges are. |
 | [`docs/api-compatibility.md`](docs/api-compatibility.md) | What the contract version promises, and what a bump means for a generated client. |
 | [`docs/server-stack-tutorial.md`](docs/server-stack-tutorial.md) | The server stack explained piece by piece, no prior familiarity assumed. |
