@@ -353,6 +353,15 @@ own directory, ignored by default, and never the place a project rule is written
   `.claude/settings.json` re-included, so worktrees and scratch stay out of the tree while
   the shared allowlist is versioned. Ignoring the directory itself (`.claude/`) would make
   that negation silently do nothing. Add any new agent's directory the same way.
+- **The repository's GitHub topics are deliberate, and they are not the words we use
+  internally.** `ai-agents`, `provenance`, `supply-chain-security`, `sdlc`, `git`, `slsa`,
+  `in-toto`, `devsecops`, `mcp`, `self-hosted`. They were empty until 2026-09-03, which is a
+  free discovery surface left unset — topics are how GitHub is browsed and filtered, and they
+  feed its search. They are chosen for how somebody would look for this rather than how the
+  README describes it: nobody searches for "agent-native forge", and the people who would
+  benefit are searching for the problem. There is no API that records *why* a topic is set, so
+  it is recorded here.
+
 - Building the test environment found 19 bugs, 12 pre-existing, and the most valuable
   ones were invisible in containers: a dangling Docker Desktop symlink, a missing compose
   plugin, `sudo` rewriting `$USER`. A container is a clean machine; a laptop is a dirty

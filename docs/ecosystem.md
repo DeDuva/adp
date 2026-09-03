@@ -29,7 +29,7 @@ depends on it.
 
 ```
                     ┌─────────────┐
-                    │     adp     │  wire contract, currently 0.2.0
+                    │     adp     │  the wire contract, versioned
                     └──────┬──────┘
              REST /        │ runs, labels,      \ REST
       versioned contract   │ evals, verify       \
@@ -61,9 +61,15 @@ adp-replay generates its client from ADP's `spec/openapi.yaml` and asserts the s
 
 > **Watch out.** adp-replay's CI checks its vendored spec against **the pinned ADP ref**,
 > not against ADP's `main`. That check is a tautology — it cannot fail, and nothing in
-> either repo moves the pin. As of 2026-08-08 adp-replay is generated against **0.1.0**
-> while this repo serves **0.2.0**. The drift is benign (0.2.0 is additive) but it is
-> unmonitored.
+> either repo moves the pin, so adp-replay can be generated against an arbitrarily old
+> contract and still report itself consistent.
+>
+> The numbers that used to sit here — a snapshot of both versions taken on 2026-08-08 —
+> are gone rather than updated. They were a fact with an owner in another repository,
+> copied into this one, and by the time anyone read them they had been wrong for five
+> minor versions. What matters is the structural gap, which is unchanged: the drift is
+> unmonitored. Compare `ADP-API-Version` against adp-replay's vendored spec when you
+> need the current answer.
 
 ### adp → squad-lab — runs, labels and evals
 

@@ -25,6 +25,40 @@ of commits and CI verdicts and nothing that said what any of it was *for*. This 
 ingest, and what it buys is that land policy, `adp undo` and the evidence bundle all reach a
 change that arrived through GitHub. `PLAN.md` Phase 5 is the backlog; entries land here per item.
 
+### What is published is true again (#269, #270, #271)
+
+The front page said the wire contract was **currently 0.6.0** while the server served 0.7.0, and
+`check-release.sh` reported the site consistent. Its guard required each version to be *introduced*
+by `Spec`, `contract` or `currently` within forty characters — and grep matches within a line, so a
+claim that wrapped one was invisible. Eleven characters apart, on two lines. That is the same
+sentence Phase 0 spent a release blocker on, false again for a new reason, which means the class was
+never closed.
+
+**The guard now asks the question its own comment always claimed it asked:** every version-shaped
+string on a published page is a contract claim. The keyword requirement is gone, so wrapping cannot
+defeat it — a version number never spans a line. If a page ever carries a three-part version meaning
+something else, this fails and somebody has to say what they meant, which is the outcome worth
+having.
+
+**It also reads prose now**, which it never had. Two documents had drifted five minor versions with
+nothing watching: `ecosystem.md` called the contract 0.2.0 — in the document the README tells you to
+read *before changing the wire contract* — and `api-compatibility.md` said `server/package.json`
+"stays at 0.0.0", contradicting a check that has asserted otherwise on every push since the CLI was
+published. Prose cannot take the site's rule, because a document explaining what a bump means has to
+name old versions; it gets the narrow "introduced as current" match instead, across the whole file
+rather than line by line.
+
+Both were fixed by **removing the restatement rather than updating it**. The site now points at the
+number in its own masthead, and `ecosystem.md` says "the wire contract, versioned" — a fact with an
+owner in `api-version.ts` should not be copied into prose at all, which is the rule that produced
+these two in the first place. The stale cross-repo drift figures are gone for the same reason: they
+were a snapshot of another repository taken on a day, and the structural warning they illustrated is
+unchanged and is what was kept.
+
+**The repository has topics**, which were empty — a free discovery surface left unset. Chosen for how
+somebody would look for this rather than how the README describes it, and recorded in `AGENTS.md`
+because no API records why a topic was set.
+
 ### A GitHub pull request is a proposal in ADP (#224)
 
 `pull_request` deliveries — `opened`, `reopened`, `synchronize`, `edited`, `closed` — become a
