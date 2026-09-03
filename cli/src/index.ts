@@ -10,6 +10,7 @@ import { connect, disconnect } from "./commands/connect.js";
 import { watch } from "./commands/watch.js";
 import { undo } from "./commands/undo.js";
 import { bakeoff, bakeoffResults } from "./commands/bakeoff.js";
+import { reimplement } from "./commands/reimplement.js";
 import { runnerUp } from "./commands/runner.js";
 import { ApiError } from "./api.js";
 
@@ -47,6 +48,9 @@ export const COMMANDS: Command[] = [
     summary: "one intent, one run per harness, one comparison", run: bakeoff },
   { path: ["bakeoff", "results"], args: "--repo <owner>/<repo> --intent <uuid|#issue>",
     summary: "the comparison for an intent that already has runs", run: bakeoffResults },
+  { path: ["reimplement"], args: "<sha> [--harness <name>] [--model <name>] [--compare] [--repo <owner>/<repo>]",
+    summary: "do a landed change again, with a second run related to the first, and show the difference",
+    run: reimplement },
   { path: ["runner", "up"], args: "--here [--server <url>] [--token <token>]",
     summary: "start a gate runner, or refuse and say why not here", run: runnerUp },
   { path: ["gate", "report"], args: "--repo <owner>/<repo> --sha <sha> --name <name> --status <success|failure|pending> [--summary <text>]",

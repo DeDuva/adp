@@ -384,6 +384,7 @@ npm link            # puts this checkout's `adp` on your PATH; undo with `npm un
 | `adp pr review --repo <owner>/<repo> --number <n> --state <approved\|changes_requested\|commented>` | `POST .../pulls/{n}/reviews` |
 | `adp watch --repo <owner>/<repo> [--pr <n>]` | the proposal, its gates, its runs, and whether it would land |
 | `adp undo <sha> --repo <owner>/<repo>` | finds the merge that produced the commit, and says which undo path it took |
+| `adp reimplement <sha> [--harness <name>] [--model <name>] [--compare]` | the intent, the base, a second run related to the first, and the comparison |
 | `adp bakeoff --repo <owner>/<repo> --intent <uuid\|#issue> --harness <a,b,c>` | a candidate set, one labelled run per harness, and the comparison |
 | `adp runner up --here` | starts a gate runner, or refuses and says why not here |
 | `adp connect <claude-code\|codex\|gemini-cli> [--model <name>]` | not a wrapper — see below |
