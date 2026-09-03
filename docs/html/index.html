@@ -255,65 +255,6 @@ gh pr merge --squash</pre>
     to merge an ingested pull request itself, and says why. Choosing between two merge planes is the
     thing companion mode exists to avoid.</p>
 
-    <figure class="flow flow--tight">
-      <div class="plate__scroll">
-        <svg class="diagram diagram--wider" viewBox="0 0 960 330" role="img" aria-label="Unmodified agents and tools above; ADP's compatibility and native planes with the gate between them; the gate runner, your delivery stack and GitHub in companion mode below.">
-          <defs>
-            <marker id="fc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-              <path class="diagram__arrowhead" d="M0 0 L10 5 L0 10 z"/>
-            </marker>
-          </defs>
-          <rect class="diagram__box" x="24" y="24" width="912" height="58"/>
-          <text class="diagram__n" x="40" y="44">YOUR AGENTS AND TOOLS — UNMODIFIED</text>
-          <text class="diagram__t" x="40" y="66">git · gh · Octokit and CI libraries · any coding agent, over the same protocols or MCP</text>
-          <line class="diagram__arrow" x1="300" y1="82" x2="300" y2="106" marker-end="url(#fc)"/>
-          <line class="diagram__arrow" x1="660" y1="82" x2="660" y2="106" marker-end="url(#fc)"/>
-          <text class="diagram__note diagram__t--sm" x="312" y="100">git wire · REST /api/v3 · GraphQL</text>
-          <text class="diagram__note diagram__t--sm" x="672" y="100">/api/adp · MCP</text>
-          <rect class="diagram__box diagram__box--accent" x="24" y="112" width="912" height="118"/>
-          <text class="diagram__keyhead" x="40" y="134">ADP — THE AGENT-NATIVE FORGE, SELF-HOSTED</text>
-          <line class="diagram__divider" x1="480" y1="146" x2="480" y2="196"/>
-          <text class="diagram__head" x="40" y="166">Compatibility plane</text>
-          <text class="diagram__t diagram__t--sm" x="40" y="184">GitHub's protocols over the same domain model —</text>
-          <text class="diagram__t diagram__t--sm" x="40" y="200">an unmodified tool cannot tell</text>
-          <text class="diagram__head" x="500" y="166">Native plane</text>
-          <text class="diagram__t diagram__t--sm" x="500" y="184">operation log · undo · evidence bundles ·</text>
-          <text class="diagram__t diagram__t--sm" x="500" y="200">workspaces · candidate sets · sessions</text>
-          <rect class="diagram__band" x="36" y="204" width="888" height="20"/>
-          <text class="diagram__key" x="480" y="218" text-anchor="middle">the gate: land policy — signed evidence required, or the merge is refused</text>
-          <line class="diagram__arrow" x1="170" y1="262" x2="170" y2="234" marker-end="url(#fc)"/>
-          <line class="diagram__arrow" x1="480" y1="230" x2="480" y2="258" marker-end="url(#fc)"/>
-          <line class="diagram__arrow" x1="790" y1="262" x2="790" y2="234" marker-end="url(#fc)"/>
-          <line class="diagram__arrow" x1="810" y1="234" x2="810" y2="262" marker-end="url(#fc)"/>
-          <g>
-            <rect class="diagram__box" x="24" y="266" width="290" height="56"/>
-            <text class="diagram__n" x="40" y="286">GATE RUNNER — YOUR CHECKS</text>
-            <text class="diagram__t diagram__t--sm" x="40" y="303">isolated container, network denied;</text>
-            <text class="diagram__t diagram__t--sm" x="40" y="318">reports signed results</text>
-            <rect class="diagram__box" x="336" y="266" width="290" height="56"/>
-            <text class="diagram__n" x="352" y="286">YOUR DELIVERY + OBSERVABILITY</text>
-            <text class="diagram__t diagram__t--sm" x="352" y="303">consumes the record:</text>
-            <text class="diagram__t diagram__t--sm" x="352" y="318">identify, attribute, reverse</text>
-            <rect class="diagram__box" x="648" y="266" width="288" height="56"/>
-            <text class="diagram__n" x="664" y="286">GITHUB — COMPANION MODE</text>
-            <text class="diagram__t diagram__t--sm" x="664" y="303">issues, pulls, reviews, Actions in;</text>
-            <text class="diagram__t diagram__t--sm" x="664" y="318">two checks published back</text>
-          </g>
-        </svg>
-      </div>
-
-      <!-- The same picture below 700px, read top to bottom. -->
-      <div class="steps diagram--stacked" role="img" aria-label="Unmodified agents and tools above; ADP's compatibility and native planes with the gate between them; the gate runner, your delivery stack and GitHub in companion mode below.">
-        <div class="step"><span class="step__n">Above</span><span class="step__h">Your agents and tools — unmodified</span><span class="step__b">git · gh · Octokit and CI libraries · any coding agent, over the same protocols or MCP.</span></div>
-        <div class="step"><span class="step__n">ADP</span><span class="step__h">Two planes over one domain model</span><span class="step__b">The compatibility plane speaks GitHub's protocols; the native plane serves the operation log, undo, evidence bundles, workspaces and candidate sets. Between them, the gate: signed evidence required, or the merge is refused.</span></div>
-        <div class="step"><span class="step__n">Around it</span><span class="step__h">Your runner, your stack, your GitHub</span><span class="step__b">Gates execute in an isolated, network-denied container; your delivery and observability stacks consume the record; in companion mode the repository stays on GitHub, its lifecycle is ingested, and two checks are published back.</span></div>
-      </div>
-
-      <figcaption>Nothing above ADP changes and nothing below it is replaced: tools speak the
-      protocols they already speak, gates execute on your infrastructure, and companion mode means
-      adopting ADP is not a migration.</figcaption>
-    </figure>
-
     <div class="grid">
       <div class="card"><h3>Nothing to migrate</h3><p>The repository stays on GitHub. Its issues,
       pull requests, reviews and Actions results are ingested; ADP's verdict is published back as a
@@ -391,6 +332,70 @@ gh pr merge --squash</pre>
       <figcaption>Requirements are additive and fail closed: an instance floor, an organization floor,
       and the repository's own <code>adp.yaml</code>. A change that cannot show the evidence does not
       land — and the refusal is recorded too.</figcaption>
+    </figure>
+
+    <h3>Where that sits</h3>
+    <p>Two planes over one domain model, with the gate between them. Above it, tools that cannot tell
+    ADP from GitHub; below it, your runner, your delivery stack, and the repository you did not
+    move.</p>
+
+<figure class="flow flow--tight">
+      <div class="plate__scroll">
+        <svg class="diagram diagram--wider" viewBox="0 0 960 330" role="img" aria-label="Unmodified agents and tools above; ADP's compatibility and native planes with the gate between them; the gate runner, your delivery stack and GitHub in companion mode below.">
+          <defs>
+            <marker id="fc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path class="diagram__arrowhead" d="M0 0 L10 5 L0 10 z"/>
+            </marker>
+          </defs>
+          <rect class="diagram__box" x="24" y="24" width="912" height="58"/>
+          <text class="diagram__n" x="40" y="44">YOUR AGENTS AND TOOLS — UNMODIFIED</text>
+          <text class="diagram__t" x="40" y="66">git · gh · Octokit and CI libraries · any coding agent, over the same protocols or MCP</text>
+          <line class="diagram__arrow" x1="300" y1="82" x2="300" y2="106" marker-end="url(#fc)"/>
+          <line class="diagram__arrow" x1="660" y1="82" x2="660" y2="106" marker-end="url(#fc)"/>
+          <text class="diagram__note diagram__t--sm" x="312" y="100">git wire · REST /api/v3 · GraphQL</text>
+          <text class="diagram__note diagram__t--sm" x="672" y="100">/api/adp · MCP</text>
+          <rect class="diagram__box diagram__box--accent" x="24" y="112" width="912" height="118"/>
+          <text class="diagram__keyhead" x="40" y="134">ADP — THE AGENT-NATIVE FORGE, SELF-HOSTED</text>
+          <line class="diagram__divider" x1="480" y1="146" x2="480" y2="196"/>
+          <text class="diagram__head" x="40" y="166">Compatibility plane</text>
+          <text class="diagram__t diagram__t--sm" x="40" y="184">GitHub's protocols over the same domain model —</text>
+          <text class="diagram__t diagram__t--sm" x="40" y="200">an unmodified tool cannot tell</text>
+          <text class="diagram__head" x="500" y="166">Native plane</text>
+          <text class="diagram__t diagram__t--sm" x="500" y="184">operation log · undo · evidence bundles ·</text>
+          <text class="diagram__t diagram__t--sm" x="500" y="200">workspaces · candidate sets · sessions</text>
+          <rect class="diagram__band" x="36" y="204" width="888" height="20"/>
+          <text class="diagram__key" x="480" y="218" text-anchor="middle">the gate: land policy — signed evidence required, or the merge is refused</text>
+          <line class="diagram__arrow" x1="170" y1="262" x2="170" y2="234" marker-end="url(#fc)"/>
+          <line class="diagram__arrow" x1="480" y1="230" x2="480" y2="258" marker-end="url(#fc)"/>
+          <line class="diagram__arrow" x1="790" y1="262" x2="790" y2="234" marker-end="url(#fc)"/>
+          <line class="diagram__arrow" x1="810" y1="234" x2="810" y2="262" marker-end="url(#fc)"/>
+          <g>
+            <rect class="diagram__box" x="24" y="266" width="290" height="56"/>
+            <text class="diagram__n" x="40" y="286">GATE RUNNER — YOUR CHECKS</text>
+            <text class="diagram__t diagram__t--sm" x="40" y="303">isolated container, network denied;</text>
+            <text class="diagram__t diagram__t--sm" x="40" y="318">reports signed results</text>
+            <rect class="diagram__box" x="336" y="266" width="290" height="56"/>
+            <text class="diagram__n" x="352" y="286">YOUR DELIVERY + OBSERVABILITY</text>
+            <text class="diagram__t diagram__t--sm" x="352" y="303">consumes the record:</text>
+            <text class="diagram__t diagram__t--sm" x="352" y="318">identify, attribute, reverse</text>
+            <rect class="diagram__box" x="648" y="266" width="288" height="56"/>
+            <text class="diagram__n" x="664" y="286">GITHUB — COMPANION MODE</text>
+            <text class="diagram__t diagram__t--sm" x="664" y="303">issues, pulls, reviews, Actions in;</text>
+            <text class="diagram__t diagram__t--sm" x="664" y="318">two checks published back</text>
+          </g>
+        </svg>
+      </div>
+
+      <!-- The same picture below 700px, read top to bottom. -->
+      <div class="steps diagram--stacked" role="img" aria-label="Unmodified agents and tools above; ADP's compatibility and native planes with the gate between them; the gate runner, your delivery stack and GitHub in companion mode below.">
+        <div class="step"><span class="step__n">Above</span><span class="step__h">Your agents and tools — unmodified</span><span class="step__b">git · gh · Octokit and CI libraries · any coding agent, over the same protocols or MCP.</span></div>
+        <div class="step"><span class="step__n">ADP</span><span class="step__h">Two planes over one domain model</span><span class="step__b">The compatibility plane speaks GitHub's protocols; the native plane serves the operation log, undo, evidence bundles, workspaces and candidate sets. Between them, the gate: signed evidence required, or the merge is refused.</span></div>
+        <div class="step"><span class="step__n">Around it</span><span class="step__h">Your runner, your stack, your GitHub</span><span class="step__b">Gates execute in an isolated, network-denied container; your delivery and observability stacks consume the record; in companion mode the repository stays on GitHub, its lifecycle is ingested, and two checks are published back.</span></div>
+      </div>
+
+      <figcaption>Nothing above ADP changes and nothing below it is replaced: tools speak the
+      protocols they already speak, gates execute on your infrastructure, and companion mode means
+      adopting ADP is not a migration.</figcaption>
     </figure>
   </div>
 </section>
@@ -504,7 +509,7 @@ gh pr merge --squash</pre>
         </tbody>
       </table>
     </div>
-    <p class="sub">The wire contract is published and versioned — the number in the masthead above,
+    <p class="sub">The wire contract is published and versioned,
     served as <code>ADP-API-Version</code> on every response, with the spec,
     the image and the git tag moving together. See
     <a href="https://github.com/DeDuva/adp/blob/main/docs/api-compatibility.md">what a version bump promises</a>.</p>

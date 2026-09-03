@@ -88,6 +88,14 @@ request itself and says why.
 
 §06 gains eight rows and no longer describes a release that is behind.
 
+**The two-plane architecture diagram moved from §02 to §03.** Rendering the page and measuring it
+showed §02 had become 27% of it and nearly four times §03 — which is where the product thesis
+actually lives, so a first-time reader hit a wall at section two. The diagram was the block in the
+wrong place: §02 is about what adoption costs you and that picture is about how ADP is built. In §03
+it now follows the change-lifecycle diagram, so the section zooms in on one change and then out to
+where the whole thing sits. The page reads 13 / 22 / 14 / 17 / 7 / 18 / 9 instead of
+13 / 27 / 7 / 18 / 7 / 19 / 9.
+
 Written entirely in the existing design system — no new class, no colour, no inline style — and
 `make site` still passes all 29 assertions: five widths with no horizontal scroll, tables readable
 at 375px, a focus ring on every interactive element, and nothing loaded from a third party.
