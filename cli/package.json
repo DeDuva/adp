@@ -14,13 +14,19 @@
   },
   "keywords": [
     "adp",
+    "ai-agents",
     "provenance",
-    "agent",
+    "supply-chain-security",
+    "sdlc",
+    "git",
+    "slsa",
+    "in-toto",
+    "devsecops",
+    "mcp",
+    "self-hosted",
     "forge",
     "github",
-    "evidence",
-    "sbom",
-    "sdlc"
+    "evidence"
   ],
   "type": "module",
   "engines": {

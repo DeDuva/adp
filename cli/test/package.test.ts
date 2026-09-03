@@ -5,6 +5,7 @@ import path from "node:path";
 const root = path.resolve(new URL(".", import.meta.url).pathname, "..");
 const manifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")) as {
   name: string;
+  keywords: string[];
   private?: boolean;
   bin: Record<string, string>;
   files: string[];
@@ -57,5 +58,51 @@ describe("#235: the CLI is publishable", () => {
     // Without a shebang `npm install -g` produces a file on PATH that the shell
     // tries to run as a shell script.
     expect(readFileSync(path.join(root, "src/index.ts"), "utf8").startsWith("#!/usr/bin/env node")).toBe(true);
+  });
+});
+
+// #275 — the package page says what an instance is.
+//
+// npm renders README.md as the package page, and `@deduva/adp` is a discovery
+// surface in its own right: someone can find this package from a search or a
+// dependency list without ever seeing the repository. Before this, that page
+// said "install it, here are some commands, here is `adp login --server
+// https://adp.example.com`" — and nothing about what an instance is, that you
+// need one, or how to get one. `npx @deduva/adp` worked and had nothing to
+// point at.
+//
+// Asserted rather than trusted because a page nobody working here reads is a
+// page that rots: every contributor arrives through the repository, so the one
+// document written for the other entrance is the one with no reader.
+describe("#275: the npm page orients someone who arrived cold", () => {
+  const readme = readFileSync(path.join(root, "README.md"), "utf8");
+
+  it("says this is a client and that it needs an instance", () => {
+    expect(readme).toMatch(/instance/i);
+    // The shortest real path to having one, not just the word.
+    expect(readme).toContain("make demo");
+    expect(readme).toContain("make local");
+  });
+
+  it("links the repository, self-hosting and companion mode absolutely", () => {
+    // npm serves this page off its own origin, so a relative link to
+    // ../docs/self-hosting.md resolves to nothing a reader can follow.
+    for (const target of ["docs/self-hosting.md", "docs/companion-mode.md"]) {
+      expect(readme, `${target} must be linked`).toContain(target);
+      expect(readme, `${target} must be linked absolutely`)
+        .toContain(`https://github.com/DeDuva/adp/blob/main/${target}`);
+    }
+    expect(readme).toContain("https://github.com/DeDuva/adp#readme");
+  });
+
+  it("declares no keyword the project does not stand behind", () => {
+    // These are the repository's own GitHub topics, chosen for how somebody
+    // would search for the problem. Divergence here is how the two surfaces
+    // come to describe different products. "sbom" was one of these and ADP
+    // does not produce one — a keyword is a claim.
+    const topics = ["ai-agents", "provenance", "supply-chain-security", "sdlc",
+                    "git", "slsa", "in-toto", "devsecops", "mcp", "self-hosted"];
+    for (const topic of topics) expect(manifest.keywords).toContain(topic);
+    expect(manifest.keywords).not.toContain("sbom");
   });
 });
