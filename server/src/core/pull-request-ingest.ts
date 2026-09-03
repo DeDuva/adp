@@ -51,7 +51,13 @@ export interface PullRequestPayload {
 // refresh: an action nobody has thought about should read as unhandled in the
 // response, not silently rewrite the row from whatever the payload happened to
 // contain.
-const HANDLED_ACTIONS = new Set(["opened", "reopened", "synchronize", "edited", "closed"]);
+// #228 adds `poll`, which is not one of GitHub's actions and is deliberately
+// not disguised as one. A polled pull request carries no action — the poller
+// has a state, not an event — and recording it as `synchronize` would put a
+// claim in the operations log that nothing observed. The row-diff below is what
+// decides whether anything changed either way, so `poll` needs no separate
+// handling; it only needs to be admitted.
+const HANDLED_ACTIONS = new Set(["opened", "reopened", "synchronize", "edited", "closed", "poll"]);
 
 export interface PullRequestIngestResult {
   recorded: boolean;

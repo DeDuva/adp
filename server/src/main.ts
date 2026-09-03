@@ -12,6 +12,7 @@ import { authPlugin } from "./auth/plugin.js";
 import { registerMirrorWebhookRawBodyParser } from "./http-rest/mirror-webhook.js";
 import { registerApiRoutes } from "./routes.js";
 import { startMirrorPoller } from "./core/mirror-poller.js";
+import { startInboundPoller } from "./core/mirror-inbound-poller.js";
 import { startWorkspaceSweeper } from "./core/workspace-sweeper.js";
 import { startRetentionSweeper } from "./core/trajectory-retention.js";
 import { startGateJobReaper } from "./core/gate-job-reaper.js";
@@ -141,6 +142,23 @@ async function main() {
   await app.listen({ host: "0.0.0.0", port: config.PORT });
 
   startMirrorPoller(db, gitBackend, config.MIRROR_CREDENTIAL_KEY, config.MIRROR_POLL_INTERVAL_MS);
+
+  // #228: inbound without a public hostname. Runs alongside the webhook rather
+  // than instead of it — every ingest either drives is idempotent, because
+  // GitHub redelivers, so an instance that has both configured records each
+  // fact once and it does not matter which arrived first.
+  if (config.MIRROR_INBOUND_POLL_INTERVAL_MS > 0) {
+    startInboundPoller(
+      {
+        db,
+        gitBackend,
+        signer,
+        credentialKey: config.MIRROR_CREDENTIAL_KEY,
+        publicUrl: config.PUBLIC_URL,
+      },
+      config.MIRROR_INBOUND_POLL_INTERVAL_MS,
+    );
+  }
 
   const sweeperActorId = await findOrCreateSystemIdentity(db, "system:workspace-sweeper");
   startWorkspaceSweeper(db, gitBackend, sweeperActorId, config.WORKSPACE_SWEEP_INTERVAL_MS);

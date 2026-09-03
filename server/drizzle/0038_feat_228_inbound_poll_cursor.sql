@@ -1,0 +1,20 @@
+-- #228: companion mode without a public hostname.
+--
+-- `adp init` configures the mirror and then prints a webhook URL and a secret
+-- for a human to paste into GitHub's settings. Until that is done by hand,
+-- inbound ingests nothing — the mode is configured, reports success, and
+-- records only what an outbound push already knew. A developer without a
+-- publicly reachable endpoint cannot do it at all, which is most people
+-- evaluating this on the machine they have.
+--
+-- So the poller is not a degraded substitute for the webhook. It is the only
+-- version of companion mode that runs on a laptop, and it drives the same
+-- ingest functions the webhook does.
+--
+-- One column: where the last poll got to. A timestamp rather than a per-object
+-- cursor, because it is what GitHub's own filters take and because it is the
+-- only cursor that stays correct when the poller is behind — falling further
+-- behind widens the window instead of skipping what happened while it was down.
+-- Null means "never polled", which makes the first poll a backfill of what is
+-- currently open rather than an arbitrary window.
+ALTER TABLE "mirrors" ADD COLUMN IF NOT EXISTS "last_polled_at" timestamp with time zone;

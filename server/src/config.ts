@@ -49,6 +49,21 @@ const EnvSchema = z.object({
   // at rest" bar.
   MIRROR_CREDENTIAL_KEY: z.string().min(1),
   MIRROR_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
+  // #228: how often inbound polls upstream, and whether it does at all.
+  //
+  // A minute rather than the outbound poller's five seconds, because the two
+  // are not the same kind of loop: outbound drains a local outbox and its
+  // latency is the developer's, while this one costs a GitHub API call per
+  // repository per tick against a 5000/hour budget. A minute is well inside
+  // that for any instance a person is running, and it is the difference
+  // between "my pull request is in ADP" happening while you switch windows and
+  // not happening at all.
+  //
+  // On by default. Off would make the mode that needs no public hostname the
+  // one you have to know to ask for, which is exactly backwards: the webhook
+  // is the optimisation and this is the floor. Set 0 to disable it on an
+  // instance that has a public URL and would rather not spend the calls.
+  MIRROR_INBOUND_POLL_INTERVAL_MS: z.coerce.number().int().nonnegative().default(60_000),
   // M4-3: how often the expired-workspace sweeper runs (core/workspace-sweeper.ts).
   // Minutes, not milliseconds, unlike the mirror poller — a workspace's own
   // TTL is stated in hours, so a sweep interval this coarse costs nothing.

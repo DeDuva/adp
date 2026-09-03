@@ -39,7 +39,9 @@ export interface IssuePayload {
   repository?: { html_url?: string };
 }
 
-const HANDLED_ACTIONS = new Set(["opened", "reopened", "edited", "closed"]);
+// `poll` is #228's, and is not one of GitHub's actions — see the note on the
+// same constant in pull-request-ingest.ts.
+const HANDLED_ACTIONS = new Set(["opened", "reopened", "edited", "closed", "poll"]);
 
 export interface IssueIngestResult {
   recorded: boolean;
