@@ -59,6 +59,47 @@ unchanged and is what was kept.
 somebody would look for this rather than how the README describes it, and recorded in `AGENTS.md`
 because no API records why a topic was set.
 
+### The front page describes what shipped (#272)
+
+The site mentioned companion mode, check runs, ingest and shadow proposals **zero times**, and §06
+Status had thirteen rows that all predated Phase 5. So the strongest adoption argument this project
+has — your issues and pull requests stay on GitHub, the record fills anyway, and the verdict arrives
+as a check branch protection can require — was not on the front page in any form.
+
+Phase 5 deferred this deliberately: a front page promising a companion mode 5a had not built would
+have been the same class of false published claim Phase 0 was spent on. 5a is built.
+
+**The hero stays.** *"Agents write the code. Someone still has to answer for it."* is
+category-defining and abstract, and it earns the reader's next question — so §02 answers that
+question rather than the hero pre-empting it. Leading with the concrete adoption claim converts
+faster and claims less; it was rejected on those terms rather than overlooked.
+
+§02 was *"Your tools do not change"* — the self-hosted-forge framing, where you point your tools at
+ADP instead of GitHub. It is now **"Your repository does not move"**: the loop shown is on
+`github.com`, none of it is an ADP command, and what follows is what ADP recorded anyway — the
+intent from the issue you filed, the proposal from your pull request carrying its own number, your
+Actions results as signed attestations, the model *observed in the trajectory* rather than the one a
+token claimed, and a merge that `adp undo` can reach.
+
+Then the two check runs, and the sentence that makes the enforcement story true rather than
+aspirational: **GitHub stays the merge authority.** Publishing a verdict GitHub already knows how to
+require is the same enforcement with none of the migration, so ADP refuses to merge an ingested pull
+request itself and says why.
+
+§06 gains eight rows and no longer describes a release that is behind.
+
+**The two-plane architecture diagram moved from §02 to §03.** Rendering the page and measuring it
+showed §02 had become 27% of it and nearly four times §03 — which is where the product thesis
+actually lives, so a first-time reader hit a wall at section two. The diagram was the block in the
+wrong place: §02 is about what adoption costs you and that picture is about how ADP is built. In §03
+it now follows the change-lifecycle diagram, so the section zooms in on one change and then out to
+where the whole thing sits. The page reads 13 / 22 / 14 / 17 / 7 / 18 / 9 instead of
+13 / 27 / 7 / 18 / 7 / 19 / 9.
+
+Written entirely in the existing design system — no new class, no colour, no inline style — and
+`make site` still passes all 29 assertions: five widths with no horizontal scroll, tables readable
+at 375px, a focus ring on every interactive element, and nothing loaded from a third party.
+
 ### A GitHub pull request is a proposal in ADP (#224)
 
 `pull_request` deliveries — `opened`, `reopened`, `synchronize`, `edited`, `closed` — become a
