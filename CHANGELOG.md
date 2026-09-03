@@ -374,13 +374,23 @@ npx @deduva/adp --help
 npm install -g @deduva/adp
 ```
 
-No runtime dependencies, so an install is one download and no tree. The release workflow publishes
-on tag with `--provenance`, which ties the tarball to the workflow run that built it — the same
-claim the rest of this project is about, applied to its own artifact.
+No runtime dependencies, so an install is one download and no tree.
 
-**It skips cleanly when `NPM_TOKEN` is not configured**, and says so, rather than failing the
-release. A fork must still be able to cut a release that produces an image and a GitHub release: the
-npm registry is one distribution channel among several, not a precondition for the others.
+**The release workflow holds no npm credential.** It publishes on tag through npm's trusted
+publishing, exchanging the OIDC token the workflow already mints for `id-token: write` against a
+publisher configured on the package itself — so there is nothing to leak, nothing to rotate, and no
+`.npmrc` left on disk if the step fails. Provenance is attested automatically, which ties the tarball
+to the workflow run that built it: the same claim the rest of this project is about, applied to its
+own artifact.
+
+The job runs in a GitHub Actions environment named `npm`, because the OIDC claim carries it and
+because that is where a required reviewer goes — on the one job here that does something
+irreversible in public. npm's unpublish window is 72 hours, and after it the version number is spent.
+
+What this costs is that a **fork will fail at this step** rather than skipping it, since a fork is
+not the trusted publisher. That is a sharp edge, and it is the better of the two: an earlier draft
+gated the step on `NPM_TOKEN` being set, which under trusted publishing means an empty variable and
+a release that goes green having silently published nothing.
 
 `cli/test/package.test.ts` asserts the package stays installable — not private, scoped `public`
 (a scoped package defaults to restricted, which publishes successfully and is unreachable), `dist`
