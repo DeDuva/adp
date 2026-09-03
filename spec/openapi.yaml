@@ -1864,6 +1864,49 @@ paths:
             not be produced — the branch's history was rewritten, the merge is
             already reverted, or the revert conflicts (`conflicts` names the
             paths).
+  /api/v3/users/{owner}:
+    get:
+      x-required-scope: "repo:read"
+      summary: >
+        #196: resolve an owner. `gh repo create <owner>/<name>` calls this
+        before creating, to decide whether the owner is a user or an
+        organization, and then creates through the GraphQL `createRepository`
+        mutation using the `node_id` returned here.
+
+        It answers `Organization` because that is what ADP's owners are —
+        `repos.owner` is the org's immutable URL slug — and `gh` branches on
+        this field to choose the org creation path.
+
+        Owner-shaped, not person-shaped: it returns the organization and never
+        its membership, so it cannot become a way to enumerate principals.
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The organization
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Owner"
+        "401":
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: >
+            No such owner. Organizations are provisioned explicitly (#91), so
+            this usually means "not created yet" — the body says so rather than
+            leaving the caller to guess.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/adp/github-app:
     get:
       x-required-scope: "repo:read"
@@ -4134,6 +4177,28 @@ components:
         events:
           type: array
           items: { $ref: "#/components/schemas/TrajectoryEvent" }
+    Owner:
+      type: object
+      required: [login, id, node_id, type]
+      properties:
+        login:
+          type: string
+        id:
+          type: string
+          format: uuid
+        node_id:
+          type: string
+          description: base64("Organization:<uuid>") — the id the GraphQL createRepository mutation takes as `ownerId`.
+        type:
+          type: string
+          enum: [Organization]
+        name:
+          type: string
+        html_url:
+          type: string
+        created_at:
+          type: string
+          format: date-time
     GitHubApp:
       type: object
       required: [app_id, slug, name, html_url, client_id, created_at]

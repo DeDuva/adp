@@ -10,6 +10,7 @@ import { recordOperation } from "../core/operations.js";
 import { findRepo, findRepoAuthorized, mayAccessOrg } from "../core/repos-lookup.js";
 import { isSafeRepoSegment } from "../core/git-backend.js";
 import type { AuthenticatedIdentity } from "../auth/tokens.js";
+import { toGlobalId } from "../http-gql/global-id.js";
 
 const CreateRepoBody = z.object({
   name: z.string().min(1).regex(/^[a-zA-Z0-9._-]+$/),
@@ -26,7 +27,11 @@ function isUniqueViolation(err: unknown): boolean {
   return false;
 }
 
-async function createRepo(
+// Exported since #196: `gh repo create` creates through GraphQL, not REST, so
+// the GraphQL mutation and the three REST routes below have to be one
+// implementation. Two would disagree about the org lock, the quota check or the
+// operations row within a release.
+export async function createRepo(
   db: Db,
   gitBackend: GitBackend,
   owner: string,
@@ -251,6 +256,46 @@ export function registerRepoRoutes(app: FastifyInstance, db: Db, gitBackend: Git
       return;
     }
     reply.code(201).send(serializeRepo(result.repo, org, name, publicUrl));
+  });
+
+  // #196: `gh repo create <owner>/<name>` resolves the owner before creating,
+  // to decide whether it is a user or an organisation, and this route was not
+  // served — so the first command in the first-contact journey met a 404 that
+  // explained nothing. (`gh` then creates through the GraphQL
+  // `createRepository` mutation with the `node_id` this returns; both halves
+  // are needed, and neither alone closes it.)
+  //
+  // It answers `Organization`, which is the honest answer rather than a
+  // convenient one: ADP's owners *are* orgs — `repos.owner` is the org's
+  // immutable URL slug — and `gh` branches on this field to choose the org
+  // creation path over the personal one.
+  app.get("/api/v3/users/:owner", { preHandler: requireScope("repo:read") }, async (req, reply) => {
+    const { owner } = req.params as { owner: string };
+    const [org] = await db.select().from(orgs).where(eq(orgs.name, owner));
+    if (!org) {
+      reply.code(404).send({
+        message: `Owner '${owner}' not found`,
+        // Orgs are provisioned explicitly (#91), so "not found" here usually
+        // means "not created yet" rather than "misspelled" — and a 404 that
+        // does not say which costs the caller a turn.
+        documentation_url: "https://github.com/DeDuva/adp/blob/main/README.md",
+        adp_equivalent:
+          "Owners are organizations and are provisioned explicitly: POST /api/adp/orgs, or " +
+          "`bootstrap --org <name>` at the host.",
+      });
+      return;
+    }
+    // The org, not its membership. This route is owner-shaped rather than
+    // person-shaped, and it must not become a way to enumerate principals.
+    reply.send({
+      login: org.name,
+      id: org.id,
+      node_id: toGlobalId("Organization", org.id),
+      type: "Organization",
+      name: org.name,
+      html_url: `${publicUrl.replace(/\/$/, "")}/${org.name}`,
+      created_at: org.createdAt.toISOString(),
+    });
   });
 
   app.get("/api/v3/repos/:owner/:repo", { preHandler: requireScope("repo:read") }, async (req, reply) => {

@@ -60,6 +60,7 @@
     "GET /api/v3/repos/{owner}/{repo}/pulls/{number}/files",
     "GET /api/v3/repos/{owner}/{repo}/pulls/{number}/reviews",
     "GET /api/v3/user",
+    "GET /api/v3/users/{owner}",
     "GET /auth/oidc/callback",
     "GET /auth/oidc/start",
     "GET /healthz",
