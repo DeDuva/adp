@@ -447,6 +447,41 @@ moving afterwards, which is asserted by renaming the remote out from under it mi
 The refusal changed too: it named remotes, which is a fact about git rather than about what the user
 has to do. It names `adp init` now.
 
+### `adp connect` finishes the job (#237)
+
+`adp connect <harness>` is supposed to mean *done*. It did not, and it stopped short differently for
+each harness — and both failures were silent, because a session that is not recorded looks exactly
+like a session that never happened.
+
+**Claude Code: the hook is written, not instructed.** `connect` wrote a launcher and then told the
+developer to register it as a `SessionStart` hook in `.claude/settings.json` themselves — the last
+step of a command whose promise is one command and then the harness records itself. The reason it
+was not written before is real and is answered rather than ignored: that file may already hold the
+developer's own hooks, and merging JSON somebody else owns is how connect comes to own it. It is the
+same risk `.mcp.json` carries, and the answer is the same discipline — **ADP owns one entry,
+recognised by the command it runs, and never the file.** `adp disconnect` takes exactly that entry
+back out, and deletes the file only if ADP's hook was all that was ever in it.
+
+**Harnesses with no hook: watched, not wrapped.** `adp-recorder watch --sessions <dir>` notices new
+transcripts and starts a `tail` for each, so an ordinary invocation records itself. `wrap` is still
+written and still useful in CI, but it is the mechanism rather than the interface: a command the
+developer types instead of their normal one is capture *they* perform, and it fails the first time
+they forget. `connect` starts the watcher detached and writes down its pid, so `disconnect` stops
+the process `connect` started rather than pattern-matching the process table. It does not survive a
+reboot, which is said rather than hidden — a supervised service means deciding whose init system and
+means ADP running when nobody asked it to, and re-running `connect` is one command.
+
+**The proof covers the ambient path.** `connect` already opened and closed a real session to prove
+the credential; the hook is now proved too, by running it exactly as the harness will and checking it
+resolves the transcript path out of the payload. That is the step that silently breaks — a renamed
+key and the hook exits 0 having found nothing. It is deliberately *not* a live capture: polling for a
+session to appear would make `adp connect` fail on a slow machine with a correct setup, which is the
+worst outcome available for a first-contact command.
+
+`watchDir` treats what was already in the directory as history unless asked otherwise — a watcher
+that ingested the back catalogue on every start would re-record every past session each time someone
+reconnected.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

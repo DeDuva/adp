@@ -20,6 +20,7 @@
 // and Gemini's documented `mcpServers` entry are the same three fields Claude
 // Code's `.mcp.json` uses, which is why one spec type covers all three.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 
 /** A stdio MCP server, in the shape all three harnesses spell the same way. */
@@ -39,6 +40,21 @@ export interface Harness {
   recording: "hook" | "wrap";
   /** Named in the report, because an adopter's next question is where their trajectory comes from. */
   stream: string;
+  /**
+   * Where this harness writes its session transcripts, for the harnesses that
+   * offer no hook (#237).
+   *
+   * `wrap` used to be the answer there — a different command the developer types
+   * instead of their normal one, which is capture the developer performs rather
+   * than ambient capture, and which fails silently the first time they forget.
+   * Watching this directory needs nothing from them at all.
+   *
+   * A function rather than a string because it reads the environment, and
+   * because the honest default for a harness whose layout is not verified here
+   * is `null` — a watch pointed at a guess would report success and record
+   * nothing.
+   */
+  sessionsDir?: () => string | null;
 }
 
 /** The key ADP owns inside whatever else is in the file. */
@@ -52,14 +68,20 @@ export const HARNESSES: Harness[] = [
     // The only one that can start the recorder by itself: a SessionStart hook
     // is handed the transcript path, which is exactly what `tail` needs.
     recording: "hook",
-    stream: "the session transcript, followed by `adp-recorder tail`",
+    stream: "the session transcript, followed by `adp-recorder tail`, started by a hook connect writes",
   },
   {
     name: "codex",
     configPath: path.join(".codex", "config.toml"),
     format: "toml",
     recording: "wrap",
-    stream: "`codex exec --json`, through `adp-recorder wrap`",
+    stream: "its session transcripts, followed by `adp-recorder watch`",
+    // `CODEX_HOME` is Codex's own override for where it keeps everything;
+    // `~/.codex` is its default. Named in connect's output rather than assumed
+    // silently, so a layout this is wrong about is visible on the line that
+    // wires it instead of being a watch that never fires.
+    sessionsDir: () =>
+      path.join(process.env.CODEX_HOME ?? path.join(homedir(), ".codex"), "sessions"),
   },
   {
     name: "gemini-cli",
@@ -206,4 +228,102 @@ function removeTomlServer(before: string): string | null {
 /** TOML basic string: the four escapes a path or a URL can actually contain. */
 function tomlString(value: string): string {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\t/g, "\\t")}"`;
+}
+
+// ---------------------------------------------------------------------------
+// The Claude Code hook (#237)
+// ---------------------------------------------------------------------------
+//
+// `connect` used to write the launcher and then *tell* the developer to add it
+// as a `SessionStart` hook in `.claude/settings.json` themselves — the last
+// step of a command whose promise is one command and then the harness records
+// itself. It failed silently when skipped: sessions simply do not appear, which
+// looks identical to nothing having happened.
+//
+// The earlier reasoning for not writing it was that `.claude/settings.json` is
+// a file the developer may already have, shared with their own hooks, and that
+// merging JSON somebody else owns is how connect comes to own it. That argument
+// is right about the risk and wrong about the conclusion: it is the same risk
+// `.mcp.json` already carries, and the answer there is the discipline this file
+// opens with — **ADP owns one entry and never the file.** The entry is
+// recognised by the command it runs, which is the launcher connect wrote, so
+// disconnect removes exactly what connect added and nothing beside it.
+
+export const CLAUDE_SETTINGS = path.join(".claude", "settings.json");
+
+interface HookEntry {
+  type?: string;
+  command?: string;
+}
+interface HookGroup {
+  matcher?: string;
+  hooks?: HookEntry[];
+}
+
+export function writeSessionStartHook(root: string, command: string): WriteResult {
+  const file = path.join(root, CLAUDE_SETTINGS);
+  const created = !existsSync(file);
+  mkdirSync(path.dirname(file), { recursive: true });
+
+  let doc: Record<string, unknown> = {};
+  if (!created) {
+    const before = readFileSync(file, "utf8");
+    if (before.trim()) {
+      try {
+        doc = JSON.parse(before) as Record<string, unknown>;
+      } catch {
+        // Refused rather than overwritten, exactly as the MCP merge refuses:
+        // a file this cannot parse is a file somebody wrote.
+        throw new Error(`cannot parse ${CLAUDE_SETTINGS} as JSON — fix or move it, then retry`);
+      }
+    }
+  }
+
+  const hooks = (doc.hooks ?? {}) as Record<string, unknown>;
+  const groups = Array.isArray(hooks.SessionStart) ? (hooks.SessionStart as HookGroup[]) : [];
+  // Replaced rather than appended, so reconnecting after the launcher path
+  // changes repairs the entry instead of leaving two — the same reason the MCP
+  // entry is replaced.
+  const others = groups
+    .map((group) => ({ ...group, hooks: (group.hooks ?? []).filter((h) => h.command !== command) }))
+    .filter((group) => (group.hooks ?? []).length > 0);
+  hooks.SessionStart = [...others, { hooks: [{ type: "command", command }] }];
+  doc.hooks = hooks;
+
+  writeFileSync(file, `${JSON.stringify(doc, null, 2)}\n`);
+  return { file, created };
+}
+
+export function removeSessionStartHook(root: string, command: string): { file: string; removed: boolean } {
+  const file = path.join(root, CLAUDE_SETTINGS);
+  if (!existsSync(file)) return { file, removed: false };
+  const before = readFileSync(file, "utf8");
+  let doc: Record<string, unknown>;
+  try {
+    doc = JSON.parse(before) as Record<string, unknown>;
+  } catch {
+    return { file, removed: false };
+  }
+
+  const hooks = (doc.hooks ?? {}) as Record<string, unknown>;
+  const groups = Array.isArray(hooks.SessionStart) ? (hooks.SessionStart as HookGroup[]) : [];
+  const kept = groups
+    .map((group) => ({ ...group, hooks: (group.hooks ?? []).filter((h) => h.command !== command) }))
+    .filter((group) => (group.hooks ?? []).length > 0);
+  if (kept.length === groups.length && groups.every((g, i) => (g.hooks ?? []).length === (kept[i]?.hooks ?? []).length)) {
+    return { file, removed: false };
+  }
+
+  if (kept.length === 0) delete hooks.SessionStart;
+  else hooks.SessionStart = kept;
+  if (Object.keys(hooks).length === 0) delete doc.hooks;
+
+  if (Object.keys(doc).length === 0) {
+    // Nothing but ADP's own hook was ever in it — deleting beats leaving `{}`,
+    // the same judgement removeMcpServer makes.
+    rmSync(file, { force: true });
+    return { file, removed: true };
+  }
+  writeFileSync(file, `${JSON.stringify(doc, null, 2)}\n`);
+  return { file, removed: true };
 }

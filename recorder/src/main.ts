@@ -7,6 +7,7 @@
 // `adp-recorder` — three verbs, and no fourth.
 //
 //   tail   follow a transcript the harness is writing, and record it
+//   watch  notice new transcripts in a directory, and tail each
 //   wrap   run the harness, tee its stream, and record that
 //   flush  finish spools a previous recorder left behind
 //
@@ -28,6 +29,7 @@ import { listSessions, newSessionMeta, producerAlive, writeSessionMeta, type Ses
 import { Lifecycle, DEFAULT_IDLE_MS, type Outcome } from "./lifecycle.js";
 import { headIntentTrailer, headSha } from "./git.js";
 import { tailFile } from "./tail.js";
+import { watchDir } from "./watch.js";
 
 function usage(): never {
   console.error(`usage: adp-recorder <command>
@@ -35,6 +37,9 @@ function usage(): never {
   tail  --repo <owner/name> --file <transcript.jsonl> [--from-start]
         [--harness <name>] [--reader <module>] [--intent <uuid|#n>] [--run <uuid>]
         [--dir <path>] [--idle-ms <n>] [--continue] [--resume-from <session-id>]
+
+  watch --repo <owner/name> --sessions <dir> [--harness <name>] [--reader <module>]
+        [--dir <path>] [--backfill] [--poll-ms <n>]
 
   wrap  --repo <owner/name> [--harness <name>] [--reader <module>]
         [--intent <uuid|#n>] [--run <uuid>] [--dir <path>] [--idle-ms <n>]
@@ -297,6 +302,68 @@ async function commandTail(args: Args): Promise<void> {
   });
 }
 
+/**
+ * Record every session a harness starts, without the harness knowing.
+ *
+ * `tail` needs a file and something has to know which. For Claude Code the
+ * harness itself does — a `SessionStart` hook is handed the transcript path —
+ * and for a harness with no hook the answer was `wrap`, a different command the
+ * developer types instead of their normal one. That is not ambient capture; it
+ * is capture the developer performs, and it fails silently the first time they
+ * forget.
+ *
+ * One child process per transcript rather than many sessions in this one. A
+ * session is a process here — its lifecycle, its spool, its suspend-on-signal
+ * are all written that way — and multiplexing them would mean rewriting all of
+ * that to gain nothing except a smaller `ps` listing. A `tail` child is also
+ * independently killable, which is what makes one wedged session not everyone's
+ * problem.
+ */
+async function commandWatch(args: Args): Promise<void> {
+  const sessions = args.flags.sessions;
+  if (typeof sessions !== "string") usage();
+
+  const forwarded = ["repo", "harness", "reader", "intent", "run", "dir", "idle-ms"]
+    .filter((flag) => typeof args.flags[flag] === "string")
+    .flatMap((flag) => [`--${flag}`, args.flags[flag] as string]);
+
+  const children = new Set<ReturnType<typeof spawn>>();
+  const { stop, poll } = watchDir(
+    sessions,
+    (file) => {
+      // `--from-start`, because a transcript this watch has just noticed is one
+      // whose opening lines were written before anyone was looking — and the
+      // first lines of a session are the ones that say what it was asked to do.
+      const child = spawn(
+        process.execPath,
+        [process.argv[1]!, "tail", "--file", file, "--from-start", ...forwarded],
+        { stdio: ["ignore", "inherit", "inherit"] },
+      );
+      children.add(child);
+      child.on("close", () => children.delete(child));
+      console.error(`adp-recorder: recording ${file}`);
+    },
+    {
+      backfill: args.flags.backfill === true,
+      pollMs: typeof args.flags["poll-ms"] === "string" ? Number(args.flags["poll-ms"]) : undefined,
+    },
+  );
+
+  console.error(`adp-recorder: watching ${sessions}`);
+  await new Promise<void>((resolve) => {
+    const finish = () => resolve();
+    process.once("SIGINT", finish);
+    process.once("SIGTERM", finish);
+  });
+
+  poll();
+  stop();
+  // The children own their own sessions and their own suspend-on-signal
+  // behaviour, so they are asked to stop rather than killed: a transcript that
+  // is mid-delivery finishes delivering.
+  for (const child of children) child.kill("SIGTERM");
+}
+
 async function commandWrap(args: Args): Promise<void> {
   if (args.rest.length === 0) usage();
   await runSession(args, async (onLine, stopped) => {
@@ -441,6 +508,8 @@ async function main(): Promise<void> {
   switch (args.command) {
     case "tail":
       return commandTail(args);
+    case "watch":
+      return commandWatch(args);
     case "wrap":
       return commandWrap(args);
     case "flush":
