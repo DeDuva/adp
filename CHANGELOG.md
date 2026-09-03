@@ -421,6 +421,32 @@ that rots silently. Getting there needed `GH_HOST` **exported** rather than only
 other `gh` call in that file names the host inside `--repo`, so the variable had never had to be one
 the child process could see, and the first attempt talked to api.github.com.
 
+### A checkout records which repository it is (#238)
+
+`adp init` added an `adp` remote and `adp connect` found the repository by looking for a remote whose
+host matched the server. Those composed — and they composed **by coincidence**: a repository's
+identity lived in mutable local git state, so renaming or removing a remote broke every subsequent
+ADP command with an error about remotes rather than about configuration.
+
+The identity is now written down at `init`, per clone, in the git directory — the same reasoning
+`connect` uses for excluding its files: one developer's setup is not every contributor's business,
+and a file there cannot be committed by accident. `--git-path` rather than `.git/`, so a worktree
+gets its own answer.
+
+**Companion mode adds no remote at all.** There is nothing to push to ADP in that mode: the
+developer pushes to GitHub and ADP observes, so the remote was an artifact of a mode they are not
+in. `init` leaves their remotes exactly as it found them, and the "Next" steps now name the push
+they were going to make anyway — which is the sentence the previous version could not say, having
+just added a second remote to push to. The remote is still added on the native path, where the
+developer genuinely pushes to ADP.
+
+The old inference survives as a **last resort**, so a checkout set up before this keeps working — and
+when it answers, the answer is written down. A clone infers at most once and is immune to the remote
+moving afterwards, which is asserted by renaming the remote out from under it mid-test.
+
+The refusal changed too: it named remotes, which is a fact about git rather than about what the user
+has to do. It names `adp init` now.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran

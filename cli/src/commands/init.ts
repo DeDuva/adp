@@ -5,6 +5,7 @@ import { parseFlags, splitRepo } from "../args.js";
 import { apiRequest, ApiError } from "../api.js";
 import { loadConfig } from "../config.js";
 import { addRemote, currentBranch, gitRemotes, remoteRepo, repoRoot } from "../git.js";
+import { saveRepoIdentity } from "../repo-identity.js";
 import { detectToolchain, renderAdpYaml, type RepoFiles } from "../toolchain.js";
 
 // #153. The strongest brake on adoption is not scepticism about signed evidence
@@ -53,12 +54,33 @@ export async function init(argv: string[]): Promise<void> {
   );
   console.log(`  repo:      ${repoState.created ? "created" : "already there"}`);
 
-  // 1b. The remote, without which nothing else here reaches the repository
-  //     just created. See git.ts `addRemote` for why this is `adp` and not
-  //     `origin`, and why it never takes a name that is already in use.
+  // 1b. Which repository this checkout is, written down (#238).
+  //
+  //     It used to be *derived* from a git remote whose host matched the
+  //     server, which composed with `adp connect` by coincidence: identity
+  //     lived in mutable local git state, so renaming the remote broke every
+  //     later command with an error about remotes rather than configuration.
+  //     Recorded per clone in the git directory, on the same reasoning connect
+  //     uses for excluding its files.
+  const wantsMirror = flags["no-mirror"] !== "true" && upstream !== null;
+  const mode = wantsMirror ? "mirror" : "native";
+  if (saveRepoIdentity(root, { serverUrl: config.serverUrl, owner: target.owner, repo: target.repo, mode })) {
+    console.log(`  identity:  ${target.owner}/${target.repo}, recorded for this clone (${mode} mode)`);
+  }
+
+  // 1c. The remote — **only in native mode**, where the developer genuinely
+  //     pushes to ADP.
+  //
+  //     In companion mode there is nothing to push here: the developer pushes
+  //     to GitHub and ADP observes, so an `adp` remote is an artifact of a mode
+  //     they are not in. `init` now leaves their remotes exactly as it found
+  //     them. See git.ts `addRemote` for why the name is `adp` and not `origin`,
+  //     and why it never takes a name already in use.
   const alreadyPointed = remoteRepo(root, config.serverUrl) !== null;
   let pushRemote: string | null = null;
-  if (alreadyPointed) {
+  if (wantsMirror) {
+    console.log("  remote:    unchanged — you push to your existing remote, ADP observes");
+  } else if (alreadyPointed) {
     console.log("  remote:    already points at this server");
   } else if (repoState.cloneUrl) {
     pushRemote = addRemote(root, repoState.cloneUrl);
@@ -71,7 +93,6 @@ export async function init(argv: string[]): Promise<void> {
 
   // 2. Mirror, unless told not to. This is the step that makes adoption
   //    additive rather than a migration.
-  const wantsMirror = flags["no-mirror"] !== "true" && upstream !== null;
   if (wantsMirror) {
     await configureMirror(target, upstream!, flags.credential ?? process.env.GITHUB_TOKEN);
   } else if (upstream === null) {
@@ -96,6 +117,14 @@ export async function init(argv: string[]): Promise<void> {
   console.log("");
   console.log("Next:");
   console.log(`  git add adp.yaml && git commit -m "add adp.yaml"   # review it first`);
+  if (wantsMirror) {
+    // The push that fills the record is the one they were going to make
+    // anyway. Saying so is the whole of what makes this additive rather than a
+    // migration, and it is the sentence the previous version could not say
+    // because it had just added a second remote to push to.
+    const branch = currentBranch(root);
+    console.log(`  git push origin ${branch ?? "<branch>"}                 # your usual remote; ADP ingests it`);
+  }
   if (pushRemote) {
     const branch = currentBranch(root);
     console.log(`  git push -u ${pushRemote} ${branch ?? "<branch>"}`);

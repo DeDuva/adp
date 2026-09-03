@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import { createServer, type Server, type IncomingMessage } from "node:http";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { execFileSync, } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { run } from "../src/index.js";
@@ -550,16 +550,69 @@ describe("adp CLI", () => {
 
     // `origin` on a mirrored checkout is somebody's upstream, and a command
     // that repoints it is a command that loses it.
+    //
+    // `--no-mirror` because a remote pointing elsewhere is exactly what makes
+    // this a *mirrored* checkout since #238, and a mirrored checkout gets no
+    // ADP remote at all — so without the flag this asserts the name-collision
+    // behaviour on a path that no longer adds a name.
     it("never takes a remote name that is already in use", async () => {
       execFileSync("git", ["remote", "add", "adp", "https://elsewhere.example.com/x.git"], { cwd: repo });
       responder = () => ({ status: 201, body: { clone_url: "https://adp.example.com/acme/widget.git" } });
       const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-      await run(["init", "--repo", "acme/widget"]);
+      await run(["init", "--repo", "acme/widget", "--no-mirror"]);
 
       const remotes = execFileSync("git", ["remote", "-v"], { cwd: repo }).toString();
       expect(remotes).toContain("https://elsewhere.example.com/x.git");
       expect(remotes).toContain("adp-origin\thttps://adp.example.com/acme/widget.git");
       logSpy.mockRestore();
+    });
+
+    // #238 — companion mode leaves the developer's remotes exactly as it found
+    // them. There is nothing to push to ADP in that mode: the developer pushes
+    // to GitHub and ADP observes, so an `adp` remote is an artifact of a mode
+    // they are not in.
+    it("adds no remote in companion mode, and leaves the upstream untouched", async () => {
+      execFileSync("git", ["remote", "add", "origin", "https://github.com/acme/widget.git"], { cwd: repo });
+      responder = ({ url, method }) => {
+        if (url === "/api/adp/orgs" && method === "POST") return { status: 201, body: { id: "org-1" } };
+        return { status: 201, body: { clone_url: "https://adp.example.com/acme/widget.git" } };
+      };
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      expect(await run(["init", "--repo", "acme/widget"])).toBe(0);
+
+      const remotes = execFileSync("git", ["remote", "-v"], { cwd: repo }).toString();
+      expect(remotes).toContain("https://github.com/acme/widget.git");
+      expect(remotes).not.toContain("adp.example.com");
+
+      const out = logSpy.mock.calls.flat().join("\n");
+      expect(out).toContain("you push to your existing remote, ADP observes");
+      // And the push it names is the one they were going to make anyway.
+      expect(out).toContain("git push origin main");
+      logSpy.mockRestore();
+    });
+
+    // The identity is recorded rather than derived, which is what makes every
+    // later command survive the remote being renamed or removed.
+    it("records which repository this checkout is, per clone", async () => {
+      responder = ({ url, method }) => {
+        if (url === "/api/adp/orgs" && method === "POST") return { status: 201, body: { id: "org-1" } };
+        return { status: 201, body: { clone_url: "https://adp.example.com/acme/widget.git" } };
+      };
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      await run(["init", "--repo", "acme/widget"]);
+      logSpy.mockRestore();
+
+      const recorded = JSON.parse(readFileSync(path.join(repo, ".git", "adp.json"), "utf8")) as {
+        owner: string;
+        repo: string;
+        mode: string;
+      };
+      expect(recorded).toMatchObject({ owner: "acme", repo: "widget", mode: "native" });
+
+      // In the git directory, not the working tree: one developer's setup is
+      // not every contributor's business, and a file here cannot be committed
+      // by accident.
+      expect(existsSync(path.join(repo, "adp.json"))).toBe(false);
     });
 
     // The owner is inferred from the parent directory name when --repo is
