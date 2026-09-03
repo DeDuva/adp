@@ -151,6 +151,27 @@ must resolve to an actual `<section>`, and no page may carry a duplicate id. A s
 with one of the demo's own element handles would have pointed a permalink at a div inside the
 animation, and it would have looked like a working link.
 
+### Companion mode, explained end to end (#277)
+
+The phase's headline had no document. Its story was spread across twenty CHANGELOG entries, a
+completed `PLAN.md` phase and a CLI table row — which is fine for someone reconstructing how it was
+built and useless to someone deciding whether to use it.
+
+[`docs/companion-mode.md`](docs/companion-mode.md) is the second reader's document. Setting it up in
+three commands; a table of the loop with what you do on github.com beside what ADP records without
+a command being run; the two checks that appear on the pull request and why one of them is never a
+verdict; what it costs, in a table that includes what you give up.
+
+**It states the refusals as plainly as the capabilities**, in their own section, because each one is
+a place where doing the obliging thing would make the record wrong: a repository that ingests
+refuses natively created proposals and issues; `adp land` refuses an ingested proposal *before*
+evaluating the policy, so one that would have satisfied it is refused for the right reason; `adp
+undo` returns `merge_base_unknown` rather than guessing a base, because a guessed base makes undo
+*succeed* and remove the wrong range.
+
+The sentence the whole mode turns on is stated rather than implied: **ADP does not take the merge
+button away.** It publishes a verdict GitHub already knows how to require.
+
 ### A GitHub pull request is a proposal in ADP (#224)
 
 `pull_request` deliveries — `opened`, `reopened`, `synchronize`, `edited`, `closed` — become a
