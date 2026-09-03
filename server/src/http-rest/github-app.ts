@@ -257,7 +257,7 @@ export function registerGitHubAppRoutes(
       results.push({
         repo: `${repo.owner}/${repo.name}`,
         ...(await dispatchGitHubEvent(
-          { db, gitBackend, signer, credentialKey, publicUrl },
+          { db, gitBackend, signer, credentialKey, publicUrl, fetchImpl },
           event,
           payload,
           repo,

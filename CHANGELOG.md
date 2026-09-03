@@ -307,6 +307,34 @@ events, not that the record of what it ingested while installed disappears.
 The PAT path still works, and 5-5's poller is still necessary either way: an App also delivers to a
 reachable URL, and a laptop has none.
 
+### `ADP / change record` appears on the pull request (#233)
+
+Everything this phase built was invisible to a developer who never leaves GitHub: the intent the
+change is bound to, the trajectory that produced it, the model that ran, the signed evidence behind
+each verdict. A check run is where GitHub already looks.
+
+**It is never a verdict.** `success` says a signed change record exists for the commit and `neutral`
+says none does yet; both pass if somebody marks the check required, because the check allowed to
+block is #234's. A commit bound to no intent **says so** rather than having the line omitted — that
+is the state the whole product is about noticing.
+
+It carries #231's honesty onto the surface people actually read: a model observed in the trajectory
+is reported as observed, and one that only the token claimed is labelled as asserted.
+
+The check run on a commit is **updated, not appended**. GitHub keeps every check run of the same
+name and shows the newest, so appending works and leaves a pile of stale rows a reader has to scroll
+past to reach the one that is true — a check run is a *current* statement about a commit, and there
+is one of it.
+
+It republishes whenever its inputs move: the pull request changing, a push to its head branch, an
+upstream CI result landing. The poller publishes them too, because an instance with no public
+hostname is the one whose developer most needs ADP's answer to appear on the pull request — nothing
+else about ADP is in front of them.
+
+An instance still on the personal-access-token path publishes nothing and says why, and a failed
+write never fails the ingest that preceded it: the record is the product and the check run is a view
+of it.
+
 ## v0.6.0 — 2026-09-02
 
 **The first five minutes, walked from a clean clone.** A first-run evaluation on 2026-09-01 ran
