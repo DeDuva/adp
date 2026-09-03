@@ -444,9 +444,9 @@ that the tree contradicts, and the guard that would have caught each one now doe
 
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
-| 6-1 | `check-release.sh` reads each page whole, not line by line — and the `0.6.0` it then catches | #269 | not started | The guard is the thing that has to work. The string is a symptom, and fixing only the string leaves the next wrap invisible |
-| 6-2 | The version guard extends to tracked prose, and `ecosystem.md` and `api-compatibility.md` stop contradicting it | #270 | not started | `ecosystem.md` says the contract is 0.2.0 and is what the README tells you to read *before changing the wire contract*. `api-compatibility.md` says `server/package.json` stays at `0.0.0`, which `check-release` has asserted otherwise on every push since the CLI was published |
-| 6-3 | Topics on the repository | #271 | not started | `gh api … -q .topics` returns `[]`. It is how GitHub is browsed, it feeds search, and it is free |
+| 6-1 | `check-release.sh` reads each page whole, not line by line — and the `0.6.0` it then catches | #269 | shipped | The guard is the thing that has to work. The string is a symptom, and fixing only the string leaves the next wrap invisible |
+| 6-2 | The version guard extends to tracked prose, and `ecosystem.md` and `api-compatibility.md` stop contradicting it | #270 | shipped | `ecosystem.md` says the contract is 0.2.0 and is what the README tells you to read *before changing the wire contract*. `api-compatibility.md` says `server/package.json` stays at `0.0.0`, which `check-release` has asserted otherwise on every push since the CLI was published |
+| 6-3 | Topics on the repository | #271 | shipped | `gh api … -q .topics` returned `[]`. It is how GitHub is browsed, it feeds search, and it is free |
 
 ### 6b — The site says what shipped, and travels
 

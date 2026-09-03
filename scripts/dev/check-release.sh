@@ -112,14 +112,55 @@ done
 # exact markup would turn a restyle into a release failure, so this asks the weaker and
 # more durable question: does any version-shaped string on a published page disagree
 # with what the server serves?
+#
+# That is what the paragraph above has always claimed and what the code did not do.
+# Until 2026-09-03 it required each version to be *introduced* by `Spec`, `contract` or
+# `currently` within forty characters — and grep matches within a line, so a claim that
+# wrapped one was invisible. The front page said
+#
+#     The wire contract is published and versioned — currently
+#     <code>0.6.0</code>, served as <code>ADP-API-Version</code> …
+#
+# with eleven characters between the keyword and the number, on two lines, while this
+# script reported the site consistent and the server served 0.7.0. That is the same
+# sentence Phase 0 spent a release blocker on, false again for a new reason.
+#
+# So the keyword is gone and the question is asked literally: **every** X.Y.Z on a
+# published page is a contract claim. These pages have no other reason to carry a
+# three-part version, and if one ever does — a Node version, a dependency — this will
+# fail and somebody will have to decide what they meant, which is the outcome worth
+# having. A version number never spans a line, so this cannot be defeated by wrapping.
 site_pages=$(git ls-files 'docs/html/*.html' 'docs/html/**/*.html' 2>/dev/null || true)
 for page in $site_pages; do
-	# Every X.Y.Z that is introduced as a spec/contract version, in either spelling.
-	claimed=$(grep -oE '(Spec|spec|contract|currently)[^0-9]{0,40}[0-9]+\.[0-9]+\.[0-9]+' "$page" |
-		grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u)
+	claimed=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$page" | sort -u)
 	for c in $claimed; do
 		[ "$c" = "$version" ] ||
 			bad "$page claims contract $c, api-version.ts says $version."
+	done
+done
+
+# ---------------------------------------------------------------------------
+# 3b-ii. The prose.
+# ---------------------------------------------------------------------------
+# The guard watched seven surfaces and `docs/` was not among them, so two documents
+# drifted for five minor versions with nothing to catch them: `ecosystem.md` said the
+# wire contract was "currently 0.2.0", and `api-compatibility.md` said
+# `server/package.json` "stays at 0.0.0" — which §3 above has asserted otherwise on
+# every push since the CLI was published. `ecosystem.md` is the document the README
+# tells you to read *before changing the wire contract*, so it was wrong exactly where
+# it is most load-bearing.
+#
+# Prose cannot take §3b's rule. A document explaining what a version bump means has to
+# be able to name old versions, and the CHANGELOG, PLAN.md and AGENTS.md are historical
+# records whose whole job is naming them. So this is the narrow question the site check
+# used to ask, done properly: a version *introduced* as the current one, matched across
+# the whole file rather than line by line.
+prose_docs=$(git ls-files 'docs/*.md' 'README.md' 2>/dev/null || true)
+for doc in $prose_docs; do
+	claimed=$(perl -0777 -ne 'while (/(?:currently|serves|serving|wire contract,)[^0-9]{0,40}?([0-9]+\.[0-9]+\.[0-9]+)/gs) { print "$1\n" }' "$doc" | sort -u)
+	for c in $claimed; do
+		[ "$c" = "$version" ] ||
+			bad "$doc calls $c the current version, api-version.ts says $version."
 	done
 done
 

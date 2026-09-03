@@ -20,8 +20,14 @@ verbatim; that protocol is specified by git, not by ADP.
 
 ## What a bump means
 
-Versions are semver over the **wire contract**, not over this codebase. `server/package.json` is
-unrelated and stays at `0.0.0`.
+Versions are semver over the **wire contract**, not over this codebase — a rewrite of the server in
+another language would not move it, and a new optional response field would.
+
+The package manifests do move with it, which is the opposite of what this document said until
+2026-09-03: `scripts/dev/check-release.sh` asserts that every workspace manifest, the chart's
+`appVersion`, the spec, the published pages, the Compose image tag and the newest CHANGELOG heading
+all equal the version `server/src/api-version.ts` serves. They are not a second opinion about the
+contract; they are the same number, in the places something reads it.
 
 | Change | Bump |
 |---|---|
