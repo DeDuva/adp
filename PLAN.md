@@ -488,7 +488,7 @@ to work out.
 
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
-| 5-16 | Portability — a repository's record can leave the instance holding it | #239 | not started | See below. This is the item without which every adoption path in this phase is a trap |
+| 5-16 | Portability — a repository's record can leave the instance holding it | #239 | shipped | See below. This is the item without which every adoption path in this phase is a trap |
 | 5-17 | Run lineage — `parent_run` plus a relationship of `retry`, `continue`, `reimplement` or `supersede` | #240 | shipped | Sessions model "Codex continued Claude's unfinished work" well and "GPT-8 independently reimplemented GPT-6's bad change" not at all. They are different historical facts and only the first has a column |
 | 5-18 | `adp reimplement <sha>` | #241 | shipped | Recover the intent, find the base before the change, open a related run, record the new trajectory, run the same evals, compare, and offer the replacement. Every ingredient exists; the verb does not — so it composes them and reverts nothing itself, because `adp undo` already takes a merge back out through the land policy |
 | 5-19 | Bake-off and reimplement launch the harness | #242 | shipped | `adp bakeoff` opens the candidate set and the labelled runs and then prints instructions for wiring each harness in by hand. Powerful substrate, and the assembly is the user's. `--launch` is opt-in and the flag is the acknowledgement, as `--runner` is on `adp init` |
@@ -503,12 +503,23 @@ adopts, then the funnel that motivates the whole phase breaks precisely at the p
 to pay off, and it breaks for a reason we designed in.
 
 So portability is not an export feature. The question it has to answer is what an evidence bundle
-means after the URL it was signed under stops resolving, and the honest answers are a small set:
+means after the URL it was signed under stops resolving, and the honest answers were a small set:
 re-sign under the new instance and record the migration as an operation; keep the original
 signatures and carry the old key's public half as part of the exported record; or accept that
-history verifies only against an archived key. Deciding that is most of the work, and it is
-cheapest to decide now, while the number of records that would have to migrate is small enough to
-migrate by hand.
+history verifies only against an archived key.
+
+**Answered in #239: keep the original signatures, and carry the key.** The second and third turn out
+to be the same answer, one of them done properly. A signature says *this instance attested this,
+then*, and re-signing under the receiving instance would let it assert what it did not witness —
+which is the substitution this product exists to prevent. The migration is recorded as a
+`repo.import` operation, because the imported log cannot say how it got there.
+
+Two things the bundle deliberately does not carry, and both were decisions rather than omissions.
+Git history moves by `git push`, which is the tool that exists for it. And identities move as id,
+kind and principal only — no tokens, no links, no memberships — because what has to survive is who
+the record *names*, not the ability to act as them. That second one was found by testing against two
+real databases rather than one: a single shared database made every foreign key resolve by accident,
+which is exactly the failure a migration would have hit and a test would not have.
 
 ### The open decisions this phase creates
 

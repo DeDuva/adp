@@ -30,6 +30,7 @@ import { registerActionsRoutes } from "./http-rest/actions.js";
 import { registerNotImplementedHandler } from "./http-rest/not-implemented.js";
 import { registerMirrorWebhookRoutes } from "./http-rest/mirror-webhook.js";
 import { registerGitHubAppRoutes } from "./http-rest/github-app.js";
+import { registerPortabilityRoutes } from "./http-rest/portability.js";
 import { registerCandidateSetRoutes } from "./http-rest/candidate-sets.js";
 import { registerWebhookRoutes } from "./http-rest/webhooks.js";
 import { registerGitHttpRoutes } from "./http-git/proxy.js";
@@ -125,6 +126,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDeps): void {
   registerMirrorRoutes(app, db, credentialKey);
   registerMirrorWebhookRoutes(app, db, gitBackend, signer, credentialKey, publicUrl, fetch, instanceFloor);
   registerGitHubAppRoutes(app, db, gitBackend, signer, credentialKey, publicUrl, fetch, instanceFloor);
+  registerPortabilityRoutes(app, db, signer, publicUrl, keyRegistry);
   registerActionsRoutes(app, db, credentialKey);
   registerCandidateSetRoutes(app, db, gitBackend, instanceFloor, { signer, publicUrl });
   registerWebhookRoutes(app, db, credentialKey);

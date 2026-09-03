@@ -13,6 +13,7 @@ import { registerMirrorWebhookRawBodyParser } from "./http-rest/mirror-webhook.j
 import { registerApiRoutes } from "./routes.js";
 import { startMirrorPoller } from "./core/mirror-poller.js";
 import { startInboundPoller } from "./core/mirror-inbound-poller.js";
+import { loadArchivedKeys } from "./core/portability.js";
 import { startWorkspaceSweeper } from "./core/workspace-sweeper.js";
 import { startRetentionSweeper } from "./core/trajectory-retention.js";
 import { startGateJobReaper } from "./core/gate-job-reaper.js";
@@ -95,7 +96,15 @@ async function main() {
     db,
     gitBackend,
     signer,
-    keyRegistry: new KeyRegistry(signer, (config.RETIRED_SIGNING_PUBLIC_KEYS ?? "").split(",")),
+    // #239: retired keys from configuration, plus every key an import has taken
+    // in. Loaded at boot rather than looked up per verification, because
+    // `resolve` is on the verification path and there are as many of these as
+    // there have been migrations — which is a very small number, and a number
+    // that only grows deliberately.
+    keyRegistry: new KeyRegistry(signer, [
+      ...(config.RETIRED_SIGNING_PUBLIC_KEYS ?? "").split(","),
+      ...(await loadArchivedKeys(db)),
+    ]),
     publicUrl: config.PUBLIC_URL,
     credentialKey: config.MIRROR_CREDENTIAL_KEY,
     instanceFloor,

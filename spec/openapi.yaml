@@ -1907,6 +1907,122 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/adp/repos/{owner}/{repo}/export:
+    get:
+      x-required-scope: "repo:read"
+      summary: >
+        #239: this repository's record, so it can leave the instance holding it.
+
+        `PUBLIC_URL` is part of the signed record rather than a display string,
+        which is stated in docs/self-hosting.md as a property of the design — and
+        the consequence nobody had written down is that a record could not move.
+        Every adoption path in Phase 5 ends with a developer's record living on
+        an instance chosen while they were evaluating alone.
+
+        The bundle carries the intents, issues, proposals, changes, gate results,
+        runs and the operation log, plus **the exporting instance's public key
+        and its `PUBLIC_URL`** — without which every signature in it is
+        unverifiable on the receiving instance, and an unverifiable record is not
+        evidence.
+
+        Git history is **not** in the bundle, and that is a boundary rather than
+        an omission: a change record references a commit, and the commit travels
+        by `git push`.
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema: { type: string }
+        - name: repo
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The repository's record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportBundle"
+        "401":
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No such repository
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/adp/repos/{owner}/{repo}/import:
+    post:
+      x-required-scope: "admin"
+      summary: >
+        #239: take a record in, keeping every signature exactly as it was.
+
+        **Nothing is re-signed.** A signature says "this instance attested this,
+        then", and re-signing under the receiving instance would let it assert
+        what it did not witness — the substitution this product exists to
+        prevent. So the records keep their original signatures and the exporting
+        instance's key is archived here, which is the same mechanism a retired
+        key already used, pointed at a key this instance never held.
+
+        `admin` rather than `repo:write`: this writes signed records this
+        instance did not produce and adds a verification key to it, which is a
+        trust decision about another instance.
+
+        Idempotent by row — importing the same bundle twice is a no-op — because
+        a migration that half-failed has to be safe to run again. The repository
+        must already exist: creating it as a side effect would let an import
+        place a repository under an org the caller was never admitted to.
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema: { type: string }
+        - name: repo
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportBundle"
+      responses:
+        "200":
+          description: What was taken in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResult"
+        "401":
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Requires the `admin` scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No such repository here — create it first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: A bundle in a shape this instance does not read, or naming no signing key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/adp/repos/{owner}/{repo}/intents/{id}:
     get:
       x-required-scope: "repo:read"
@@ -4249,6 +4365,84 @@ components:
         events:
           type: array
           items: { $ref: "#/components/schemas/TrajectoryEvent" }
+    ExportBundle:
+      type: object
+      required: [format, exported_at, instance, repository]
+      properties:
+        format:
+          type: string
+          description: "`adp.repository.export/v1`. A bundle in an unknown shape is refused rather than parsed hopefully."
+        exported_at:
+          type: string
+          format: date-time
+        instance:
+          type: object
+          required: [public_url, signing_public_key]
+          description: >
+            Who attested everything below. The receiving instance archives this
+            key and verifies against it — without it, every signature in the
+            bundle is unverifiable there.
+          properties:
+            public_url:
+              type: string
+            signing_public_key:
+              type: string
+        repository:
+          type: object
+          required: [owner, name, default_branch]
+          properties:
+            owner: { type: string }
+            name: { type: string }
+            default_branch: { type: string }
+        identities:
+          type: array
+          items: { type: object }
+          description: >
+            The principals the record names — id, kind and principal only. Not a
+            nicety: `operations.actor_id` and the author fields are hard foreign
+            keys, so a bundle without these cannot be inserted. Rewriting every
+            actor to whoever ran the import would make the log say one person
+            did everything, which is a falsified record rather than a migrated
+            one. No tokens, no identity links, no memberships: what moves is who
+            the record names, not the ability to act as them.
+        intents:
+          type: array
+          items: { type: object }
+        issues:
+          type: array
+          items: { type: object }
+        proposals:
+          type: array
+          items: { type: object }
+        changes:
+          type: array
+          items: { type: object }
+        gate_results:
+          type: array
+          items: { type: object }
+        runs:
+          type: array
+          items: { type: object }
+        operations:
+          type: array
+          items: { type: object }
+    ImportResult:
+      type: object
+      required: [repo_id, imported, key_archived]
+      properties:
+        repo_id:
+          type: string
+          format: uuid
+        imported:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Rows written per table. Zero everywhere on a re-import, which is a no-op rather than a duplicate history.
+        key_archived:
+          type: boolean
+          description: Whether the exporting instance's key was new to this one.
+        note:
+          type: string
     Intent:
       type: object
       required: [id, title, body, source, created_at]
