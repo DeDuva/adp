@@ -8,7 +8,7 @@ and signed verification evidence.
 work is gone when the session ends. ADP keeps that context on the change itself, and refuses to
 land a change that does not meet your evidence requirements.
 
-[Try it](#try-it) · [How it works](#how-it-works) · [Self-hosting](docs/self-hosting.md)
+[Try it](#try-it) · [On a repository you already have](#2-try-it-on-the-repository-you-already-have) · [How it works](#how-it-works) · [Self-hosting](docs/self-hosting.md)
 
 **New here?** Start with the site — [what ADP is](https://deduva.github.io/adp/),
 [why it exists](https://deduva.github.io/adp/why/), and
@@ -19,6 +19,16 @@ MIT · TypeScript · Fastify · PostgreSQL · the real `git` binary for all plum
 ---
 
 ## Try it
+
+Two paths, answering different questions. The first shows you what ADP does; the second puts it
+under the work you already have. Take them in that order — the demo is much the better answer to
+the first question, and it takes a minute.
+
+Neither creates an account. If you want to see the client without installing anything at all,
+`npx @deduva/adp --help` is the whole CLI and no tree — it talks to an instance, so one of the two
+paths below is what makes it do something.
+
+### 1. Show me
 
 One command. It starts a throwaway ADP against an ephemeral PostgreSQL, then uses ordinary `git`
 and an **unmodified `gh`** to clone, push, open a proposal, report a gate, and land the change —
@@ -60,6 +70,57 @@ bash scripts/dev/bootstrap.sh
 make up && make test-all && make down
 ```
 </details>
+
+### 2. Try it on the repository you already have
+
+**Companion mode**: your repository stays on GitHub and you do not change how you work. Issues,
+branches, pull requests, reviews, Actions and the merge button all stay where they are. ADP sits
+underneath, records what each of them means, and publishes its verdict back onto the pull request
+as a check GitHub can require.
+
+You need an instance to point at. `make local` above is enough — it prints a URL and a token, and
+it is still there tomorrow. Then, **from inside your own checkout**:
+
+```bash
+npx @deduva/adp login --server http://localhost:8420 --token <the token make local printed>
+npx @deduva/adp init --repo local/<your-repo> --credential <a GitHub token ADP can push with>
+```
+
+Three things that save a wrong turn on a `make local` instance:
+
+- **The CLI uses the plain HTTP port**, not the TLS one. `gh` is the tool that needs the
+  certificate, because it refuses plain HTTP for any host but github.com; `adp` has no such rule.
+- **Name the org.** `adp init` infers `example-org/widget` from your GitHub remote and your token is
+  not a member of an org by that name, so it refuses and tells you to name one. On a `make local`
+  instance the org you have is `local`.
+- **The mirror needs a credential ADP can push with** — `--credential`, or `GITHUB_TOKEN` in the
+  environment.
+
+`adp init` creates the repository on your instance, records which repository this clone is,
+configures the mirror in both directions, and writes an `adp.yaml` detected from what your
+repository already says about itself — for a Node repository, the gate it finds is your own
+`npm run test`. It shows you the file rather than committing it.
+
+```
+  repo:      created
+  identity:  local/widget, recorded for this clone (mirror mode)
+  remote:    unchanged — you push to your existing remote, ADP observes
+  mirror:    https://github.com/example-org/widget.git
+  adp.yaml:  written — node (package.json)
+             gate test: npm run test
+```
+
+| | |
+|---|---|
+| **What changes in your repository** | One new file, `adp.yaml`, which you review before committing |
+| **What does not change** | Your remote, your pull requests, your reviewers, your CI, your merge button. `git clone` keeps working throughout |
+| **What you give up while ingest is on** | Creating proposals and issues natively on that repository, and `adp land` — GitHub stays the merge authority |
+
+[`docs/companion-mode.md`](docs/companion-mode.md) is the whole of it: the loop with what ADP records
+beside what you do, the two checks that appear on the pull request, and what it deliberately refuses
+to do.
+
+---
 
 For a real deployment, see [`docs/self-hosting.md`](docs/self-hosting.md); to run from source,
 [Running it](#running-it).

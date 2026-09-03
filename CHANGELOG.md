@@ -172,6 +172,31 @@ undo` returns `merge_base_unknown` rather than guessing a base, because a guesse
 The sentence the whole mode turns on is stated rather than implied: **ADP does not take the merge
 button away.** It publishes a verdict GitHub already knows how to require.
 
+### The README offers a second path, and it was walked before it was written (#274)
+
+The only trial on the front door was *clone this repository and install Docker*. The better story —
+point ADP at the repository you already have and change nothing about how you work — was a CLI table
+row three hundred lines down, describing `adp init`'s flags.
+
+**Try it** is two numbered paths now. `make demo` is untouched and stays first: it is the best asset
+here and it is much the better answer to "show me". The second is companion mode against your own
+checkout, with what changes, what does not, and what you give up in a table.
+
+**It was run before it was written**, against a real `make local` instance and a real checkout with
+a GitHub remote, which is the only reason it says three things a plausible-sounding version would
+have got wrong:
+
+- The CLI talks to the **plain HTTP** port. `gh` is the tool that needs the certificate, because it
+  refuses plain HTTP for any host but github.com; `adp` has no such rule, and the obvious guess
+  sends a first-time reader into a self-signed-certificate dead end.
+- `adp init` infers the org from your GitHub remote, your token is not a member of an org by that
+  name, and it refuses — correctly, with the fix in the message. On a `make local` instance the org
+  you have is `local`, and the front door now says so before you hit it.
+- The mirror needs a credential ADP can push with.
+
+`npx @deduva/adp` is on the front door too, in the sentence where somebody is deciding whether to
+bother: the whole CLI, nothing installed, and an honest note that it needs an instance to talk to.
+
 ### A GitHub pull request is a proposal in ADP (#224)
 
 `pull_request` deliveries — `opened`, `reopened`, `synchronize`, `edited`, `closed` — become a
