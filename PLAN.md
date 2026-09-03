@@ -346,188 +346,59 @@ argument, one stage.
 
 ## Phase 5 — Companion mode: ADP underneath GitHub
 
-**Why now:** a product review on 2026-09-02 walked `main` as a GitHub developer rather than as
-an evaluator, and landed on a seam this backlog had not named. Mirror mode is the default because
-Open question 4 settled it that way, and every claim made for it holds — GitHub's runners keep
-executing the existing workflows, and their results arrive here as signed gate evidence
-(`server/src/core/actions-ingest.ts`). The seam is what happens on either side of that:
+**Complete.** A product review on 2026-09-02 walked `main` as a GitHub developer rather than as an
+evaluator and named a seam this backlog had not: *the more faithfully a developer keeps GitHub as
+their workflow, the less of ADP's most interesting behaviour is authoritative.* Mirror inbound
+handled two events — `push` and `workflow_run` — so a repository whose issues, pull requests,
+reviews and merges all lived on GitHub handed ADP a stream of commits and CI verdicts and nothing
+that said what any of it was *for*.
 
-> **The more faithfully a developer keeps GitHub as their workflow, the less of ADP's most
-> interesting behaviour is authoritative.**
+Twenty items, `#224`–`#242` and `#196`, all landed. What each of them was and what it cost is in
+`CHANGELOG.md` under v0.7.0; this file records what is left, so the tables are gone with them.
 
-That is not a missing capability either. It is the same shape Phase 1 found, one level up: the
-substrate is built, and mirror inbound binds almost none of it. `server/src/http-rest/mirror-webhook.ts`
-handles two events — `push` and `workflow_run` — and skips the rest, so a repository whose issues,
-pull requests, reviews and merges all live on GitHub hands ADP a stream of commits and CI verdicts
-and nothing that says what any of it was *for*. Three consequences, each of which reads as a
-separate defect and is not:
+**Exit criteria, met.** A developer runs the whole loop on GitHub — issue, branch, pull request,
+Actions, merge — types no ADP command, and afterwards `adp undo <sha>` works and the evidence bundle
+names the issue by title. A change pushed through GitHub and the same change pushed to ADP directly
+produce provenance blocks that differ only in `via`. A pull request on GitHub shows what ADP knows
+about it, and a repository can make ADP's verdict a required check without ADP becoming the merge
+authority. `adp connect <harness>` is the last thing a developer types, for every harness that has a
+reader. And a record can move to another instance without losing what makes it evidence.
 
-- **Land policy is unenforceable** where the merge happens. `evaluateLandPolicy`
-  (`server/src/core/land-policy.ts`) is real and refuses correctly, and GitHub will merge without
-  ever asking it.
-- **`adp undo` does not cover a GitHub-native merge.** It resolves the `proposal.merge` operation
-  that produced a SHA (`server/src/core/undo.ts`); mirror inbound writes `change.create` and never
-  that verb. The one verb most worth having in the mode we tell people to adopt is the one that
-  mode cannot reach.
-- **Intent lives in a second namespace.** A team organising work in GitHub Issues gets an ADP
-  intent universe beside it rather than under it, because `intents` has no column for an upstream
-  identity.
+For the record of which number was which, since the issues filed against this phase cite them and a
+recycled number would point two of them at different work. 5-1 was `pull_request` ingest, #224; 5-2
+merge ingest, #225; 5-3 `issues` ingest, #226; 5-4 `pull_request_review` ingest, #227; 5-5 the
+inbound poller, #228. 5-6 was carrying `harness`, `model` and `session_id` through the push path,
+#229; 5-7 resolving the GitHub author to a real identity, #230; 5-8 observing the model rather than
+trusting the token, #231. 5-9 was the GitHub App from a served manifest, #232; 5-10 the
+`ADP / change record` check run, #233; 5-11 the `ADP / policy` check run, #234. 5-12 was publishing
+the CLI, #235; 5-13 the Gemini CLI reader, #236; 5-14 connect finishing the job, #237; 5-15 the
+recorded repository identity, #238; 5-20 `gh repo create`, #196. 5-16 was portability, #239; 5-17
+run lineage, #240; 5-18 `adp reimplement`, #241; 5-19 launching the harness, #242.
 
-**They are one defect.** Ingest the pull-request and issue lifecycle and all three close against
-machinery that already exists and is already tested: a shadow proposal for a GitHub pull request is
-something `evaluateLandPolicy` can be handed, something a merge webhook can close with a real
-`proposal.merge`, and something `undo` therefore resolves. This phase is mostly ingest.
+**Three things it settled that the next person should not have to rediscover.**
 
-It is numbered 5 and **runs ahead of Phases 2, 3 and 4**, which is a claim about order rather than
-about their worth: those are a differentiator, a durability measurement and three research
-questions, and none of them changes whether anyone adopts. Numbers here are identity, not sequence
-— the same rule that stops item numbers being reused under 1a.
+*Two arrivals must produce one record, and the way to guarantee that is to share the function rather
+than the intention.* Inbound has three arrivals now — a per-repository webhook, a GitHub App's single
+endpoint, and the poller — and branch syncing, the ingest dispatch and the check-run publisher are
+each written once. The two copies that were nearly written would have agreed on the day they were
+written and not for long after.
 
-**Every item below was filed on 2026-09-02**, as #224–#242 in item order, so this file's own rule
-holds over the largest phase in it: `check-docs` compares each `#NNN` here against its real state,
-and a phase whose items named no issue would have left that guard inert over exactly the work most
-likely to drift.
+*Where the record cannot answer, say so rather than guessing.* A merge whose pre-merge base sha
+cannot be established writes no `proposal.merge`, because a wrong one would make `adp undo` succeed
+and remove the wrong range. A harness that reports tool *counts* has its counts recorded as counts.
+A model the token claimed but no trajectory observed is labelled as claimed. Each of those was
+available as a plausible-looking fabrication, and each would have been worse than the gap.
 
-### 5a — The record covers GitHub's own lifecycle
-
-Exit criterion: a developer runs the whole loop on GitHub — issue, branch, pull request, Actions,
-merge — types no ADP command, and afterwards `adp undo <sha>` works and the evidence bundle names
-the issue by title.
-
-| # | Item | Tracking | State | Why |
-|---|---|---|---|---|
-| 5-1 | `pull_request` ingest — a GitHub pull request becomes a shadow proposal carrying its upstream number and URL | #224 | shipped | Every other item in this release hangs off the proposal row existing |
-| 5-2 | Merge ingest — a merged pull request writes a real `proposal.merge` operation | #225 | shipped | What makes `adp undo` reach a GitHub-native merge. The operation must carry the before/after state `undo.ts` reads, or it refuses for the second reason instead of the first — so it is established from one of three facts, or not written at all |
-| 5-3 | `issues` ingest — a GitHub issue becomes an intent with an upstream identity | #226 | shipped | `intents` needs a column for the upstream reference; today `source` distinguishes `issue` from `api` but nothing records *which* issue, on whose host |
-| 5-4 | `pull_request_review` ingest — a GitHub approval satisfies `one_approval` | #227 | shipped | Otherwise the policy in 5c refuses every mirrored pull request on a requirement GitHub already met, which is worse than not publishing it |
-| 5-5 | Poll what a webhook cannot reach | #228 | shipped | Inbound needs a publicly reachable endpoint; `server/src/core/mirror-poller.ts` drains outbound only. A poller driving the same ingest functions needs no public URL, and is what makes companion mode work from a laptop. On by default, because the webhook is the optimisation and this is the floor |
-
-**5-5 is the item that decides who can adopt at all, and it was nearly missed.** `adp init`
-configures the mirror and then prints a webhook URL and a secret for a human to paste into GitHub's
-settings, so until that is done by hand, inbound ingests nothing — the mode is configured, reports
-success, and records only what an outbound push already knew. A developer without a public hostname
-cannot do it at all. Polling is not a degraded substitute here; it is the only version of companion
-mode that runs on the machine most evaluators have.
-
-### 5b — Provenance is the same wherever a change arrives
-
-Exit criterion: a change pushed through GitHub and the same change pushed to ADP directly produce
-provenance blocks that differ only in `via`.
-
-| # | Item | Tracking | State | Why |
-|---|---|---|---|---|
-| 5-6 | Carry `harness`, `model` and `session_id` through the push path | #229 | shipped | A defect against 1-1 rather than new work — see below. The invariant it buys is in `AGENTS.md`, where the next person changing a write path will meet it |
-| 5-7 | Resolve the GitHub author to a real identity | #230 | shipped | Mirror inbound attributes every commit to `mirror:github:<owner>/<repo>`. `external_identities` is already `(issuer, subject)`-keyed and provider-generic (`server/src/db/schema.ts`), so a GitHub link needs no new table — and it landed ahead of 5-4, which cannot work without it |
-| 5-8 | Observe the model rather than trusting the token's claim | #231 | shipped | A harness can change model inside one run, and the session events already record it per event. 2-4 prices a decision on this field; an asserted `--model` is the wrong thing to price it on. `core/observed-model.ts` is what 2-4 writes against |
-
-**5-6 is a bug, and finding it is the argument for having reviewed the implementation rather than
-the positioning.** `AuthenticatedIdentity` carries `harness`, `model` and `sessionId`
-(`server/src/auth/tokens.ts`). `RecordActor` carries `id`, `kind` and `principal`
-(`server/src/core/change-recorder.ts`), and `server/src/http-git/hooks.ts` passes only those three.
-So a plain `git push` from a connected harness — the exact path 1b exists to make ambient — records
-a signed change that does not name the harness that produced it. Only the explicit REST route sets
-it (`server/src/http-rest/changes.ts`). The review read this as mirror mode having weaker provenance
-than direct push; it is weaker than that, because **both** git paths drop it and only the route
-nobody uses ambiently keeps it.
-
-**The invariant this release buys, and the reason it belongs in `AGENTS.md` rather than only here:**
-*how a change arrived must not determine the quality of its provenance.* It wants a test asserting
-the two routes agree, because the failure mode is silent — the provenance block is present, signed,
-and simply thinner, which no existing check can distinguish from a human pushing without a harness.
-
-### 5c — ADP is visible, and enforceable, inside GitHub
-
-Exit criterion: a pull request on GitHub shows what ADP knows about it, and a repository can make
-ADP's verdict a required check without ADP becoming the merge authority.
-
-| # | Item | Tracking | State | Why |
-|---|---|---|---|---|
-| 5-9 | A GitHub App, created from a manifest by the instance itself | #232 | shipped | Replaces the personal access token and the hand-made webhook 5-5 describes. The manifest flow keeps this available to a self-hosted instance: GitHub creates the App in the user's own org and hands the credentials back, so it needs no hosted control plane. It also unblocks 5-10 and 5-11, which a PAT cannot reach at all — GitHub's Checks API refuses one |
-| 5-10 | Publish `ADP / change record` as a check run | #233 | shipped | Intent, producer, trajectory and evidence, on the pull request, where the work already is. This is the whole additive claim made visible |
-| 5-11 | Publish `ADP / policy` as a check run | #234 | shipped | Branch protection then enforces it. GitHub stays the merge authority and will not merge until ADP agrees, which is the resolution of the seam this phase opens on |
-
-**5-11 is the item that makes mirror mode's enforcement story true rather than aspirational**, and
-it is deliberately a *check* rather than a merge gate of our own. Asking a developer to choose
-between GitHub's merge plane and ADP's is the choice mirror mode exists to avoid; publishing a
-verdict GitHub already knows how to require is the same enforcement with none of the migration.
-
-### 5d — Distribution, and adapters that are boringly good
-
-Exit criterion: `adp connect <harness>` is the last thing a developer types, for every harness that
-has a reader.
-
-| # | Item | Tracking | State | Why |
-|---|---|---|---|---|
-| 5-12 | Publish the CLI | #235 | shipped | `cli/package.json` is `"private": true` and the documented install is a source build, so ADP cannot currently be obtained without cloning it. Everything else in this phase is a bigger front door on a building with no road. It publishes as `@deduva/adp` on tag, and skips cleanly where no `NPM_TOKEN` is configured |
-| 5-13 | A Gemini CLI reader | #236 | shipped | `adp connect gemini-cli` works and gets the commit-trailer half; turn-level trajectory is the documented degraded mode. Harness independence is the strategic claim, and two readers out of three connected harnesses is where it is measured |
-| 5-14 | Connect finishes the job | #237 | shipped | Claude Code is told to add a `SessionStart` hook by hand; Codex leaves a wrapper the developer has to remember to invoke instead of their normal command. Both are `connect` stopping one step short of the thing it exists to do |
-| 5-15 | Companion mode needs no ADP git remote, and no command infers one | #238 | shipped | `adp init` adds an `adp` remote and `adp connect` finds the repository by looking for it. That composes today, and it composes by coincidence: the repository's identity is *derived* from a remote rather than *recorded*, so renaming the remote breaks every subsequent command. In companion mode there is nothing to push to ADP at all, and the remote should not exist |
-| 5-20 | `gh repo create` resolves the owner through an endpoint the server does not serve | #196 | shipped | It fails against ADP, and it fails on the first-contact path: creating the repository is step one of every walkthrough that does not start from `adp init`. Filed 2026-08-30 and, until it was pulled into this phase, in no phase — which this file's own rule forbids and `check-docs` cannot catch, because it validates the numbers that are present rather than noticing an issue that names none. The conformance suite runs it now, so the README's row is enforced rather than asserted |
-
-**5-15 is the residual of a defect the review reported as larger than it is**, and the correction
-is worth recording because the shape recurs. It read `init` and `connect` as not composing at all;
-they do — `init` adds the remote `connect` then finds. What is actually wrong is subtler and
-outlives the fix it would have prompted: a repository's identity is inferred from mutable local git
-state, in a mode where the repository does not need a remote on this server in the first place.
-
-**Positioning is downstream of this phase, and is deliberately not an item in it.** The review's
-headline is that ADP should be marketed as disappearing underneath GitHub rather than as a
-GitHub-compatible forge, and it is right about the emphasis and wrong about the trade: the `gh`
+*The positioning question this phase was expected to answer is still open, and deliberately.* The
+review's headline was that ADP should be marketed as disappearing underneath GitHub rather than as a
+GitHub-compatible forge. It is right about the emphasis and wrong about the trade — the `gh`
 conformance gate is what makes companion mode credible rather than a competing claim on the same
-budget, and OD-3 depends on it. The published site already carries three pages gated by `make site`
-and has been repositioned twice on findings of this kind (see 1d). It should be repositioned a
-third time — but on this phase's evidence rather than ahead of it, because a front page promising a
-companion mode that 5a has not yet built is exactly the class of false published claim Phase 0 was
-spent on.
+budget. The site should be repositioned a third time, on this phase's evidence rather than ahead of
+it, and that is a `docs/` change nobody has made yet.
 
-### 5e — The record outlives the instance, and the verb that uses it
-
-Exit criterion: a record can move to another ADP instance without losing what makes it evidence,
-and "do this again with a better model" is one command rather than a composition the developer has
-to work out.
-
-| # | Item | Tracking | State | Why |
-|---|---|---|---|---|
-| 5-16 | Portability — a repository's record can leave the instance holding it | #239 | shipped | See below. This is the item without which every adoption path in this phase is a trap |
-| 5-17 | Run lineage — `parent_run` plus a relationship of `retry`, `continue`, `reimplement` or `supersede` | #240 | shipped | Sessions model "Codex continued Claude's unfinished work" well and "GPT-8 independently reimplemented GPT-6's bad change" not at all. They are different historical facts and only the first has a column |
-| 5-18 | `adp reimplement <sha>` | #241 | shipped | Recover the intent, find the base before the change, open a related run, record the new trajectory, run the same evals, compare, and offer the replacement. Every ingredient exists; the verb does not — so it composes them and reverts nothing itself, because `adp undo` already takes a merge back out through the land policy |
-| 5-19 | Bake-off and reimplement launch the harness | #242 | shipped | `adp bakeoff` opens the candidate set and the labelled runs and then prints instructions for wiring each harness in by hand. Powerful substrate, and the assembly is the user's. `--launch` is opt-in and the flag is the acknowledgement, as `--runner` is on `adp init` |
-
-**5-16 exists because of what hosting would otherwise commit us to, and it is the item this phase
-would most regret deferring.** `PUBLIC_URL` is part of the signed record rather than a display
-string — the server signs evidence with it and hands it back in clone URLs, which
-`docs/self-hosting.md` states as a property of the design and warns operators to decide before the
-first change lands. Every adoption story in this phase ends with a developer's record living on an
-instance chosen when they were evaluating alone. If that record cannot move when their company
-adopts, then the funnel that motivates the whole phase breaks precisely at the point it is supposed
-to pay off, and it breaks for a reason we designed in.
-
-So portability is not an export feature. The question it has to answer is what an evidence bundle
-means after the URL it was signed under stops resolving, and the honest answers were a small set:
-re-sign under the new instance and record the migration as an operation; keep the original
-signatures and carry the old key's public half as part of the exported record; or accept that
-history verifies only against an archived key.
-
-**Answered in #239: keep the original signatures, and carry the key.** The second and third turn out
-to be the same answer, one of them done properly. A signature says *this instance attested this,
-then*, and re-signing under the receiving instance would let it assert what it did not witness —
-which is the substitution this product exists to prevent. The migration is recorded as a
-`repo.import` operation, because the imported log cannot say how it got there.
-
-Two things the bundle deliberately does not carry, and both were decisions rather than omissions.
-Git history moves by `git push`, which is the tool that exists for it. And identities move as id,
-kind and principal only — no tokens, no links, no memberships — because what has to survive is who
-the record *names*, not the ability to act as them. That second one was found by testing against two
-real databases rather than one: a single shared database made every foreign key resolve by accident,
-which is exactly the failure a migration would have hit and a test would not have.
-
-### The open decisions this phase creates
-
-| Decision | Why it cannot be deferred past 5a |
-|---|---|
-| ~~**Proposal numbering in mirror mode.**~~ **Answered in #224: adopt the upstream number.** `gh pr view 482` means one thing on both planes, and a repository with inbound ingest enabled refuses natively created proposals — on both REST and GraphQL, because `gh pr create` uses the second | `proposals` is unique on `(repo_id, number)`. The cost of the answer is that a repository cannot mix native and ingested proposals, and a proposal that predates the mirror keeps its number: ingest refuses to overwrite it rather than destroying a record to make room for a mirror of one |
-| ~~**Whether an ingested pull request may be landed through ADP.**~~ **Answered in #234: evaluable, not landable.** `land` refuses a proposal carrying an upstream number, before evaluating the policy, and the refusal names GitHub as the merge authority and the `ADP / policy` check run as how the verdict acts | Two writers against one branch. The cost of the answer is that `adp land` is unavailable on an ingesting repository — which is the point: requiring the check in branch protection is the same enforcement with none of the migration |
-| **What a free or evaluating instance may claim about durability.** M4-8 and M4-10 are deferred on budget, and `docs/self-hosting.md` correctly claims nothing about backup or PITR until a restore drill has been executed | Companion mode changes the stakes rather than the engineering: where GitHub stays the merge authority, losing an ADP instance degrades the record and loses no code. That is a real argument and it is worth writing down as a position with a tripwire, not left as a consolation |
+**The one decision this phase opened that is still open** — what a free or evaluating instance may
+claim about durability — moved to *Positions, and the tripwire for each* below, which is where a
+belief with a stated tripwire belongs rather than in a backlog of work.
 
 ---
 
@@ -680,6 +551,7 @@ would change it, and whether that has happened.
 | **Adapters, never scanners.** One bundled engine (secret detection at the receive path) and no first-party SAST/SCA | Procurement demanding batteries-included baseline scanning | **Partly** — on breadth, not on principle: dependency admission and SBOM emission are npm-only. Carried in *Deferred* below |
 | **Two-level policy resolution inside the substrate**, org floor ∧ repo file, both signed and versioned | An enterprise insisting its existing policy engine stays the source of truth — ADP would become an enforcement point binding external decisions into the signed land record | No |
 | **Compliance as a byproduct**, not a product: the evidentiary substrate is guaranteed, and GRC tooling renders reports from it | Auditors rejecting attestation envelopes and demanding certified report formats | No |
+| **An evaluating instance claims nothing about durability**, and companion mode changes the stakes rather than the engineering: where GitHub stays the merge authority, losing an ADP instance degrades the record and loses no code. `docs/self-hosting.md` claims nothing about backup or PITR until a restore drill has been run (M4-8, M4-10, deferred on budget) | Anyone treating an ADP instance as the only copy of something — which #239's export is the answer to, and which a hosted rung would make true by default | No — and #239 makes the record movable, which is the cheaper half of the same problem |
 
 ---
 
