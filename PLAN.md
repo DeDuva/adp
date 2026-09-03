@@ -402,6 +402,89 @@ belief with a stated tripwire belongs rather than in a backlog of work.
 
 ---
 
+## Phase 6 — The front door
+
+**Why now:** a documentation review on 2026-09-03 read the published site, the README, the npm
+package page, the five `docs/` guides and the repository's own GitHub metadata, as three different
+readers: someone learning what ADP is, someone trying it, and someone deciding whether to pass it
+on. It found one thing wrong, one thing missing, and one thing absent.
+
+**Wrong:** the front page says the wire contract is *currently 0.6.0* while the server serves 0.7.0,
+and `check-release.sh` reports the site consistent. Its guard greps line by line and that claim wraps
+a newline. Phase 0 spent a release blocker on this exact sentence being false; it is false again, for
+a different mechanical reason, which means the class was never closed. Two prose docs are wrong the
+same way, in the place the guard has never looked.
+
+**Missing:** the site mentions companion mode, check runs, ingest and shadow proposals **zero times**.
+§06 Status has thirteen rows, all of which predate Phase 5. The strongest adoption argument this
+project has — your issues and pull requests stay on GitHub, the record fills anyway, and the verdict
+arrives as a check branch protection can require — is not on the front page in any form. Phase 5
+deferred this deliberately, on the grounds that a front page promising a companion mode 5a had not
+built would be the same class of false claim. 5a is built.
+
+**Absent:** nothing shares. No Open Graph tags, no image, no favicon, no canonical URL, on any page;
+no topics on the repository; one usable anchor across seven sections. Every share of the site
+unfurls as bare text, and nobody can link to the passage that convinced them.
+
+**The through-line, and the reason this is a phase rather than a chore:** every item here is a place
+where what the product *does* and what the product *says* have come apart. That is the failure this
+codebase exists to make impossible in code, and it has been allowed to happen in prose.
+
+**One decision, taken 2026-09-03 rather than deferred.** The hero stays — *"Agents write the code.
+Someone still has to answer for it."* is category-defining and abstract, and it earns the reader's
+next question. §02 answers that question instead of the hero pre-empting it: the abstract promise
+lands first, and *"but what do I have to change?"* is answered immediately after with companion mode.
+The alternative — leading with the concrete adoption claim — converts faster and claims less, and was
+rejected on those terms rather than overlooked.
+
+### 6a — What is published is true again
+
+Exit criterion: no tracked document or published page states a version, a capability or a default
+that the tree contradicts, and the guard that would have caught each one now does.
+
+| # | Item | Tracking | State | Why |
+|---|---|---|---|---|
+| 6-1 | `check-release.sh` reads each page whole, not line by line — and the `0.6.0` it then catches | #269 | not started | The guard is the thing that has to work. The string is a symptom, and fixing only the string leaves the next wrap invisible |
+| 6-2 | The version guard extends to tracked prose, and `ecosystem.md` and `api-compatibility.md` stop contradicting it | #270 | not started | `ecosystem.md` says the contract is 0.2.0 and is what the README tells you to read *before changing the wire contract*. `api-compatibility.md` says `server/package.json` stays at `0.0.0`, which `check-release` has asserted otherwise on every push since the CLI was published |
+| 6-3 | Topics on the repository | #271 | not started | `gh api … -q .topics` returns `[]`. It is how GitHub is browsed, it feeds search, and it is free |
+
+### 6b — The site says what shipped, and travels
+
+Exit criterion: a developer who never leaves GitHub can see on the front page what ADP gives them
+and what it costs to try, and a link to any part of that page arrives somewhere else looking like
+something.
+
+| # | Item | Tracking | State | Why |
+|---|---|---|---|---|
+| 6-4 | §02 rewritten around companion mode; §06 Status describes 0.7.0 | #272 | not started | Deferred by Phase 5 until the evidence existed. It does. The hero stays — see the decision above |
+| 6-5 | `og:` and `twitter:` tags, an `og:image` from the site's own design system, favicon, canonical | #273 | not started | The highest ratio of reach to effort in the doc set: one `<head>` block per page and one image. The image is a build output shipped as an input, on `support.js`'s terms — committed and regenerable, or it becomes another dependency nobody can rebuild |
+| 6-6 | An anchor per numbered section, and a linkable *Try the moves* | #276 | not started | People share the paragraph that convinced them, not the domain |
+
+**Not in scope here and worth naming:** the GitHub repository's *social preview* image is a separate
+upload in repository settings with no public API, so it stays a manual step for whoever owns the
+account. #273 produces an image suitable for it.
+
+### 6c — The first five minutes, for someone who already has a repository
+
+Exit criterion: someone with a repository on GitHub can find what to run, and what it will and will
+not change, without scrolling into a reference section.
+
+| # | Item | Tracking | State | Why |
+|---|---|---|---|---|
+| 6-7 | The existing-repository path on the README's front door, and `npx @deduva/adp` where a decider will see it | #274 | not started | The only trial offered today is "clone this repo and install Docker". The better story — point it at your own work and change nothing — is a CLI table row at line 378. `make demo` stays exactly as it is: it is the best asset here |
+| 6-8 | The npm page says what an instance is and how to get one | #275 | not started | `@deduva/adp` is a discovery surface now. Someone arriving there cold installs a CLI with nothing to talk to and no explanation of why |
+| 6-9 | Companion mode explained end to end, in `docs/` | #277 | not started | The site will make the claim; this is what someone reads to decide whether it is true for them. It has to state the refusals as plainly as the capabilities |
+
+### How this phase is worked
+
+**One pull request at a time.** Open it, get CI green, merge it, then start the next. Phase 5 was
+built as a twenty-one-deep stack and landing it cost hours that the ordering above makes impossible:
+every squash forced a rebase and a retarget on every child, a two-commit pull request left twelve
+branches with patch-ids matching nothing, and a fix written downstream of the bug it fixed meant the
+upstream pull request was never green standing alone — which is the only thing CI actually tests.
+
+---
+
 ## Phase 2 — The serial-base-case forward work
 
 **Why now:** the 2026-08-17 reweighting named three consequences and none of them was ever
