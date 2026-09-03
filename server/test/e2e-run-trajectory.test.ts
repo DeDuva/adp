@@ -663,7 +663,14 @@ describe.skipIf(skipWithoutDb)("run trajectory and eval-gated close", () => {
   it("answers for a commit no session and no run ever named", async () => {
     const bundle = await api(`/api/adp/repos/${owner}/${repoName}/evidence/${"d".repeat(40)}`);
     expect(bundle.status).toBe(200);
-    expect(bundle.body.produced_by).toEqual({ sessions: [], runs: [], proposals: [] });
+    expect(bundle.body.produced_by).toEqual({
+      // #231: `source: "none"` is the answer for a commit a person wrote, and
+      // is deliberately an answer rather than an omission.
+      models: { observed: [], asserted: null, source: "none" },
+      sessions: [],
+      runs: [],
+      proposals: [],
+    });
     expect(bundle.body.change).toBeNull();
   });
 

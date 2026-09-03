@@ -177,7 +177,16 @@ describe.skipIf(skipWithoutDb)("M1c: workspaces + evidence bundle", () => {
       git_sha: "f".repeat(40),
       change: null,
       gates: [],
-      produced_by: { sessions: [], runs: [], proposals: [] },
+      produced_by: {
+        // #231: present and `none` rather than absent, for the same reason
+        // `produced_by` itself is — an unknown commit gets the shape a known
+        // one has, so a reader never has to distinguish "no models" from "this
+        // server is too old to say".
+        models: { observed: [], asserted: null, source: "none" },
+        sessions: [],
+        runs: [],
+        proposals: [],
+      },
     });
   });
 });

@@ -418,7 +418,7 @@ provenance blocks that differ only in `via`.
 |---|---|---|---|---|
 | 5-6 | Carry `harness`, `model` and `session_id` through the push path | #229 | shipped | A defect against 1-1 rather than new work — see below. The invariant it buys is in `AGENTS.md`, where the next person changing a write path will meet it |
 | 5-7 | Resolve the GitHub author to a real identity | #230 | shipped | Mirror inbound attributes every commit to `mirror:github:<owner>/<repo>`. `external_identities` is already `(issuer, subject)`-keyed and provider-generic (`server/src/db/schema.ts`), so a GitHub link needs no new table — and it landed ahead of 5-4, which cannot work without it |
-| 5-8 | Observe the model rather than trusting the token's claim | #231 | not started | A harness can change model inside one run, and the session events already record it per event. 2-4 prices a decision on this field; an asserted `--model` is the wrong thing to price it on |
+| 5-8 | Observe the model rather than trusting the token's claim | #231 | shipped | A harness can change model inside one run, and the session events already record it per event. 2-4 prices a decision on this field; an asserted `--model` is the wrong thing to price it on. `core/observed-model.ts` is what 2-4 writes against |
 
 **5-6 is a bug, and finding it is the argument for having reviewed the implementation rather than
 the positioning.** `AuthenticatedIdentity` carries `harness`, `model` and `sessionId`

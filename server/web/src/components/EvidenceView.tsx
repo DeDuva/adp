@@ -38,7 +38,11 @@ export default function EvidenceView({
 
   const produced = bundle?.produced_by;
   const hasEdges =
-    produced && (produced.sessions.length > 0 || produced.runs.length > 0 || produced.proposals.length > 0);
+    produced &&
+    (produced.sessions.length > 0 ||
+      produced.runs.length > 0 ||
+      produced.proposals.length > 0 ||
+      produced.models.source !== "none");
 
   return (
     <>
@@ -83,6 +87,40 @@ export default function EvidenceView({
                 Joins over what is already recorded, not part of what is signed — a commit event carries its
                 <code> git_sha</code> as a typed column precisely so this needs no payload parsing.
               </div>
+              {/* #231: which model produced this, and whether that is an
+                  observation or a claim. `provenance.model` is what the token
+                  asserted once at connect time; the trajectory records the
+                  model per event, and a harness can change it inside a run.
+                  Showing the weaker fact is fine — showing it as though it
+                  were the stronger one is not, which is why the label is here
+                  rather than only the value. */}
+              {produced!.models.source !== "none" && (
+                <div className="edge">
+                  <span className="edge-label">Model</span>
+                  <div>
+                    {produced!.models.source === "observed" ? (
+                      <>
+                        <strong>{produced!.models.observed.join(" → ")}</strong>
+                        <div className="meta">
+                          observed in the trajectory
+                          {produced!.models.observed.length > 1 && ", which changed during the run"}
+                          {produced!.models.asserted &&
+                            !produced!.models.observed.includes(produced!.models.asserted) &&
+                            ` — the token asserted ${produced!.models.asserted}`}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <strong>{produced!.models.asserted}</strong>
+                        <div className="meta">
+                          asserted by the harness at connect time — no trajectory was recorded for this
+                          commit, so nothing observed it
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
               {produced!.runs.length > 0 && (
                 <div className="edge">
                   <span className="edge-label">Run</span>
