@@ -69,6 +69,13 @@
 // a repository with inbound pull-request ingest enabled refuses natively
 // created proposals, because the shadow row adopts the upstream number and
 // `proposals` is unique on (repo_id, number).
+//
+// The same release carries #226's intent identity: an intent ingested from a
+// GitHub issue records which issue, on whose host, and the evidence bundle's
+// `change.intent` grows an `upstream_url` beside the `issue_number` #157 put
+// there. Null on a natively filed intent. A repository with inbound ingest
+// enabled likewise refuses natively filed issues, for the same numbering
+// reason as proposals.
 export const API_VERSION = "0.7.0";
 
 export const API_VERSION_HEADER = "ADP-API-Version";

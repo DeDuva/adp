@@ -203,15 +203,41 @@ export const tokens = pgTable("tokens", {
   revoked: boolean("revoked").notNull().default(false),
 });
 
-export const intents = pgTable("intents", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  repoId: uuid("repo_id").notNull().references(() => repos.id),
-  title: text("title").notNull(),
-  body: text("body").notNull().default(""),
-  source: text("source", { enum: ["issue", "task", "api"] }).notNull(),
-  parentId: uuid("parent_id"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const intents = pgTable(
+  "intents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repoId: uuid("repo_id").notNull().references(() => repos.id),
+    title: text("title").notNull(),
+    body: text("body").notNull().default(""),
+    source: text("source", { enum: ["issue", "task", "api"] }).notNull(),
+    parentId: uuid("parent_id"),
+    // #226: which issue, on whose host.
+    //
+    // `source` already said an intent came from an issue, and that was as far
+    // as it went — so a team organising its work in GitHub Issues got an ADP
+    // intent universe *beside* theirs rather than under it, with no way to ask
+    // "is this the same piece of work as that one?" other than comparing
+    // titles.
+    //
+    // The host is a column rather than something parsed out of the URL because
+    // it is the identity half. An intent is the object 5-16 has to carry to
+    // another instance intact, and "issue 92" means nothing without saying
+    // whose 92 — where the URL is a display string that can be rewritten by a
+    // proxy, an enterprise hostname change, or a repository transfer.
+    upstreamHost: text("upstream_host"),
+    upstreamNumber: integer("upstream_number"),
+    upstreamUrl: text("upstream_url"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // One intent per upstream issue, and partial for the same reason the
+    // proposals index is (#224): it says something about ingested rows only.
+    uniqueIndex("intents_repo_upstream_idx")
+      .on(table.repoId, table.upstreamHost, table.upstreamNumber)
+      .where(sql`${table.upstreamNumber} is not null`),
+  ],
+);
 
 // Per-repo sequential numbering, GitHub-shaped. Assigning `number` requires
 // serializing on the repo row (see issues.ts) — Postgres won't do it for us.

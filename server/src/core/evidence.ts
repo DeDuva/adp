@@ -23,7 +23,22 @@ export interface EvidenceBundle {
      * error: a commit pushed without an intent trailer and never bound
      * afterwards has no intent to name.
      */
-    intent: { id: string; title: string; issue_number: number | null } | null;
+    intent: {
+      id: string;
+      title: string;
+      issue_number: number | null;
+      /**
+       * #226: where this intent came from, when it came from somewhere else.
+       * Null on a natively filed one.
+       *
+       * `issue_number` alone is ambiguous the moment a repository is mirrored:
+       * it is a number in *this* instance's sequence, which on an ingesting
+       * repository happens to equal GitHub's and on any other does not. The
+       * URL is what makes the bundle navigable off this instance, which is the
+       * same reason #157 put the number there in the first place.
+       */
+      upstream_url: string | null;
+    } | null;
     provenance: unknown;
     signature: string;
     created_at: string;
@@ -80,7 +95,10 @@ export async function getEvidenceBundle(db: Db, repoId: string, gitSha: string):
   // that is null whenever the change is unbound, which is the common shape on
   // a repo that does not use trailers.
   const [intent] = change?.intentId
-    ? await db.select({ id: intents.id, title: intents.title }).from(intents).where(eq(intents.id, change.intentId))
+    ? await db
+        .select({ id: intents.id, title: intents.title, upstreamUrl: intents.upstreamUrl })
+        .from(intents)
+        .where(eq(intents.id, change.intentId))
     : [];
 
   // #157: the issue that carries this intent, so the bundle names something a
@@ -109,7 +127,14 @@ export async function getEvidenceBundle(db: Db, repoId: string, gitSha: string):
       ? {
           id: change.id,
           intent_id: change.intentId,
-          intent: intent ? { ...intent, issue_number: issue?.number ?? null } : null,
+          intent: intent
+            ? {
+                id: intent.id,
+                title: intent.title,
+                issue_number: issue?.number ?? null,
+                upstream_url: intent.upstreamUrl,
+              }
+            : null,
           provenance: change.provenance,
           signature: change.signature,
           created_at: change.createdAt.toISOString(),

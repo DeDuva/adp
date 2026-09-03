@@ -14,7 +14,8 @@ import { emitWebhookEvent } from "../core/webhooks.js";
 import { landProposal } from "../core/land.js";
 import { landRefusalBody, evaluateLandPolicy } from "../core/land-policy.js";
 import { findOrgLandContext } from "../core/org-lookup.js";
-import { nativeProposalRefusal, pullRequestIngestEnabled } from "../core/pull-request-ingest.js";
+import { nativeProposalRefusal } from "../core/pull-request-ingest.js";
+import { upstreamIngestEnabled } from "../core/mirrors-lookup.js";
 
 const CreateProposalBody = z.object({
   title: z.string().min(1),
@@ -94,7 +95,7 @@ export function registerProposalRoutes(
       // rather than resolved later: renumbering after the fact would move a
       // number a developer has already seen, and 5a's numbering decision is
       // that the number means one thing on both planes.
-      if (await pullRequestIngestEnabled(db, repo.id)) {
+      if (await upstreamIngestEnabled(db, repo.id)) {
         reply.code(409).send(nativeProposalRefusal(owner, repoName));
         return;
       }
