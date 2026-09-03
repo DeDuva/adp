@@ -458,7 +458,7 @@ has a reader.
 
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
-| 5-12 | Publish the CLI | #235 | not started | `cli/package.json` is `"private": true` and the documented install is a source build, so ADP cannot currently be obtained without cloning it. Everything else in this phase is a bigger front door on a building with no road |
+| 5-12 | Publish the CLI | #235 | shipped | `cli/package.json` is `"private": true` and the documented install is a source build, so ADP cannot currently be obtained without cloning it. Everything else in this phase is a bigger front door on a building with no road. It publishes as `@deduva/adp` on tag, and skips cleanly where no `NPM_TOKEN` is configured |
 | 5-13 | A Gemini CLI reader | #236 | not started | `adp connect gemini-cli` works and gets the commit-trailer half; turn-level trajectory is the documented degraded mode. Harness independence is the strategic claim, and two readers out of three connected harnesses is where it is measured |
 | 5-14 | Connect finishes the job | #237 | not started | Claude Code is told to add a `SessionStart` hook by hand; Codex leaves a wrapper the developer has to remember to invoke instead of their normal command. Both are `connect` stopping one step short of the thing it exists to do |
 | 5-15 | Companion mode needs no ADP git remote, and no command infers one | #238 | not started | `adp init` adds an `adp` remote and `adp connect` finds the repository by looking for it. That composes today, and it composes by coincidence: the repository's identity is *derived* from a remote rather than *recorded*, so renaming the remote breaks every subsequent command. In companion mode there is nothing to push to ADP at all, and the remote should not exist |

@@ -1,8 +1,27 @@
 {
-  "name": "@adp/cli",
+  "name": "@deduva/adp",
   "version": "0.7.0",
-  "private": true,
+  "description": "The ADP CLI — intents, proposals, gates, evidence and undo against an ADP instance, plus `adp init` and `adp connect` for a repository that already exists.",
   "license": "MIT",
+  "homepage": "https://github.com/DeDuva/adp#readme",
+  "bugs": {
+    "url": "https://github.com/DeDuva/adp/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DeDuva/adp.git",
+    "directory": "cli"
+  },
+  "keywords": [
+    "adp",
+    "provenance",
+    "agent",
+    "forge",
+    "github",
+    "evidence",
+    "sbom",
+    "sdlc"
+  ],
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -10,11 +29,19 @@
   "bin": {
     "adp": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

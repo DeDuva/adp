@@ -1,28 +1,36 @@
-# `adp` — the CLI
+# `adp`
 
-A thin command-line wrapper over ADP's REST endpoints, for scripting and CI steps that would
-otherwise be a raw `curl` — plus `init`, `connect` and `disconnect`, which are not wrappers.
-
-**The reference is the root [`README.md`](../README.md)**, under *`adp` CLI* and *`adp connect`*:
-every command, what it wraps, and what `connect` writes where. This file is how to get it running,
-which is the one thing that lives here because it is about this directory.
+The command-line client for [ADP](https://github.com/DeDuva/adp) — the agent-native forge.
 
 ```bash
-npm ci && npm run build
-npm link                 # puts `adp` on your PATH
-adp login --server https://adp.example.com --token <token>
+npx @deduva/adp --help          # no install
+npm install -g @deduva/adp      # or put `adp` on your PATH
 ```
 
-`npm link` is the step the documentation used to skip. This package declares a `bin` and is
-`private`, so it is never published to npm and `npm i -g @adp/cli` will not work — but every
-example in the root README says `adp …`, so something has to bridge the two. Without the link,
-spell it `node dist/index.js …` from this directory.
+Node 22 or newer. No runtime dependencies: the install is one download and no tree.
 
-Undo it with `npm unlink -g @adp/cli`.
+## What it is for
+
+ADP records every change as a signed transaction binding **intent → diff → evidence →
+provenance**. This CLI is how a person or an agent reaches the parts of that GitHub has no
+analogue for — the operation log, `undo`, evidence bundles — and how a repository that already
+exists gets connected to an instance in the first place.
 
 ```bash
-npm run typecheck && npm test    # or `make cli` from the repository root
+adp login --server https://adp.example.com   # store a token for this machine
+adp init                                     # org, repo, mirror and a detected adp.yaml
+adp connect claude-code                      # write a harness's own configuration, and prove it
+adp pr list
+adp watch <sha>                              # the land verdict, without attempting the merge
+adp undo <sha>                               # resolve a commit to its merge and take it back out
 ```
 
-No database and no server: the tests drive the argument parsing and the request shapes, and the
-paths that touch a real instance are covered by `server/test/e2e-connect.test.ts`.
+`adp init` is additive by default: a checkout with an upstream is **mirrored** rather than moved,
+so your remote, your pull requests and your CI do not change and the ADP record fills anyway.
+
+## Where the documentation is
+
+The [repository README](https://github.com/DeDuva/adp#readme) is the reference for every command,
+the contract the CLI speaks (`spec/openapi.yaml`), and how to self-host an instance to point it at.
+
+MIT.
