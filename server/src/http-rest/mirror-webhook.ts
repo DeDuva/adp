@@ -12,6 +12,8 @@ import { decryptCredential, redactUrl } from "../core/mirror-crypto.js";
 import { ingestWorkflowRun, resolveMirrorReporter, type WorkflowRunPayload } from "../core/actions-ingest.js";
 import { ingestPullRequest, type PullRequestPayload } from "../core/pull-request-ingest.js";
 import { ingestIssue, type IssuePayload } from "../core/issue-ingest.js";
+import { resolveGitHubIdentity } from "../core/github-identity.js";
+import type { RecordActor } from "../core/change-recorder.js";
 
 // GitHub calls this route directly — it can't carry an ADP bearer token, so
 // trust here is entirely the HMAC signature over the raw body (verified
@@ -26,6 +28,18 @@ function verifySignature(secret: string, rawBody: Buffer, signatureHeader: strin
 }
 
 const WEBHOOK_PATH_PREFIX = "/webhooks/github/";
+
+// The host an ingested identity belongs to, taken from the mirror's own remote
+// URL. A self-hosted instance mirroring GitHub Enterprise gets that hostname,
+// and two people with the same login on two hosts stay two identities —
+// `external_identities` is `(issuer, subject)`-keyed for exactly this reason.
+function upstreamHostOfMirror(remoteUrl: string): string {
+  try {
+    return new URL(remoteUrl).host;
+  } catch {
+    return "github.com";
+  }
+}
 
 // Registers a content-type parser scoped (by URL prefix check, since
 // Fastify's addContentTypeParser is otherwise global per content-type) to
@@ -84,7 +98,14 @@ export function registerMirrorWebhookRoutes(
       return;
     }
 
-    let payload: { ref?: string; after?: string } & WorkflowRunPayload & PullRequestPayload & IssuePayload;
+    let payload: {
+      ref?: string;
+      after?: string;
+      commits?: { id?: string; author?: { username?: string | null } }[];
+      head_commit?: { id?: string; author?: { username?: string | null } } | null;
+    } & WorkflowRunPayload &
+      PullRequestPayload &
+      IssuePayload;
     try {
       payload = JSON.parse(rawBody.toString("utf8"));
     } catch {
@@ -128,7 +149,12 @@ export function registerMirrorWebhookRoutes(
         reply.send({ ok: true, skipped: "mirror has no ingest identity" });
         return;
       }
-      const result = await ingestPullRequest(db, gitBackend, repo, mirror.id, actorId, payload);
+      // #230: the pull request's author, not the mirror. `one_approval` is
+      // author-independent (#121), so a proposal authored by the system
+      // identity that also ingests its approvals is one nothing can ever
+      // approve — which is 5-4's whole problem.
+      const opener = await resolveGitHubIdentity(db, upstreamHostOfMirror(mirror.remoteUrl), payload.pull_request?.user);
+      const result = await ingestPullRequest(db, gitBackend, repo, mirror.id, opener?.identityId ?? actorId, payload);
       reply.send({
         ok: true,
         ...(result.recorded
@@ -148,7 +174,8 @@ export function registerMirrorWebhookRoutes(
         reply.send({ ok: true, skipped: "mirror has no ingest identity" });
         return;
       }
-      const result = await ingestIssue(db, repo, actorId, payload);
+      const filer = await resolveGitHubIdentity(db, upstreamHostOfMirror(mirror.remoteUrl), payload.issue?.user);
+      const result = await ingestIssue(db, repo, filer?.identityId ?? actorId, payload);
       reply.send({
         ok: true,
         ...(result.recorded
@@ -235,6 +262,7 @@ export function registerMirrorWebhookRoutes(
           currentSha ?? "0".repeat(40),
           fetchedSha,
           "mirror-inbound",
+          await commitAuthors(db, upstreamHostOfMirror(mirror.remoteUrl), payload),
         );
       }
 
@@ -260,4 +288,40 @@ export function registerMirrorWebhookRoutes(
       reply.send({ ok: false, reason: "error" });
     }
   });
+}
+
+// Who wrote each commit in a push, as far as the payload says.
+//
+// GitHub names a commit's author by `username` and nothing else here — no
+// numeric id, which is why core/github-identity.ts keys a login-only sighting
+// separately and upgrades it later. The array is capped at 20 by GitHub, and a
+// first import walks history nothing was ever delivered for, so this map is
+// deliberately partial: `recordPushedCommits` falls back to the mirror identity
+// for a commit it does not cover, which stays the honest answer for one whose
+// author this instance has no way to know.
+async function commitAuthors(
+  db: Db,
+  host: string,
+  payload: { commits?: { id?: string; author?: { username?: string | null } }[]; head_commit?: { id?: string; author?: { username?: string | null } } | null },
+): Promise<Map<string, RecordActor>> {
+  const out = new Map<string, RecordActor>();
+  const entries = [...(payload.commits ?? []), ...(payload.head_commit ? [payload.head_commit] : [])];
+
+  // One resolution per distinct login rather than one per commit: a 20-commit
+  // push from one person is one lookup, and this runs inline on the delivery.
+  const byLogin = new Map<string, RecordActor | null>();
+  for (const commit of entries) {
+    const login = commit?.author?.username?.trim();
+    if (!commit?.id || !login) continue;
+    if (!byLogin.has(login)) {
+      const resolved = await resolveGitHubIdentity(db, host, { login });
+      byLogin.set(
+        login,
+        resolved ? { id: resolved.identityId, kind: resolved.kind, principal: resolved.principal } : null,
+      );
+    }
+    const actor = byLogin.get(login);
+    if (actor) out.set(commit.id, actor);
+  }
+  return out;
 }
