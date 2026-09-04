@@ -220,6 +220,34 @@ commands that produce one, that both `docs/` links are **absolute** — npm serv
 own origin, where a relative link resolves to nothing — and that the keywords still match the
 topics.
 
+### The gate-job claim test stops losing a race it did not need to enter (#286)
+
+`make check` failed twice in three runs on a docs-only branch, on the test asserting that the claim
+candidate select does not skip a job whose `repos` row is locked. The property is real and the test
+is the right shape; the way it made its answer deterministic was not.
+
+It backdated its job an hour so `order by created_at limit 1` would name it — which made it the
+oldest row in a table every concurrently-running test file claims from, so their claim loops took it
+first. It knew, and retried ten times at 50ms: a **500ms** budget against the whole suite's
+contention, spent losing on purpose.
+
+**Determinism is `excludeIds` now, not age.** The select already accepts an exclusion list, so
+naming every other queued row makes the answer ours regardless of ordering — and *not* backdating
+means nothing preferentially claims it either, since a row created moments ago is the last thing an
+oldest-first loop reaches. The list is snapshotted inside the same transaction as the select, and a
+row enqueued after that point would sort after ours anyway.
+
+The failure message names the cause instead of counting attempts: it reports what came back and the
+job's own status, so "returned nothing, and the job was still queued" says *skipped*, which is the
+whole assertion.
+
+**It still bites.** Reverting `for update of gate_jobs` to a bare `for update` was run against the
+new test, and it fails — more crisply than before, because with everything else excluded a skipped
+job leaves the select with nothing to return rather than with somebody else's row.
+
+A test that fails on a busy machine and passes on a quiet one trains everyone to re-run the suite,
+which is how a real regression gets re-run away. Same class as the skipped-test invariant.
+
 ### A GitHub pull request is a proposal in ADP (#224)
 
 `pull_request` deliveries — `opened`, `reopened`, `synchronize`, `edited`, `closed` — become a
