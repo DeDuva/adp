@@ -220,6 +220,30 @@ commands that produce one, that both `docs/` links are **absolute** — npm serv
 own origin, where a relative link resolves to nothing — and that the keywords still match the
 topics.
 
+### `make local` stops printing the workaround `gh repo create` no longer needs (#285)
+
+The closing summary of the first command anyone runs ended with this:
+
+```
+gh api -X POST /repos/local -f name=widget
+```
+
+A raw API call, with a comment in `local.sh` explaining that the real command was guaranteed to
+404 — `gh` resolves the owner through `GET /api/v3/users/{owner}` before it creates anything, and
+that route was not served.
+
+**#196 served it**, in this same release, along with the GraphQL `createRepository` mutation `gh`
+calls next. So the workaround outlived the problem by a release, on the last line of the first
+command anyone runs — and demonstrating GitHub compatibility with a raw API call is the opposite of
+the claim being made. An unmodified `gh` does not know the difference; that is the whole point.
+
+It prints `gh repo create local/widget --private` now, confirmed by running exactly that against a
+live `make local` instance rather than by reading. The comment above it records what it used to say
+and why, so the `gh api` form does not come back without somebody checking the route first.
+
+Found by walking the front door for #274 rather than by a test, which is the honest description: the
+script prints a string and nothing asserts what the string is.
+
 ### The gate-job claim test stops losing a race it did not need to enter (#286)
 
 `make check` failed twice in three runs on a docs-only branch, on the test asserting that the claim

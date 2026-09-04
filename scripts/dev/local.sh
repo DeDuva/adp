@@ -131,12 +131,17 @@ print_details() {
   info "With SSL_CERT_FILE exported as above:"
   printf '        export GH_HOST=localhost:%s\n' "$TLS_PORT"
   printf '        export GH_ENTERPRISE_TOKEN=%s\n' "$token"
-  # NOT `gh repo create`. That command resolves the owner through
-  # GET /api/v3/users/{owner} before it creates anything, that route is not
-  # served, and the README's compatibility table has listed it as unsupported
-  # all along — so the last line this script printed was a command guaranteed
-  # to 404, as the very first thing anyone did with their new instance.
-  printf '        gh api -X POST /repos/%s -f name=widget\n' "$(grep '^ADP_ORG=' "$ENV_FILE" | cut -d= -f2-)"
+  # `gh repo create`, and the history here is worth keeping. This used to print
+  # `gh api -X POST /repos/<org> -f name=widget` with a comment explaining that
+  # the real command was guaranteed to 404: `gh` resolves the owner through
+  # GET /api/v3/users/{owner} before creating anything, and that route was not
+  # served. #196 served it, and added the GraphQL createRepository mutation `gh`
+  # calls next — so the line stayed a workaround for a whole release after the
+  # thing it worked around was fixed, on the last line of the first command
+  # anyone runs. Demonstrating GitHub compatibility with a raw API call is the
+  # opposite of the claim: an unmodified `gh` does not know the difference.
+  # Don't put the `gh api` form back without checking that route first.
+  printf '        gh repo create %s/widget --private\n' "$(grep '^ADP_ORG=' "$ENV_FILE" | cut -d= -f2-)"
   echo
   info "Everything above is also written to $ENV_FILE — source it with:"
   printf '        set -a; . %s; set +a\n' "$ENV_FILE"
