@@ -197,6 +197,29 @@ have got wrong:
 `npx @deduva/adp` is on the front door too, in the sentence where somebody is deciding whether to
 bother: the whole CLI, nothing installed, and an honest note that it needs an instance to talk to.
 
+### The npm page orients someone who arrived cold (#275)
+
+`@deduva/adp` became a discovery surface of its own this release, and its page — npm renders
+`cli/README.md` as one — said *install it, here are some commands, here is
+`adp login --server https://adp.example.com`*. Nothing on it said what an instance is, that you need
+one, or how to get one. `npx @deduva/adp` worked and had nothing to point at.
+
+It now answers the two questions in order: what you have just installed (a **client**, not the
+forge), and where your instance comes from — `make demo` to see it, `make local` to keep one,
+`docs/self-hosting.md` to run a real one. Then the companion-mode path, because pointing it at a
+repository you already have is what most people want it for.
+
+The keywords were aligned with the repository's own GitHub topics, which are chosen for how somebody
+would search for the problem. **`sbom` came out: ADP does not produce one, and a keyword is a
+claim.**
+
+Three assertions in `cli/test/package.test.ts` hold it, and the reason is worth stating: every
+contributor arrives through the repository, so the one document written for the other entrance is
+the one with no reader. It is checked that the page says an instance is needed and names the two
+commands that produce one, that both `docs/` links are **absolute** — npm serves the page off its
+own origin, where a relative link resolves to nothing — and that the keywords still match the
+topics.
+
 ### A GitHub pull request is a proposal in ADP (#224)
 
 `pull_request` deliveries — `opened`, `reopened`, `synchronize`, `edited`, `closed` — become a

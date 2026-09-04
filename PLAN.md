@@ -472,7 +472,7 @@ not change, without scrolling into a reference section.
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
 | 6-7 | The existing-repository path on the README's front door, and `npx @deduva/adp` where a decider will see it | #274 | shipped | The only trial offered today is "clone this repo and install Docker". The better story — point it at your own work and change nothing — is a CLI table row at line 378. `make demo` stays exactly as it is: it is the best asset here |
-| 6-8 | The npm page says what an instance is and how to get one | #275 | not started | `@deduva/adp` is a discovery surface now. Someone arriving there cold installs a CLI with nothing to talk to and no explanation of why |
+| 6-8 | The npm page says what an instance is and how to get one | #275 | shipped | `@deduva/adp` is a discovery surface now. Someone arriving there cold installs a CLI with nothing to talk to and no explanation of why |
 | 6-9 | Companion mode explained end to end, in `docs/` | #277 | shipped | The site will make the claim; this is what someone reads to decide whether it is true for them. It has to state the refusals as plainly as the capabilities |
 
 ### How this phase is worked
