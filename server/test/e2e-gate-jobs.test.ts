@@ -6,7 +6,7 @@ import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb, type Db } from "../src/db/client.js";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { identities, gateJobs, gateResults, operations, repos } from "../src/db/schema.js";
 import { mintToken } from "../src/auth/tokens.js";
 import { grantOwner } from "./org-fixture.js";
@@ -281,51 +281,76 @@ describe.skipIf(skipWithoutDb)("M4-9a: gate-job queue", () => {
   it("the claim candidate select does not skip a job whose repos row is locked", async () => {
     const [repo] = await db.select().from(repos).where(and(eq(repos.owner, owner), eq(repos.name, repoName)));
 
-    // The job must be the oldest queued row in the shared table so the
-    // LIMIT 1 answer is deterministic — backdate it well past anything the
-    // concurrently-running files enqueue. That also makes it prime theft
-    // material for their claim loops, hence the retry.
-    for (let attempt = 0; ; attempt++) {
-      const [job] = await db
-        .insert(gateJobs)
-        .values({
-          repoId: repo!.id,
-          gitSha,
-          name: `lock-skip-${attempt}`,
-          image: "node:22",
-          command: "true",
-          timeoutMs: 60_000,
-          actorId: writerId,
-          createdAt: new Date(Date.now() - 3_600_000),
-        })
-        .returning();
+    // Determinism here is `excludeIds`, not age (#286). This used to backdate
+    // the job an hour so `order by created_at limit 1` would name it — which
+    // made it the oldest row in a table every concurrently-running test file
+    // is claiming from, so their claim loops took it first and the test
+    // retried. Ten attempts at 50ms is a 500ms budget against the whole
+    // suite's contention, and under load it ran out: the gate failed twice in
+    // three runs on a docs-only branch, which is how a real regression ends up
+    // re-run away.
+    //
+    // Excluding every other queued row makes the answer ours regardless of
+    // ordering, and *not* backdating means nothing preferentially claims it
+    // either — a row created moments ago is the last thing an oldest-first
+    // loop reaches. The residual race is only our own row being claimed
+    // between insert and select, which the shorter retry covers.
+    const [job] = await db
+      .insert(gateJobs)
+      .values({
+        repoId: repo!.id,
+        gitSha,
+        name: "lock-skip",
+        image: "node:22",
+        command: "true",
+        timeoutMs: 60_000,
+        actorId: writerId,
+      })
+      .returning();
 
-      const client = await pool.connect();
-      let won = false;
-      try {
-        await client.query("BEGIN");
-        await client.query("SELECT id FROM repos WHERE owner = $1 AND name = $2 FOR UPDATE", [owner, repoName]);
+    try {
+      for (let attempt = 0; ; attempt++) {
+        const client = await pool.connect();
+        let candidate: { id: string } | null | undefined;
+        try {
+          await client.query("BEGIN");
+          await client.query("SELECT id FROM repos WHERE owner = $1 AND name = $2 FOR UPDATE", [owner, repoName]);
 
-        const candidate = await db.transaction(async (tx) => {
-          const c = await selectClaimCandidate(tx);
-          // Roll back: this test asserts on the selection, it does not claim.
-          throw Object.assign(new Error("rollback"), { candidate: c });
-        }).catch((err: Error & { candidate?: { id: string } | null }) => err.candidate);
+          candidate = await db.transaction(async (tx) => {
+            // Snapshotted inside the same transaction as the select, so a row
+            // enqueued after this point cannot be missing from the list — and
+            // it would sort after ours anyway, being newer.
+            const others = await tx
+              .select({ id: gateJobs.id })
+              .from(gateJobs)
+              .where(and(eq(gateJobs.status, "queued"), ne(gateJobs.id, job!.id)));
+            const c = await selectClaimCandidate(tx, others.map((o) => o.id));
+            // Roll back: this test asserts on the selection, it does not claim.
+            throw Object.assign(new Error("rollback"), { candidate: c });
+          }).catch((err: Error & { candidate?: { id: string } | null }) => err.candidate);
+        } finally {
+          await client.query("ROLLBACK").catch(() => {});
+          client.release();
+        }
 
-        won = candidate?.id === job!.id;
-      } finally {
-        await client.query("ROLLBACK").catch(() => {});
-        client.release();
-        await db.delete(gateJobs).where(eq(gateJobs.id, job!.id));
+        // The property: with the repos row locked by another connection, the
+        // select still returns the job — a bare FOR UPDATE would SKIP LOCKED
+        // past it.
+        if (candidate?.id === job!.id) return;
+
+        // The only way to get here is our own row having been claimed out from
+        // under us, so say that rather than leaving a bare count.
+        const [current] = await db.select({ status: gateJobs.status }).from(gateJobs).where(eq(gateJobs.id, job!.id));
+        if (attempt >= 4) {
+          throw new Error(
+            `candidate select returned ${candidate?.id ?? "nothing"}, not the locked repo's job ` +
+              `(job status: ${current?.status ?? "deleted"})`,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
       }
-
-      if (won) return; // the property held — done
-
-      // A concurrent file's claim loop got to the row first (it was the
-      // oldest job in the queue, after all) — that attempt's row is already
-      // retired above; try again with a fresh one.
-      if (attempt >= 9) throw new Error("candidate select never returned the locked repo's job in 10 attempts");
-      await new Promise((resolve) => setTimeout(resolve, 50));
+    } finally {
+      await db.delete(gateJobs).where(eq(gateJobs.id, job!.id));
     }
   });
 
