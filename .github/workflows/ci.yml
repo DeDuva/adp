@@ -255,9 +255,11 @@ jobs:
       # edited by hand or a run record changed without the report following —
       # either way the published numbers stopped being reproducible.
       #
-      # The merge-contention measurement itself is enforced separately, by
-      # server/test/e2e-merge-contention.test.ts in the `server` job, which
-      # drives bench/lib/merge-contention.mjs directly rather than a copy.
+      # The deterministic measurements themselves are enforced separately, in
+      # the `server` job, each by an e2e test that drives its bench library
+      # directly rather than a copy: merge contention by
+      # server/test/e2e-merge-contention.test.ts, storage growth by
+      # server/test/e2e-storage-growth.test.ts.
       # The transcript reader's own assertions. `measurement.escapeHatchCalls`
       # is meant to be read at a glance and acted on, and the shell splitting
       # under it is exactly the kind of code that looks obviously right and is

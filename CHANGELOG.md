@@ -272,6 +272,36 @@ job leaves the select with nothing to return rather than with somebody else's ro
 A test that fails on a busy machine and passes on a quiet one trains everyone to re-run the suite,
 which is how a real regression gets re-run away. Same class as the skipped-test invariant.
 
+### Bench arm 4: what storage actually costs (#195)
+
+`PLAN.md` 3-6 — retention and tiering as org policy — had a settled shape and no numbers. The
+2026-08-22 storage analysis had *modelled* growth from 1,930 real trajectory events; nothing had
+measured it. Arm 4 does, on arm 1's terms: deterministic, no model, no tokens, and enforced in CI by
+`server/test/e2e-storage-growth.test.ts`, which drives the same `bench/lib/storage-growth.mjs` the
+published numbers come from.
+
+`make bench-storage` creates a database, boots the built server against it as a process of its own,
+and drives a seeded, coding-agent-shaped trajectory through it: events under both
+`trajectory.payloads` modes, concurrent ingest with checkpoints, whole-run and anchored verification,
+and two hundred landed changes. Then it reads what Postgres holds — heap, TOAST and index bytes per
+unit, realised against batched compression, dedup yield, the ingest curve, and peak server RSS on
+`/verify`. [`bench/report/storage-growth.md`](bench/report/storage-growth.md) has the figures.
+
+**What it changed.** On a default repository the payload is a small minority of what an event costs,
+so retention that ages out payloads reclaims little there. TOAST leaves most `full`-mode payloads
+uncompressed, and batching would store them in about a third of the space — the tiering argument,
+measured. And #194, as written, would have been a disappointment: a deterministic SBOM still names
+its own commit, so no land's SBOM becomes a copy of another's. The component list is what repeats,
+and reclaiming it is 3-6's work, not 3-3's. The plan says so now.
+
+**Two measurements it would have got wrong.** The first incompressible corpus was base64, and #148's
+detector redacted almost all of it as secrets — its catch-all is any 24-character token run at 4.3
+bits a character, which base64 is — so that bound was measuring the redaction marker. The profile is
+built from shorter runs now, and the arm counts redacted events and fails on any. And a kernel's
+peak-RSS mark is folded in lazily, so the first CI-scale run read a peak below its own baseline; the
+rig samples RSS as well now, and reports the baseline beside the growth, because a server that has
+just ingested verifies on a warm heap and "grew by nothing" has to be readable as that.
+
 ### A GitHub pull request is a proposal in ADP (#224)
 
 `pull_request` deliveries — `opened`, `reopened`, `synchronize`, `edited`, `closed` — become a

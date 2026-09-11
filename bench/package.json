@@ -8,6 +8,7 @@
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "merge-contention": "node arms/merge-contention.mjs",
+    "storage-growth": "node arms/storage-growth.mjs",
     "report": "node report/build-report.mjs"
   },
   "//test": "`node --test test/*.test.mjs`, with the glob explicit. `node --test test/` resolves the bare directory as a module on Node 24 and dies with MODULE_NOT_FOUND before running anything, which is a failure with nothing behind it — the same trap the previous note in this field described. There was no bench/test/ until #144's escape-hatch accounting needed one; the merge-contention arm's assertions still live in server/test/e2e-merge-contention.test.ts, which drives bench/lib/ directly."
