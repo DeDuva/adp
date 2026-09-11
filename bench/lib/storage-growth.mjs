@@ -879,3 +879,34 @@ export async function runStorageGrowth({
 function round(ms) {
   return Math.round(ms * 10) / 10;
 }
+
+/**
+ * Drop the database a rig created for this arm, once nothing is connected to it.
+ *
+ * Not `DROP … WITH (FORCE)` straight away, which is what both rigs first did.
+ * `pool.end()` resolves while a client can still be mid-shutdown, and forcing
+ * the drop then terminates that client's backend: pg surfaces the server's
+ * `FATAL 57P01` as an error event on a client nobody is listening to any more,
+ * and vitest fails the run on it. CI caught exactly that, on a run whose every
+ * test had passed; locally the race went the other way. Waiting for the
+ * backends to leave is the fix. FORCE stays, as the fallback for a connection
+ * that never does — at which point an error is the right outcome.
+ *
+ * `query(text, params)` runs against a *different* database on the same
+ * server, since a database cannot be dropped from a connection to itself.
+ */
+export async function dropArmDatabase(query, name, { timeoutMs = 10_000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const [{ connected }] = await query("select count(*)::int as connected from pg_stat_activity where datname = $1", [name]);
+    if (connected === 0) {
+      await query(`DROP DATABASE IF EXISTS "${name}"`);
+      return;
+    }
+    if (Date.now() > deadline) {
+      await query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}

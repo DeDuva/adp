@@ -16,6 +16,7 @@ import { Signer } from "../src/core/signing.js";
 import { registerApiRoutes } from "../src/routes.js";
 import {
   runStorageGrowth,
+  dropArmDatabase,
   CI_SCALE,
   type StorageGrowthResult,
 } from "../../bench/lib/storage-growth.mjs";
@@ -122,8 +123,12 @@ describe.skipIf(skipWithoutDb)("3-5: storage-growth benchmark arm", () => {
   afterAll(async () => {
     await app?.close();
     await pool?.end();
-    await admin?.query(`DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`);
-    await admin?.end();
+    // Waits for this file's own connections to leave before dropping — see
+    // dropArmDatabase for the unhandled FATAL that forcing it produced in CI.
+    if (admin) {
+      await dropArmDatabase(async (text, params) => (await admin.query(text, params)).rows, dbName);
+      await admin.end();
+    }
     if (gitRoot) await rm(gitRoot, { recursive: true, force: true });
   });
 

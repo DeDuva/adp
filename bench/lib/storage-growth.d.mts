@@ -117,3 +117,9 @@ export interface StorageGrowthResult {
 }
 
 export function runStorageGrowth(options: StorageGrowthOptions): Promise<StorageGrowthResult>;
+
+export function dropArmDatabase(
+  query: (text: string, params?: unknown[]) => Promise<Record<string, any>[]>,
+  name: string,
+  options?: { timeoutMs?: number },
+): Promise<void>;

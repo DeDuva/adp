@@ -28,7 +28,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { runStorageGrowth, DEFAULT_SCALE, CI_SCALE } from "../lib/storage-growth.mjs";
+import { runStorageGrowth, dropArmDatabase, DEFAULT_SCALE, CI_SCALE } from "../lib/storage-growth.mjs";
 
 const execFileAsync = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -92,8 +92,10 @@ async function pickPort() {
 // CI-scale run read a peak 0.7 MB *below* its own baseline. So VmRSS is also
 // sampled every 5 ms while the request runs. Each method covers the other's
 // gap: sampling misses a spike between reads, the mark misses one it was
-// never told about. At CI scale the result is still inside that noise; at the
-// published scale a whole-run verify moves it by tens of megabytes.
+// never told about. At CI scale the result is inside that noise. At the
+// published scale, on a server still warm from ingest, a whole-run verify moved
+// it by nothing measurable — which is why the baseline is recorded beside the
+// growth, and the report says what that does and does not show.
 //
 // Null off Linux, and the record says so rather than inventing a number.
 function procRss(pid) {
@@ -291,7 +293,9 @@ async function main() {
       clearTimeout(killer);
     }
     await pool?.end();
-    await admin.query(`DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`).catch((err) => log(`could not drop ${dbName}: ${err.message}`));
+    await dropArmDatabase(async (text, params) => (await admin.query(text, params)).rows, dbName).catch((err) =>
+      log(`could not drop ${dbName}: ${err.message}`),
+    );
     await admin.end();
     await rm(gitRoot, { recursive: true, force: true });
   }
