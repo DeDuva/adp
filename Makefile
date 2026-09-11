@@ -22,7 +22,7 @@ REQUIRE_ENV = @test -f $(ENV_FILE) || { \
 	exit 1; }
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps check-deps worktree worktree-remove worktree-list test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner recorder helm dc-runtime og site land local local-status local-down local-destroy measure-ops measure-verify
+.PHONY: help bootstrap doctor env-status clean-check up down down-all nuke deps check-deps worktree worktree-remove worktree-list test test-unit test-all check check-docs conformance acceptance acceptance-ui browser browser-deps web cli adapters bench runner recorder helm dc-runtime og site land local local-status local-down local-destroy measure-ops measure-verify bench-storage
 
 help: ## Show this help
 	@echo "ADP test environment"
@@ -169,6 +169,12 @@ measure-ops: ## EXPLAIN the operations-log reads at volume (#147); needs 'make u
 
 measure-verify: ## Peak memory of verifying a long trajectory (#152); needs 'make up'
 	@node --expose-gc server/scripts/measure-verify-memory.mjs
+
+bench-storage: ## Arm 4, storage growth (#195): a real server on a fresh database, writes its run record; needs 'make up'
+	$(REQUIRE_ENV)
+	@$(LOAD_ENV) npm run build --prefix server
+	@$(LOAD_ENV) node bench/arms/storage-growth.mjs --out bench/runs/storage-growth.json
+	npm run report --prefix bench
 
 bench: ## Test the harness, regenerate the benchmark report, and assert it is unchanged
 	npm test --prefix bench

@@ -579,11 +579,35 @@ The reason it was not already urgent is worth keeping, because it is the same re
 stopped being cheap fixes taken early: an item's priority is set by what is about to consume it,
 and this file has now twice had to re-rank storage work when something new started writing.
 
+**What 3-5 found (2026-09-11).** Bench arm 4 (#195) shipped and is gone from the table below; its
+number is not reused. It is the first measurement of what this schema actually holds, taken through
+the real server on a database nobody else wrote to, and it moves three items. The figures live in
+[`bench/report/storage-growth.md`](bench/report/storage-growth.md); what they change lives here.
+
+- **Under the default `structure` mode the payload is a small minority of what an event costs.**
+  The rest is the row — two hex hashes, ids, the typed columns — and its indexes. So "verified,
+  payload not retained" reclaims little on a default repository: 3-6's retention window is about
+  `full`-mode repositories, and on a default one the levers are the row and its indexes.
+- **TOAST compresses one value at a time, and only once a row passes about 2 KB**, so most
+  `full`-mode payloads are stored uncompressed. Compressed a batch at a time, the same payloads
+  take about a third of the space. That is the case for 3-6's tiering half, and it is an
+  object-store argument, so that half still waits on decision 2.
+- **3-3 dedups nothing by itself.** Every land's SBOM names the commit it describes, so taking out
+  the UUID and the timestamp leaves each one distinct; what an unchanged lockfile repeats is the
+  component list, nearly all of it. 3-3 stays, because an SBOM should be a function of its commit,
+  but the bytes come back only when 3-6 stores the component list once and references it by digest
+  — the same "attestations commit to digests" shape 3-6 already has.
+- **The storage meter reads well below what the tables occupy.** It sums row datums by design
+  (`core/storage-usage.ts`), so an org quota of N bytes admits a multiple of N on disk. Anyone
+  setting a quota needs that multiple, and the report carries it.
+
+What it did not find is a cliff: append throughput at the recorder's batch size held across the
+measured range, which bounds where one could be and says nothing past it.
+
 | # | Item | Tracking | State | Why |
 |---|---|---|---|---|
-| 3-3 | Make the SBOM deterministic so identical dependency sets dedup | #194 | not started | `randomUUID()` and a fresh timestamp per land make ~8 KB of every ~12 KB landed change un-dedupable and ~100% redundant. Pure win; needs no object store |
-| 3-5 | Bench arm 4 — `storage-growth` | #195 | not started, and **pulled forward** — see below | Deterministic, no model, no tokens, CI-runnable like arm 1: bytes per unit on a real Postgres, realised vs batched compression, dedup yield, ingest cliff, peak RSS on `/verify`. It is also the only thing that prices a user, which is why it no longer sits behind the rest of this phase |
-| 3-6 | Retention and tiering as org policy | — | blocked on 3-5; 1-16 shipped the interval | The intended shape — hot/extended tiers with promote-on-reference, attestations committing to digests never payloads, "verified, payload not retained" as an honest third verification state — is settled; the numbers that justify it come from 3-5. 1-19 (#199) built the commitment half already: an event whose payload is stored as structure carries `payload_digest`, covered by the chain. 1-16 covers the interval. The object-store half also waits on decision 2 |
+| 3-3 | Make the SBOM a function of the commit it describes | #194 | not started | `randomUUID()` and a fresh timestamp make two SBOMs of the same commit byte-different, and an SBOM describes a commit, not a moment. **It does not dedup anything on its own**, which is what this row used to claim: 3-5 measured it, and every land's SBOM stays distinct without those two fields, because it names its own sha. The storage win is 3-6's — see below |
+| 3-6 | Retention and tiering as org policy | — | its numbers exist — 3-5 measured them; 1-16 shipped the interval | The intended shape — hot/extended tiers with promote-on-reference, attestations committing to digests never payloads, "verified, payload not retained" as an honest third verification state — is settled; the numbers that justify it come from 3-5. 1-19 (#199) built the commitment half already: an event whose payload is stored as structure carries `payload_digest`, covered by the chain. 1-16 covers the interval. The object-store half also waits on decision 2 |
 
 ---
 

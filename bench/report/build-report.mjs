@@ -26,6 +26,7 @@ async function loadRuns(arm) {
     if (record.arm === arm) records.push({ file, ...record });
   }
   if (arm === "merge-contention") return records.sort((a, b) => a.result.config.writers - b.result.config.writers);
+  if (arm === "storage-growth") return records.sort((a, b) => a.file.localeCompare(b.file));
   // Arm 5 has a `condition` where arm 2 has a `method`; sorting on the field
   // that exists keeps a stable order rather than an "undefined" prefix on
   // every key.
@@ -644,7 +645,371 @@ understand.
 `;
 }
 
+// --- arm 4: storage growth ---------------------------------------------------
+
+const bytes = (n) => Math.round(n).toLocaleString("en-US");
+const mib = (n) => (n / 1024 / 1024).toFixed(1);
+const share = (n) => `${(n * 100).toFixed(1)}%`;
+const per = (total, n) => (n > 0 ? total / n : 0);
+
+function percentileOf(values, p) {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1))];
+}
+
+function sumDeltas(deltas) {
+  const out = { rows: 0, heap: 0, toast: 0, indexes: 0, other: 0, total: 0 };
+  for (const d of deltas) for (const k of Object.keys(out)) out[k] += d[k];
+  return out;
+}
+
+// Throughput by decile of the ingest, in completion order across all writers.
+// A decile's rate is its events over the wall time between the last batch of
+// the previous decile and its own last batch, so concurrent writers add up
+// rather than being averaged away.
+function ingestDeciles(ingest, rowsBefore) {
+  const batches = [...ingest.batches].sort((a, b) => a[1] - b[1]);
+  const total = batches.reduce((s, b) => s + b[2], 0);
+  const deciles = [];
+  let cumulative = 0;
+  let index = 0;
+  let previousEnd = 0;
+  for (let d = 1; d <= 10; d++) {
+    const target = (total * d) / 10;
+    const latencies = [];
+    let events = 0;
+    while (index < batches.length && cumulative < target) {
+      const [, , n, ms] = batches[index++];
+      cumulative += n;
+      events += n;
+      latencies.push(ms);
+    }
+    const end = index > 0 ? batches[index - 1][1] : previousEnd;
+    const seconds = (end - previousEnd) / 1000;
+    deciles.push({
+      d,
+      rowsAtEnd: rowsBefore + cumulative,
+      eventsPerSecond: seconds > 0 ? events / seconds : 0,
+      p50: percentileOf(latencies, 50),
+      p95: percentileOf(latencies, 95),
+    });
+    previousEnd = end;
+  }
+  return deciles;
+}
+
+function storageGrowthSection(record) {
+  const r = record.result;
+  const c = r.config;
+  const env = record.environment;
+  const label = (e) => `\`${e.mode}\`, ${e.profile}`;
+  const batchKeys = [...new Set([String(c.batchSize), "1000"])];
+
+  const landTables = ["changes", "proposals", "gate_results", "operations"];
+  const landDelta = sumDeltas(landTables.map((t) => r.lands.relation[t]));
+  const landRowBytes = landTables.reduce((s, t) => s + r.lands.rows[t].rowBytes, 0);
+  const gitPerLand = r.lands.gitBytes ? per(r.lands.gitBytes.after - r.lands.gitBytes.before, r.lands.count) : null;
+
+  const unit = (name, n, d, rowBytes) =>
+    `| ${name} | ${bytes(n)} | ${bytes(per(d.heap, n))} | ${bytes(per(d.toast, n))} | ${bytes(per(d.indexes, n))} | ` +
+    `**${bytes(per(d.total, n))}** | ${bytes(per(rowBytes, n))} |`;
+  const unitRows = [
+    ...r.events.map((e) => unit(`Trajectory event — ${label(e)}`, e.events, e.relation, e.stored.rowBytes)),
+    unit(`Trajectory event — \`structure\`, text, ${r.ingest.writers} writers`, r.ingest.events, r.ingest.relation, r.ingest.rowBytes),
+    unit("Checkpoint", r.checkpoints.count, r.checkpoints.relation, r.checkpoints.rowBytes),
+    unit("Operation-log row", r.operations.relation.rows, r.operations.relation, per(r.meter.operations.rowBytes, r.meter.operations.rows) * r.operations.relation.rows),
+    unit("Landed change (Postgres)", r.lands.count, landDelta, landRowBytes),
+  ];
+
+  const payloadRows = r.events.map((e) => {
+    const perEvent = per(e.relation.total, e.events);
+    const payload = per(e.stored.payloadDatumBytes, e.events);
+    return (
+      `| ${label(e)} | ${bytes(per(e.suppliedPayloadBytes, e.events))} | ${bytes(payload)} | ` +
+      `${bytes(perEvent - payload)} | ${share(per(payload, perEvent))} |`
+    );
+  });
+
+  const compressionRows = r.events.map((e) => {
+    const batched = batchKeys.map((k) => bytes(per(e.compression.batchedDeflateBytes[k] ?? 0, e.events)));
+    return (
+      `| ${label(e)} | ${bytes(per(e.stored.payloadUncompressedBytes, e.events))} | ${bytes(per(e.stored.payloadDatumBytes, e.events))} | ` +
+      `${share(per(e.stored.compressedRows, e.events))} | ${bytes(per(e.compression.perEventDeflateBytes, e.events))} | ${batched.join(" | ")} |`
+    );
+  });
+
+  const dedupRows = r.events.map(
+    (e) =>
+      `| ${label(e)} | ${bytes(e.dedup.payloadTextBytes)} | ${bytes(e.dedup.distinctPayloadTextBytes)} | ` +
+      `${share(1 - per(e.dedup.distinctPayloadTextBytes, e.dedup.payloadTextBytes))} |`,
+  );
+  const sbom = r.lands.sbom;
+  const sbomRow = (name, g) =>
+    `| ${name} | ${g.documents} | ${g.distinctDocuments} | ${bytes(g.bytes)} | ${bytes(g.distinctBytes)} | ${share(1 - per(g.distinctBytes, g.bytes))} |`;
+
+  const rowsBefore = r.events.reduce((s, e) => s + e.events, 0);
+  const deciles = ingestDeciles(r.ingest, rowsBefore);
+  const rates = deciles.map((d) => d.eventsPerSecond);
+  const medianRate = percentileOf(rates, 50);
+  const slowest = deciles.reduce((a, b) => (b.eventsPerSecond < a.eventsPerSecond ? b : a));
+  // A cliff is throughput that falls and stays fallen, so it is judged on how
+  // the run *ends*. One slow decile that recovers is a stall, and is reported
+  // as one rather than as the place a cliff starts.
+  const tailRatio = per((deciles[8].eventsPerSecond + deciles[9].eventsPerSecond) / 2, medianRate);
+  const decileRows = deciles.map(
+    (d) => `| ${d.d} | ${bytes(d.rowsAtEnd)} | ${bytes(d.eventsPerSecond)} | ${d.p50.toFixed(0)} | ${d.p95.toFixed(0)} |`,
+  );
+
+  const rssCell = (n) => (n === null || n === undefined ? "not measured" : mib(n));
+  const verifyRows = r.verify.map(
+    (v) =>
+      `| ${v.target} | ${v.coverage} | ${v.sessions} | ${bytes(v.events)} | ${bytes(v.ms)} | ${bytes(per(v.events, v.ms / 1000))} | ` +
+      `${rssCell(v.baselineRssBytes)} | ${rssCell(v.peakRssBytes)} | ${rssCell(v.peakRssOverBaselineBytes)} |`,
+  );
+
+  const meterTables = Object.entries(r.meter).filter(([, m]) => m.rows > 0);
+  const meterTotal = meterTables.reduce((a, [, m]) => ({ rowBytes: a.rowBytes + m.rowBytes, relationBytes: a.relationBytes + m.relationBytes }), {
+    rowBytes: 0,
+    relationBytes: 0,
+  });
+  const meterRows = meterTables.map(
+    ([table, m]) =>
+      `| \`${table}\` | ${bytes(m.rows)} | ${bytes(m.rowBytes)} | ${bytes(m.relationBytes)} | ${(m.relationBytes / Math.max(1, m.rowBytes)).toFixed(2)}× |`,
+  );
+
+  const opRows = r.operations.byVerb.map((o) => `| \`${o.verb}\` | ${bytes(o.rows)} | ${bytes(per(o.rowBytes, o.rows))} |`);
+
+  // The sentences below are computed from the same record, so they cannot say
+  // something the tables above do not.
+  const byConfig = Object.fromEntries(r.events.map((e) => [`${e.mode}/${e.profile}`, e]));
+  const def = byConfig["structure/text"];
+  const full = byConfig["full/text"];
+  const defPerEvent = per(def.relation.total, def.events);
+  const defPayload = per(def.stored.payloadDatumBytes, def.events);
+  const fullPerEvent = per(full.relation.total, full.events);
+  const fullStored = per(full.stored.payloadDatumBytes, full.events);
+  const fullBatched = per(full.compression.batchedDeflateBytes["1000"] ?? 0, full.events);
+  const ingestPerEvent = per(r.ingest.relation.total, r.ingest.events);
+  const landPerChange = per(landDelta.total, r.lands.count);
+  const sbomPerLand = per(sbom.envelopeDatumBytes, r.lands.count);
+  const events = r.meter.session_events;
+  const fullVerify = r.verify.find((v) => v.target === "run" && v.coverage === "full");
+  const anchoredVerify = r.verify.find((v) => v.target === "run" && v.coverage === "from-checkpoint");
+  const gib = (n) => (n / 1024 ** 3).toFixed(2);
+  const textMeans = [...new Set([def, full].map((e) => bytes(per(e.suppliedPayloadBytes, e.events))))].join("–");
+  const statementPerDoc = per(sbom.statement.bytes, sbom.statement.documents);
+
+  const shows = [
+    `**Under the default \`structure\` mode an event costs ${bytes(defPerEvent)} B, and the payload is ` +
+      `${share(per(defPayload, defPerEvent))} of it.** The rest is the row — hashes, ids, typed columns — and ` +
+      `${bytes(per(def.relation.indexes, def.events))} B of index per event. Retention that ages out payloads ` +
+      `(3-6's "verified, payload not retained") can reclaim at most that ${share(per(defPayload, defPerEvent))} ` +
+      `on a default repository; the bulk of what an event costs is what keeps it verifiable and queryable.`,
+    `**At ingest scale the per-event cost holds**: ${bytes(ingestPerEvent)} B/event over ${bytes(r.ingest.events)} ` +
+      `events, against ${bytes(defPerEvent)} B at ${bytes(def.events)}. A million default events is ` +
+      `${gib(ingestPerEvent * 1e6)} GiB of \`session_events\`.`,
+    `**\`full\` costs ${(fullPerEvent / defPerEvent).toFixed(2)}× the default on text-shaped payloads** ` +
+      `(${bytes(fullPerEvent)} B/event), and TOAST stores its payloads at ${bytes(fullStored)} B/event. ` +
+      `Compressed a thousand at a time instead, the same payloads take ${bytes(fullBatched)} B/event — ` +
+      `${share(per(fullBatched, fullStored))} of what is stored today. TOAST compresses one value at a time and ` +
+      `only once a row passes ~2 KB, so ${share(1 - per(full.stored.compressedRows, full.events))} of these rows ` +
+      `are stored uncompressed.`,
+    sbom.withoutSerialAndTimestamp.distinctDocuments === sbom.withoutSerialAndTimestamp.documents
+      ? `**#194 alone makes no stored SBOM byte a copy.** Take out the UUID and the timestamp and every land's ` +
+        `SBOM is still distinct, because it names the commit it describes (\`metadata.component.version\`). ` +
+        `What an unchanged lockfile does repeat is the component list: ` +
+        `${share(1 - per(sbom.components.distinctBytes, sbom.components.bytes))} of those bytes are copies. ` +
+        `Reclaiming them needs the component list stored once and referenced by digest, which is 3-6's shape ` +
+        `rather than 3-3's.`
+      : `**Without the UUID and the timestamp, ${sbom.withoutSerialAndTimestamp.distinctDocuments} of ` +
+        `${sbom.withoutSerialAndTimestamp.documents} SBOMs are distinct.**`,
+    `**A landed change costs ${bytes(landPerChange)} B of Postgres**` +
+      (gitPerLand === null ? "" : ` and ${bytes(gitPerLand)} B of git objects`) +
+      `; its SBOM is ${bytes(sbomPerLand)} B of the Postgres figure (${share(per(sbomPerLand, landPerChange))}) — ` +
+      `a ${bytes(statementPerDoc)} B statement, base64-encoded into a DSSE envelope and then compressed by TOAST.`,
+    `**The storage meter reads ${(events.relationBytes / Math.max(1, events.rowBytes)).toFixed(2)}× low on ` +
+      `\`session_events\`**, and ${(meterTotal.relationBytes / Math.max(1, meterTotal.rowBytes)).toFixed(2)}× ` +
+      `across every table here. It sums row datums by design (core/storage-usage.ts) — no index, no page ` +
+      `overhead — so an org quota of N bytes admits roughly that multiple of N on disk.`,
+    fullVerify && anchoredVerify && fullVerify.peakRssOverBaselineBytes !== null
+      ? `**Verifying the whole run — ${bytes(fullVerify.events)} events in ${fullVerify.sessions} sessions — grew the ` +
+        `server's resident set by ${mib(fullVerify.peakRssOverBaselineBytes)} MiB** over the ` +
+        `${mib(fullVerify.baselineRssBytes)} MiB it already held, in ${bytes(fullVerify.ms)} ms; anchored at ` +
+        `checkpoints, ${bytes(anchoredVerify.ms)} ms. #152's batched read holds one batch per session at a time, and ` +
+        `on a warm heap that fits inside what the process already has. This shows it stayed there; it does not ` +
+        `show what a freshly started process verifying the same run would need.`
+      : `**Peak RSS on /verify was not measured** on this platform.`,
+    `**Ingest ran at a median ${bytes(medianRate)} events/s** across ${r.ingest.writers} writers in batches of ` +
+      `${r.ingest.batchSize}, with \`session_events\` growing to ${bytes(deciles[deciles.length - 1].rowsAtEnd)} rows, ` +
+      `and its last two deciles ran at ${share(tailRatio)} of that median. ` +
+      (tailRatio >= 0.7
+        ? "No cliff inside that range — which bounds where one could be, and says nothing past it." +
+          (per(slowest.eventsPerSecond, medianRate) < 0.7
+            ? ` Decile ${slowest.d} stalled to ${share(per(slowest.eventsPerSecond, medianRate))} of the median ` +
+              "and the next one recovered. A stall that recovers is not a cliff, and its cause is not measured " +
+              "here: autovacuum and Postgres checkpoints both run on schedules this arm does not control."
+            : "")
+        : "Throughput fell and had not recovered when the run ended, so past this range is where to look."),
+  ];
+
+  return `Environment: Postgres ${r.postgres.version} (\`default_toast_compression = ${r.postgres.toastCompression}\`), ` +
+    `node ${env.node}, ${env.platform}, ${env.cpus}× ${env.cpu}, ${(env.totalMemoryBytes / 1024 ** 3).toFixed(0)} GiB. ` +
+    `Server commit \`${env.serverCommit ?? "unrecorded"}\`, run as ${env.server}. Seed ${c.seed}; ` +
+    `whole run ${bytes(r.wallClockMs / 1000)} s.
+
+## What this shows
+
+${shows.map((s) => `- ${s}`).join("\n")}
+
+## Bytes per unit
+
+What Postgres allocated per unit — heap, out-of-line TOAST, and indexes, as relation-size
+deltas on a database only this arm wrote to — beside the row-datum sum the storage meter
+counts. Free-space and visibility maps are in the total and not broken out.
+
+| Unit | Count | Heap B | TOAST B | Index B | **Total B** | Meter B |
+|---|---|---|---|---|---|---|
+${unitRows.join("\n")}
+
+${gitPerLand === null ? "" : `A landed change also adds ${bytes(gitPerLand)} B of git objects (\`git count-objects -v\`, the meter's own measure).\n\n`}\
+**The synthetic corpus beside the real one.** The \`text\` profile supplied a mean of ${textMeans} B per
+payload; the 2026-08-22 storage analysis measured ${bytes(c.observedMeanPayloadBytes)} B across 1,930 real events.
+
+## How much of an event is its payload
+
+| Configuration | Supplied B/event | Stored payload B/event | Everything else B/event | Payload share |
+|---|---|---|---|---|
+${payloadRows.join("\n")}
+
+## Compression: realised against batched
+
+"Uncompressed" is the payload as jsonb before TOAST; "stored" is the datum as it sits
+(\`pg_column_size\`). The deflate columns compress the *stored* payloads with one algorithm
+at every grain, so the difference between them is the batching and not the codec.
+
+| Configuration | Uncompressed B/event | Stored B/event | Rows TOAST-compressed | Deflate, per event | ${batchKeys.map((k) => `Deflate, batch of ${k}`).join(" | ")} |
+|---|---|---|---|---|${batchKeys.map(() => "---").join("|")}|
+${compressionRows.join("\n")}
+
+## Dedup yield
+
+Distinct by content, over the payloads as stored:
+
+| Configuration | Payload bytes | Distinct bytes | Yield |
+|---|---|---|---|
+${dedupRows.join("\n")}
+
+And the SBOM each of ${r.lands.count} lands recorded over an unchanged \`package-lock.json\` (#194),
+at three grains — the statement as stored, the SBOM without #194's UUID and timestamp, and the
+component list alone:
+
+| Grain | Documents | Distinct | Bytes | Distinct bytes | Yield |
+|---|---|---|---|---|---|
+${sbomRow("Statement", sbom.statement)}
+${sbomRow("SBOM without serial and timestamp", sbom.withoutSerialAndTimestamp)}
+${sbomRow("Component list", sbom.components)}
+
+## Ingest
+
+${bytes(r.ingest.events)} events from ${r.ingest.writers} concurrent writers, one session each, in
+batches of ${r.ingest.batchSize} (the recorder's default), with a checkpoint every
+${bytes(c.checkpointEvery)} events per writer. Throughput is across all writers; latency is
+per batch, including the HTTP round trip and the server's request logging.
+
+| Decile | Rows in \`session_events\` | Events/s | p50 batch ms | p95 batch ms |
+|---|---|---|---|---|
+${decileRows.join("\n")}
+
+Checkpoints: ${r.checkpoints.count}, p50 ${percentileOf(r.checkpoints.latencyMs, 50).toFixed(0)} ms,
+p95 ${percentileOf(r.checkpoints.latencyMs, 95).toFixed(0)} ms. Each carried
+${bytes(per(r.checkpoints.stateDatumBytes, r.checkpoints.count))} B of harness state and
+${bytes(per(r.checkpoints.envelopeDatumBytes, r.checkpoints.count))} B of signed envelope, as stored.
+
+## Verification
+
+| Target | Coverage | Sessions | Events | ms | Events/s | Server RSS before (MiB) | Peak (MiB) | Growth (MiB) |
+|---|---|---|---|---|---|---|---|---|
+${verifyRows.join("\n")}
+
+The server verifies straight after ingesting every event above, so it does so on a warm heap.
+Growth is what the verify added to that.
+
+## The meter against the relations
+
+| Table | Rows | Meter (row datums) | Relation | Relation ÷ meter |
+|---|---|---|---|---|
+${meterRows.join("\n")}
+| **All** | | **${bytes(meterTotal.rowBytes)}** | **${bytes(meterTotal.relationBytes)}** | **${(meterTotal.relationBytes / Math.max(1, meterTotal.rowBytes)).toFixed(2)}×** |
+
+## Operation-log rows by verb
+
+| Verb | Rows | Row bytes each |
+|---|---|---|
+${opRows.join("\n")}`;
+}
+
+function storageGrowthReport(records) {
+  if (records.length === 0) {
+    return "# Storage growth\n\n**Not run.** No records in `bench/runs/` for this arm.\n";
+  }
+  const sections = records.map((record) =>
+    records.length === 1 ? storageGrowthSection(record) : `## Run \`${record.file}\`\n\n${storageGrowthSection(record)}`,
+  );
+
+  return `# Storage growth — arm 4 results
+
+*Generated by \`bench/report/build-report.mjs\` from the run records in
+[\`bench/runs/\`](../runs). Do not edit by hand: re-run the script.*
+
+**Deterministic arm.** No model, no agent, no LLM call. A seeded generator produces a
+coding-agent-shaped trajectory — tool calls, model calls, messages, test results, commits — and
+the arm appends it through the real server, checkpoints it, verifies it, and lands changes, on a
+Postgres database created for the run and dropped after it. What it reports is what that
+database then holds. \`PLAN.md\` 3-6's retention and tiering policy is meant to be written
+against these numbers rather than against the 2026-08-22 model.
+
+**Two content profiles, because a synthetic payload's compressibility is a choice.** \`text\` is
+drawn from a Zipf-weighted vocabulary of code and prose and compresses the way source does;
+\`random\` is random six-bit characters and barely compresses at all. Real content lies between
+them, and every compression and dedup figure is given for both.
+
+${sections.join("\n\n")}
+
+## What this does not show
+
+**The corpus is synthetic.** Its sizes are calibrated to the one real measurement there is, and
+its content is bracketed rather than chosen, but no real trajectory went through this. Real
+payloads repeat themselves across events — the same file read twice, the same tool output —
+in ways a PRNG does not, so the payload dedup yields here are a floor under \`full\`, not an
+estimate.
+
+**One machine, one Postgres, freshly written.** Every relation was built by inserts into an empty
+database and measured straight away: no updates, no deletes, no vacuum, no bloat, and indexes as
+compact as they will ever be. A database that has run for a year holds the same rows in more
+pages. The multiples against the meter are a lower bound for the same reason.
+
+**Retention is not exercised.** Nothing here ages out, so "verified, payload not retained" is
+priced by subtraction — the payload column's share of an event — and not by running it.
+
+**The ingest curve stops where the run stops.** Its range is the table in the Ingest section. A
+cliff past it is neither shown nor ruled out, and the rates include this box's HTTP stack and
+request logging, which a production deployment shares and a differently-sized one would not.
+
+**Peak RSS is the server process's, sampled.** It is the larger of the kernel's high-water mark
+(reset before each request) and \`VmRSS\` polled every 5 ms, and both are approximate by a few
+hundred KiB on per-CPU counters. And the server verifies straight after ingesting, with a warm
+heap: growth near zero says the read stayed inside what the process already held, not what a
+freshly started process verifying a large run cold would need.
+`;
+}
+
 async function main() {
+  const storageRecords = await loadRuns("storage-growth");
+  const storageTarget = path.join(here, "storage-growth.md");
+  await writeFile(storageTarget, storageGrowthReport(storageRecords));
+  console.error(`wrote ${path.relative(process.cwd(), storageTarget)} from ${storageRecords.length} run record(s)`);
+
   const mergeRecords = await loadRuns("merge-contention");
   const mergeTarget = path.join(here, "merge-contention.md");
   await writeFile(mergeTarget, mergeContentionReport(mergeRecords));

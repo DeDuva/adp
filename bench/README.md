@@ -17,6 +17,7 @@ the same kind of measurement, and the report says so on every page.
 | **1 — merge contention** | No | **Yes**, at small N | ✅ Run; see [`report/merge-contention.md`](report/merge-contention.md) |
 | **2 — three-way cost comparison** (GitHub+`gh` vs ADP-MCP vs ADP-via-`gh`) | Yes | No | ✅ Run, pilot scale; see [`report/three-way-cost.md`](report/three-way-cost.md) |
 | **3 — fan-out vs serial** | Yes | No | ✅ Run; squad's duva-bench track — see the [squad PR](https://github.com/DeDuva/squad/pull/119) and `packages/duva-bench/examples/topology-arm3-report/` in that repo |
+| **4 — storage growth** (bytes per event, checkpoint, operation and land; compression; dedup; ingest; `/verify` memory) | No | **Yes**, at small N | ✅ Run; see [`report/storage-growth.md`](report/storage-growth.md) |
 | **5 — what recording costs the agent** (recorder on vs off, paired) | Yes | No | ✅ Run, 20 pairs; see [`report/recorder-overhead.md`](report/recorder-overhead.md) |
 
 **Arm 1 is deterministic.** No agent, no LLM call, no tokens spent. It measures
@@ -25,6 +26,12 @@ agent's ability to drive it. That makes it cheap enough to enforce on every
 change — `server/test/e2e-merge-contention.test.ts` drives *this exact module*,
 not a reimplementation of it, so the code CI checks is the code that produced the
 published numbers.
+
+**Arm 4 is deterministic on the same terms**, and enforced the same way:
+`server/test/e2e-storage-growth.test.ts` drives `lib/storage-growth.mjs` at small N, on a
+database of its own. What it asserts is accounting — every write counted, the payload mode the
+server actually applied, the dedup arithmetic — and never a byte count or a speed, which move
+with the Postgres version and the machine rather than with anything anyone changed.
 
 **Arms 2, 3 and 5 are agent-backed and run out of band, not in CI.** They need a real
 agent burning real tokens and, for the GitHub arm, a real GitHub repository and PAT.
@@ -69,6 +76,27 @@ API — no clone, so clone cost never contaminates the land latency being measur
 
 A run where writers failed for reasons *other than* contention exits nonzero. A
 broken run is not a result and must not be published as one.
+
+## Running arm 4
+
+```bash
+make up              # a Postgres for the arm to create its own database on
+make bench-storage   # builds the server, runs the arm, writes runs/storage-growth.json, regenerates the report
+```
+
+The arm brings its own server rather than pointing at one: it creates a database, migrates it,
+mints a token, boots `server/dist/main.js` against it as a separate process, and drops the
+database afterwards. What it measures requires both. Relation sizes are per table rather than
+per tenant, so they describe this arm only on a database nobody else writes to; and peak RSS on
+`/verify` has to be the server's alone, not the driver's as well.
+
+`--scale ci` runs the corpus CI runs, and any scale field can be overridden —
+`--ingestEvents 1000000` pushes the ingest curve further. The corpus is a pure function of
+`--seed`, so a re-run on the same Postgres reproduces the payloads to the byte. Relation sizes
+come back within about half a percent for the single-writer phases and about three percent for
+the concurrent ingest: uuid keys and interleaving writers vary the order pages fill and indexes
+split in, and nothing else does. Two runs of the published scale were compared to establish
+that, rather than assumed.
 
 ## Running arm 2
 
