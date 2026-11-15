@@ -19,6 +19,16 @@ Completed phases are not kept here. Work that shipped is described in `CHANGELOG
 the version that carried it; a backlog that also records its own history stops being a
 backlog and becomes a ledger nobody trusts.
 
+## Status: paused 2026-11-15
+
+Nothing below is in flight. ADP is hibernating with the rest of the agent-research program
+(`adp`, `duva-bench`, `adp-replay`; registry: `PORTFOLIO.md` in the private
+`DeDuva/duva-lab-tpm`). **Resume condition:** a burst whose goal is a new ADP / duva-bench research question. squad-lab is not part of it: `squad` was archived 2026-11-15 and its M15 scope decision closed with it.
+
+Where it stopped: the last human work was 2026-09-11, on branch
+`feat/195-storage-growth-bench` (open PR, unmerged). The GCP dev VM was deleted 2026-10-19,
+so nothing of ADP's runs in the cloud. Only the CI that GitHub runs on a push remains.
+
 ---
 
 ## Phase 0 — What 0.6.0 must not ship without
